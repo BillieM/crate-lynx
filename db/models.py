@@ -73,3 +73,16 @@ class StreamingPlaylist(Base):
     provider_playlist_id: Mapped[str] = mapped_column(String, nullable=False)
     title: Mapped[str] = mapped_column(String, nullable=False)
     synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class StreamingTrack(Base):
+    __tablename__ = "streaming_tracks"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    provider_track_id: Mapped[str] = mapped_column(String, nullable=False)
+    title: Mapped[str] = mapped_column(String, nullable=False)
+    artist: Mapped[str] = mapped_column(String, nullable=False)
+    album: Mapped[str | None] = mapped_column(String)
+    year: Mapped[int | None] = mapped_column()
+    isrc: Mapped[str | None] = mapped_column(String)
+    duration_ms: Mapped[int | None] = mapped_column()
