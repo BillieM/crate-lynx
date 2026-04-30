@@ -11,9 +11,19 @@ from db.models import Base
 
 config = context.config
 
+
+def _normalize_database_url(url: str) -> str:
+    if url.startswith("postgres://"):
+        return "postgresql+psycopg://" + url.removeprefix("postgres://")
+    if url.startswith("postgresql://") and "+" not in url.split("://", 1)[0]:
+        return "postgresql+psycopg://" + url.removeprefix("postgresql://")
+    return url
+
+
 database_url = os.environ.get("DATABASE_URL")
 if not database_url:
     raise RuntimeError("DATABASE_URL must be set for Alembic migrations")
+database_url = _normalize_database_url(database_url)
 
 config.set_main_option("sqlalchemy.url", database_url)
 

@@ -7,7 +7,7 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-crate_lynx}
       POSTGRES_USER: ${POSTGRES_USER:-crate_lynx}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-crate_lynx}
-      DATABASE_URL: postgres://${POSTGRES_USER:-crate_lynx}:${POSTGRES_PASSWORD:-crate_lynx}@127.0.0.1:5432/${POSTGRES_DB:-crate_lynx}
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-crate_lynx}:${POSTGRES_PASSWORD:-crate_lynx}@127.0.0.1:5432/${POSTGRES_DB:-crate_lynx}
     ports:
       - "18102:5432"
     volumes:
@@ -45,7 +45,7 @@ services:
       redis:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgres://${POSTGRES_USER:-crate_lynx}:${POSTGRES_PASSWORD:-crate_lynx}@db:5432/${POSTGRES_DB:-crate_lynx}
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-crate_lynx}:${POSTGRES_PASSWORD:-crate_lynx}@db:5432/${POSTGRES_DB:-crate_lynx}
       REDIS_URL: redis://redis:6379/0
       TOKEN_ENCRYPTION_KEY: ${TOKEN_ENCRYPTION_KEY:-change-me}
       LIBRARY_ROOT: ${LIBRARY_ROOT:-/library}
