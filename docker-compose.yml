@@ -1,10 +1,13 @@
 services:
   db:
-    image: postgres:16-alpine
+    build:
+      context: .
+      dockerfile: db/Dockerfile
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-crate_lynx}
       POSTGRES_USER: ${POSTGRES_USER:-crate_lynx}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-crate_lynx}
+      DATABASE_URL: postgres://${POSTGRES_USER:-crate_lynx}:${POSTGRES_PASSWORD:-crate_lynx}@127.0.0.1:5432/${POSTGRES_DB:-crate_lynx}
     ports:
       - "18102:5432"
     volumes:
