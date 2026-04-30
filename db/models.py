@@ -124,3 +124,23 @@ class SuggestedLink(Base):
         server_default=func.now(),
         nullable=False,
     )
+
+
+class FinalLink(Base):
+    __tablename__ = "final_links"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    local_track_id: Mapped[int] = mapped_column(
+        ForeignKey("local_tracks.id"),
+        nullable=False,
+        unique=True,
+    )
+    streaming_track_id: Mapped[int] = mapped_column(
+        ForeignKey("streaming_tracks.id"),
+        nullable=False,
+    )
+    approved_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
