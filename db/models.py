@@ -86,3 +86,18 @@ class StreamingTrack(Base):
     year: Mapped[int | None] = mapped_column()
     isrc: Mapped[str | None] = mapped_column(String)
     duration_ms: Mapped[int | None] = mapped_column()
+
+
+class PlaylistMembership(Base):
+    __tablename__ = "playlist_membership"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    playlist_id: Mapped[int] = mapped_column(
+        ForeignKey("streaming_playlists.id"),
+        nullable=False,
+    )
+    streaming_track_id: Mapped[int] = mapped_column(
+        ForeignKey("streaming_tracks.id"),
+        nullable=False,
+    )
+    position: Mapped[int] = mapped_column(nullable=False)
