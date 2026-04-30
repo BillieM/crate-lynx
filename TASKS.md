@@ -4,7 +4,7 @@
 - [x] Write SQLAlchemy base model and shared `models.py` (to be mounted/imported by `app/`)
 - [x] Define `local_tracks` table (id, file_path, library_root_rel_path, fingerprint, beets_id, created_at, updated_at)
 - [x] Define `streaming_accounts` table (id, provider, display_name, auth_token_blob, created_at, updated_at)
-- [ ] Define `streaming_playlists` table (id, account_id FK, provider_playlist_id, title, synced_at)
+- [x] Define `streaming_playlists` table (id, account_id FK, provider_playlist_id, title, synced_at)
 - [ ] Define `streaming_tracks` table (id, provider_track_id, title, artist, album, year, isrc, duration_ms)
 - [ ] Define `playlist_membership` table (id, playlist_id FK, streaming_track_id FK, position)
 - [ ] Define `suggested_links` table (id, local_track_id FK, streaming_track_id FK, match_method, score, status, rejected_at, created_at)

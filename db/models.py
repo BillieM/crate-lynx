@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import DateTime, MetaData, String, func
+from sqlalchemy import DateTime, ForeignKey, MetaData, String, func
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -60,3 +60,16 @@ class StreamingAccount(Base):
         onupdate=func.now(),
         nullable=False,
     )
+
+
+class StreamingPlaylist(Base):
+    __tablename__ = "streaming_playlists"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    account_id: Mapped[int] = mapped_column(
+        ForeignKey("streaming_accounts.id"),
+        nullable=False,
+    )
+    provider_playlist_id: Mapped[str] = mapped_column(String, nullable=False)
+    title: Mapped[str] = mapped_column(String, nullable=False)
+    synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
