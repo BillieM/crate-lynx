@@ -1,0 +1,85 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-crate_lynx}
+      POSTGRES_USER: ${POSTGRES_USER:-crate_lynx}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-crate_lynx}
+    ports:
+      - "18102:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "/usr/local/etc/redis/redis.conf"]
+    ports:
+      - "18103:6379"
+    volumes:
+      - ./redis/redis.conf:/usr/local/etc/redis/redis.conf:ro
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+
+  app:
+    build:
+      context: ./app
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-crate_lynx}:${POSTGRES_PASSWORD:-crate_lynx}@db:5432/${POSTGRES_DB:-crate_lynx}
+      REDIS_URL: redis://redis:6379/0
+      TOKEN_ENCRYPTION_KEY: ${TOKEN_ENCRYPTION_KEY:-change-me}
+      LIBRARY_ROOT: ${LIBRARY_ROOT:-/library}
+      INGESTION_ROOT: /ingestion
+    ports:
+      - "18101:8000"
+    volumes:
+      - library_data:/library
+      - ingestion_data:/ingestion
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - import urllib.request; urllib.request.urlopen("http://127.0.0.1:8000/health")
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  app-ui:
+    build:
+      context: ./app-ui
+    depends_on:
+      app:
+        condition: service_healthy
+    ports:
+      - "18100:80"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+
+volumes:
+  postgres_data:
+  redis_data:
+  library_data:
+  ingestion_data:

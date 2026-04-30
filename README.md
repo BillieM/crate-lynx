@@ -25,7 +25,7 @@ cp .env.example .env
 docker compose up --build
 ```
 
-The UI is served at `http://localhost` (Nginx). The API is available at `http://localhost/api`.
+The UI is served at `http://localhost:18100` (Nginx). The API is available at `http://localhost:18101` and proxied through the UI at `http://localhost:18100/api`.
 
 ---
 

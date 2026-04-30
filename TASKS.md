@@ -6,6 +6,6 @@
 - [x] Add FastAPI skeleton with `/health` endpoint
 - [x] Write Dockerfile + Nginx config for `app-ui` container (multi-stage, SPA proxy)
 - [x] Write Redis config (maxmemory-policy=noeviction)
-- [ ] Write `docker-compose.yml` (4 services, volumes, health-check depends_on)
-- [ ] Write `.env.example` (all required vars, no real secrets)
-- [ ] Smoke test: `docker compose up --build`, verify all 4 services reach healthy state
+- [x] Write `docker-compose.yml` (4 services, volumes, health-check depends_on)
+- [x] Write `.env.example` (all required vars, no real secrets)
+- [x] Smoke test: `docker compose up --build`, verify all 4 services reach healthy state
