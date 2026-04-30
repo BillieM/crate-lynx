@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from datetime import datetime
 
 from sqlalchemy import DateTime, Float, ForeignKey, MetaData, String, func
@@ -27,8 +25,8 @@ class LocalTrack(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     file_path: Mapped[str] = mapped_column(String, nullable=False)
     library_root_rel_path: Mapped[str] = mapped_column(String, nullable=False)
-    fingerprint: Mapped[str | None] = mapped_column(String)
-    beets_id: Mapped[int | None] = mapped_column()
+    fingerprint: Mapped[str] = mapped_column(String, nullable=True)
+    beets_id: Mapped[int] = mapped_column(nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
@@ -72,7 +70,7 @@ class StreamingPlaylist(Base):
     )
     provider_playlist_id: Mapped[str] = mapped_column(String, nullable=False)
     title: Mapped[str] = mapped_column(String, nullable=False)
-    synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    synced_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class StreamingTrack(Base):
@@ -82,10 +80,10 @@ class StreamingTrack(Base):
     provider_track_id: Mapped[str] = mapped_column(String, nullable=False)
     title: Mapped[str] = mapped_column(String, nullable=False)
     artist: Mapped[str] = mapped_column(String, nullable=False)
-    album: Mapped[str | None] = mapped_column(String)
-    year: Mapped[int | None] = mapped_column()
-    isrc: Mapped[str | None] = mapped_column(String)
-    duration_ms: Mapped[int | None] = mapped_column()
+    album: Mapped[str] = mapped_column(String, nullable=True)
+    year: Mapped[int] = mapped_column(nullable=True)
+    isrc: Mapped[str] = mapped_column(String, nullable=True)
+    duration_ms: Mapped[int] = mapped_column(nullable=True)
 
 
 class PlaylistMembership(Base):
@@ -118,7 +116,9 @@ class SuggestedLink(Base):
     match_method: Mapped[str] = mapped_column(String, nullable=False)
     score: Mapped[float] = mapped_column(Float, nullable=False)
     status: Mapped[str] = mapped_column(String, nullable=False)
-    rejected_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    rejected_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),

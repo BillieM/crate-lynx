@@ -10,6 +10,6 @@
 - [x] Define `suggested_links` table (id, local_track_id FK, streaming_track_id FK, match_method, score, status, rejected_at, created_at)
 - [x] Define `final_links` table (id, local_track_id FK unique, streaming_track_id FK, approved_at)
 - [x] Write Fernet encryption helpers (`encrypt_token` / `decrypt_token`) for `auth_token_blob`
-- [ ] Generate initial Alembic migration from the model definitions
+- [x] Generate initial Alembic migration from the model definitions
 - [ ] Wire `db` container in `docker-compose.yml` to run `alembic upgrade head` on startup (or add entrypoint script)
 - [ ] Smoke test: `docker compose up`, confirm all 7 tables exist in Postgres and migration history is clean
