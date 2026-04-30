@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, MetaData, String, func
+from sqlalchemy import DateTime, Float, ForeignKey, MetaData, String, func
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -101,3 +101,26 @@ class PlaylistMembership(Base):
         nullable=False,
     )
     position: Mapped[int] = mapped_column(nullable=False)
+
+
+class SuggestedLink(Base):
+    __tablename__ = "suggested_links"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    local_track_id: Mapped[int] = mapped_column(
+        ForeignKey("local_tracks.id"),
+        nullable=False,
+    )
+    streaming_track_id: Mapped[int] = mapped_column(
+        ForeignKey("streaming_tracks.id"),
+        nullable=False,
+    )
+    match_method: Mapped[str] = mapped_column(String, nullable=False)
+    score: Mapped[float] = mapped_column(Float, nullable=False)
+    status: Mapped[str] = mapped_column(String, nullable=False)
+    rejected_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
