@@ -1,0 +1,23 @@
+# Environment
+.env
+*.env
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+dist/
+
+# Node
+node_modules/
+app-ui/dist/
+
+# OS
+.DS_Store
+
+# Docker
+*.log
