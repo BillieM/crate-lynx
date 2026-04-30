@@ -16,13 +16,13 @@ crate-lynx/
 
 ## Epics
 
-### E01 — Project scaffolding `in progress`
+### E01 — Project scaffolding `done`
 **Subdirs:** root, `app-ui/`, `app/`, `db/`, `redis/`
 Docker Compose wiring all 4 services. Nginx config for the frontend. Supervisor or shell script inside `app` to start uvicorn + RQ worker together. Redis config. Env var template (`.env.example`). Health check endpoints on the API.
 
 ---
 
-### E02 — Database schema & migrations
+### E02 — Database schema & migrations `in progress`
 **Subdir:** `db/`
 Alembic setup. All 7 tables: `local_tracks`, `streaming_accounts`, `streaming_playlists`, `streaming_tracks`, `playlist_membership`, `suggested_links`, `final_links`. SQLAlchemy models shared with `app/`. Fernet encryption helpers for `auth_token_blob`.
 
