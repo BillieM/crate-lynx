@@ -1,0 +1,408 @@
+
+<style>
+  :root {
+    --mocha-base: #1e1e2e;
+    --mocha-mantle: #181825;
+    --mocha-crust: #11111b;
+    --mocha-surface0: #313244;
+    --mocha-surface1: #45475a;
+    --mocha-surface2: #585b70;
+    --mocha-overlay0: #6c7086;
+    --mocha-overlay1: #7f849c;
+    --mocha-overlay2: #9399b2;
+    --mocha-subtext0: #a6adc8;
+    --mocha-subtext1: #bac2de;
+    --mocha-text: #cdd6f4;
+    --mocha-lavender: #b4befe;
+    --mocha-blue: #89b4fa;
+    --mocha-sapphire: #74c7ec;
+    --mocha-sky: #89dceb;
+    --mocha-teal: #94e2d5;
+    --mocha-green: #a6e3a1;
+    --mocha-yellow: #f9e2af;
+    --mocha-peach: #fab387;
+    --mocha-maroon: #eba0ac;
+    --mocha-red: #f38ba8;
+    --mocha-mauve: #cba6f7;
+    --mocha-pink: #f5c2e7;
+    --mocha-flamingo: #f2cdcd;
+    --mocha-rosewater: #f5e0dc;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  .app { background: var(--mocha-base); color: var(--mocha-text); font-family: 'JetBrains Mono','Fira Code',monospace; display: flex; height: 640px; border-radius: 12px; overflow: hidden; font-size: 13px; border: 1px solid var(--mocha-surface0); }
+  .sidebar { width: 220px; min-width: 220px; background: var(--mocha-mantle); display: flex; flex-direction: column; border-right: 1px solid var(--mocha-surface0); overflow-y: auto; }
+  .sidebar-header { padding: 14px 14px 10px; border-bottom: 1px solid var(--mocha-surface0); }
+  .sidebar-logo { font-size: 12px; font-weight: 700; color: var(--mocha-mauve); letter-spacing: 0.08em; text-transform: uppercase; display: flex; align-items: center; gap: 7px; }
+  .logo-icon { width: 20px; height: 20px; background: var(--mocha-mauve); border-radius: 4px; display: flex; align-items: center; justify-content: center; }
+  .search-bar { margin: 10px 10px 0; background: var(--mocha-surface0); border: 1px solid var(--mocha-surface1); border-radius: 6px; padding: 6px 10px; color: var(--mocha-subtext0); font-size: 11px; font-family: inherit; display: flex; align-items: center; gap: 6px; cursor: text; }
+  .sidebar-section { padding: 10px 0 4px; }
+  .section-label { font-size: 10px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--mocha-overlay0); padding: 0 14px 6px; }
+  .nav-item { display: flex; align-items: center; justify-content: space-between; padding: 5px 14px; cursor: pointer; transition: background 0.1s; gap: 6px; }
+  .nav-item:hover { background: var(--mocha-surface0); }
+  .nav-item.active { background: var(--mocha-surface0); border-left: 2px solid var(--mocha-mauve); padding-left: 12px; }
+  .nav-item-left { display: flex; align-items: center; gap: 7px; color: var(--mocha-subtext1); font-size: 12px; min-width: 0; flex: 1; overflow: hidden; }
+  .nav-item.active .nav-item-left { color: var(--mocha-text); }
+  .nav-item-left span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .badge { font-size: 10px; font-weight: 700; border-radius: 10px; padding: 1px 7px; min-width: 20px; text-align: center; flex-shrink: 0; }
+  .badge-red { background: rgba(243,139,168,0.18); color: var(--mocha-red); }
+  .badge-blue { background: rgba(137,180,250,0.18); color: var(--mocha-blue); }
+  .badge-yellow { background: rgba(249,226,175,0.18); color: var(--mocha-yellow); }
+  .progress-bubble { font-size: 10px; font-weight: 700; flex-shrink: 0; min-width: 40px; text-align: right; }
+  .main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+  .topbar { background: var(--mocha-mantle); border-bottom: 1px solid var(--mocha-surface0); padding: 0 18px; height: 44px; display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; }
+  .topbar-title { font-size: 13px; font-weight: 700; color: var(--mocha-text); display: flex; align-items: center; gap: 8px; }
+  .topbar-pill { font-size: 10px; padding: 2px 8px; border-radius: 10px; font-weight: 700; }
+  .pill-pending { background: rgba(249,226,175,0.18); color: var(--mocha-yellow); }
+  .pill-info { background: rgba(137,180,250,0.18); color: var(--mocha-blue); }
+  .pill-lib { background: rgba(203,166,247,0.18); color: var(--mocha-mauve); }
+  .topbar-actions { display: flex; align-items: center; gap: 8px; }
+  .btn { font-family: inherit; font-size: 11px; font-weight: 700; padding: 5px 12px; border-radius: 6px; cursor: pointer; border: none; transition: opacity 0.15s; }
+  .btn:hover { opacity: 0.85; }
+  .btn-ghost { background: var(--mocha-surface0); color: var(--mocha-subtext1); }
+  .btn-primary { background: var(--mocha-mauve); color: var(--mocha-crust); }
+  .btn-green { background: var(--mocha-green); color: var(--mocha-crust); }
+  .btn-red { background: rgba(243,139,168,0.18); color: var(--mocha-red); border: 1px solid rgba(243,139,168,0.3); }
+  .content { flex: 1; overflow-y: auto; padding: 16px 18px; }
+  .view { display: none; }
+  .view.active { display: block; }
+  .filter-bar { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }
+  .filter-chip { font-family: inherit; font-size: 10px; font-weight: 700; padding: 4px 10px; border-radius: 20px; border: 1px solid var(--mocha-surface1); background: transparent; color: var(--mocha-subtext0); cursor: pointer; transition: all 0.15s; letter-spacing: 0.04em; }
+  .filter-chip:hover, .filter-chip.on { background: var(--mocha-surface0); border-color: var(--mocha-surface2); color: var(--mocha-text); }
+  .filter-chip.on { border-color: var(--mocha-mauve); color: var(--mocha-mauve); }
+  .track-row { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--mocha-surface0); }
+  .track-num { font-size: 11px; color: var(--mocha-overlay0); width: 28px; text-align: right; flex-shrink: 0; }
+  .track-status-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .dot-linked { background: var(--mocha-green); }
+  .dot-pending { background: var(--mocha-yellow); }
+  .dot-unlinked { background: var(--mocha-red); }
+  .track-info { flex: 1; min-width: 0; }
+  .t-title { font-size: 12px; font-weight: 700; color: var(--mocha-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .t-artist { font-size: 11px; color: var(--mocha-subtext0); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .t-dur { font-size: 11px; color: var(--mocha-overlay0); flex-shrink: 0; }
+  .t-action { font-family: inherit; font-size: 10px; font-weight: 700; padding: 3px 8px; border-radius: 4px; cursor: pointer; border: 1px solid var(--mocha-surface1); background: transparent; color: var(--mocha-subtext0); flex-shrink: 0; transition: all 0.15s; letter-spacing: 0.04em; text-transform: uppercase; }
+  .t-action:hover { background: var(--mocha-surface0); color: var(--mocha-text); }
+  .t-action-linked { border-color: rgba(166,227,161,0.4); color: var(--mocha-green); background: rgba(166,227,161,0.08); }
+  .t-action-pending { border-color: rgba(249,226,175,0.3); color: var(--mocha-yellow); }
+  .proposals-list { display: flex; flex-direction: column; gap: 8px; }
+  .proposal-card { background: var(--mocha-mantle); border: 1px solid var(--mocha-surface0); border-radius: 8px; padding: 12px 14px; display: flex; align-items: center; gap: 12px; transition: border-color 0.15s; }
+  .proposal-card:hover { border-color: var(--mocha-surface1); }
+  .confidence-bar { width: 4px; border-radius: 4px; flex-shrink: 0; height: 48px; }
+  .conf-high { background: var(--mocha-green); }
+  .conf-med { background: var(--mocha-yellow); }
+  .conf-low { background: var(--mocha-red); }
+  .proposal-tracks { flex: 1; min-width: 0; display: flex; gap: 10px; }
+  .track-col { flex: 1; min-width: 0; }
+  .track-label { font-size: 9px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--mocha-overlay0); margin-bottom: 3px; }
+  .track-title { font-size: 12px; font-weight: 700; color: var(--mocha-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .track-artist { font-size: 11px; color: var(--mocha-subtext0); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .track-divider { width: 1px; background: var(--mocha-surface1); flex-shrink: 0; align-self: stretch; }
+  .proposal-meta { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; flex-shrink: 0; }
+  .match-badge { font-size: 9px; font-weight: 700; padding: 2px 7px; border-radius: 4px; letter-spacing: 0.06em; text-transform: uppercase; }
+  .match-isrc { background: rgba(166,227,161,0.2); color: var(--mocha-green); }
+  .match-tag { background: rgba(137,180,250,0.2); color: var(--mocha-blue); }
+  .match-acoustic { background: rgba(249,226,175,0.2); color: var(--mocha-yellow); }
+  .score { font-size: 11px; color: var(--mocha-overlay1); }
+  .proposal-actions { display: flex; flex-direction: column; gap: 5px; flex-shrink: 0; }
+  .separator { height: 1px; background: var(--mocha-surface0); margin: 10px 0; }
+  .playlist-header { display: flex; align-items: flex-start; gap: 16px; margin-bottom: 18px; }
+  .playlist-art { width: 80px; height: 80px; border-radius: 8px; background: var(--mocha-surface0); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .playlist-name { font-size: 18px; font-weight: 700; color: var(--mocha-text); margin-bottom: 4px; }
+  .playlist-stats { font-size: 11px; color: var(--mocha-overlay1); display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .stat-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--mocha-surface1); display: inline-block; }
+  .progress-ring-wrap { margin-top: 8px; display: flex; align-items: center; gap: 10px; }
+  .progress-label { font-size: 12px; color: var(--mocha-subtext0); }
+  .progress-frac { font-size: 14px; font-weight: 700; }
+  .lib-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 16px; }
+  .lib-stat { background: var(--mocha-mantle); border: 1px solid var(--mocha-surface0); border-radius: 8px; padding: 10px 12px; }
+  .lib-stat-num { font-size: 20px; font-weight: 700; margin-bottom: 2px; }
+  .lib-stat-label { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--mocha-overlay0); }
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--mocha-surface1); border-radius: 2px; }
+</style>
+
+<h2 class="sr-only">Music Asset Manager UI mockup v2 with simplified local library view</h2>
+
+<div class="app">
+  <div class="sidebar">
+    <div class="sidebar-header">
+      <div class="sidebar-logo">
+        <div class="logo-icon">
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><circle cx="6" cy="6" r="4" stroke="#1e1e2e" stroke-width="2"/><circle cx="6" cy="6" r="1.5" fill="#1e1e2e"/></svg>
+        </div>
+        MUSEBRIDGE
+      </div>
+      <div class="search-bar" style="margin-top:10px;">
+        <svg width="11" height="11" viewBox="0 0 11 11" fill="none"><circle cx="4.5" cy="4.5" r="3.5" stroke="#6c7086" stroke-width="1.2"/><line x1="7.5" y1="7.5" x2="10" y2="10" stroke="#6c7086" stroke-width="1.2" stroke-linecap="round"/></svg>
+        search library…
+      </div>
+    </div>
+
+    <div class="sidebar-section">
+      <div class="section-label">🛠 Maintenance</div>
+      <div class="nav-item" onclick="showView('proposals', this)">
+        <div class="nav-item-left"><div style="color:var(--mocha-yellow);font-size:11px">◆</div><span>Link proposals</span></div>
+        <span class="badge badge-yellow">14</span>
+      </div>
+      <div class="nav-item" onclick="showView('unidentified', this)">
+        <div class="nav-item-left"><div style="color:var(--mocha-red);font-size:11px">◆</div><span>Unidentified</span></div>
+        <span class="badge badge-red">3</span>
+      </div>
+      <div class="nav-item" onclick="showView('missing', this)">
+        <div class="nav-item-left"><div style="color:var(--mocha-overlay1);font-size:11px">◆</div><span>Missing locally</span></div>
+        <span class="badge" style="background:rgba(108,112,134,0.2);color:var(--mocha-overlay1)">28</span>
+      </div>
+    </div>
+
+    <div class="sidebar-section">
+      <div class="section-label">▶ YouTube Music</div>
+      <div class="nav-item active" onclick="showView('playlist', this)">
+        <div class="nav-item-left"><span>Late Night Drive</span></div>
+        <span class="progress-bubble" id="pb1">5/62</span>
+      </div>
+      <div class="nav-item" onclick="showView('playlist2', this)">
+        <div class="nav-item-left"><span>Deep House '23</span></div>
+        <span class="progress-bubble" id="pb2">48/51</span>
+      </div>
+      <div class="nav-item" onclick="showView('playlist3', this)">
+        <div class="nav-item-left"><span>Morning Ambient</span></div>
+        <span class="progress-bubble" id="pb3">0/34</span>
+      </div>
+      <div class="nav-item" onclick="showView('playlist4', this)">
+        <div class="nav-item-left"><span>DJ Set Prep</span></div>
+        <span class="progress-bubble" id="pb4">27/27</span>
+      </div>
+      <div class="nav-item" onclick="showView('playlist5', this)">
+        <div class="nav-item-left"><span>Discover Weekly</span></div>
+        <span class="progress-bubble" id="pb5">12/30</span>
+      </div>
+    </div>
+
+    <div class="sidebar-section">
+      <div class="section-label">🏠 Local Library</div>
+      <div class="nav-item" onclick="showView('library', this)">
+        <div class="nav-item-left"><span>All tracks</span></div>
+        <span class="badge" style="background:rgba(203,166,247,0.15);color:var(--mocha-mauve)">312</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="main">
+    <div class="topbar">
+      <div class="topbar-title" id="topbar-title">
+        <span style="color:var(--mocha-overlay1)">▶</span>
+        Late Night Drive
+        <span class="topbar-pill pill-info">62 tracks</span>
+      </div>
+      <div class="topbar-actions">
+        <button class="btn btn-ghost">↻ Sync</button>
+        <button class="btn btn-ghost">⊕ Export M3U</button>
+      </div>
+    </div>
+
+    <div class="content">
+
+      <!-- Playlist view -->
+      <div class="view active" id="view-playlist">
+        <div class="playlist-header">
+          <div class="playlist-art">
+            <svg width="36" height="36" viewBox="0 0 36 36" fill="none"><circle cx="18" cy="18" r="14" stroke="#45475a" stroke-width="2"/><circle cx="18" cy="18" r="6" stroke="#45475a" stroke-width="2"/><circle cx="18" cy="18" r="2" fill="#585b70"/><line x1="18" y1="4" x2="18" y2="12" stroke="#45475a" stroke-width="1.5"/></svg>
+          </div>
+          <div style="flex:1;">
+            <div class="playlist-name">Late Night Drive</div>
+            <div class="playlist-stats"><span>YouTube Music</span><span class="stat-dot"></span><span>62 tracks</span><span class="stat-dot"></span><span>synced 4 min ago</span></div>
+            <div class="progress-ring-wrap">
+              <svg width="44" height="44" viewBox="0 0 44 44"><circle cx="22" cy="22" r="18" fill="none" stroke="#313244" stroke-width="4"/><circle cx="22" cy="22" r="18" fill="none" stroke="#f38ba8" stroke-width="4" stroke-dasharray="113" stroke-dashoffset="104" stroke-linecap="round" transform="rotate(-90 22 22)"/></svg>
+              <div><div class="progress-frac" style="color:var(--mocha-red)">5 / 62</div><div class="progress-label">tracks linked</div></div>
+            </div>
+          </div>
+        </div>
+        <div class="filter-bar">
+          <span class="filter-chip on">All</span>
+          <span class="filter-chip">Linked</span>
+          <span class="filter-chip">Pending</span>
+          <span class="filter-chip">Unlinked</span>
+        </div>
+        <div class="track-row"><div class="track-num">1</div><div class="track-status-dot dot-linked"></div><div class="track-info"><div class="t-title">Burial – Archangel</div><div class="t-artist">Untrue · 2007</div></div><div class="t-dur">4:58</div><button class="t-action t-action-linked">linked</button></div>
+        <div class="track-row"><div class="track-num">2</div><div class="track-status-dot dot-pending"></div><div class="track-info"><div class="t-title">Four Tet – Baby</div><div class="t-artist">There Is Love in You · 2010</div></div><div class="t-dur">6:20</div><button class="t-action t-action-pending">review</button></div>
+        <div class="track-row"><div class="track-num">3</div><div class="track-status-dot dot-unlinked"></div><div class="track-info"><div class="t-title">Actress – Rims</div><div class="t-artist">R.I.P · 2012</div></div><div class="t-dur">5:12</div><button class="t-action">match</button></div>
+        <div class="track-row"><div class="track-num">4</div><div class="track-status-dot dot-linked"></div><div class="track-info"><div class="t-title">Aphex Twin – Rhubarb</div><div class="t-artist">Selected Ambient Works Vol II · 1994</div></div><div class="t-dur">5:58</div><button class="t-action t-action-linked">linked</button></div>
+        <div class="track-row"><div class="track-num">5</div><div class="track-status-dot dot-unlinked"></div><div class="track-info"><div class="t-title">Moderat – Bad Kingdom</div><div class="t-artist">II · 2013</div></div><div class="t-dur">5:01</div><button class="t-action">match</button></div>
+        <div class="track-row"><div class="track-num">6</div><div class="track-status-dot dot-unlinked"></div><div class="track-info"><div class="t-title">Jon Hopkins – Open Eye Signal</div><div class="t-artist">Immunity · 2013</div></div><div class="t-dur">9:32</div><button class="t-action">match</button></div>
+        <div class="track-row"><div class="track-num">7</div><div class="track-status-dot dot-linked"></div><div class="track-info"><div class="t-title">Floating Points – Silhouettes</div><div class="t-artist">Elaenia · 2015</div></div><div class="t-dur">8:22</div><button class="t-action t-action-linked">linked</button></div>
+        <div style="text-align:center;padding:14px 0;font-size:11px;color:var(--mocha-overlay0)">55 more tracks…</div>
+      </div>
+
+      <!-- Local Library — flat all tracks view -->
+      <div class="view" id="view-library">
+        <div class="lib-stats">
+          <div class="lib-stat"><div class="lib-stat-num" style="color:var(--mocha-mauve)">312</div><div class="lib-stat-label">Total tracks</div></div>
+          <div class="lib-stat"><div class="lib-stat-num" style="color:var(--mocha-green)">241</div><div class="lib-stat-label">Linked</div></div>
+          <div class="lib-stat"><div class="lib-stat-num" style="color:var(--mocha-yellow)">38</div><div class="lib-stat-label">Pending</div></div>
+          <div class="lib-stat"><div class="lib-stat-num" style="color:var(--mocha-red)">33</div><div class="lib-stat-label">Unlinked</div></div>
+        </div>
+        <div class="filter-bar">
+          <span class="filter-chip on">All</span>
+          <span class="filter-chip">Linked</span>
+          <span class="filter-chip">Pending</span>
+          <span class="filter-chip">Unlinked</span>
+          <span style="width:1px;height:16px;background:var(--mocha-surface1);flex-shrink:0;"></span>
+          <span class="filter-chip">ISRC</span>
+          <span class="filter-chip">Tag</span>
+          <span class="filter-chip">Acoustic</span>
+          <span class="filter-chip">Manual</span>
+          <span style="width:1px;height:16px;background:var(--mocha-surface1);flex-shrink:0;"></span>
+          <span class="filter-chip">File OK</span>
+          <span class="filter-chip">Missing</span>
+        </div>
+        <div class="track-row"><div class="track-num">1</div><div class="track-status-dot dot-linked"></div><div class="track-info"><div class="t-title">Actress – Rims</div><div class="t-artist">R.I.P · 2012</div></div><div class="t-dur">5:12</div><button class="t-action t-action-linked">linked</button></div>
+        <div class="track-row"><div class="track-num">2</div><div class="track-status-dot dot-linked"></div><div class="track-info"><div class="t-title">Aphex Twin – Rhubarb</div><div class="t-artist">Selected Ambient Works Vol II · 1994</div></div><div class="t-dur">5:58</div><button class="t-action t-action-linked">linked</button></div>
+        <div class="track-row"><div class="track-num">3</div><div class="track-status-dot dot-pending"></div><div class="track-info"><div class="t-title">Basic Channel – Phylyps Trak</div><div class="t-artist">BCD · 1993</div></div><div class="t-dur">7:44</div><button class="t-action t-action-pending">review</button></div>
+        <div class="track-row"><div class="track-num">4</div><div class="track-status-dot dot-linked"></div><div class="track-info"><div class="t-title">Burial – Archangel</div><div class="t-artist">Untrue · 2007</div></div><div class="t-dur">4:58</div><button class="t-action t-action-linked">linked</button></div>
+        <div class="track-row"><div class="track-num">5</div><div class="track-status-dot dot-unlinked"></div><div class="track-info"><div class="t-title">Cabaret Nocturne – Slowly</div><div class="t-artist">Single · 2018</div></div><div class="t-dur">6:03</div><button class="t-action">match</button></div>
+        <div class="track-row"><div class="track-num">6</div><div class="track-status-dot dot-linked"></div><div class="track-info"><div class="t-title">Floating Points – Silhouettes</div><div class="t-artist">Elaenia · 2015</div></div><div class="t-dur">8:22</div><button class="t-action t-action-linked">linked</button></div>
+        <div class="track-row"><div class="track-num">7</div><div class="track-status-dot dot-pending"></div><div class="track-info"><div class="t-title">Four Tet – Baby</div><div class="t-artist">There Is Love in You · 2010</div></div><div class="t-dur">6:20</div><button class="t-action t-action-pending">review</button></div>
+        <div class="track-row"><div class="track-num">8</div><div class="track-status-dot dot-unlinked"></div><div class="track-info"><div class="t-title">Jon Hopkins – Open Eye Signal</div><div class="t-artist">Immunity · 2013</div></div><div class="t-dur">9:32</div><button class="t-action">match</button></div>
+        <div class="track-row"><div class="track-num">9</div><div class="track-status-dot dot-linked"></div><div class="track-info"><div class="t-title">Moderat – Bad Kingdom</div><div class="t-artist">II · 2013</div></div><div class="t-dur">5:01</div><button class="t-action t-action-linked">linked</button></div>
+        <div class="track-row"><div class="track-num">10</div><div class="track-status-dot dot-unlinked"></div><div class="track-info"><div class="t-title">Objekt – Theme From Q</div><div class="t-artist">Flatland · 2014</div></div><div class="t-dur">8:11</div><button class="t-action">match</button></div>
+        <div style="text-align:center;padding:14px 0;font-size:11px;color:var(--mocha-overlay0)">302 more tracks…</div>
+      </div>
+
+      <!-- Link Proposals view -->
+      <div class="view" id="view-proposals">
+        <div style="margin-bottom:12px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+          <span class="filter-chip on">All (14)</span>
+          <span class="filter-chip" style="border-color:rgba(166,227,161,0.4);color:var(--mocha-green)">High (6)</span>
+          <span class="filter-chip" style="border-color:rgba(137,180,250,0.4);color:var(--mocha-blue)">Medium (5)</span>
+          <span class="filter-chip" style="border-color:rgba(243,139,168,0.4);color:var(--mocha-red)">Low (3)</span>
+        </div>
+        <div class="proposals-list">
+          <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:var(--mocha-green);margin-bottom:4px;">◆ High confidence</div>
+          <div class="proposal-card">
+            <div class="confidence-bar conf-high"></div>
+            <div class="proposal-tracks"><div class="track-col"><div class="track-label">local</div><div class="track-title">Archangel</div><div class="track-artist">Burial</div></div><div class="track-divider"></div><div class="track-col"><div class="track-label">YouTube Music</div><div class="track-title">Archangel</div><div class="track-artist">Burial · Untrue</div></div></div>
+            <div class="proposal-meta"><span class="match-badge match-isrc">ISRC</span><span class="score">exact</span></div>
+            <div class="proposal-actions"><button class="btn btn-green" style="font-size:10px;padding:4px 10px;">✓ Approve</button><button class="btn btn-red" style="font-size:10px;padding:4px 10px;">✗ Reject</button></div>
+          </div>
+          <div class="proposal-card">
+            <div class="confidence-bar conf-high"></div>
+            <div class="proposal-tracks"><div class="track-col"><div class="track-label">local</div><div class="track-title">Open Eye Signal</div><div class="track-artist">Jon Hopkins</div></div><div class="track-divider"></div><div class="track-col"><div class="track-label">YouTube Music</div><div class="track-title">Open Eye Signal</div><div class="track-artist">Jon Hopkins · Immunity</div></div></div>
+            <div class="proposal-meta"><span class="match-badge match-tag">Tag</span><span class="score">0.94</span></div>
+            <div class="proposal-actions"><button class="btn btn-green" style="font-size:10px;padding:4px 10px;">✓ Approve</button><button class="btn btn-red" style="font-size:10px;padding:4px 10px;">✗ Reject</button></div>
+          </div>
+          <div class="separator"></div>
+          <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:var(--mocha-blue);margin-bottom:4px;">◆ Medium confidence</div>
+          <div class="proposal-card">
+            <div class="confidence-bar conf-med"></div>
+            <div class="proposal-tracks"><div class="track-col"><div class="track-label">local</div><div class="track-title">Bad Kingdom (Edit)</div><div class="track-artist">Moderat</div></div><div class="track-divider"></div><div class="track-col"><div class="track-label">YouTube Music</div><div class="track-title">Bad Kingdom</div><div class="track-artist">Moderat · II</div></div></div>
+            <div class="proposal-meta"><span class="match-badge match-tag">Tag</span><span class="score">0.72</span></div>
+            <div class="proposal-actions"><button class="btn btn-green" style="font-size:10px;padding:4px 10px;">✓ Approve</button><button class="btn btn-red" style="font-size:10px;padding:4px 10px;">✗ Reject</button></div>
+          </div>
+          <div class="separator"></div>
+          <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:var(--mocha-red);margin-bottom:4px;">◆ Low confidence — acoustic matching queued</div>
+          <div class="proposal-card">
+            <div class="confidence-bar conf-low"></div>
+            <div class="proposal-tracks"><div class="track-col"><div class="track-label">local</div><div class="track-title">Track 07 (untagged)</div><div class="track-artist">Unknown</div></div><div class="track-divider"></div><div class="track-col"><div class="track-label">YouTube Music</div><div class="track-title">Rims</div><div class="track-artist">Actress · R.I.P</div></div></div>
+            <div class="proposal-meta"><span class="match-badge match-acoustic">Acoustic</span><span class="score">0.41</span></div>
+            <div class="proposal-actions"><button class="btn btn-green" style="font-size:10px;padding:4px 10px;">✓ Approve</button><button class="btn btn-red" style="font-size:10px;padding:4px 10px;">✗ Reject</button></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Unidentified -->
+      <div class="view" id="view-unidentified">
+        <div style="font-size:11px;color:var(--mocha-overlay0);margin-bottom:14px;">Tracks where Beets failed to find a MusicBrainz/Discogs match.</div>
+        <div class="proposals-list">
+          <div class="proposal-card" style="align-items:flex-start;">
+            <div class="confidence-bar" style="background:var(--mocha-red);"></div>
+            <div style="flex:1;min-width:0;"><div class="track-title">track_07_unknown.mp3</div><div class="track-artist" style="margin-top:2px;">No match · Fingerprint: e3a9f12c…</div></div>
+            <button class="btn btn-ghost" style="font-size:10px;padding:4px 10px;flex-shrink:0;">⬆ Rescue</button>
+          </div>
+          <div class="proposal-card" style="align-items:flex-start;">
+            <div class="confidence-bar" style="background:var(--mocha-red);"></div>
+            <div style="flex:1;min-width:0;"><div class="track-title">ambient_loop_3.flac</div><div class="track-artist" style="margin-top:2px;">No match · Fingerprint: b8c20a44…</div></div>
+            <button class="btn btn-ghost" style="font-size:10px;padding:4px 10px;flex-shrink:0;">⬆ Rescue</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Missing locally -->
+      <div class="view" id="view-missing">
+        <div style="font-size:11px;color:var(--mocha-overlay0);margin-bottom:14px;">Streaming tracks with no local match. Future auto-grab queue.</div>
+        <div class="proposals-list">
+          <div class="proposal-card"><div class="confidence-bar" style="background:var(--mocha-overlay0);"></div><div style="flex:1;min-width:0;"><div class="track-title">Floating Points – Last Bloom</div><div class="track-artist" style="margin-top:2px;">Cascade · 2023</div></div><span class="match-badge" style="background:rgba(108,112,134,0.2);color:var(--mocha-overlay1);font-size:9px;">No local file</span></div>
+          <div class="proposal-card"><div class="confidence-bar" style="background:var(--mocha-overlay0);"></div><div style="flex:1;min-width:0;"><div class="track-title">Objekt – Theme From Q</div><div class="track-artist" style="margin-top:2px;">Flatland · 2014</div></div><span class="match-badge" style="background:rgba(108,112,134,0.2);color:var(--mocha-overlay1);font-size:9px;">No local file</span></div>
+        </div>
+      </div>
+
+      <!-- Playlist 2 -->
+      <div class="view" id="view-playlist2">
+        <div class="playlist-header">
+          <div class="playlist-art"><svg width="36" height="36" viewBox="0 0 36 36" fill="none"><circle cx="18" cy="18" r="14" stroke="#45475a" stroke-width="2"/><circle cx="18" cy="18" r="6" stroke="#45475a" stroke-width="2"/><circle cx="18" cy="18" r="2" fill="#585b70"/></svg></div>
+          <div style="flex:1;">
+            <div class="playlist-name">Deep House '23</div>
+            <div class="playlist-stats"><span>YouTube Music</span><span class="stat-dot"></span><span>51 tracks</span></div>
+            <div class="progress-ring-wrap">
+              <svg width="44" height="44" viewBox="0 0 44 44"><circle cx="22" cy="22" r="18" fill="none" stroke="#313244" stroke-width="4"/><circle cx="22" cy="22" r="18" fill="none" stroke="#a6e3a1" stroke-width="4" stroke-dasharray="113" stroke-dashoffset="10" stroke-linecap="round" transform="rotate(-90 22 22)"/></svg>
+              <div><div class="progress-frac" style="color:var(--mocha-green)">48 / 51</div><div class="progress-label">tracks linked</div></div>
+            </div>
+          </div>
+        </div>
+        <div style="text-align:center;padding:30px 0;font-size:11px;color:var(--mocha-overlay0)">Nearly complete — 3 tracks still need linking.</div>
+      </div>
+
+      <div class="view" id="view-playlist3"></div>
+      <div class="view" id="view-playlist4"></div>
+      <div class="view" id="view-playlist5"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+function lerp(a,b,t){return a+(b-a)*t;}
+function progressColor(linked,total){
+  if(total===0)return '#f38ba8';
+  const ratio=linked/total;
+  const t=Math.pow(ratio,0.7);
+  if(t<0.5){const r=Math.round(lerp(243,249,t*2));const g=Math.round(lerp(139,226,t*2));const b=Math.round(lerp(168,175,t*2));return'rgb('+r+','+g+','+b+')';}
+  else{const r=Math.round(lerp(249,166,(t-0.5)*2));const g=Math.round(lerp(226,227,(t-0.5)*2));const b=Math.round(lerp(175,161,(t-0.5)*2));return'rgb('+r+','+g+','+b+')';}
+}
+[[5,62],[48,51],[0,34],[27,27],[12,30]].forEach(function(p,i){
+  const el=document.getElementById('pb'+(i+1));
+  if(el){el.textContent=p[0]+'/'+p[1];el.style.color=progressColor(p[0],p[1]);}
+});
+
+const topbarInfo={
+  'playlist':['Late Night Drive','62 tracks','pill-info','↻ Sync|⊕ Export M3U'],
+  'playlist2':["Deep House '23",'51 tracks','pill-info','↻ Sync|⊕ Export M3U'],
+  'playlist3':['Morning Ambient','34 tracks','pill-info','↻ Sync|⊕ Export M3U'],
+  'playlist4':['DJ Set Prep','27 tracks','pill-info','↻ Sync|⊕ Export M3U'],
+  'playlist5':['Discover Weekly','30 tracks','pill-info','↻ Sync|⊕ Export M3U'],
+  'proposals':['Link proposals','14 pending','pill-pending',''],
+  'unidentified':['Unidentified','3 tracks','pill-pending',''],
+  'missing':['Missing locally','28 tracks','pill-info',''],
+  'library':['Local library','312 tracks','pill-lib',''],
+};
+
+function showView(name,el){
+  document.querySelectorAll('.view').forEach(function(v){v.classList.remove('active');});
+  document.querySelectorAll('.nav-item').forEach(function(n){n.classList.remove('active');});
+  const v=document.getElementById('view-'+name);
+  if(v)v.classList.add('active');
+  if(el)el.classList.add('active');
+  const info=topbarInfo[name];
+  if(info){
+    const btns=info[3]?info[3].split('|').map(function(b){return'<button class="btn btn-ghost">'+b+'</button>';}).join(''):'';
+    document.getElementById('topbar-title').innerHTML='<span style="color:var(--mocha-overlay1)">▶</span> '+info[0]+' <span class="topbar-pill '+info[2]+'">'+info[1]+'</span>';
+    document.querySelector('.topbar-actions').innerHTML=btns;
+  }
+}
+
+document.querySelectorAll('.filter-chip').forEach(function(chip){
+  chip.addEventListener('click',function(){
+    const parent=this.parentElement;
+    parent.querySelectorAll('.filter-chip').forEach(function(c){c.classList.remove('on');});
+    this.classList.add('on');
+  });
+});
+</script>
