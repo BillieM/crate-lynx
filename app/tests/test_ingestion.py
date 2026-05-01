@@ -1,8 +1,15 @@
 from pathlib import Path
+import subprocess
 
 from watchdog.events import DirCreatedEvent, FileCreatedEvent
 
-from app.ingestion import IngestionEventHandler, IngestionWatcher
+from app.ingestion import (
+    AudioPreparer,
+    IngestionEventHandler,
+    IngestionWatcher,
+    PreparedTrack,
+    UnsupportedAudioFormatError,
+)
 
 
 class StubObserver:
@@ -65,3 +72,66 @@ def test_ingestion_watcher_starts_and_stops(tmp_path: Path) -> None:
 
     assert stub_observer.stopped is True
     assert stub_observer.joined is True
+
+
+def test_audio_preparer_passes_mp3_through_unchanged(tmp_path: Path) -> None:
+    source = tmp_path / "track.MP3"
+    source.write_bytes(b"mp3")
+    output_root = tmp_path / "staging"
+
+    prepared = AudioPreparer().prepare(source, output_root)
+
+    assert prepared == PreparedTrack(
+        source_path=source,
+        prepared_path=source,
+        transcoded=False,
+    )
+    assert output_root.is_dir()
+
+
+def test_audio_preparer_transcodes_lossless_formats_to_mp3(
+    tmp_path: Path, monkeypatch
+) -> None:
+    source = tmp_path / "track.flac"
+    source.write_bytes(b"flac")
+    output_root = tmp_path / "staging"
+    seen_commands: list[list[str]] = []
+
+    def fake_run(
+        command: list[str], *, check: bool, capture_output: bool, text: bool
+    ) -> subprocess.CompletedProcess[str]:
+        seen_commands.append(command)
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr("app.ingestion.subprocess.run", fake_run)
+
+    prepared = AudioPreparer(ffmpeg_binary="ffmpeg-test").prepare(source, output_root)
+
+    assert prepared == PreparedTrack(
+        source_path=source,
+        prepared_path=output_root / "track.mp3",
+        transcoded=True,
+    )
+    assert seen_commands == [
+        [
+            "ffmpeg-test",
+            "-y",
+            "-i",
+            str(source),
+            "-codec:a",
+            "libmp3lame",
+            str(output_root / "track.mp3"),
+        ]
+    ]
+
+
+def test_audio_preparer_rejects_unsupported_formats(tmp_path: Path) -> None:
+    source = tmp_path / "track.ogg"
+    source.write_bytes(b"ogg")
+
+    try:
+        AudioPreparer().prepare(source, tmp_path / "staging")
+    except UnsupportedAudioFormatError as exc:
+        assert ".ogg" in str(exc)
+    else:
+        raise AssertionError("Expected UnsupportedAudioFormatError")

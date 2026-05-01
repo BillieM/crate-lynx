@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
+import subprocess
 from typing import Callable
 
 from watchdog.events import FileCreatedEvent, FileSystemEventHandler
@@ -9,6 +10,8 @@ from watchdog.observers import Observer
 
 
 FileCallback = Callable[[Path], None]
+SUPPORTED_AUDIO_EXTENSIONS = {".mp3", ".flac", ".wav", ".aiff", ".aif"}
+LOSSLESS_AUDIO_EXTENSIONS = {".flac", ".wav", ".aiff", ".aif"}
 
 
 class IngestionEventHandler(FileSystemEventHandler):
@@ -20,6 +23,67 @@ class IngestionEventHandler(FileSystemEventHandler):
             return
 
         self._on_new_file(Path(event.src_path))
+
+
+class UnsupportedAudioFormatError(ValueError):
+    pass
+
+
+@dataclass(slots=True)
+class PreparedTrack:
+    source_path: Path
+    prepared_path: Path
+    transcoded: bool
+
+
+@dataclass(slots=True)
+class AudioPreparer:
+    ffmpeg_binary: str = "ffmpeg"
+
+    def prepare(
+        self, source_path: Path | str, output_directory: Path | str
+    ) -> PreparedTrack:
+        source = Path(source_path)
+        output_root = Path(output_directory)
+        extension = source.suffix.lower()
+
+        if extension not in SUPPORTED_AUDIO_EXTENSIONS:
+            raise UnsupportedAudioFormatError(
+                f"Unsupported audio format for ingestion: {source.suffix or '<none>'}"
+            )
+
+        output_root.mkdir(parents=True, exist_ok=True)
+
+        if extension == ".mp3":
+            return PreparedTrack(
+                source_path=source,
+                prepared_path=source,
+                transcoded=False,
+            )
+
+        prepared_path = output_root / f"{source.stem}.mp3"
+        self._transcode_to_mp3(source, prepared_path)
+        return PreparedTrack(
+            source_path=source,
+            prepared_path=prepared_path,
+            transcoded=True,
+        )
+
+    def _transcode_to_mp3(self, source_path: Path, output_path: Path) -> None:
+        subprocess.run(
+            [
+                self.ffmpeg_binary,
+                "-y",
+                "-i",
+                str(source_path),
+                "-codec:a",
+                "libmp3lame",
+                str(output_path),
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
 
 
 @dataclass(slots=True)

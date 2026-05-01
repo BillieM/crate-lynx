@@ -1,7 +1,7 @@
 # E03 — Local library ingestion pipeline
 
 - [x] Add Watchdog dependency to `app/` and write a file-system observer that watches the `ingestion/` folder for new files
-- [ ] Implement format detection: MP3 passes through unchanged; FLAC/WAV/AIFF are transcoded to MP3 via FFmpeg
+- [x] Implement format detection: MP3 passes through unchanged; FLAC/WAV/AIFF are transcoded to MP3 via FFmpeg
 - [ ] Wire the transcoder to output files into a staging area before Beets import
 - [ ] Run `beets import -q` on each incoming file for metadata enrichment and move to `/library/`
 - [ ] Generate a Chromaprint fingerprint via `fpcalc` for each ingested file and store the result
