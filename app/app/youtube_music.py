@@ -154,6 +154,9 @@ class YouTubeMusicAdapter:
             album = _normalize_album(track)
             year = track.get("year")
             duration_seconds = track.get("duration_seconds")
+            isrc = _extract_isrc(track)
+            if isrc is None:
+                isrc = _extract_isrc(self.get_song(provider_track_id))
 
             tracks.append(
                 YouTubeMusicTrack(
@@ -162,7 +165,7 @@ class YouTubeMusicAdapter:
                     artist=artist,
                     album=album,
                     year=year if isinstance(year, int) else None,
-                    isrc=None,
+                    isrc=isrc,
                     duration_ms=(
                         duration_seconds * 1000
                         if isinstance(duration_seconds, int)
@@ -288,5 +291,24 @@ def _normalize_album(track: JsonMapping) -> str | None:
         title = album.get("name") or album.get("title")
         if isinstance(title, str) and title:
             return title
+
+    return None
+
+
+def _extract_isrc(value: object) -> str | None:
+    if isinstance(value, dict):
+        for key, nested_value in value.items():
+            if key.lower() in {"isrc", "internationalstandardrecordingcode"}:
+                if isinstance(nested_value, str) and nested_value:
+                    return nested_value
+            extracted = _extract_isrc(nested_value)
+            if extracted is not None:
+                return extracted
+
+    if isinstance(value, list):
+        for item in value:
+            extracted = _extract_isrc(item)
+            if extracted is not None:
+                return extracted
 
     return None

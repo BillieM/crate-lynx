@@ -279,7 +279,7 @@ def test_streaming_account_store_upserts_tracks_and_playlist_membership(
                 artist="Artist 1",
                 album="Album 1",
                 year=2021,
-                isrc=None,
+                isrc="GBUM72105976",
                 duration_ms=180000,
             ),
             YouTubeMusicTrack(
@@ -305,7 +305,7 @@ def test_streaming_account_store_upserts_tracks_and_playlist_membership(
                 artist="Artist 2",
                 album="Album 2",
                 year=2024,
-                isrc=None,
+                isrc="USQX92200001",
                 duration_ms=200000,
             ),
             YouTubeMusicTrack(
@@ -344,6 +344,8 @@ def test_streaming_account_store_upserts_tracks_and_playlist_membership(
     assert stored_tracks[1]["title"] == "Track 2 Updated"
     assert stored_tracks[1]["album"] == "Album 2"
     assert stored_tracks[1]["year"] == 2024
+    assert stored_tracks[0]["isrc"] == "GBUM72105976"
+    assert stored_tracks[1]["isrc"] == "USQX92200001"
     assert stored_tracks[1]["duration_ms"] == 200000
     assert len(stored_memberships) == 2
     assert stored_memberships[0]["playlist_id"] == playlist.id

@@ -273,6 +273,7 @@ def test_list_playlist_tracks_normalizes_valid_rows_only() -> None:
                         "artists": [{"name": "Lorde"}],
                         "album": {"name": "Solar Power"},
                         "year": 2021,
+                        "isrc": "GBUM72105976",
                         "duration_seconds": 193,
                     },
                     {
@@ -292,6 +293,19 @@ def test_list_playlist_tracks_normalizes_valid_rows_only() -> None:
                 ]
             }
 
+        def get_song(
+            self,
+            *,
+            videoId: str,
+            signatureTimestamp: int | None,
+        ) -> dict[str, object]:
+            assert signatureTimestamp is None
+            if videoId == "track-2":
+                return {
+                    "microformat": {"microformatDataRenderer": {"isrc": "USQX92200001"}}
+                }
+            return {"videoDetails": {"videoId": videoId}}
+
     adapter = YouTubeMusicAdapter(FakeYTMusic())  # type: ignore[arg-type]
 
     assert adapter.list_playlist_tracks("PL1") == [
@@ -301,7 +315,7 @@ def test_list_playlist_tracks_normalizes_valid_rows_only() -> None:
             artist="Lorde",
             album="Solar Power",
             year=2021,
-            isrc=None,
+            isrc="GBUM72105976",
             duration_ms=193000,
         ),
         YouTubeMusicTrack(
@@ -310,7 +324,7 @@ def test_list_playlist_tracks_normalizes_valid_rows_only() -> None:
             artist="Beyonce",
             album="RENAISSANCE",
             year=None,
-            isrc=None,
+            isrc="USQX92200001",
             duration_ms=None,
         ),
     ]

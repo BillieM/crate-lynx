@@ -342,6 +342,7 @@ class StreamingAccountStore:
                     )
                     continue
 
+                isrc = track.isrc if track.isrc is not None else existing["isrc"]
                 connection.execute(
                     update(streaming_tracks_table)
                     .where(streaming_tracks_table.c.id == existing["id"])
@@ -350,7 +351,7 @@ class StreamingAccountStore:
                         artist=track.artist,
                         album=track.album,
                         year=track.year,
-                        isrc=track.isrc,
+                        isrc=isrc,
                         duration_ms=track.duration_ms,
                     )
                 )
@@ -362,7 +363,7 @@ class StreamingAccountStore:
                         artist=track.artist,
                         album=track.album,
                         year=track.year,
-                        isrc=track.isrc,
+                        isrc=isrc,
                         duration_ms=track.duration_ms,
                     )
                 )
