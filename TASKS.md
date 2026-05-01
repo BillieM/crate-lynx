@@ -6,7 +6,7 @@
 - [x] Run `beets import -q` on each incoming file for metadata enrichment and move to `/library/`
 - [x] Generate a Chromaprint fingerprint via `fpcalc` for each ingested file and store the result
 - [x] Persist the ingested track to `local_tracks` with `file_path` stored relative to `LIBRARY_ROOT`
-- [ ] Enqueue a matching pipeline job on RQ once ingestion is complete for a track
+- [x] Enqueue a matching pipeline job on RQ once ingestion is complete for a track
 - [ ] Handle ingestion errors gracefully: log failures, do not crash the watcher loop
 - [ ] Write an RQ worker entrypoint inside `app/` that processes ingestion and matching queue jobs
 - [ ] Ensure Supervisor (or the existing shell script) starts both uvicorn and the RQ worker

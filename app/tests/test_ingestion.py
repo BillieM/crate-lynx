@@ -17,6 +17,7 @@ from app.ingestion import (
     UnsupportedAudioFormatError,
 )
 from app.local_tracks import LocalTrackStore, local_tracks_table, metadata
+from app.queueing import MatchingJobEnqueuer
 from sqlalchemy import create_engine, select
 
 
@@ -335,3 +336,45 @@ def test_ingestion_processor_persists_relative_library_path(tmp_path: Path) -> N
     assert row["library_root_rel_path"] == "Artist/track.mp3"
     assert row["fingerprint"] == "fp-42"
     assert row["beets_id"] == 42
+
+
+def test_ingestion_processor_enqueues_matching_job_after_persisting(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "ingestion" / "track.mp3"
+    source.parent.mkdir()
+    source.write_bytes(b"mp3")
+    prepared = PreparedTrack(
+        source_path=source,
+        prepared_path=tmp_path / "staging" / "track.mp3",
+        transcoded=False,
+    )
+    preparer = Mock(spec=AudioPreparer)
+    preparer.prepare.return_value = prepared
+    importer = Mock(spec=BeetsImporter)
+    importer.library_root = tmp_path / "library"
+    importer.import_file.return_value = ImportedTrack(
+        library_path=tmp_path / "library" / "Artist" / "track.mp3",
+        beets_id=42,
+    )
+    fingerprint_generator = Mock(spec=FingerprintGenerator)
+    fingerprint_generator.generate.return_value = "fp-42"
+    enqueuer = Mock(spec=MatchingJobEnqueuer)
+    enqueuer.enqueue.return_value = "job-123"
+
+    database_url = f"sqlite:///{tmp_path / 'app.db'}"
+    engine = create_engine(database_url)
+    metadata.create_all(engine)
+
+    result = IngestionProcessor(
+        staging_root=tmp_path / "staging",
+        audio_preparer=preparer,
+        beets_importer=importer,
+        fingerprint_generator=fingerprint_generator,
+        track_store=LocalTrackStore(database_url),
+        matching_job_enqueuer=enqueuer,
+    ).process(source)
+
+    assert result.local_track_id is not None
+    assert result.matching_job_id == "job-123"
+    enqueuer.enqueue.assert_called_once_with(result.local_track_id)

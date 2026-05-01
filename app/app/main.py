@@ -7,6 +7,7 @@ from fastapi import FastAPI
 
 from app.ingestion import BeetsImporter, IngestionProcessor, IngestionWatcher
 from app.local_tracks import LocalTrackStore
+from app.queueing import MatchingJobEnqueuer
 
 
 logger = logging.getLogger(__name__)
@@ -20,6 +21,7 @@ async def lifespan(_: FastAPI):
     )
     library_root = Path(os.environ.get("LIBRARY_ROOT", "/library"))
     database_url = os.environ.get("DATABASE_URL")
+    redis_url = os.environ.get("REDIS_URL")
     processor = IngestionProcessor(
         staging_root=staging_root,
         beets_importer=BeetsImporter(
@@ -28,6 +30,7 @@ async def lifespan(_: FastAPI):
             library_database=os.environ.get("BEETS_LIBRARY"),
         ),
         track_store=LocalTrackStore(database_url) if database_url else None,
+        matching_job_enqueuer=MatchingJobEnqueuer(redis_url) if redis_url else None,
     )
     watcher = IngestionWatcher(
         root=ingestion_root,

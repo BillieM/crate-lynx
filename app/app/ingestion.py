@@ -9,6 +9,7 @@ import subprocess
 from typing import Callable
 
 from app.local_tracks import LocalTrackStore
+from app.queueing import MatchingJobEnqueuer
 from watchdog.events import FileCreatedEvent, FileSystemEventHandler
 from watchdog.observers import Observer
 
@@ -42,6 +43,7 @@ class PreparedTrack:
     library_path: Path | None = None
     beets_id: int | None = None
     local_track_id: int | None = None
+    matching_job_id: str | None = None
 
 
 @dataclass(slots=True)
@@ -208,6 +210,7 @@ class IngestionProcessor:
         default_factory=FingerprintGenerator
     )
     track_store: LocalTrackStore | None = None
+    matching_job_enqueuer: MatchingJobEnqueuer | None = None
 
     def process(self, source_path: Path | str) -> PreparedTrack:
         prepared = self.audio_preparer.prepare(source_path, self.staging_root)
@@ -225,6 +228,13 @@ class IngestionProcessor:
                 beets_id=imported_track.beets_id,
             )
             prepared.local_track_id = persisted.id
+        if (
+            self.matching_job_enqueuer is not None
+            and prepared.local_track_id is not None
+        ):
+            prepared.matching_job_id = self.matching_job_enqueuer.enqueue(
+                prepared.local_track_id
+            )
         self._cleanup_source(prepared.source_path)
         return prepared
 
