@@ -1,11 +1,14 @@
 from pathlib import Path
 import subprocess
+from unittest.mock import Mock
 
 from watchdog.events import DirCreatedEvent, FileCreatedEvent
 
 from app.ingestion import (
     AudioPreparer,
+    BeetsImporter,
     IngestionEventHandler,
+    IngestionProcessor,
     IngestionWatcher,
     PreparedTrack,
     UnsupportedAudioFormatError,
@@ -136,3 +139,65 @@ def test_audio_preparer_rejects_unsupported_formats(tmp_path: Path) -> None:
         assert ".ogg" in str(exc)
     else:
         raise AssertionError("Expected UnsupportedAudioFormatError")
+
+
+def test_beets_importer_runs_quiet_move_import(tmp_path: Path, monkeypatch) -> None:
+    library_root = tmp_path / "library"
+    prepared_path = tmp_path / "staging" / "track.mp3"
+    prepared_path.parent.mkdir()
+    prepared_path.write_bytes(b"mp3")
+    seen_commands: list[list[str]] = []
+
+    def fake_run(
+        command: list[str], *, check: bool, capture_output: bool, text: bool
+    ) -> subprocess.CompletedProcess[str]:
+        seen_commands.append(command)
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr("app.ingestion.subprocess.run", fake_run)
+
+    BeetsImporter(beet_binary="beet-test", library_root=library_root).import_file(
+        prepared_path
+    )
+
+    assert library_root.is_dir()
+    assert seen_commands == [
+        [
+            "beet-test",
+            "-l",
+            str(library_root / "library.db"),
+            "-d",
+            str(library_root),
+            "import",
+            "-q",
+            "-m",
+            str(prepared_path),
+        ]
+    ]
+
+
+def test_ingestion_processor_prepares_imports_and_deletes_source(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "ingestion" / "track.mp3"
+    source.parent.mkdir()
+    source.write_bytes(b"mp3")
+    prepared = PreparedTrack(
+        source_path=source,
+        prepared_path=tmp_path / "staging" / "track.mp3",
+        transcoded=False,
+    )
+    preparer = Mock(spec=AudioPreparer)
+    preparer.prepare.return_value = prepared
+    importer = Mock(spec=BeetsImporter)
+
+    result = IngestionProcessor(
+        staging_root=tmp_path / "staging",
+        audio_preparer=preparer,
+        beets_importer=importer,
+    ).process(source)
+
+    assert result is prepared
+    preparer.prepare.assert_called_once_with(source, tmp_path / "staging")
+    importer.import_file.assert_called_once_with(prepared.prepared_path)
+    assert source.exists() is False

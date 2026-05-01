@@ -90,6 +90,57 @@ class AudioPreparer:
 
 
 @dataclass(slots=True)
+class BeetsImporter:
+    beet_binary: str = "beet"
+    library_root: Path | str = "/library"
+    library_database: Path | str | None = None
+
+    def import_file(self, prepared_path: Path | str) -> None:
+        library_root = Path(self.library_root)
+        library_root.mkdir(parents=True, exist_ok=True)
+
+        library_database = (
+            Path(self.library_database)
+            if self.library_database is not None
+            else library_root / "library.db"
+        )
+
+        subprocess.run(
+            [
+                self.beet_binary,
+                "-l",
+                str(library_database),
+                "-d",
+                str(library_root),
+                "import",
+                "-q",
+                "-m",
+                str(prepared_path),
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+
+
+@dataclass(slots=True)
+class IngestionProcessor:
+    staging_root: Path | str
+    audio_preparer: AudioPreparer = field(default_factory=AudioPreparer)
+    beets_importer: BeetsImporter = field(default_factory=BeetsImporter)
+
+    def process(self, source_path: Path | str) -> PreparedTrack:
+        prepared = self.audio_preparer.prepare(source_path, self.staging_root)
+        self.beets_importer.import_file(prepared.prepared_path)
+        self._cleanup_source(prepared.source_path)
+        return prepared
+
+    def _cleanup_source(self, source_path: Path) -> None:
+        if source_path.exists():
+            source_path.unlink()
+
+
+@dataclass(slots=True)
 class IngestionWatcher:
     root: Path | str
     on_new_file: FileCallback
