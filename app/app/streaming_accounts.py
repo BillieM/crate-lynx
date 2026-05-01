@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -17,6 +18,7 @@ from sqlalchemy import (
     create_engine,
     func,
     insert,
+    select,
 )
 
 from app.youtube_music import YouTubeMusicAdapter, YouTubeMusicOAuthCredentials
@@ -49,6 +51,12 @@ class PersistedStreamingAccount:
     display_name: str
 
 
+@dataclass(frozen=True, slots=True)
+class StreamingAccountRecord(PersistedStreamingAccount):
+    created_at: datetime
+    updated_at: datetime
+
+
 class StreamingAccountStore:
     def __init__(self, database_url: str) -> None:
         self._engine = create_engine(database_url)
@@ -79,6 +87,29 @@ class StreamingAccountStore:
             provider=YOUTUBE_MUSIC_PROVIDER,
             display_name=display_name,
         )
+
+    def list_accounts(self) -> list[StreamingAccountRecord]:
+        with self._engine.connect() as connection:
+            rows = connection.execute(
+                select(
+                    streaming_accounts_table.c.id,
+                    streaming_accounts_table.c.provider,
+                    streaming_accounts_table.c.display_name,
+                    streaming_accounts_table.c.created_at,
+                    streaming_accounts_table.c.updated_at,
+                ).order_by(streaming_accounts_table.c.id.asc())
+            ).mappings()
+
+            return [
+                StreamingAccountRecord(
+                    id=row["id"],
+                    provider=row["provider"],
+                    display_name=row["display_name"],
+                    created_at=row["created_at"],
+                    updated_at=row["updated_at"],
+                )
+                for row in rows
+            ]
 
 
 def connect_youtube_music_account(

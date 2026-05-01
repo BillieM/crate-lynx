@@ -4,9 +4,12 @@ import asyncio
 from datetime import UTC, datetime
 from pathlib import Path
 
+from cryptography.fernet import Fernet
 from app.ingest_status import IngestionStatusStore
 from app.ingestion import PreparedTrack
-from app.main import create_app
+from app.main import CreateStreamingAccountRequest, create_app
+from app.streaming_accounts import metadata, streaming_accounts_table
+from sqlalchemy import create_engine, insert
 from starlette.requests import Request
 
 
@@ -93,3 +96,89 @@ def test_ingestion_status_store_records_failures() -> None:
             }
         ],
     }
+
+
+def test_streaming_accounts_endpoint_lists_persisted_accounts(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite:///{tmp_path / 'streaming.db'}"
+    engine = create_engine(database_url)
+    metadata.create_all(engine)
+    monkeypatch.setenv("DATABASE_URL", database_url)
+
+    with engine.begin() as connection:
+        connection.execute(
+            insert(streaming_accounts_table).values(
+                provider="youtube_music",
+                display_name="Main Account",
+                auth_token_blob="encrypted-token",
+            )
+        )
+
+    app = create_app()
+    route = next(
+        route
+        for route in app.routes
+        if getattr(route, "path", None) == "/streaming/accounts"
+        and "GET" in getattr(route, "methods", set())
+    )
+    response = asyncio.run(route.endpoint())
+
+    assert len(response["accounts"]) == 1
+    account = response["accounts"][0]
+    assert account.id == 1
+    assert account.provider == "youtube_music"
+    assert account.display_name == "Main Account"
+    assert account.created_at
+    assert account.updated_at
+
+
+def test_streaming_accounts_endpoint_creates_youtube_music_account(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite:///{tmp_path / 'streaming-create.db'}"
+    engine = create_engine(database_url)
+    metadata.create_all(engine)
+    monkeypatch.setenv("DATABASE_URL", database_url)
+    monkeypatch.setenv("TOKEN_ENCRYPTION_KEY", Fernet.generate_key().decode("utf-8"))
+
+    seen: dict[str, object] = {}
+
+    def fake_setup_oauth(credentials, *, filepath=None, open_browser=False):
+        seen["credentials"] = credentials
+        seen["filepath"] = filepath
+        seen["open_browser"] = open_browser
+        return {"refresh_token": "refresh-token"}
+
+    monkeypatch.setattr(
+        "app.streaming_accounts.YouTubeMusicAdapter.setup_oauth",
+        fake_setup_oauth,
+    )
+
+    app = create_app()
+    route = next(
+        route
+        for route in app.routes
+        if getattr(route, "path", None) == "/streaming/accounts"
+        and "POST" in getattr(route, "methods", set())
+    )
+    payload = CreateStreamingAccountRequest(
+        display_name="Billie",
+        client_id="client-id",
+        client_secret="client-secret",
+        open_browser=True,
+    )
+
+    response = asyncio.run(route.endpoint(payload))
+
+    assert response.id == 1
+    assert response.provider == "youtube_music"
+    assert response.display_name == "Billie"
+    assert response.created_at
+    assert response.updated_at
+    assert seen["filepath"] is None
+    assert seen["open_browser"] is True
+    assert seen["credentials"].client_id == "client-id"
+    assert seen["credentials"].client_secret == "client-secret"

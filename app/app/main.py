@@ -3,16 +3,34 @@ import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
+from pydantic import BaseModel
 
 from app.ingest_status import IngestionStatusStore
 from app.ingestion import BeetsImporter, IngestionProcessor, IngestionWatcher
 from app.local_tracks import LocalTrackStore
 from app.queueing import MatchingJobEnqueuer, QueueDepthReader
+from app.streaming_accounts import StreamingAccountStore, connect_youtube_music_account
 from app.worker import resolve_queue_names
+from app.youtube_music import YouTubeMusicOAuthCredentials
 
 
 logger = logging.getLogger(__name__)
+
+
+class StreamingAccountResponse(BaseModel):
+    id: int
+    provider: str
+    display_name: str
+    created_at: str
+    updated_at: str
+
+
+class CreateStreamingAccountRequest(BaseModel):
+    display_name: str
+    client_id: str
+    client_secret: str
+    open_browser: bool = False
 
 
 def create_app() -> FastAPI:
@@ -72,6 +90,24 @@ def create_app() -> FastAPI:
     app = FastAPI(title="crate-lynx", lifespan=lifespan)
     app.state.ingestion_status = IngestionStatusStore(queue_depth_reader=lambda: {})
 
+    def require_database_url() -> str:
+        database_url = os.environ.get("DATABASE_URL")
+        if not database_url:
+            raise HTTPException(
+                status_code=503,
+                detail="DATABASE_URL must be configured for streaming account access",
+            )
+        return database_url
+
+    def serialize_streaming_account(account: object) -> StreamingAccountResponse:
+        return StreamingAccountResponse(
+            id=account.id,
+            provider=account.provider,
+            display_name=account.display_name,
+            created_at=account.created_at.isoformat(),
+            updated_at=account.updated_at.isoformat(),
+        )
+
     @app.get("/health")
     async def health() -> dict[str, str]:
         return {"status": "ok"}
@@ -79,6 +115,35 @@ def create_app() -> FastAPI:
     @app.get("/ingest/status")
     async def ingest_status(request: Request) -> dict[str, object]:
         return {"status": "ok", **request.app.state.ingestion_status.snapshot()}
+
+    @app.get("/streaming/accounts")
+    async def list_streaming_accounts() -> dict[str, list[StreamingAccountResponse]]:
+        accounts = StreamingAccountStore(require_database_url()).list_accounts()
+        return {
+            "accounts": [serialize_streaming_account(account) for account in accounts]
+        }
+
+    @app.post("/streaming/accounts", status_code=201)
+    async def create_streaming_account(
+        payload: CreateStreamingAccountRequest,
+    ) -> StreamingAccountResponse:
+        database_url = require_database_url()
+        account = connect_youtube_music_account(
+            database_url=database_url,
+            display_name=payload.display_name,
+            credentials=YouTubeMusicOAuthCredentials(
+                client_id=payload.client_id,
+                client_secret=payload.client_secret,
+            ),
+            open_browser=payload.open_browser,
+        )
+
+        created_account = next(
+            account_record
+            for account_record in StreamingAccountStore(database_url).list_accounts()
+            if account_record.id == account.id
+        )
+        return serialize_streaming_account(created_account)
 
     return app
 

@@ -2,7 +2,7 @@
 
 - [x] Add ytmusicapi to `app/` dependencies and create a `YouTubeMusicAdapter` module that wraps all ytmusicapi calls (no direct ytmusicapi usage elsewhere in the codebase)
 - [x] Implement the auth flow: accept OAuth credentials, encrypt the resulting token with Fernet, and write it to the `streaming_accounts` table
-- [ ] Add a `GET /streaming/accounts` endpoint and a `POST /streaming/accounts` endpoint to initiate and complete YouTube Music auth
+- [x] Add a `GET /streaming/accounts` endpoint and a `POST /streaming/accounts` endpoint to initiate and complete YouTube Music auth
 - [ ] Implement playlist sync in `YouTubeMusicAdapter`: fetch all playlists for an authenticated account and upsert into `streaming_playlists`
 - [ ] Implement track sync: for each playlist, fetch its tracks via ytmusicapi and upsert into `streaming_tracks` and `playlist_membership`
 - [ ] Extract ISRC from ytmusicapi track metadata where available and store on `streaming_tracks`
