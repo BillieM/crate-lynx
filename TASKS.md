@@ -1,14 +1,12 @@
-# E03 — Local library ingestion pipeline
+# E04 — YouTube Music adapter
 
-- [x] Add Watchdog dependency to `app/` and write a file-system observer that watches the `ingestion/` folder for new files
-- [x] Implement format detection: MP3 passes through unchanged; FLAC/WAV/AIFF are transcoded to MP3 via FFmpeg
-- [x] Wire the transcoder to output files into a staging area before Beets import
-- [x] Run `beets import -q` on each incoming file for metadata enrichment and move to `/library/`
-- [x] Generate a Chromaprint fingerprint via `fpcalc` for each ingested file and store the result
-- [x] Persist the ingested track to `local_tracks` with `file_path` stored relative to `LIBRARY_ROOT`
-- [x] Enqueue a matching pipeline job on RQ once ingestion is complete for a track
-- [x] Handle ingestion errors gracefully: log failures, do not crash the watcher loop
-- [x] Write an RQ worker entrypoint inside `app/` that processes ingestion and matching queue jobs
-- [x] Ensure Supervisor (or the existing shell script) starts both uvicorn and the RQ worker
-- [x] Add a `/ingest/status` health/status endpoint showing queue depth and recent ingestion results
-- [x] Integration smoke test: drop a FLAC and an MP3 into `ingestion/`, confirm both end up in `local_tracks` with fingerprints
+- [x] Add ytmusicapi to `app/` dependencies and create a `YouTubeMusicAdapter` module that wraps all ytmusicapi calls (no direct ytmusicapi usage elsewhere in the codebase)
+- [ ] Implement the auth flow: accept OAuth credentials, encrypt the resulting token with Fernet, and write it to the `streaming_accounts` table
+- [ ] Add a `GET /streaming/accounts` endpoint and a `POST /streaming/accounts` endpoint to initiate and complete YouTube Music auth
+- [ ] Implement playlist sync in `YouTubeMusicAdapter`: fetch all playlists for an authenticated account and upsert into `streaming_playlists`
+- [ ] Implement track sync: for each playlist, fetch its tracks via ytmusicapi and upsert into `streaming_tracks` and `playlist_membership`
+- [ ] Extract ISRC from ytmusicapi track metadata where available and store on `streaming_tracks`
+- [ ] Expose a `POST /streaming/accounts/{id}/sync` endpoint that enqueues an RQ job to run the full playlist + track sync
+- [ ] Add a `GET /streaming/playlists` endpoint returning all synced playlists with track counts and last-synced timestamp
+- [ ] Handle ytmusicapi auth errors and token expiry gracefully: surface a clear error state on `streaming_accounts` rather than crashing
+- [ ] Write unit tests for `YouTubeMusicAdapter` using mocked ytmusicapi responses (playlists, tracks with and without ISRC)
