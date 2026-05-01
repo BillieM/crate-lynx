@@ -169,7 +169,9 @@ def test_audio_preparer_rejects_unsupported_formats(tmp_path: Path) -> None:
         raise AssertionError("Expected UnsupportedAudioFormatError")
 
 
-def test_beets_importer_runs_quiet_move_import(tmp_path: Path, monkeypatch) -> None:
+def test_beets_importer_runs_quiet_singleton_move_import(
+    tmp_path: Path, monkeypatch
+) -> None:
     library_root = tmp_path / "library"
     library_database = library_root / "library.db"
     prepared_path = tmp_path / "staging" / "track.mp3"
@@ -222,7 +224,9 @@ def test_beets_importer_runs_quiet_move_import(tmp_path: Path, monkeypatch) -> N
             str(library_root),
             "import",
             "-q",
+            "--quiet-fallback=asis",
             "-m",
+            "-s",
             str(prepared_path),
         ]
     ]

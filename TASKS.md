@@ -11,4 +11,4 @@
 - [x] Write an RQ worker entrypoint inside `app/` that processes ingestion and matching queue jobs
 - [x] Ensure Supervisor (or the existing shell script) starts both uvicorn and the RQ worker
 - [x] Add a `/ingest/status` health/status endpoint showing queue depth and recent ingestion results
-- [ ] Integration smoke test: drop a FLAC and an MP3 into `ingestion/`, confirm both end up in `local_tracks` with fingerprints
+- [x] Integration smoke test: drop a FLAC and an MP3 into `ingestion/`, confirm both end up in `local_tracks` with fingerprints
