@@ -22,13 +22,13 @@ Docker Compose wiring all 4 services. Nginx config for the frontend. Supervisor 
 
 ---
 
-### E02 — Database schema & migrations `in progress`
+### E02 — Database schema & migrations `done`
 **Subdir:** `db/`
 Alembic setup. All 7 tables: `local_tracks`, `streaming_accounts`, `streaming_playlists`, `streaming_tracks`, `playlist_membership`, `suggested_links`, `final_links`. SQLAlchemy models shared with `app/`. Fernet encryption helpers for `auth_token_blob`.
 
 ---
 
-### E03 — Local library ingestion pipeline
+### E03 — Local library ingestion pipeline `in progress`
 **Subdir:** `app/`
 Watchdog monitors `ingestion/` folder. Format check — MP3 passes through, lossless (FLAC/WAV/AIFF) transcoded via FFmpeg. Beets `import -q` for metadata enrichment and move to `/library/`. Chromaprint (`fpcalc`) fingerprint generation. File path stored relative to `LIBRARY_ROOT`. Enqueues matching pipeline job on completion.
 

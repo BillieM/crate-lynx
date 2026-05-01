@@ -16,7 +16,7 @@ source .venv/bin/activate
 pip install -r app/requirements.txt -r requirements-dev.txt
 ```
 
-When a subtask is complete, unless the scope, desired commit contents, or validation result is ambiguous:
+When a subtask is complete, always commit and push:
 
 1. Run any available linters and tests for changed code
 2. Fix any issues surfaced before committing
@@ -24,7 +24,10 @@ When a subtask is complete, unless the scope, desired commit contents, or valida
 4. Commit with a concise message (`feat/fix/refactor/chore: description`)
 5. Push to origin
 
-If the task depends on manual verification, external confirmation, or there is ambiguity about what should be committed, stop and ask the user before committing or pushing.
+Only skip committing if one of these specific conditions applies:
+- Tests or linting are failing and you cannot fix them
+- The user explicitly said not to commit
+- No files were changed
 
 ## Linting & tests
 
