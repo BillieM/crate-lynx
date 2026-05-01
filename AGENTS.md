@@ -2,6 +2,8 @@
 
 ## Python environment
 
+Use Python 3.12 for this repository.
+
 Always use the project venv for Python commands:
 
 ```
@@ -11,7 +13,7 @@ source .venv/bin/activate
 If `.venv` doesn't exist, create it and install dependencies:
 
 ```
-python3 -m venv .venv
+python3.12 -m venv .venv
 source .venv/bin/activate
 pip install -r app/requirements.txt -r requirements-dev.txt
 ```

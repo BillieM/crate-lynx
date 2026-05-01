@@ -25,6 +25,8 @@ cp .env.example .env
 docker compose up --build
 ```
 
+For local backend development, use Python 3.12. A repo-level `.python-version` file is included for tools such as `pyenv`.
+
 The UI is served at `http://localhost:18100` (Nginx). The API is available at `http://localhost:18101` and proxied through the UI at `http://localhost:18100/api`.
 
 ---
@@ -43,6 +45,9 @@ The UI is served at `http://localhost:18100` (Nginx). The API is available at `h
 ### Backend (`app/`)
 
 ```bash
+python3.12 -m venv .venv
+source .venv/bin/activate
+pip install -r app/requirements.txt -r requirements-dev.txt
 ruff check .          # lint
 ruff format .         # format
 pytest                # tests
