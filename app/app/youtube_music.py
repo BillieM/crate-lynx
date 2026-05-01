@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -72,6 +73,10 @@ class YouTubeMusicAdapter:
         language: str = "en",
         location: str = "",
     ) -> YouTubeMusicAdapter:
+        if isinstance(oauth_token, dict):
+            oauth_token = {k: v for k, v in oauth_token.items() if k != "refresh_token_expires_in"}
+            if "expires_at" not in oauth_token and "expires_in" in oauth_token:
+                oauth_token = {**oauth_token, "expires_at": int(time.time()) + int(oauth_token["expires_in"])}
         return cls(
             YTMusic(
                 auth=oauth_token,
