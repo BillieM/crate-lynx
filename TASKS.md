@@ -6,7 +6,7 @@
 - [x] Implement playlist sync in `YouTubeMusicAdapter`: fetch all playlists for an authenticated account and upsert into `streaming_playlists`
 - [x] Implement track sync: for each playlist, fetch its tracks via ytmusicapi and upsert into `streaming_tracks` and `playlist_membership`
 - [x] Extract ISRC from ytmusicapi track metadata where available and store on `streaming_tracks`
-- [ ] Expose a `POST /streaming/accounts/{id}/sync` endpoint that enqueues an RQ job to run the full playlist + track sync
+- [x] Expose a `POST /streaming/accounts/{id}/sync` endpoint that enqueues an RQ job to run the full playlist + track sync
 - [ ] Add a `GET /streaming/playlists` endpoint returning all synced playlists with track counts and last-synced timestamp
 - [ ] Handle ytmusicapi auth errors and token expiry gracefully: surface a clear error state on `streaming_accounts` rather than crashing
 - [ ] Write unit tests for `YouTubeMusicAdapter` using mocked ytmusicapi responses (playlists, tracks with and without ISRC)

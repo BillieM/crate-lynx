@@ -9,7 +9,11 @@ from pydantic import BaseModel
 from app.ingest_status import IngestionStatusStore
 from app.ingestion import BeetsImporter, IngestionProcessor, IngestionWatcher
 from app.local_tracks import LocalTrackStore
-from app.queueing import MatchingJobEnqueuer, QueueDepthReader
+from app.queueing import (
+    MatchingJobEnqueuer,
+    QueueDepthReader,
+    StreamingSyncJobEnqueuer,
+)
 from app.streaming_accounts import StreamingAccountStore, connect_youtube_music_account
 from app.worker import resolve_queue_names
 from app.youtube_music import YouTubeMusicOAuthCredentials
@@ -31,6 +35,16 @@ class CreateStreamingAccountRequest(BaseModel):
     client_id: str
     client_secret: str
     open_browser: bool = False
+
+
+class SyncStreamingAccountRequest(BaseModel):
+    client_id: str
+    client_secret: str
+
+
+class StreamingSyncResponse(BaseModel):
+    account_id: int
+    job_id: str
 
 
 def create_app() -> FastAPI:
@@ -99,6 +113,15 @@ def create_app() -> FastAPI:
             )
         return database_url
 
+    def require_redis_url() -> str:
+        redis_url = os.environ.get("REDIS_URL")
+        if not redis_url:
+            raise HTTPException(
+                status_code=503,
+                detail="REDIS_URL must be configured for streaming sync jobs",
+            )
+        return redis_url
+
     def serialize_streaming_account(account: object) -> StreamingAccountResponse:
         return StreamingAccountResponse(
             id=account.id,
@@ -144,6 +167,23 @@ def create_app() -> FastAPI:
             if account_record.id == account.id
         )
         return serialize_streaming_account(created_account)
+
+    @app.post("/streaming/accounts/{account_id}/sync", status_code=202)
+    async def sync_streaming_account(
+        account_id: int,
+        payload: SyncStreamingAccountRequest,
+    ) -> StreamingSyncResponse:
+        database_url = require_database_url()
+        store = StreamingAccountStore(database_url)
+        if not any(account.id == account_id for account in store.list_accounts()):
+            raise HTTPException(status_code=404, detail="Streaming account not found")
+
+        job_id = StreamingSyncJobEnqueuer(require_redis_url()).enqueue(
+            account_id=account_id,
+            client_id=payload.client_id,
+            client_secret=payload.client_secret,
+        )
+        return StreamingSyncResponse(account_id=account_id, job_id=job_id)
 
     return app
 

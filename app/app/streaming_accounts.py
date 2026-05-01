@@ -442,6 +442,23 @@ class StreamingAccountStore:
             playlist_store=self,
         )
 
+    def sync_youtube_music_account(
+        self,
+        *,
+        account_id: int,
+        credentials: YouTubeMusicOAuthCredentials,
+    ) -> list[PlaylistMembershipRecord]:
+        account = self.get_account(account_id)
+        adapter = YouTubeMusicAdapter.from_oauth_token(
+            account.oauth_token,
+            credentials=credentials,
+        )
+        return sync_library_playlist_tracks(
+            account_id=account_id,
+            adapter=adapter,
+            playlist_store=self,
+        )
+
 
 def connect_youtube_music_account(
     *,
@@ -460,6 +477,26 @@ def connect_youtube_music_account(
     return StreamingAccountStore(database_url).create_youtube_music_account(
         display_name=display_name,
         oauth_token=oauth_token,
+    )
+
+
+def run_youtube_music_sync_job(
+    account_id: int,
+    client_id: str,
+    client_secret: str,
+) -> None:
+    database_url = os.environ.get("DATABASE_URL")
+    if not database_url:
+        raise RuntimeError(
+            "DATABASE_URL must be configured for YouTube Music sync jobs"
+        )
+
+    StreamingAccountStore(database_url).sync_youtube_music_account(
+        account_id=account_id,
+        credentials=YouTubeMusicOAuthCredentials(
+            client_id=client_id,
+            client_secret=client_secret,
+        ),
     )
 
 

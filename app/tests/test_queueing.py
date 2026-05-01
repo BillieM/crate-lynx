@@ -1,6 +1,10 @@
 from types import SimpleNamespace
 
-from app.queueing import MatchingJobEnqueuer, QueueDepthReader
+from app.queueing import (
+    MatchingJobEnqueuer,
+    QueueDepthReader,
+    StreamingSyncJobEnqueuer,
+)
 
 
 def test_matching_job_enqueuer_uses_default_queue(monkeypatch) -> None:
@@ -79,3 +83,58 @@ def test_queue_depth_reader_returns_none_without_redis_url() -> None:
     ).read()
 
     assert depths == {"ingestion": None, "matching": None}
+
+
+def test_streaming_sync_job_enqueuer_uses_streaming_queue(monkeypatch) -> None:
+    seen: dict[str, object] = {}
+
+    class FakeRedis:
+        @classmethod
+        def from_url(cls, url: str) -> object:
+            seen["redis_url"] = url
+            return object()
+
+    class FakeQueue:
+        def __init__(self, name: str, connection: object) -> None:
+            seen["queue_name"] = name
+            seen["connection"] = connection
+
+        def enqueue(
+            self,
+            func: str,
+            account_id: int,
+            client_id: str,
+            client_secret: str,
+            *,
+            job_timeout: str,
+        ) -> SimpleNamespace:
+            seen["func"] = func
+            seen["account_id"] = account_id
+            seen["client_id"] = client_id
+            seen["client_secret"] = client_secret
+            seen["job_timeout"] = job_timeout
+            return SimpleNamespace(id="sync-job-123")
+
+    monkeypatch.setattr("app.queueing.Redis", FakeRedis)
+    monkeypatch.setattr("app.queueing.Queue", FakeQueue)
+
+    job_id = StreamingSyncJobEnqueuer(
+        redis_url="redis://redis:6379/2",
+        job_timeout="20m",
+    ).enqueue(
+        account_id=19,
+        client_id="client-id",
+        client_secret="client-secret",
+    )
+
+    assert job_id == "sync-job-123"
+    assert seen == {
+        "redis_url": "redis://redis:6379/2",
+        "queue_name": "streaming",
+        "connection": seen["connection"],
+        "func": "app.streaming_accounts.run_youtube_music_sync_job",
+        "account_id": 19,
+        "client_id": "client-id",
+        "client_secret": "client-secret",
+        "job_timeout": "20m",
+    }

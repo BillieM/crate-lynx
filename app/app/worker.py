@@ -7,7 +7,7 @@ from redis import Redis
 from rq import Queue, Worker
 
 
-DEFAULT_QUEUE_NAMES = ("ingestion", "matching")
+DEFAULT_QUEUE_NAMES = ("ingestion", "matching", "streaming")
 DEFAULT_REDIS_URL = "redis://localhost:6379/0"
 
 

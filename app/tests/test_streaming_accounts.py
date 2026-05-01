@@ -9,6 +9,7 @@ from sqlalchemy import create_engine, select
 
 from app.streaming_accounts import (
     playlist_membership_table,
+    run_youtube_music_sync_job,
     YOUTUBE_MUSIC_PROVIDER,
     StreamingAccountStore,
     connect_youtube_music_account,
@@ -437,6 +438,35 @@ def test_streaming_account_store_syncs_youtube_music_playlist_tracks(
     assert len(stored_tracks) == 1
     assert stored_tracks[0]["provider_track_id"] == "track-9"
     assert len(stored_memberships) == 1
+
+
+def test_run_youtube_music_sync_job_uses_database_and_credentials(
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("DATABASE_URL", "sqlite:///worker.db")
+    seen: dict[str, object] = {}
+
+    class FakeStore:
+        def __init__(self, database_url: str) -> None:
+            seen["database_url"] = database_url
+
+        def sync_youtube_music_account(
+            self, *, account_id, credentials
+        ) -> list[object]:
+            seen["account_id"] = account_id
+            seen["credentials"] = credentials
+            return []
+
+    monkeypatch.setattr("app.streaming_accounts.StreamingAccountStore", FakeStore)
+
+    run_youtube_music_sync_job(7, "client-id", "client-secret")
+
+    assert seen["database_url"] == "sqlite:///worker.db"
+    assert seen["account_id"] == 7
+    assert seen["credentials"] == YouTubeMusicOAuthCredentials(
+        client_id="client-id",
+        client_secret="client-secret",
+    )
 
 
 def _decrypt_token(auth_token_blob: str) -> str:

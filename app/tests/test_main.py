@@ -7,7 +7,11 @@ from pathlib import Path
 from cryptography.fernet import Fernet
 from app.ingest_status import IngestionStatusStore
 from app.ingestion import PreparedTrack
-from app.main import CreateStreamingAccountRequest, create_app
+from app.main import (
+    CreateStreamingAccountRequest,
+    SyncStreamingAccountRequest,
+    create_app,
+)
 from app.streaming_accounts import metadata, streaming_accounts_table
 from sqlalchemy import create_engine, insert
 from starlette.requests import Request
@@ -182,3 +186,67 @@ def test_streaming_accounts_endpoint_creates_youtube_music_account(
     assert seen["open_browser"] is True
     assert seen["credentials"].client_id == "client-id"
     assert seen["credentials"].client_secret == "client-secret"
+
+
+def test_streaming_account_sync_endpoint_enqueues_job(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite:///{tmp_path / 'streaming-sync.db'}"
+    engine = create_engine(database_url)
+    metadata.create_all(engine)
+    monkeypatch.setenv("DATABASE_URL", database_url)
+    monkeypatch.setenv("REDIS_URL", "redis://redis:6379/3")
+    monkeypatch.setenv("TOKEN_ENCRYPTION_KEY", Fernet.generate_key().decode("utf-8"))
+
+    with engine.begin() as connection:
+        connection.execute(
+            insert(streaming_accounts_table).values(
+                provider="youtube_music",
+                display_name="Syncable Account",
+                auth_token_blob="encrypted-token",
+            )
+        )
+
+    seen: dict[str, object] = {}
+
+    class FakeSyncEnqueuer:
+        def __init__(self, redis_url: str) -> None:
+            seen["redis_url"] = redis_url
+
+        def enqueue(
+            self,
+            *,
+            account_id: int,
+            client_id: str,
+            client_secret: str,
+        ) -> str:
+            seen["account_id"] = account_id
+            seen["client_id"] = client_id
+            seen["client_secret"] = client_secret
+            return "sync-job-999"
+
+    monkeypatch.setattr("app.main.StreamingSyncJobEnqueuer", FakeSyncEnqueuer)
+
+    app = create_app()
+    route = next(
+        route
+        for route in app.routes
+        if getattr(route, "path", None) == "/streaming/accounts/{account_id}/sync"
+        and "POST" in getattr(route, "methods", set())
+    )
+    payload = SyncStreamingAccountRequest(
+        client_id="client-id",
+        client_secret="client-secret",
+    )
+
+    response = asyncio.run(route.endpoint(1, payload))
+
+    assert response.account_id == 1
+    assert response.job_id == "sync-job-999"
+    assert seen == {
+        "redis_url": "redis://redis:6379/3",
+        "account_id": 1,
+        "client_id": "client-id",
+        "client_secret": "client-secret",
+    }

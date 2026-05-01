@@ -25,6 +25,31 @@ class MatchingJobEnqueuer:
 
 
 @dataclass(slots=True)
+class StreamingSyncJobEnqueuer:
+    redis_url: str
+    queue_name: str = "streaming"
+    job_timeout: str = "30m"
+
+    def enqueue(
+        self,
+        *,
+        account_id: int,
+        client_id: str,
+        client_secret: str,
+    ) -> str:
+        connection = Redis.from_url(self.redis_url)
+        queue = Queue(self.queue_name, connection=connection)
+        job = queue.enqueue(
+            "app.streaming_accounts.run_youtube_music_sync_job",
+            account_id,
+            client_id,
+            client_secret,
+            job_timeout=self.job_timeout,
+        )
+        return job.id
+
+
+@dataclass(slots=True)
 class QueueDepthReader:
     redis_url: str | None
     queue_names: Sequence[str]
