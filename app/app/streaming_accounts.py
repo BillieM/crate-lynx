@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import os
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -19,9 +19,15 @@ from sqlalchemy import (
     func,
     insert,
     select,
+    update,
 )
 
-from app.youtube_music import YouTubeMusicAdapter, YouTubeMusicOAuthCredentials
+from app.youtube_music import (
+    YouTubeMusicAdapter,
+    YouTubeMusicOAuthCredentials,
+    YouTubeMusicPlaylist,
+    sync_library_playlists,
+)
 
 
 YOUTUBE_MUSIC_PROVIDER = "youtube_music"
@@ -43,6 +49,16 @@ streaming_accounts_table = Table(
     ),
 )
 
+streaming_playlists_table = Table(
+    "streaming_playlists",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column("account_id", Integer, nullable=False),
+    Column("provider_playlist_id", String, nullable=False),
+    Column("title", String, nullable=False),
+    Column("synced_at", DateTime(timezone=True), nullable=True),
+)
+
 
 @dataclass(frozen=True, slots=True)
 class PersistedStreamingAccount:
@@ -55,6 +71,23 @@ class PersistedStreamingAccount:
 class StreamingAccountRecord(PersistedStreamingAccount):
     created_at: datetime
     updated_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class StoredStreamingAccount:
+    id: int
+    provider: str
+    display_name: str
+    oauth_token: dict[str, Any]
+
+
+@dataclass(frozen=True, slots=True)
+class StreamingPlaylistRecord:
+    id: int
+    account_id: int
+    provider_playlist_id: str
+    title: str
+    synced_at: datetime | None
 
 
 class StreamingAccountStore:
@@ -111,6 +144,118 @@ class StreamingAccountStore:
                 for row in rows
             ]
 
+    def get_account(self, account_id: int) -> StoredStreamingAccount:
+        with self._engine.connect() as connection:
+            row = (
+                connection.execute(
+                    select(
+                        streaming_accounts_table.c.id,
+                        streaming_accounts_table.c.provider,
+                        streaming_accounts_table.c.display_name,
+                        streaming_accounts_table.c.auth_token_blob,
+                    ).where(streaming_accounts_table.c.id == account_id)
+                )
+                .mappings()
+                .one()
+            )
+
+        return StoredStreamingAccount(
+            id=row["id"],
+            provider=row["provider"],
+            display_name=row["display_name"],
+            oauth_token=json.loads(decrypt_token(row["auth_token_blob"])),
+        )
+
+    def upsert_playlists(
+        self,
+        *,
+        account_id: int,
+        playlists: list[YouTubeMusicPlaylist],
+        synced_at: datetime | None = None,
+    ) -> list[StreamingPlaylistRecord]:
+        playlist_rows: list[StreamingPlaylistRecord] = []
+        sync_timestamp = synced_at or datetime.now(UTC)
+
+        with self._engine.begin() as connection:
+            for playlist in playlists:
+                existing = (
+                    connection.execute(
+                        select(
+                            streaming_playlists_table.c.id,
+                            streaming_playlists_table.c.account_id,
+                            streaming_playlists_table.c.provider_playlist_id,
+                            streaming_playlists_table.c.title,
+                            streaming_playlists_table.c.synced_at,
+                        ).where(
+                            streaming_playlists_table.c.account_id == account_id,
+                            streaming_playlists_table.c.provider_playlist_id
+                            == playlist.provider_playlist_id,
+                        )
+                    )
+                    .mappings()
+                    .one_or_none()
+                )
+
+                if existing is None:
+                    result = connection.execute(
+                        insert(streaming_playlists_table).values(
+                            account_id=account_id,
+                            provider_playlist_id=playlist.provider_playlist_id,
+                            title=playlist.title,
+                            synced_at=sync_timestamp,
+                        )
+                    )
+                    playlist_id = result.inserted_primary_key[0]
+                    if not isinstance(playlist_id, int):
+                        raise ValueError("Failed to persist streaming playlist")
+                    playlist_rows.append(
+                        StreamingPlaylistRecord(
+                            id=playlist_id,
+                            account_id=account_id,
+                            provider_playlist_id=playlist.provider_playlist_id,
+                            title=playlist.title,
+                            synced_at=sync_timestamp,
+                        )
+                    )
+                    continue
+
+                connection.execute(
+                    update(streaming_playlists_table)
+                    .where(streaming_playlists_table.c.id == existing["id"])
+                    .values(
+                        title=playlist.title,
+                        synced_at=sync_timestamp,
+                    )
+                )
+                playlist_rows.append(
+                    StreamingPlaylistRecord(
+                        id=existing["id"],
+                        account_id=existing["account_id"],
+                        provider_playlist_id=existing["provider_playlist_id"],
+                        title=playlist.title,
+                        synced_at=sync_timestamp,
+                    )
+                )
+
+        return playlist_rows
+
+    def sync_youtube_music_playlists(
+        self,
+        *,
+        account_id: int,
+        credentials: YouTubeMusicOAuthCredentials,
+    ) -> list[StreamingPlaylistRecord]:
+        account = self.get_account(account_id)
+        adapter = YouTubeMusicAdapter.from_oauth_token(
+            account.oauth_token,
+            credentials=credentials,
+        )
+        return sync_library_playlists(
+            account_id=account_id,
+            adapter=adapter,
+            playlist_store=self,
+        )
+
 
 def connect_youtube_music_account(
     *,
@@ -143,3 +288,16 @@ def encrypt_token(raw_token: str) -> str:
         raise RuntimeError("TOKEN_ENCRYPTION_KEY must be a valid Fernet key") from exc
 
     return fernet.encrypt(raw_token.encode("utf-8")).decode("utf-8")
+
+
+def decrypt_token(auth_token_blob: str) -> str:
+    key = os.environ.get("TOKEN_ENCRYPTION_KEY")
+    if not key:
+        raise RuntimeError("TOKEN_ENCRYPTION_KEY is required for token encryption")
+
+    try:
+        fernet = Fernet(key.encode("utf-8"))
+    except ValueError as exc:
+        raise RuntimeError("TOKEN_ENCRYPTION_KEY must be a valid Fernet key") from exc
+
+    return fernet.decrypt(auth_token_blob.encode("utf-8")).decode("utf-8")

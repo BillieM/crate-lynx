@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -20,6 +21,12 @@ class YouTubeMusicOAuthCredentials:
             client_id=self.client_id,
             client_secret=self.client_secret,
         )
+
+
+@dataclass(frozen=True, slots=True)
+class YouTubeMusicPlaylist:
+    provider_playlist_id: str
+    title: str
 
 
 class YouTubeMusicAdapter:
@@ -82,6 +89,30 @@ class YouTubeMusicAdapter:
     def get_library_playlists(self, *, limit: int | None = None) -> list[JsonMapping]:
         return self._client.get_library_playlists(limit=limit)
 
+    def list_library_playlists(
+        self,
+        *,
+        limit: int | None = None,
+    ) -> list[YouTubeMusicPlaylist]:
+        playlists: list[YouTubeMusicPlaylist] = []
+
+        for playlist in self.get_library_playlists(limit=limit):
+            playlist_id = playlist.get("playlistId")
+            title = playlist.get("title")
+            if not isinstance(playlist_id, str) or not playlist_id:
+                continue
+            if not isinstance(title, str) or not title:
+                continue
+
+            playlists.append(
+                YouTubeMusicPlaylist(
+                    provider_playlist_id=playlist_id,
+                    title=title,
+                )
+            )
+
+        return playlists
+
     def get_playlist(
         self,
         playlist_id: str,
@@ -124,3 +155,18 @@ class YouTubeMusicAdapter:
             radio=radio,
             shuffle=shuffle,
         )
+
+
+def sync_library_playlists(
+    *,
+    account_id: int,
+    adapter: YouTubeMusicAdapter,
+    playlist_store: Any,
+    synced_at: datetime | None = None,
+) -> list[Any]:
+    playlists = adapter.list_library_playlists()
+    return playlist_store.upsert_playlists(
+        account_id=account_id,
+        playlists=playlists,
+        synced_at=synced_at or datetime.now(UTC),
+    )

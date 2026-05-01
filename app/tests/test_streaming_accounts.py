@@ -13,8 +13,9 @@ from app.streaming_accounts import (
     connect_youtube_music_account,
     metadata,
     streaming_accounts_table,
+    streaming_playlists_table,
 )
-from app.youtube_music import YouTubeMusicOAuthCredentials
+from app.youtube_music import YouTubeMusicOAuthCredentials, YouTubeMusicPlaylist
 
 
 def test_connect_youtube_music_account_encrypts_and_persists_token(
@@ -120,6 +121,123 @@ def test_streaming_account_store_persists_encrypted_token(
     assert json.loads(_decrypt_token(stored_account["auth_token_blob"])) == {
         "refresh_token": "refresh-token"
     }
+
+
+def test_streaming_account_store_upserts_playlists(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite:///{tmp_path / 'streaming-playlists.db'}"
+    engine = create_engine(database_url)
+    metadata.create_all(engine)
+    monkeypatch.setenv("TOKEN_ENCRYPTION_KEY", Fernet.generate_key().decode("utf-8"))
+
+    store = StreamingAccountStore(database_url)
+    account = store.create_youtube_music_account(
+        display_name="Listener",
+        oauth_token={"refresh_token": "refresh-token"},
+    )
+
+    inserted = store.upsert_playlists(
+        account_id=account.id,
+        playlists=[
+            YouTubeMusicPlaylist(
+                provider_playlist_id="PL1",
+                title="Morning Mix",
+            ),
+            YouTubeMusicPlaylist(
+                provider_playlist_id="PL2",
+                title="Evening Mix",
+            ),
+        ],
+    )
+
+    assert [playlist.provider_playlist_id for playlist in inserted] == ["PL1", "PL2"]
+
+    updated = store.upsert_playlists(
+        account_id=account.id,
+        playlists=[
+            YouTubeMusicPlaylist(
+                provider_playlist_id="PL1",
+                title="Morning Mix Updated",
+            )
+        ],
+    )
+
+    assert updated[0].id == inserted[0].id
+    assert updated[0].title == "Morning Mix Updated"
+
+    with engine.connect() as connection:
+        stored_playlists = connection.execute(
+            select(streaming_playlists_table).order_by(
+                streaming_playlists_table.c.provider_playlist_id.asc()
+            )
+        ).mappings()
+        stored_playlist_rows = list(stored_playlists)
+
+    assert len(stored_playlist_rows) == 2
+    assert stored_playlist_rows[0]["provider_playlist_id"] == "PL1"
+    assert stored_playlist_rows[0]["title"] == "Morning Mix Updated"
+    assert stored_playlist_rows[0]["synced_at"] is not None
+    assert stored_playlist_rows[1]["provider_playlist_id"] == "PL2"
+    assert stored_playlist_rows[1]["title"] == "Evening Mix"
+
+
+def test_streaming_account_store_syncs_youtube_music_playlists(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite:///{tmp_path / 'streaming-sync.db'}"
+    engine = create_engine(database_url)
+    metadata.create_all(engine)
+    monkeypatch.setenv("TOKEN_ENCRYPTION_KEY", Fernet.generate_key().decode("utf-8"))
+
+    store = StreamingAccountStore(database_url)
+    account = store.create_youtube_music_account(
+        display_name="Listener",
+        oauth_token={"refresh_token": "refresh-token"},
+    )
+
+    seen: dict[str, object] = {}
+
+    class FakeAdapter:
+        def list_library_playlists(self):
+            return [YouTubeMusicPlaylist(provider_playlist_id="PL9", title="Gym")]
+
+    def fake_from_oauth_token(
+        oauth_token, *, credentials, user=None, language="en", location=""
+    ):
+        seen["oauth_token"] = oauth_token
+        seen["credentials"] = credentials
+        seen["user"] = user
+        seen["language"] = language
+        seen["location"] = location
+        return FakeAdapter()
+
+    monkeypatch.setattr(
+        "app.streaming_accounts.YouTubeMusicAdapter.from_oauth_token",
+        fake_from_oauth_token,
+    )
+
+    synced = store.sync_youtube_music_playlists(
+        account_id=account.id,
+        credentials=YouTubeMusicOAuthCredentials(
+            client_id="client-id",
+            client_secret="client-secret",
+        ),
+    )
+
+    assert len(synced) == 1
+    assert synced[0].provider_playlist_id == "PL9"
+    assert synced[0].title == "Gym"
+    assert seen["oauth_token"] == {"refresh_token": "refresh-token"}
+    assert seen["credentials"] == YouTubeMusicOAuthCredentials(
+        client_id="client-id",
+        client_secret="client-secret",
+    )
+    assert seen["user"] is None
+    assert seen["language"] == "en"
+    assert seen["location"] == ""
 
 
 def _decrypt_token(auth_token_blob: str) -> str:

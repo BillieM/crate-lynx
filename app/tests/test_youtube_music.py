@@ -5,6 +5,8 @@ from types import SimpleNamespace
 from app.youtube_music import (
     YouTubeMusicAdapter,
     YouTubeMusicOAuthCredentials,
+    YouTubeMusicPlaylist,
+    sync_library_playlists,
 )
 
 
@@ -224,3 +226,52 @@ def test_adapter_methods_delegate_to_wrapped_client() -> None:
             "shuffle": True,
         },
     }
+
+
+def test_list_library_playlists_normalizes_valid_rows_only() -> None:
+    class FakeYTMusic:
+        def get_library_playlists(
+            self, *, limit: int | None
+        ) -> list[dict[str, object]]:
+            assert limit is None
+            return [
+                {"playlistId": "PL1", "title": "Road Trip"},
+                {"playlistId": "PL2", "title": "Focus"},
+                {"playlistId": "", "title": "Missing Id"},
+                {"playlistId": "PL3"},
+            ]
+
+    adapter = YouTubeMusicAdapter(FakeYTMusic())  # type: ignore[arg-type]
+
+    assert adapter.list_library_playlists() == [
+        YouTubeMusicPlaylist(provider_playlist_id="PL1", title="Road Trip"),
+        YouTubeMusicPlaylist(provider_playlist_id="PL2", title="Focus"),
+    ]
+
+
+def test_sync_library_playlists_uses_adapter_and_store() -> None:
+    seen: dict[str, object] = {}
+
+    class FakePlaylistStore:
+        def upsert_playlists(self, *, account_id, playlists, synced_at):
+            seen["account_id"] = account_id
+            seen["playlists"] = playlists
+            seen["synced_at"] = synced_at
+            return ["persisted"]
+
+    class FakeAdapter:
+        def list_library_playlists(self):
+            return [YouTubeMusicPlaylist(provider_playlist_id="PL1", title="Road Trip")]
+
+    result = sync_library_playlists(
+        account_id=7,
+        adapter=FakeAdapter(),  # type: ignore[arg-type]
+        playlist_store=FakePlaylistStore(),
+    )
+
+    assert result == ["persisted"]
+    assert seen["account_id"] == 7
+    assert seen["playlists"] == [
+        YouTubeMusicPlaylist(provider_playlist_id="PL1", title="Road Trip")
+    ]
+    assert seen["synced_at"] is not None
