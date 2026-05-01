@@ -330,6 +330,96 @@ def test_list_playlist_tracks_normalizes_valid_rows_only() -> None:
     ]
 
 
+def test_list_playlist_tracks_only_fetches_song_for_missing_isrc() -> None:
+    seen: dict[str, object] = {"song_ids": []}
+
+    class FakeYTMusic:
+        def get_playlist(
+            self,
+            *,
+            playlistId: str,
+            limit: int | None,
+            related: bool,
+            suggestions_limit: int,
+        ) -> dict[str, object]:
+            assert playlistId == "PL1"
+            return {
+                "tracks": [
+                    {
+                        "videoId": "track-1",
+                        "title": "Has ISRC",
+                        "artist": "Artist 1",
+                        "isrc": "GBUM72105976",
+                    },
+                    {
+                        "videoId": "track-2",
+                        "title": "Needs Lookup",
+                        "artist": "Artist 2",
+                    },
+                ]
+            }
+
+        def get_song(
+            self,
+            *,
+            videoId: str,
+            signatureTimestamp: int | None,
+        ) -> dict[str, object]:
+            assert signatureTimestamp is None
+            cast_song_ids = seen["song_ids"]
+            assert isinstance(cast_song_ids, list)
+            cast_song_ids.append(videoId)
+            return {
+                "playabilityStatus": {
+                    "musicDetail": {
+                        "internationalStandardRecordingCode": "USQX92200001"
+                    }
+                }
+            }
+
+    adapter = YouTubeMusicAdapter(FakeYTMusic())  # type: ignore[arg-type]
+
+    assert adapter.list_playlist_tracks("PL1") == [
+        YouTubeMusicTrack(
+            provider_track_id="track-1",
+            title="Has ISRC",
+            artist="Artist 1",
+            album=None,
+            year=None,
+            isrc="GBUM72105976",
+            duration_ms=None,
+        ),
+        YouTubeMusicTrack(
+            provider_track_id="track-2",
+            title="Needs Lookup",
+            artist="Artist 2",
+            album=None,
+            year=None,
+            isrc="USQX92200001",
+            duration_ms=None,
+        ),
+    ]
+    assert seen["song_ids"] == ["track-2"]
+
+
+def test_list_playlist_tracks_returns_empty_for_non_list_tracks_payload() -> None:
+    class FakeYTMusic:
+        def get_playlist(
+            self,
+            *,
+            playlistId: str,
+            limit: int | None,
+            related: bool,
+            suggestions_limit: int,
+        ) -> dict[str, object]:
+            assert playlistId == "PL1"
+            return {"tracks": None}
+
+    adapter = YouTubeMusicAdapter(FakeYTMusic())  # type: ignore[arg-type]
+
+    assert adapter.list_playlist_tracks("PL1") == []
+
+
 def test_sync_library_playlists_uses_adapter_and_store() -> None:
     seen: dict[str, object] = {}
 

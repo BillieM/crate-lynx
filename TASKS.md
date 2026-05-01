@@ -9,4 +9,4 @@
 - [x] Expose a `POST /streaming/accounts/{id}/sync` endpoint that enqueues an RQ job to run the full playlist + track sync
 - [x] Add a `GET /streaming/playlists` endpoint returning all synced playlists with track counts and last-synced timestamp
 - [x] Handle ytmusicapi auth errors and token expiry gracefully: surface a clear error state on `streaming_accounts` rather than crashing
-- [ ] Write unit tests for `YouTubeMusicAdapter` using mocked ytmusicapi responses (playlists, tracks with and without ISRC)
+- [x] Write unit tests for `YouTubeMusicAdapter` using mocked ytmusicapi responses (playlists, tracks with and without ISRC)
