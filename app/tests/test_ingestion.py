@@ -83,10 +83,11 @@ def test_audio_preparer_passes_mp3_through_unchanged(tmp_path: Path) -> None:
 
     assert prepared == PreparedTrack(
         source_path=source,
-        prepared_path=source,
+        prepared_path=output_root / "track.MP3",
         transcoded=False,
     )
     assert output_root.is_dir()
+    assert prepared.prepared_path.read_bytes() == b"mp3"
 
 
 def test_audio_preparer_transcodes_lossless_formats_to_mp3(

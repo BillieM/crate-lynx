@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
+import shutil
 import subprocess
 from typing import Callable
 
@@ -55,9 +56,11 @@ class AudioPreparer:
         output_root.mkdir(parents=True, exist_ok=True)
 
         if extension == ".mp3":
+            prepared_path = output_root / source.name
+            shutil.copy2(source, prepared_path)
             return PreparedTrack(
                 source_path=source,
-                prepared_path=source,
+                prepared_path=prepared_path,
                 transcoded=False,
             )
 
