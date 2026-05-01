@@ -7,7 +7,7 @@
 - [x] Generate a Chromaprint fingerprint via `fpcalc` for each ingested file and store the result
 - [x] Persist the ingested track to `local_tracks` with `file_path` stored relative to `LIBRARY_ROOT`
 - [x] Enqueue a matching pipeline job on RQ once ingestion is complete for a track
-- [ ] Handle ingestion errors gracefully: log failures, do not crash the watcher loop
+- [x] Handle ingestion errors gracefully: log failures, do not crash the watcher loop
 - [ ] Write an RQ worker entrypoint inside `app/` that processes ingestion and matching queue jobs
 - [ ] Ensure Supervisor (or the existing shell script) starts both uvicorn and the RQ worker
 - [ ] Add a `/ingest/status` health/status endpoint showing queue depth and recent ingestion results

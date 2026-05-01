@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 import json
+import logging
 from pathlib import Path
 import shutil
 import sqlite3
@@ -17,6 +18,7 @@ from watchdog.observers import Observer
 FileCallback = Callable[[Path], None]
 SUPPORTED_AUDIO_EXTENSIONS = {".mp3", ".flac", ".wav", ".aiff", ".aif"}
 LOSSLESS_AUDIO_EXTENSIONS = {".flac", ".wav", ".aiff", ".aif"}
+logger = logging.getLogger(__name__)
 
 
 class IngestionEventHandler(FileSystemEventHandler):
@@ -27,7 +29,11 @@ class IngestionEventHandler(FileSystemEventHandler):
         if event.is_directory:
             return
 
-        self._on_new_file(Path(event.src_path))
+        source_path = Path(event.src_path)
+        try:
+            self._on_new_file(source_path)
+        except Exception:
+            logger.exception("Failed to ingest file: %s", source_path)
 
 
 class UnsupportedAudioFormatError(ValueError):

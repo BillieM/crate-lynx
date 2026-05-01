@@ -59,6 +59,28 @@ def test_ingestion_event_handler_forwards_new_files() -> None:
     assert seen == [Path("/tmp/ingestion/track.mp3")]
 
 
+def test_ingestion_event_handler_logs_failures_without_raising(
+    monkeypatch,
+) -> None:
+    seen: list[Path] = []
+    logged: list[Path] = []
+
+    def on_new_file(path: Path) -> None:
+        seen.append(path)
+        raise RuntimeError("boom")
+
+    def fake_exception(message: str, source_path: Path) -> None:
+        logged.append(source_path)
+
+    monkeypatch.setattr("app.ingestion.logger.exception", fake_exception)
+    handler = IngestionEventHandler(on_new_file)
+
+    handler.on_created(FileCreatedEvent("/tmp/ingestion/bad.flac"))
+
+    assert seen == [Path("/tmp/ingestion/bad.flac")]
+    assert logged == [Path("/tmp/ingestion/bad.flac")]
+
+
 def test_ingestion_watcher_starts_and_stops(tmp_path: Path) -> None:
     stub_observer = StubObserver()
     seen: list[Path] = []
