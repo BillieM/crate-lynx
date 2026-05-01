@@ -28,13 +28,13 @@ Alembic setup. All 7 tables: `local_tracks`, `streaming_accounts`, `streaming_pl
 
 ---
 
-### E03 — Local library ingestion pipeline `in progress`
+### E03 — Local library ingestion pipeline `done`
 **Subdir:** `app/`
 Watchdog monitors `ingestion/` folder. Format check — MP3 passes through, lossless (FLAC/WAV/AIFF) transcoded via FFmpeg. Beets `import -q` for metadata enrichment and move to `/library/`. Chromaprint (`fpcalc`) fingerprint generation. File path stored relative to `LIBRARY_ROOT`. Enqueues matching pipeline job on completion.
 
 ---
 
-### E04 — YouTube Music adapter
+### E04 — YouTube Music adapter `in progress`
 **Subdir:** `app/`
 `YouTubeMusicAdapter` module wrapping ytmusicapi. All ytmusicapi calls routed through this adapter — no direct library calls elsewhere in the codebase. Auth flow writing encrypted token to `streaming_accounts`. Playlist sync populating `streaming_playlists`, `streaming_tracks`, and `playlist_membership`. ISRC extraction from track metadata where available.
 
