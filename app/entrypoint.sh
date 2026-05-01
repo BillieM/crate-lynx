@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-set -eu
+set -euo pipefail
 
 uvicorn app.main:app --host 0.0.0.0 --port 8000 &
 api_pid=$!
 
-rq worker default &
+python -m app.worker &
 worker_pid=$!
 
 shutdown() {
@@ -15,4 +15,6 @@ shutdown() {
 trap shutdown INT TERM
 
 wait -n "$api_pid" "$worker_pid"
+exit_code=$?
 shutdown
+exit "$exit_code"

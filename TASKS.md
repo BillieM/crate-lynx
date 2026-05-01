@@ -9,6 +9,6 @@
 - [x] Enqueue a matching pipeline job on RQ once ingestion is complete for a track
 - [x] Handle ingestion errors gracefully: log failures, do not crash the watcher loop
 - [x] Write an RQ worker entrypoint inside `app/` that processes ingestion and matching queue jobs
-- [ ] Ensure Supervisor (or the existing shell script) starts both uvicorn and the RQ worker
+- [x] Ensure Supervisor (or the existing shell script) starts both uvicorn and the RQ worker
 - [ ] Add a `/ingest/status` health/status endpoint showing queue depth and recent ingestion results
 - [ ] Integration smoke test: drop a FLAC and an MP3 into `ingestion/`, confirm both end up in `local_tracks` with fingerprints
