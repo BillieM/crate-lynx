@@ -116,6 +116,16 @@ class StreamingPlaylistRecord:
 
 
 @dataclass(frozen=True, slots=True)
+class StreamingPlaylistSummary:
+    id: int
+    account_id: int
+    provider_playlist_id: str
+    title: str
+    track_count: int
+    synced_at: datetime | None
+
+
+@dataclass(frozen=True, slots=True)
 class StreamingTrackRecord:
     id: int
     provider_track_id: str
@@ -283,6 +293,46 @@ class StreamingAccountStore:
                 )
 
         return playlist_rows
+
+    def list_playlists(self) -> list[StreamingPlaylistSummary]:
+        with self._engine.connect() as connection:
+            rows = connection.execute(
+                select(
+                    streaming_playlists_table.c.id,
+                    streaming_playlists_table.c.account_id,
+                    streaming_playlists_table.c.provider_playlist_id,
+                    streaming_playlists_table.c.title,
+                    streaming_playlists_table.c.synced_at,
+                    func.count(playlist_membership_table.c.id).label("track_count"),
+                )
+                .select_from(
+                    streaming_playlists_table.outerjoin(
+                        playlist_membership_table,
+                        playlist_membership_table.c.playlist_id
+                        == streaming_playlists_table.c.id,
+                    )
+                )
+                .group_by(
+                    streaming_playlists_table.c.id,
+                    streaming_playlists_table.c.account_id,
+                    streaming_playlists_table.c.provider_playlist_id,
+                    streaming_playlists_table.c.title,
+                    streaming_playlists_table.c.synced_at,
+                )
+                .order_by(streaming_playlists_table.c.id.asc())
+            ).mappings()
+
+            return [
+                StreamingPlaylistSummary(
+                    id=row["id"],
+                    account_id=row["account_id"],
+                    provider_playlist_id=row["provider_playlist_id"],
+                    title=row["title"],
+                    track_count=row["track_count"],
+                    synced_at=row["synced_at"],
+                )
+                for row in rows
+            ]
 
     def upsert_tracks(
         self,

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+from datetime import UTC, datetime
 from pathlib import Path
 
 from cryptography.fernet import Fernet
@@ -245,6 +246,73 @@ def test_streaming_account_store_syncs_youtube_music_playlists(
     assert seen["user"] is None
     assert seen["language"] == "en"
     assert seen["location"] == ""
+
+
+def test_streaming_account_store_lists_playlists_with_track_counts(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite:///{tmp_path / 'streaming-playlist-list.db'}"
+    engine = create_engine(database_url)
+    metadata.create_all(engine)
+    monkeypatch.setenv("TOKEN_ENCRYPTION_KEY", Fernet.generate_key().decode("utf-8"))
+
+    store = StreamingAccountStore(database_url)
+    account = store.create_youtube_music_account(
+        display_name="Listener",
+        oauth_token={"refresh_token": "refresh-token"},
+    )
+    synced_at = datetime(2026, 5, 1, 8, 30, tzinfo=UTC)
+
+    playlists = store.upsert_playlists(
+        account_id=account.id,
+        playlists=[
+            YouTubeMusicPlaylist(
+                provider_playlist_id="PL1",
+                title="Morning Mix",
+            ),
+            YouTubeMusicPlaylist(
+                provider_playlist_id="PL2",
+                title="Empty Playlist",
+            ),
+        ],
+        synced_at=synced_at,
+    )
+
+    store.replace_playlist_membership(
+        playlist_id=playlists[0].id,
+        tracks=[
+            YouTubeMusicTrack(
+                provider_track_id="track-1",
+                title="Track 1",
+                artist="Artist 1",
+                album=None,
+                year=None,
+                isrc=None,
+                duration_ms=120000,
+            ),
+            YouTubeMusicTrack(
+                provider_track_id="track-2",
+                title="Track 2",
+                artist="Artist 2",
+                album=None,
+                year=None,
+                isrc=None,
+                duration_ms=180000,
+            ),
+        ],
+    )
+
+    listed = store.list_playlists()
+
+    assert [playlist.provider_playlist_id for playlist in listed] == ["PL1", "PL2"]
+    assert listed[0].account_id == account.id
+    assert listed[0].title == "Morning Mix"
+    assert listed[0].track_count == 2
+    assert listed[0].synced_at == synced_at.replace(tzinfo=None)
+    assert listed[1].title == "Empty Playlist"
+    assert listed[1].track_count == 0
+    assert listed[1].synced_at == synced_at.replace(tzinfo=None)
 
 
 def test_streaming_account_store_upserts_tracks_and_playlist_membership(

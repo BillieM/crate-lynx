@@ -30,6 +30,15 @@ class StreamingAccountResponse(BaseModel):
     updated_at: str
 
 
+class StreamingPlaylistResponse(BaseModel):
+    id: int
+    account_id: int
+    provider_playlist_id: str
+    title: str
+    track_count: int
+    synced_at: str | None
+
+
 class CreateStreamingAccountRequest(BaseModel):
     display_name: str
     client_id: str
@@ -131,6 +140,20 @@ def create_app() -> FastAPI:
             updated_at=account.updated_at.isoformat(),
         )
 
+    def serialize_streaming_playlist(playlist: object) -> StreamingPlaylistResponse:
+        return StreamingPlaylistResponse(
+            id=playlist.id,
+            account_id=playlist.account_id,
+            provider_playlist_id=playlist.provider_playlist_id,
+            title=playlist.title,
+            track_count=playlist.track_count,
+            synced_at=(
+                playlist.synced_at.isoformat()
+                if playlist.synced_at is not None
+                else None
+            ),
+        )
+
     @app.get("/health")
     async def health() -> dict[str, str]:
         return {"status": "ok"}
@@ -144,6 +167,15 @@ def create_app() -> FastAPI:
         accounts = StreamingAccountStore(require_database_url()).list_accounts()
         return {
             "accounts": [serialize_streaming_account(account) for account in accounts]
+        }
+
+    @app.get("/streaming/playlists")
+    async def list_streaming_playlists() -> dict[str, list[StreamingPlaylistResponse]]:
+        playlists = StreamingAccountStore(require_database_url()).list_playlists()
+        return {
+            "playlists": [
+                serialize_streaming_playlist(playlist) for playlist in playlists
+            ]
         }
 
     @app.post("/streaming/accounts", status_code=201)

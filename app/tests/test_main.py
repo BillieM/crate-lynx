@@ -12,7 +12,12 @@ from app.main import (
     SyncStreamingAccountRequest,
     create_app,
 )
-from app.streaming_accounts import metadata, streaming_accounts_table
+from app.streaming_accounts import (
+    StreamingAccountStore,
+    metadata,
+    streaming_accounts_table,
+)
+from app.youtube_music import YouTubeMusicPlaylist, YouTubeMusicTrack
 from sqlalchemy import create_engine, insert
 from starlette.requests import Request
 
@@ -136,6 +141,84 @@ def test_streaming_accounts_endpoint_lists_persisted_accounts(
     assert account.display_name == "Main Account"
     assert account.created_at
     assert account.updated_at
+
+
+def test_streaming_playlists_endpoint_lists_synced_playlists(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite:///{tmp_path / 'streaming-playlists.db'}"
+    engine = create_engine(database_url)
+    metadata.create_all(engine)
+    monkeypatch.setenv("DATABASE_URL", database_url)
+    monkeypatch.setenv("TOKEN_ENCRYPTION_KEY", Fernet.generate_key().decode("utf-8"))
+
+    with engine.begin() as connection:
+        account_id = connection.execute(
+            insert(streaming_accounts_table).values(
+                provider="youtube_music",
+                display_name="Main Account",
+                auth_token_blob="encrypted-token",
+            )
+        ).inserted_primary_key[0]
+
+    store = StreamingAccountStore(database_url)
+    playlists = store.upsert_playlists(
+        account_id=account_id,
+        playlists=[
+            YouTubeMusicPlaylist(
+                provider_playlist_id="PL1",
+                title="Morning Mix",
+            ),
+            YouTubeMusicPlaylist(
+                provider_playlist_id="PL2",
+                title="Empty Playlist",
+            ),
+        ],
+        synced_at=datetime(2026, 5, 1, 9, 0, tzinfo=UTC),
+    )
+    store.replace_playlist_membership(
+        playlist_id=playlists[0].id,
+        tracks=[
+            YouTubeMusicTrack(
+                provider_track_id="track-1",
+                title="Track 1",
+                artist="Artist 1",
+                album=None,
+                year=None,
+                isrc=None,
+                duration_ms=180000,
+            ),
+            YouTubeMusicTrack(
+                provider_track_id="track-2",
+                title="Track 2",
+                artist="Artist 2",
+                album=None,
+                year=None,
+                isrc=None,
+                duration_ms=200000,
+            ),
+        ],
+    )
+
+    app = create_app()
+    route = next(
+        route
+        for route in app.routes
+        if getattr(route, "path", None) == "/streaming/playlists"
+        and "GET" in getattr(route, "methods", set())
+    )
+    response = asyncio.run(route.endpoint())
+
+    assert len(response["playlists"]) == 2
+    playlist = response["playlists"][0]
+    assert playlist.account_id == 1
+    assert playlist.provider_playlist_id == "PL1"
+    assert playlist.title == "Morning Mix"
+    assert playlist.track_count == 2
+    assert playlist.synced_at == "2026-05-01T09:00:00"
+    assert response["playlists"][1].provider_playlist_id == "PL2"
+    assert response["playlists"][1].track_count == 0
 
 
 def test_streaming_accounts_endpoint_creates_youtube_music_account(
