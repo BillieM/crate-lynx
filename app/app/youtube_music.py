@@ -83,6 +83,20 @@ class YouTubeMusicAdapter:
         )
 
     @staticmethod
+    def begin_oauth(
+        credentials: YouTubeMusicOAuthCredentials,
+    ) -> JsonMapping:
+        return dict(credentials.to_ytmusicapi().get_code())
+
+    @staticmethod
+    def complete_oauth(
+        credentials: YouTubeMusicOAuthCredentials,
+        *,
+        device_code: str,
+    ) -> JsonMapping:
+        return dict(credentials.to_ytmusicapi().token_from_code(device_code))
+
+    @staticmethod
     def setup_oauth(
         credentials: YouTubeMusicOAuthCredentials,
         *,

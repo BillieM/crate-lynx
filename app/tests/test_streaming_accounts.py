@@ -10,6 +10,8 @@ from sqlalchemy import create_engine, select
 from ytmusicapi.exceptions import YTMusicUserError
 
 from app.streaming_accounts import (
+    begin_youtube_music_account_oauth,
+    complete_youtube_music_account_oauth,
     playlist_membership_table,
     run_youtube_music_sync_job,
     YOUTUBE_MUSIC_PROVIDER,
@@ -102,6 +104,110 @@ def test_connect_youtube_music_account_encrypts_and_persists_token(
     assert json.loads(_decrypt_token(stored_account["auth_token_blob"])) == {
         "access_token": "access-token",
         "refresh_token": "refresh-token",
+    }
+
+
+def test_begin_youtube_music_account_oauth_returns_auth_code(monkeypatch) -> None:
+    seen: dict[str, object] = {}
+
+    def fake_begin_oauth(
+        credentials: YouTubeMusicOAuthCredentials,
+    ) -> dict[str, object]:
+        seen["credentials"] = credentials
+        return {
+            "device_code": "device-code",
+            "user_code": "ABC-DEF-GHIJ",
+            "verification_url": "https://example.com/device",
+            "expires_in": 1800,
+            "interval": 5,
+        }
+
+    monkeypatch.setattr(
+        "app.streaming_accounts.YouTubeMusicAdapter.begin_oauth",
+        fake_begin_oauth,
+    )
+
+    auth_code = begin_youtube_music_account_oauth(
+        credentials=YouTubeMusicOAuthCredentials(
+            client_id="client-id",
+            client_secret="client-secret",
+        )
+    )
+
+    assert auth_code["device_code"] == "device-code"
+    assert seen["credentials"] == YouTubeMusicOAuthCredentials(
+        client_id="client-id",
+        client_secret="client-secret",
+    )
+
+
+def test_complete_youtube_music_account_oauth_persists_token(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite:///{tmp_path / 'streaming-complete.db'}"
+    engine = create_engine(database_url)
+    metadata.create_all(engine)
+    monkeypatch.setenv("TOKEN_ENCRYPTION_KEY", Fernet.generate_key().decode("utf-8"))
+
+    seen: dict[str, object] = {}
+
+    def fake_complete_oauth(
+        credentials: YouTubeMusicOAuthCredentials,
+        *,
+        device_code: str,
+    ) -> dict[str, object]:
+        seen["credentials"] = credentials
+        seen["device_code"] = device_code
+        return {
+            "access_token": "access-token",
+            "refresh_token": "refresh-token",
+            "expires_at": 1234567890,
+            "expires_in": 1800,
+            "scope": "https://www.googleapis.com/auth/youtube",
+            "token_type": "Bearer",
+        }
+
+    monkeypatch.setattr(
+        "app.streaming_accounts.YouTubeMusicAdapter.complete_oauth",
+        fake_complete_oauth,
+    )
+
+    account = complete_youtube_music_account_oauth(
+        database_url=database_url,
+        display_name="Billie",
+        credentials=YouTubeMusicOAuthCredentials(
+            client_id="client-id",
+            client_secret="client-secret",
+        ),
+        device_code="device-code",
+    )
+
+    assert account == account.__class__(
+        id=1,
+        provider=YOUTUBE_MUSIC_PROVIDER,
+        display_name="Billie",
+    )
+    assert seen == {
+        "credentials": YouTubeMusicOAuthCredentials(
+            client_id="client-id",
+            client_secret="client-secret",
+        ),
+        "device_code": "device-code",
+    }
+
+    with engine.connect() as connection:
+        stored_account = (
+            connection.execute(select(streaming_accounts_table)).mappings().one()
+        )
+
+    assert json.loads(_decrypt_token(stored_account["auth_token_blob"])) == {
+        "access_token": "access-token",
+        "refresh_token": "refresh-token",
+        "expires_at": 1234567890,
+        "expires_in": 1800,
+        "scope": "https://www.googleapis.com/auth/youtube",
+        "token_type": "Bearer",
     }
 
 

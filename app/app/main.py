@@ -3,7 +3,7 @@ import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, Response
 from pydantic import BaseModel
 
 from app.ingest_status import IngestionStatusStore
@@ -14,7 +14,11 @@ from app.queueing import (
     QueueDepthReader,
     StreamingSyncJobEnqueuer,
 )
-from app.streaming_accounts import StreamingAccountStore, connect_youtube_music_account
+from app.streaming_accounts import (
+    StreamingAccountStore,
+    begin_youtube_music_account_oauth,
+    complete_youtube_music_account_oauth,
+)
 from app.worker import resolve_queue_names
 from app.youtube_music import YouTubeMusicOAuthCredentials
 
@@ -46,7 +50,16 @@ class CreateStreamingAccountRequest(BaseModel):
     display_name: str
     client_id: str
     client_secret: str
+    device_code: str | None = None
     open_browser: bool = False
+
+
+class StreamingAccountAuthChallengeResponse(BaseModel):
+    device_code: str
+    user_code: str
+    verification_url: str
+    expires_in: int
+    interval: int
 
 
 class SyncStreamingAccountRequest(BaseModel):
@@ -191,16 +204,31 @@ def create_app() -> FastAPI:
     @app.post("/streaming/accounts", status_code=201)
     async def create_streaming_account(
         payload: CreateStreamingAccountRequest,
-    ) -> StreamingAccountResponse:
+        response: Response,
+    ) -> StreamingAccountResponse | StreamingAccountAuthChallengeResponse:
         database_url = require_database_url()
-        account = connect_youtube_music_account(
+        credentials = YouTubeMusicOAuthCredentials(
+            client_id=payload.client_id,
+            client_secret=payload.client_secret,
+        )
+        if payload.device_code is None:
+            auth_code = begin_youtube_music_account_oauth(
+                credentials=credentials,
+            )
+            response.status_code = 202
+            return StreamingAccountAuthChallengeResponse(
+                device_code=auth_code["device_code"],
+                user_code=auth_code["user_code"],
+                verification_url=auth_code["verification_url"],
+                expires_in=auth_code["expires_in"],
+                interval=auth_code["interval"],
+            )
+
+        account = complete_youtube_music_account_oauth(
             database_url=database_url,
             display_name=payload.display_name,
-            credentials=YouTubeMusicOAuthCredentials(
-                client_id=payload.client_id,
-                client_secret=payload.client_secret,
-            ),
-            open_browser=payload.open_browser,
+            credentials=credentials,
+            device_code=payload.device_code,
         )
 
         created_account = next(

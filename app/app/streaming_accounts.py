@@ -608,6 +608,31 @@ def connect_youtube_music_account(
     )
 
 
+def begin_youtube_music_account_oauth(
+    *,
+    credentials: YouTubeMusicOAuthCredentials,
+) -> dict[str, Any]:
+    return YouTubeMusicAdapter.begin_oauth(credentials)
+
+
+def complete_youtube_music_account_oauth(
+    *,
+    database_url: str,
+    display_name: str,
+    credentials: YouTubeMusicOAuthCredentials,
+    device_code: str,
+) -> PersistedStreamingAccount:
+    oauth_token = YouTubeMusicAdapter.complete_oauth(
+        credentials,
+        device_code=device_code,
+    )
+
+    return StreamingAccountStore(database_url).create_youtube_music_account(
+        display_name=display_name,
+        oauth_token=oauth_token,
+    )
+
+
 def run_youtube_music_sync_job(
     account_id: int,
     client_id: str,
