@@ -8,7 +8,7 @@ A local-first music asset manager that uses streaming services as a curation lay
 
 | Service | Stack |
 |---|---|
-| `app` | Python 3.12, FastAPI, RQ worker, Beets, FFmpeg, Chromaprint |
+| `app` | Python 3.12.13, FastAPI, RQ worker, Beets, FFmpeg, Chromaprint |
 | `app-ui` | React (Vite), TypeScript, Tailwind CSS + Catppuccin Mocha, TanStack Query |
 | `db` | PostgreSQL 16+ |
 | `redis` | Message broker for RQ background jobs |
@@ -25,7 +25,7 @@ cp .env.example .env
 docker compose up --build
 ```
 
-For local backend development, use Python 3.12. A repo-level `.python-version` file is included for tools such as `pyenv`.
+For local backend development, use Python 3.12.13. A repo-level `.python-version` file is included for tools such as `pyenv`.
 
 The UI is served at `http://localhost:18100` (Nginx). The API is available at `http://localhost:18101` and proxied through the UI at `http://localhost:18100/api`.
 

@@ -2,7 +2,7 @@
 
 ## Python environment
 
-Use Python 3.12 for this repository.
+Use Python 3.12.13 for this repository.
 
 Always use the project venv for Python commands:
 
