@@ -1,15 +1,14 @@
-# E02 — Database schema & migrations
+# E03 — Local library ingestion pipeline
 
-- [x] Initialise Alembic inside `db/` with `alembic init`; configure `env.py` to read `DATABASE_URL` from env
-- [x] Write SQLAlchemy base model and shared `models.py` (to be mounted/imported by `app/`)
-- [x] Define `local_tracks` table (id, file_path, library_root_rel_path, fingerprint, beets_id, created_at, updated_at)
-- [x] Define `streaming_accounts` table (id, provider, display_name, auth_token_blob, created_at, updated_at)
-- [x] Define `streaming_playlists` table (id, account_id FK, provider_playlist_id, title, synced_at)
-- [x] Define `streaming_tracks` table (id, provider_track_id, title, artist, album, year, isrc, duration_ms)
-- [x] Define `playlist_membership` table (id, playlist_id FK, streaming_track_id FK, position)
-- [x] Define `suggested_links` table (id, local_track_id FK, streaming_track_id FK, match_method, score, status, rejected_at, created_at)
-- [x] Define `final_links` table (id, local_track_id FK unique, streaming_track_id FK, approved_at)
-- [x] Write Fernet encryption helpers (`encrypt_token` / `decrypt_token`) for `auth_token_blob`
-- [x] Generate initial Alembic migration from the model definitions
-- [x] Wire `db` container in `docker-compose.yml` to run `alembic upgrade head` on startup (or add entrypoint script)
-- [x] Smoke test: `docker compose up`, confirm all 7 tables exist in Postgres and migration history is clean
+- [x] Add Watchdog dependency to `app/` and write a file-system observer that watches the `ingestion/` folder for new files
+- [ ] Implement format detection: MP3 passes through unchanged; FLAC/WAV/AIFF are transcoded to MP3 via FFmpeg
+- [ ] Wire the transcoder to output files into a staging area before Beets import
+- [ ] Run `beets import -q` on each incoming file for metadata enrichment and move to `/library/`
+- [ ] Generate a Chromaprint fingerprint via `fpcalc` for each ingested file and store the result
+- [ ] Persist the ingested track to `local_tracks` with `file_path` stored relative to `LIBRARY_ROOT`
+- [ ] Enqueue a matching pipeline job on RQ once ingestion is complete for a track
+- [ ] Handle ingestion errors gracefully: log failures, do not crash the watcher loop
+- [ ] Write an RQ worker entrypoint inside `app/` that processes ingestion and matching queue jobs
+- [ ] Ensure Supervisor (or the existing shell script) starts both uvicorn and the RQ worker
+- [ ] Add a `/ingest/status` health/status endpoint showing queue depth and recent ingestion results
+- [ ] Integration smoke test: drop a FLAC and an MP3 into `ingestion/`, confirm both end up in `local_tracks` with fingerprints
