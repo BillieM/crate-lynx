@@ -7,6 +7,7 @@ from watchdog.events import DirCreatedEvent, FileCreatedEvent
 from app.ingestion import (
     AudioPreparer,
     BeetsImporter,
+    FingerprintGenerator,
     IngestionEventHandler,
     IngestionProcessor,
     IngestionWatcher,
@@ -176,6 +177,57 @@ def test_beets_importer_runs_quiet_move_import(tmp_path: Path, monkeypatch) -> N
     ]
 
 
+def test_fingerprint_generator_runs_fpcalc_and_parses_json(
+    tmp_path: Path, monkeypatch
+) -> None:
+    prepared_path = tmp_path / "staging" / "track.mp3"
+    prepared_path.parent.mkdir()
+    prepared_path.write_bytes(b"mp3")
+    seen_commands: list[list[str]] = []
+
+    def fake_run(
+        command: list[str], *, check: bool, capture_output: bool, text: bool
+    ) -> subprocess.CompletedProcess[str]:
+        seen_commands.append(command)
+        return subprocess.CompletedProcess(
+            command,
+            0,
+            '{"fingerprint":"abc123","duration":123.45}',
+            "",
+        )
+
+    monkeypatch.setattr("app.ingestion.subprocess.run", fake_run)
+
+    fingerprint = FingerprintGenerator(fpcalc_binary="fpcalc-test").generate(
+        prepared_path
+    )
+
+    assert fingerprint == "abc123"
+    assert seen_commands == [["fpcalc-test", "-json", str(prepared_path)]]
+
+
+def test_fingerprint_generator_rejects_missing_fingerprint(
+    tmp_path: Path, monkeypatch
+) -> None:
+    prepared_path = tmp_path / "staging" / "track.mp3"
+    prepared_path.parent.mkdir()
+    prepared_path.write_bytes(b"mp3")
+
+    def fake_run(
+        command: list[str], *, check: bool, capture_output: bool, text: bool
+    ) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(command, 0, '{"duration":123.45}', "")
+
+    monkeypatch.setattr("app.ingestion.subprocess.run", fake_run)
+
+    try:
+        FingerprintGenerator().generate(prepared_path)
+    except ValueError as exc:
+        assert "fingerprint" in str(exc)
+    else:
+        raise AssertionError("Expected ValueError")
+
+
 def test_ingestion_processor_prepares_imports_and_deletes_source(
     tmp_path: Path,
 ) -> None:
@@ -190,14 +242,19 @@ def test_ingestion_processor_prepares_imports_and_deletes_source(
     preparer = Mock(spec=AudioPreparer)
     preparer.prepare.return_value = prepared
     importer = Mock(spec=BeetsImporter)
+    fingerprint_generator = Mock(spec=FingerprintGenerator)
+    fingerprint_generator.generate.return_value = "abc123"
 
     result = IngestionProcessor(
         staging_root=tmp_path / "staging",
         audio_preparer=preparer,
         beets_importer=importer,
+        fingerprint_generator=fingerprint_generator,
     ).process(source)
 
     assert result is prepared
+    assert result.fingerprint == "abc123"
     preparer.prepare.assert_called_once_with(source, tmp_path / "staging")
+    fingerprint_generator.generate.assert_called_once_with(prepared.prepared_path)
     importer.import_file.assert_called_once_with(prepared.prepared_path)
     assert source.exists() is False

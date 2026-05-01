@@ -4,7 +4,7 @@
 - [x] Implement format detection: MP3 passes through unchanged; FLAC/WAV/AIFF are transcoded to MP3 via FFmpeg
 - [x] Wire the transcoder to output files into a staging area before Beets import
 - [x] Run `beets import -q` on each incoming file for metadata enrichment and move to `/library/`
-- [ ] Generate a Chromaprint fingerprint via `fpcalc` for each ingested file and store the result
+- [x] Generate a Chromaprint fingerprint via `fpcalc` for each ingested file and store the result
 - [ ] Persist the ingested track to `local_tracks` with `file_path` stored relative to `LIBRARY_ROOT`
 - [ ] Enqueue a matching pipeline job on RQ once ingestion is complete for a track
 - [ ] Handle ingestion errors gracefully: log failures, do not crash the watcher loop

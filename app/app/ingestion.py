@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import json
 from pathlib import Path
 import shutil
 import subprocess
@@ -35,6 +36,7 @@ class PreparedTrack:
     source_path: Path
     prepared_path: Path
     transcoded: bool
+    fingerprint: str | None = None
 
 
 @dataclass(slots=True)
@@ -124,13 +126,46 @@ class BeetsImporter:
 
 
 @dataclass(slots=True)
+class FingerprintGenerator:
+    fpcalc_binary: str = "fpcalc"
+
+    def generate(self, audio_path: Path | str) -> str:
+        completed = subprocess.run(
+            [
+                self.fpcalc_binary,
+                "-json",
+                str(audio_path),
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        return self._parse_fingerprint(completed.stdout)
+
+    def _parse_fingerprint(self, output: str) -> str:
+        payload = json.loads(output)
+        fingerprint = payload.get("fingerprint")
+
+        if not isinstance(fingerprint, str) or not fingerprint:
+            raise ValueError("fpcalc output did not include a fingerprint")
+
+        return fingerprint
+
+
+@dataclass(slots=True)
 class IngestionProcessor:
     staging_root: Path | str
     audio_preparer: AudioPreparer = field(default_factory=AudioPreparer)
     beets_importer: BeetsImporter = field(default_factory=BeetsImporter)
+    fingerprint_generator: FingerprintGenerator = field(
+        default_factory=FingerprintGenerator
+    )
 
     def process(self, source_path: Path | str) -> PreparedTrack:
         prepared = self.audio_preparer.prepare(source_path, self.staging_root)
+        prepared.fingerprint = self.fingerprint_generator.generate(
+            prepared.prepared_path
+        )
         self.beets_importer.import_file(prepared.prepared_path)
         self._cleanup_source(prepared.source_path)
         return prepared
