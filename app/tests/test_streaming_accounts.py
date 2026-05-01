@@ -8,14 +8,20 @@ from cryptography.fernet import Fernet
 from sqlalchemy import create_engine, select
 
 from app.streaming_accounts import (
+    playlist_membership_table,
     YOUTUBE_MUSIC_PROVIDER,
     StreamingAccountStore,
     connect_youtube_music_account,
     metadata,
     streaming_accounts_table,
     streaming_playlists_table,
+    streaming_tracks_table,
 )
-from app.youtube_music import YouTubeMusicOAuthCredentials, YouTubeMusicPlaylist
+from app.youtube_music import (
+    YouTubeMusicOAuthCredentials,
+    YouTubeMusicPlaylist,
+    YouTubeMusicTrack,
+)
 
 
 def test_connect_youtube_music_account_encrypts_and_persists_token(
@@ -238,6 +244,197 @@ def test_streaming_account_store_syncs_youtube_music_playlists(
     assert seen["user"] is None
     assert seen["language"] == "en"
     assert seen["location"] == ""
+
+
+def test_streaming_account_store_upserts_tracks_and_playlist_membership(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite:///{tmp_path / 'streaming-tracks.db'}"
+    engine = create_engine(database_url)
+    metadata.create_all(engine)
+    monkeypatch.setenv("TOKEN_ENCRYPTION_KEY", Fernet.generate_key().decode("utf-8"))
+
+    store = StreamingAccountStore(database_url)
+    account = store.create_youtube_music_account(
+        display_name="Listener",
+        oauth_token={"refresh_token": "refresh-token"},
+    )
+    playlist = store.upsert_playlists(
+        account_id=account.id,
+        playlists=[
+            YouTubeMusicPlaylist(
+                provider_playlist_id="PL1",
+                title="Morning Mix",
+            )
+        ],
+    )[0]
+
+    inserted = store.replace_playlist_membership(
+        playlist_id=playlist.id,
+        tracks=[
+            YouTubeMusicTrack(
+                provider_track_id="track-1",
+                title="Track 1",
+                artist="Artist 1",
+                album="Album 1",
+                year=2021,
+                isrc=None,
+                duration_ms=180000,
+            ),
+            YouTubeMusicTrack(
+                provider_track_id="track-2",
+                title="Track 2",
+                artist="Artist 2",
+                album=None,
+                year=None,
+                isrc=None,
+                duration_ms=None,
+            ),
+        ],
+    )
+
+    assert [membership.position for membership in inserted] == [1, 2]
+
+    updated = store.replace_playlist_membership(
+        playlist_id=playlist.id,
+        tracks=[
+            YouTubeMusicTrack(
+                provider_track_id="track-2",
+                title="Track 2 Updated",
+                artist="Artist 2",
+                album="Album 2",
+                year=2024,
+                isrc=None,
+                duration_ms=200000,
+            ),
+            YouTubeMusicTrack(
+                provider_track_id="track-1",
+                title="Track 1",
+                artist="Artist 1",
+                album="Album 1",
+                year=2021,
+                isrc=None,
+                duration_ms=180000,
+            ),
+        ],
+    )
+
+    assert [membership.position for membership in updated] == [1, 2]
+
+    with engine.connect() as connection:
+        stored_tracks = list(
+            connection.execute(
+                select(streaming_tracks_table).order_by(
+                    streaming_tracks_table.c.provider_track_id.asc()
+                )
+            ).mappings()
+        )
+        stored_memberships = list(
+            connection.execute(
+                select(playlist_membership_table).order_by(
+                    playlist_membership_table.c.position.asc()
+                )
+            ).mappings()
+        )
+
+    assert len(stored_tracks) == 2
+    assert stored_tracks[0]["provider_track_id"] == "track-1"
+    assert stored_tracks[1]["provider_track_id"] == "track-2"
+    assert stored_tracks[1]["title"] == "Track 2 Updated"
+    assert stored_tracks[1]["album"] == "Album 2"
+    assert stored_tracks[1]["year"] == 2024
+    assert stored_tracks[1]["duration_ms"] == 200000
+    assert len(stored_memberships) == 2
+    assert stored_memberships[0]["playlist_id"] == playlist.id
+    assert stored_memberships[0]["position"] == 1
+    assert stored_memberships[0]["streaming_track_id"] == stored_tracks[1]["id"]
+    assert stored_memberships[1]["playlist_id"] == playlist.id
+    assert stored_memberships[1]["position"] == 2
+    assert stored_memberships[1]["streaming_track_id"] == stored_tracks[0]["id"]
+
+
+def test_streaming_account_store_syncs_youtube_music_playlist_tracks(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite:///{tmp_path / 'streaming-track-sync.db'}"
+    engine = create_engine(database_url)
+    metadata.create_all(engine)
+    monkeypatch.setenv("TOKEN_ENCRYPTION_KEY", Fernet.generate_key().decode("utf-8"))
+
+    store = StreamingAccountStore(database_url)
+    account = store.create_youtube_music_account(
+        display_name="Listener",
+        oauth_token={"refresh_token": "refresh-token"},
+    )
+
+    seen: dict[str, object] = {}
+
+    class FakeAdapter:
+        def list_library_playlists(self):
+            return [YouTubeMusicPlaylist(provider_playlist_id="PL9", title="Gym")]
+
+        def list_playlist_tracks(self, playlist_id):
+            seen["playlist_id"] = playlist_id
+            return [
+                YouTubeMusicTrack(
+                    provider_track_id="track-9",
+                    title="Workout",
+                    artist="Artist 9",
+                    album=None,
+                    year=None,
+                    isrc=None,
+                    duration_ms=120000,
+                )
+            ]
+
+    def fake_from_oauth_token(
+        oauth_token, *, credentials, user=None, language="en", location=""
+    ):
+        seen["oauth_token"] = oauth_token
+        seen["credentials"] = credentials
+        seen["user"] = user
+        seen["language"] = language
+        seen["location"] = location
+        return FakeAdapter()
+
+    monkeypatch.setattr(
+        "app.streaming_accounts.YouTubeMusicAdapter.from_oauth_token",
+        fake_from_oauth_token,
+    )
+
+    synced = store.sync_youtube_music_playlist_tracks(
+        account_id=account.id,
+        credentials=YouTubeMusicOAuthCredentials(
+            client_id="client-id",
+            client_secret="client-secret",
+        ),
+    )
+
+    assert len(synced) == 1
+    assert synced[0].position == 1
+    assert seen["playlist_id"] == "PL9"
+    assert seen["oauth_token"] == {"refresh_token": "refresh-token"}
+    assert seen["credentials"] == YouTubeMusicOAuthCredentials(
+        client_id="client-id",
+        client_secret="client-secret",
+    )
+    assert seen["user"] is None
+    assert seen["language"] == "en"
+    assert seen["location"] == ""
+
+    with engine.connect() as connection:
+        stored_tracks = list(
+            connection.execute(select(streaming_tracks_table)).mappings()
+        )
+        stored_memberships = list(
+            connection.execute(select(playlist_membership_table)).mappings()
+        )
+
+    assert len(stored_tracks) == 1
+    assert stored_tracks[0]["provider_track_id"] == "track-9"
+    assert len(stored_memberships) == 1
 
 
 def _decrypt_token(auth_token_blob: str) -> str:

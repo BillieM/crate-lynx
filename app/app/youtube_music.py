@@ -29,6 +29,17 @@ class YouTubeMusicPlaylist:
     title: str
 
 
+@dataclass(frozen=True, slots=True)
+class YouTubeMusicTrack:
+    provider_track_id: str
+    title: str
+    artist: str
+    album: str | None
+    year: int | None
+    isrc: str | None
+    duration_ms: int | None
+
+
 class YouTubeMusicAdapter:
     def __init__(self, client: YTMusic) -> None:
         self._client = client
@@ -113,6 +124,55 @@ class YouTubeMusicAdapter:
 
         return playlists
 
+    def list_playlist_tracks(
+        self,
+        playlist_id: str,
+        *,
+        limit: int | None = 100,
+    ) -> list[YouTubeMusicTrack]:
+        playlist = self.get_playlist(playlist_id, limit=limit)
+        raw_tracks = playlist.get("tracks")
+        if not isinstance(raw_tracks, list):
+            return []
+
+        tracks: list[YouTubeMusicTrack] = []
+        for track in raw_tracks:
+            if not isinstance(track, dict):
+                continue
+
+            provider_track_id = track.get("videoId")
+            title = track.get("title")
+            artist = _normalize_artist(track)
+
+            if not isinstance(provider_track_id, str) or not provider_track_id:
+                continue
+            if not isinstance(title, str) or not title:
+                continue
+            if not artist:
+                continue
+
+            album = _normalize_album(track)
+            year = track.get("year")
+            duration_seconds = track.get("duration_seconds")
+
+            tracks.append(
+                YouTubeMusicTrack(
+                    provider_track_id=provider_track_id,
+                    title=title,
+                    artist=artist,
+                    album=album,
+                    year=year if isinstance(year, int) else None,
+                    isrc=None,
+                    duration_ms=(
+                        duration_seconds * 1000
+                        if isinstance(duration_seconds, int)
+                        else None
+                    ),
+                )
+            )
+
+        return tracks
+
     def get_playlist(
         self,
         playlist_id: str,
@@ -170,3 +230,63 @@ def sync_library_playlists(
         playlists=playlists,
         synced_at=synced_at or datetime.now(UTC),
     )
+
+
+def sync_library_playlist_tracks(
+    *,
+    account_id: int,
+    adapter: YouTubeMusicAdapter,
+    playlist_store: Any,
+    synced_at: datetime | None = None,
+) -> list[Any]:
+    sync_timestamp = synced_at or datetime.now(UTC)
+    playlists = adapter.list_library_playlists()
+    stored_playlists = playlist_store.upsert_playlists(
+        account_id=account_id,
+        playlists=playlists,
+        synced_at=sync_timestamp,
+    )
+
+    synced_memberships: list[Any] = []
+    for playlist in stored_playlists:
+        synced_memberships.extend(
+            playlist_store.replace_playlist_membership(
+                playlist_id=playlist.id,
+                tracks=adapter.list_playlist_tracks(playlist.provider_playlist_id),
+            )
+        )
+
+    return synced_memberships
+
+
+def _normalize_artist(track: JsonMapping) -> str | None:
+    artists = track.get("artists")
+    if isinstance(artists, list):
+        names = [
+            artist_name
+            for artist in artists
+            if isinstance(artist, dict)
+            for artist_name in [artist.get("name") or artist.get("title")]
+            if isinstance(artist_name, str) and artist_name
+        ]
+        if names:
+            return ", ".join(names)
+
+    artist = track.get("artist")
+    if isinstance(artist, str) and artist:
+        return artist
+
+    return None
+
+
+def _normalize_album(track: JsonMapping) -> str | None:
+    album = track.get("album")
+    if isinstance(album, str) and album:
+        return album
+
+    if isinstance(album, dict):
+        title = album.get("name") or album.get("title")
+        if isinstance(title, str) and title:
+            return title
+
+    return None

@@ -4,7 +4,7 @@
 - [x] Implement the auth flow: accept OAuth credentials, encrypt the resulting token with Fernet, and write it to the `streaming_accounts` table
 - [x] Add a `GET /streaming/accounts` endpoint and a `POST /streaming/accounts` endpoint to initiate and complete YouTube Music auth
 - [x] Implement playlist sync in `YouTubeMusicAdapter`: fetch all playlists for an authenticated account and upsert into `streaming_playlists`
-- [ ] Implement track sync: for each playlist, fetch its tracks via ytmusicapi and upsert into `streaming_tracks` and `playlist_membership`
+- [x] Implement track sync: for each playlist, fetch its tracks via ytmusicapi and upsert into `streaming_tracks` and `playlist_membership`
 - [ ] Extract ISRC from ytmusicapi track metadata where available and store on `streaming_tracks`
 - [ ] Expose a `POST /streaming/accounts/{id}/sync` endpoint that enqueues an RQ job to run the full playlist + track sync
 - [ ] Add a `GET /streaming/playlists` endpoint returning all synced playlists with track counts and last-synced timestamp

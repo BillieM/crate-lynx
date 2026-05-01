@@ -6,7 +6,9 @@ from app.youtube_music import (
     YouTubeMusicAdapter,
     YouTubeMusicOAuthCredentials,
     YouTubeMusicPlaylist,
+    YouTubeMusicTrack,
     sync_library_playlists,
+    sync_library_playlist_tracks,
 )
 
 
@@ -249,6 +251,71 @@ def test_list_library_playlists_normalizes_valid_rows_only() -> None:
     ]
 
 
+def test_list_playlist_tracks_normalizes_valid_rows_only() -> None:
+    class FakeYTMusic:
+        def get_playlist(
+            self,
+            *,
+            playlistId: str,
+            limit: int | None,
+            related: bool,
+            suggestions_limit: int,
+        ) -> dict[str, object]:
+            assert playlistId == "PL1"
+            assert limit == 100
+            assert related is False
+            assert suggestions_limit == 0
+            return {
+                "tracks": [
+                    {
+                        "videoId": "track-1",
+                        "title": "Solar Power",
+                        "artists": [{"name": "Lorde"}],
+                        "album": {"name": "Solar Power"},
+                        "year": 2021,
+                        "duration_seconds": 193,
+                    },
+                    {
+                        "videoId": "track-2",
+                        "title": "Cuff It",
+                        "artists": [{"title": "Beyonce"}],
+                        "album": "RENAISSANCE",
+                    },
+                    {
+                        "videoId": "track-3",
+                        "title": "Missing Artist",
+                    },
+                    {
+                        "title": "Missing Id",
+                        "artists": [{"name": "Unknown"}],
+                    },
+                ]
+            }
+
+    adapter = YouTubeMusicAdapter(FakeYTMusic())  # type: ignore[arg-type]
+
+    assert adapter.list_playlist_tracks("PL1") == [
+        YouTubeMusicTrack(
+            provider_track_id="track-1",
+            title="Solar Power",
+            artist="Lorde",
+            album="Solar Power",
+            year=2021,
+            isrc=None,
+            duration_ms=193000,
+        ),
+        YouTubeMusicTrack(
+            provider_track_id="track-2",
+            title="Cuff It",
+            artist="Beyonce",
+            album="RENAISSANCE",
+            year=None,
+            isrc=None,
+            duration_ms=None,
+        ),
+    ]
+
+
 def test_sync_library_playlists_uses_adapter_and_store() -> None:
     seen: dict[str, object] = {}
 
@@ -275,3 +342,91 @@ def test_sync_library_playlists_uses_adapter_and_store() -> None:
         YouTubeMusicPlaylist(provider_playlist_id="PL1", title="Road Trip")
     ]
     assert seen["synced_at"] is not None
+
+
+def test_sync_library_playlist_tracks_uses_adapter_and_store() -> None:
+    seen: dict[str, object] = {}
+
+    class FakePlaylistStore:
+        def upsert_playlists(self, *, account_id, playlists, synced_at):
+            seen["account_id"] = account_id
+            seen["playlists"] = playlists
+            seen["synced_at"] = synced_at
+            return [
+                SimpleNamespace(id=11, provider_playlist_id="PL1"),
+                SimpleNamespace(id=12, provider_playlist_id="PL2"),
+            ]
+
+        def replace_playlist_membership(self, *, playlist_id, tracks):
+            memberships = seen.setdefault("memberships", [])
+            memberships.append(
+                {
+                    "playlist_id": playlist_id,
+                    "tracks": tracks,
+                }
+            )
+            return [f"membership-{playlist_id}"]
+
+    class FakeAdapter:
+        def list_library_playlists(self):
+            return [
+                YouTubeMusicPlaylist(provider_playlist_id="PL1", title="Road Trip"),
+                YouTubeMusicPlaylist(provider_playlist_id="PL2", title="Focus"),
+            ]
+
+        def list_playlist_tracks(self, playlist_id):
+            return [
+                YouTubeMusicTrack(
+                    provider_track_id=f"{playlist_id}-track-1",
+                    title="Track 1",
+                    artist="Artist 1",
+                    album=None,
+                    year=None,
+                    isrc=None,
+                    duration_ms=None,
+                )
+            ]
+
+    result = sync_library_playlist_tracks(
+        account_id=7,
+        adapter=FakeAdapter(),  # type: ignore[arg-type]
+        playlist_store=FakePlaylistStore(),
+    )
+
+    assert result == ["membership-11", "membership-12"]
+    assert seen["account_id"] == 7
+    assert seen["playlists"] == [
+        YouTubeMusicPlaylist(provider_playlist_id="PL1", title="Road Trip"),
+        YouTubeMusicPlaylist(provider_playlist_id="PL2", title="Focus"),
+    ]
+    assert seen["synced_at"] is not None
+    assert seen["memberships"] == [
+        {
+            "playlist_id": 11,
+            "tracks": [
+                YouTubeMusicTrack(
+                    provider_track_id="PL1-track-1",
+                    title="Track 1",
+                    artist="Artist 1",
+                    album=None,
+                    year=None,
+                    isrc=None,
+                    duration_ms=None,
+                )
+            ],
+        },
+        {
+            "playlist_id": 12,
+            "tracks": [
+                YouTubeMusicTrack(
+                    provider_track_id="PL2-track-1",
+                    title="Track 1",
+                    artist="Artist 1",
+                    album=None,
+                    year=None,
+                    isrc=None,
+                    duration_ms=None,
+                )
+            ],
+        },
+    ]

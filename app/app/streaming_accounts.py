@@ -11,6 +11,7 @@ from cryptography.fernet import Fernet
 from sqlalchemy import (
     Column,
     DateTime,
+    delete,
     Integer,
     MetaData,
     String,
@@ -26,7 +27,9 @@ from app.youtube_music import (
     YouTubeMusicAdapter,
     YouTubeMusicOAuthCredentials,
     YouTubeMusicPlaylist,
+    YouTubeMusicTrack,
     sync_library_playlists,
+    sync_library_playlist_tracks,
 )
 
 
@@ -59,6 +62,28 @@ streaming_playlists_table = Table(
     Column("synced_at", DateTime(timezone=True), nullable=True),
 )
 
+streaming_tracks_table = Table(
+    "streaming_tracks",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column("provider_track_id", String, nullable=False),
+    Column("title", String, nullable=False),
+    Column("artist", String, nullable=False),
+    Column("album", String, nullable=True),
+    Column("year", Integer, nullable=True),
+    Column("isrc", String, nullable=True),
+    Column("duration_ms", Integer, nullable=True),
+)
+
+playlist_membership_table = Table(
+    "playlist_membership",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column("playlist_id", Integer, nullable=False),
+    Column("streaming_track_id", Integer, nullable=False),
+    Column("position", Integer, nullable=False),
+)
+
 
 @dataclass(frozen=True, slots=True)
 class PersistedStreamingAccount:
@@ -88,6 +113,26 @@ class StreamingPlaylistRecord:
     provider_playlist_id: str
     title: str
     synced_at: datetime | None
+
+
+@dataclass(frozen=True, slots=True)
+class StreamingTrackRecord:
+    id: int
+    provider_track_id: str
+    title: str
+    artist: str
+    album: str | None
+    year: int | None
+    isrc: str | None
+    duration_ms: int | None
+
+
+@dataclass(frozen=True, slots=True)
+class PlaylistMembershipRecord:
+    id: int
+    playlist_id: int
+    streaming_track_id: int
+    position: int
 
 
 class StreamingAccountStore:
@@ -239,6 +284,129 @@ class StreamingAccountStore:
 
         return playlist_rows
 
+    def upsert_tracks(
+        self,
+        *,
+        tracks: list[YouTubeMusicTrack],
+    ) -> list[StreamingTrackRecord]:
+        track_rows: list[StreamingTrackRecord] = []
+
+        with self._engine.begin() as connection:
+            for track in tracks:
+                existing = (
+                    connection.execute(
+                        select(
+                            streaming_tracks_table.c.id,
+                            streaming_tracks_table.c.provider_track_id,
+                            streaming_tracks_table.c.title,
+                            streaming_tracks_table.c.artist,
+                            streaming_tracks_table.c.album,
+                            streaming_tracks_table.c.year,
+                            streaming_tracks_table.c.isrc,
+                            streaming_tracks_table.c.duration_ms,
+                        ).where(
+                            streaming_tracks_table.c.provider_track_id
+                            == track.provider_track_id
+                        )
+                    )
+                    .mappings()
+                    .one_or_none()
+                )
+
+                if existing is None:
+                    result = connection.execute(
+                        insert(streaming_tracks_table).values(
+                            provider_track_id=track.provider_track_id,
+                            title=track.title,
+                            artist=track.artist,
+                            album=track.album,
+                            year=track.year,
+                            isrc=track.isrc,
+                            duration_ms=track.duration_ms,
+                        )
+                    )
+                    track_id = result.inserted_primary_key[0]
+                    if not isinstance(track_id, int):
+                        raise ValueError("Failed to persist streaming track")
+                    track_rows.append(
+                        StreamingTrackRecord(
+                            id=track_id,
+                            provider_track_id=track.provider_track_id,
+                            title=track.title,
+                            artist=track.artist,
+                            album=track.album,
+                            year=track.year,
+                            isrc=track.isrc,
+                            duration_ms=track.duration_ms,
+                        )
+                    )
+                    continue
+
+                connection.execute(
+                    update(streaming_tracks_table)
+                    .where(streaming_tracks_table.c.id == existing["id"])
+                    .values(
+                        title=track.title,
+                        artist=track.artist,
+                        album=track.album,
+                        year=track.year,
+                        isrc=track.isrc,
+                        duration_ms=track.duration_ms,
+                    )
+                )
+                track_rows.append(
+                    StreamingTrackRecord(
+                        id=existing["id"],
+                        provider_track_id=track.provider_track_id,
+                        title=track.title,
+                        artist=track.artist,
+                        album=track.album,
+                        year=track.year,
+                        isrc=track.isrc,
+                        duration_ms=track.duration_ms,
+                    )
+                )
+
+        return track_rows
+
+    def replace_playlist_membership(
+        self,
+        *,
+        playlist_id: int,
+        tracks: list[YouTubeMusicTrack],
+    ) -> list[PlaylistMembershipRecord]:
+        track_rows = self.upsert_tracks(tracks=tracks)
+        membership_rows: list[PlaylistMembershipRecord] = []
+
+        with self._engine.begin() as connection:
+            connection.execute(
+                delete(playlist_membership_table).where(
+                    playlist_membership_table.c.playlist_id == playlist_id
+                )
+            )
+
+            for position, track in enumerate(track_rows, start=1):
+                result = connection.execute(
+                    insert(playlist_membership_table).values(
+                        playlist_id=playlist_id,
+                        streaming_track_id=track.id,
+                        position=position,
+                    )
+                )
+                membership_id = result.inserted_primary_key[0]
+                if not isinstance(membership_id, int):
+                    raise ValueError("Failed to persist playlist membership")
+                membership_rows.append(
+                    PlaylistMembershipRecord(
+                        id=membership_id,
+                        playlist_id=playlist_id,
+                        streaming_track_id=track.id,
+                        position=position,
+                    )
+                )
+
+        return membership_rows
+
     def sync_youtube_music_playlists(
         self,
         *,
@@ -251,6 +419,23 @@ class StreamingAccountStore:
             credentials=credentials,
         )
         return sync_library_playlists(
+            account_id=account_id,
+            adapter=adapter,
+            playlist_store=self,
+        )
+
+    def sync_youtube_music_playlist_tracks(
+        self,
+        *,
+        account_id: int,
+        credentials: YouTubeMusicOAuthCredentials,
+    ) -> list[PlaylistMembershipRecord]:
+        account = self.get_account(account_id)
+        adapter = YouTubeMusicAdapter.from_oauth_token(
+            account.oauth_token,
+            credentials=credentials,
+        )
+        return sync_library_playlist_tracks(
             account_id=account_id,
             adapter=adapter,
             playlist_store=self,
