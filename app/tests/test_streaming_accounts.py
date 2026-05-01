@@ -7,6 +7,7 @@ from pathlib import Path
 
 from cryptography.fernet import Fernet
 from sqlalchemy import create_engine, select
+from ytmusicapi.exceptions import YTMusicUserError
 
 from app.streaming_accounts import (
     playlist_membership_table,
@@ -88,6 +89,9 @@ def test_connect_youtube_music_account_encrypts_and_persists_token(
 
     assert stored_account["provider"] == YOUTUBE_MUSIC_PROVIDER
     assert stored_account["display_name"] == "Billie"
+    assert stored_account["auth_state"] == "connected"
+    assert stored_account["auth_error"] is None
+    assert stored_account["auth_error_at"] is None
     assert stored_account["auth_token_blob"] != json.dumps(
         {
             "access_token": "access-token",
@@ -126,6 +130,9 @@ def test_streaming_account_store_persists_encrypted_token(
             connection.execute(select(streaming_accounts_table)).mappings().one()
         )
 
+    assert stored_account["auth_state"] == "connected"
+    assert stored_account["auth_error"] is None
+    assert stored_account["auth_error_at"] is None
     assert json.loads(_decrypt_token(stored_account["auth_token_blob"])) == {
         "refresh_token": "refresh-token"
     }
@@ -506,6 +513,99 @@ def test_streaming_account_store_syncs_youtube_music_playlist_tracks(
     assert len(stored_tracks) == 1
     assert stored_tracks[0]["provider_track_id"] == "track-9"
     assert len(stored_memberships) == 1
+
+
+def test_streaming_account_store_marks_auth_errors_without_crashing(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite:///{tmp_path / 'streaming-auth-error.db'}"
+    engine = create_engine(database_url)
+    metadata.create_all(engine)
+    monkeypatch.setenv("TOKEN_ENCRYPTION_KEY", Fernet.generate_key().decode("utf-8"))
+
+    store = StreamingAccountStore(database_url)
+    account = store.create_youtube_music_account(
+        display_name="Listener",
+        oauth_token={"refresh_token": "refresh-token"},
+    )
+
+    def fake_from_oauth_token(
+        oauth_token, *, credentials, user=None, language="en", location=""
+    ):
+        raise YTMusicUserError("refresh token expired")
+
+    monkeypatch.setattr(
+        "app.streaming_accounts.YouTubeMusicAdapter.from_oauth_token",
+        fake_from_oauth_token,
+    )
+
+    synced = store.sync_youtube_music_account(
+        account_id=account.id,
+        credentials=YouTubeMusicOAuthCredentials(
+            client_id="client-id",
+            client_secret="client-secret",
+        ),
+    )
+
+    assert synced == []
+
+    persisted = store.list_accounts()[0]
+    assert persisted.auth_state == "error"
+    assert (
+        persisted.auth_error
+        == "YouTube Music authentication failed: refresh token expired"
+    )
+    assert persisted.auth_error_at is not None
+
+
+def test_streaming_account_store_clears_auth_errors_after_successful_sync(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite:///{tmp_path / 'streaming-auth-recovery.db'}"
+    engine = create_engine(database_url)
+    metadata.create_all(engine)
+    monkeypatch.setenv("TOKEN_ENCRYPTION_KEY", Fernet.generate_key().decode("utf-8"))
+
+    store = StreamingAccountStore(database_url)
+    account = store.create_youtube_music_account(
+        display_name="Listener",
+        oauth_token={"refresh_token": "refresh-token"},
+    )
+    store.mark_account_auth_error(
+        account_id=account.id,
+        error=YTMusicUserError("expired credentials"),
+    )
+
+    class FakeAdapter:
+        def list_library_playlists(self):
+            return [YouTubeMusicPlaylist(provider_playlist_id="PL9", title="Gym")]
+
+        def list_playlist_tracks(self, playlist_id):
+            return []
+
+    monkeypatch.setattr(
+        "app.streaming_accounts.YouTubeMusicAdapter.from_oauth_token",
+        lambda oauth_token, *, credentials, user=None, language="en", location="": (
+            FakeAdapter()
+        ),
+    )
+
+    synced = store.sync_youtube_music_account(
+        account_id=account.id,
+        credentials=YouTubeMusicOAuthCredentials(
+            client_id="client-id",
+            client_secret="client-secret",
+        ),
+    )
+
+    assert synced == []
+
+    persisted = store.list_accounts()[0]
+    assert persisted.auth_state == "connected"
+    assert persisted.auth_error is None
+    assert persisted.auth_error_at is None
 
 
 def test_run_youtube_music_sync_job_uses_database_and_credentials(

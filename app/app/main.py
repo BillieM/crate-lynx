@@ -26,6 +26,9 @@ class StreamingAccountResponse(BaseModel):
     id: int
     provider: str
     display_name: str
+    auth_state: str
+    auth_error: str | None
+    auth_error_at: str | None
     created_at: str
     updated_at: str
 
@@ -136,6 +139,13 @@ def create_app() -> FastAPI:
             id=account.id,
             provider=account.provider,
             display_name=account.display_name,
+            auth_state=account.auth_state,
+            auth_error=account.auth_error,
+            auth_error_at=(
+                account.auth_error_at.isoformat()
+                if account.auth_error_at is not None
+                else None
+            ),
             created_at=account.created_at.isoformat(),
             updated_at=account.updated_at.isoformat(),
         )

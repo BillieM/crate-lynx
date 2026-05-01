@@ -22,6 +22,7 @@ from sqlalchemy import (
     select,
     update,
 )
+from ytmusicapi.exceptions import YTMusicError
 
 from app.youtube_music import (
     YouTubeMusicAdapter,
@@ -34,6 +35,8 @@ from app.youtube_music import (
 
 
 YOUTUBE_MUSIC_PROVIDER = "youtube_music"
+STREAMING_ACCOUNT_AUTH_STATE_CONNECTED = "connected"
+STREAMING_ACCOUNT_AUTH_STATE_ERROR = "error"
 
 metadata = MetaData()
 
@@ -44,6 +47,9 @@ streaming_accounts_table = Table(
     Column("provider", String, nullable=False),
     Column("display_name", String, nullable=False),
     Column("auth_token_blob", String, nullable=False),
+    Column("auth_state", String, nullable=False),
+    Column("auth_error", String, nullable=True),
+    Column("auth_error_at", DateTime(timezone=True), nullable=True),
     Column(
         "created_at", DateTime(timezone=True), server_default=func.now(), nullable=False
     ),
@@ -94,6 +100,9 @@ class PersistedStreamingAccount:
 
 @dataclass(frozen=True, slots=True)
 class StreamingAccountRecord(PersistedStreamingAccount):
+    auth_state: str
+    auth_error: str | None
+    auth_error_at: datetime | None
     created_at: datetime
     updated_at: datetime
 
@@ -103,6 +112,9 @@ class StoredStreamingAccount:
     id: int
     provider: str
     display_name: str
+    auth_state: str
+    auth_error: str | None
+    auth_error_at: datetime | None
     oauth_token: dict[str, Any]
 
 
@@ -163,6 +175,9 @@ class StreamingAccountStore:
                     provider=YOUTUBE_MUSIC_PROVIDER,
                     display_name=display_name,
                     auth_token_blob=encrypted_token,
+                    auth_state=STREAMING_ACCOUNT_AUTH_STATE_CONNECTED,
+                    auth_error=None,
+                    auth_error_at=None,
                 )
             )
 
@@ -183,6 +198,9 @@ class StreamingAccountStore:
                     streaming_accounts_table.c.id,
                     streaming_accounts_table.c.provider,
                     streaming_accounts_table.c.display_name,
+                    streaming_accounts_table.c.auth_state,
+                    streaming_accounts_table.c.auth_error,
+                    streaming_accounts_table.c.auth_error_at,
                     streaming_accounts_table.c.created_at,
                     streaming_accounts_table.c.updated_at,
                 ).order_by(streaming_accounts_table.c.id.asc())
@@ -193,6 +211,9 @@ class StreamingAccountStore:
                     id=row["id"],
                     provider=row["provider"],
                     display_name=row["display_name"],
+                    auth_state=row["auth_state"],
+                    auth_error=row["auth_error"],
+                    auth_error_at=row["auth_error_at"],
                     created_at=row["created_at"],
                     updated_at=row["updated_at"],
                 )
@@ -207,6 +228,9 @@ class StreamingAccountStore:
                         streaming_accounts_table.c.id,
                         streaming_accounts_table.c.provider,
                         streaming_accounts_table.c.display_name,
+                        streaming_accounts_table.c.auth_state,
+                        streaming_accounts_table.c.auth_error,
+                        streaming_accounts_table.c.auth_error_at,
                         streaming_accounts_table.c.auth_token_blob,
                     ).where(streaming_accounts_table.c.id == account_id)
                 )
@@ -218,8 +242,44 @@ class StreamingAccountStore:
             id=row["id"],
             provider=row["provider"],
             display_name=row["display_name"],
+            auth_state=row["auth_state"],
+            auth_error=row["auth_error"],
+            auth_error_at=row["auth_error_at"],
             oauth_token=json.loads(decrypt_token(row["auth_token_blob"])),
         )
+
+    def clear_account_auth_error(self, *, account_id: int) -> None:
+        self._set_account_auth_state(
+            account_id=account_id,
+            auth_state=STREAMING_ACCOUNT_AUTH_STATE_CONNECTED,
+            auth_error=None,
+        )
+
+    def mark_account_auth_error(self, *, account_id: int, error: Exception) -> None:
+        self._set_account_auth_state(
+            account_id=account_id,
+            auth_state=STREAMING_ACCOUNT_AUTH_STATE_ERROR,
+            auth_error=_format_auth_error(error),
+        )
+
+    def _set_account_auth_state(
+        self,
+        *,
+        account_id: int,
+        auth_state: str,
+        auth_error: str | None,
+    ) -> None:
+        with self._engine.begin() as connection:
+            connection.execute(
+                update(streaming_accounts_table)
+                .where(streaming_accounts_table.c.id == account_id)
+                .values(
+                    auth_state=auth_state,
+                    auth_error=auth_error,
+                    auth_error_at=(None if auth_error is None else datetime.now(UTC)),
+                    updated_at=datetime.now(UTC),
+                )
+            )
 
     def upsert_playlists(
         self,
@@ -464,15 +524,14 @@ class StreamingAccountStore:
         account_id: int,
         credentials: YouTubeMusicOAuthCredentials,
     ) -> list[StreamingPlaylistRecord]:
-        account = self.get_account(account_id)
-        adapter = YouTubeMusicAdapter.from_oauth_token(
-            account.oauth_token,
-            credentials=credentials,
-        )
-        return sync_library_playlists(
+        return self._run_youtube_music_sync(
             account_id=account_id,
-            adapter=adapter,
-            playlist_store=self,
+            credentials=credentials,
+            run_sync=lambda adapter: sync_library_playlists(
+                account_id=account_id,
+                adapter=adapter,
+                playlist_store=self,
+            ),
         )
 
     def sync_youtube_music_playlist_tracks(
@@ -481,15 +540,14 @@ class StreamingAccountStore:
         account_id: int,
         credentials: YouTubeMusicOAuthCredentials,
     ) -> list[PlaylistMembershipRecord]:
-        account = self.get_account(account_id)
-        adapter = YouTubeMusicAdapter.from_oauth_token(
-            account.oauth_token,
-            credentials=credentials,
-        )
-        return sync_library_playlist_tracks(
+        return self._run_youtube_music_sync(
             account_id=account_id,
-            adapter=adapter,
-            playlist_store=self,
+            credentials=credentials,
+            run_sync=lambda adapter: sync_library_playlist_tracks(
+                account_id=account_id,
+                adapter=adapter,
+                playlist_store=self,
+            ),
         )
 
     def sync_youtube_music_account(
@@ -498,16 +556,36 @@ class StreamingAccountStore:
         account_id: int,
         credentials: YouTubeMusicOAuthCredentials,
     ) -> list[PlaylistMembershipRecord]:
-        account = self.get_account(account_id)
-        adapter = YouTubeMusicAdapter.from_oauth_token(
-            account.oauth_token,
-            credentials=credentials,
-        )
-        return sync_library_playlist_tracks(
+        return self._run_youtube_music_sync(
             account_id=account_id,
-            adapter=adapter,
-            playlist_store=self,
+            credentials=credentials,
+            run_sync=lambda adapter: sync_library_playlist_tracks(
+                account_id=account_id,
+                adapter=adapter,
+                playlist_store=self,
+            ),
         )
+
+    def _run_youtube_music_sync(
+        self,
+        *,
+        account_id: int,
+        credentials: YouTubeMusicOAuthCredentials,
+        run_sync: Any,
+    ) -> list[Any]:
+        account = self.get_account(account_id)
+        try:
+            adapter = YouTubeMusicAdapter.from_oauth_token(
+                account.oauth_token,
+                credentials=credentials,
+            )
+            synced = run_sync(adapter)
+        except YTMusicError as exc:
+            self.mark_account_auth_error(account_id=account_id, error=exc)
+            return []
+
+        self.clear_account_auth_error(account_id=account_id)
+        return synced
 
 
 def connect_youtube_music_account(
@@ -574,3 +652,10 @@ def decrypt_token(auth_token_blob: str) -> str:
         raise RuntimeError("TOKEN_ENCRYPTION_KEY must be a valid Fernet key") from exc
 
     return fernet.decrypt(auth_token_blob.encode("utf-8")).decode("utf-8")
+
+
+def _format_auth_error(error: Exception) -> str:
+    message = str(error).strip()
+    if not message:
+        return "Authentication with YouTube Music failed."
+    return f"YouTube Music authentication failed: {message}"

@@ -8,7 +8,7 @@ from app.worker import build_worker, main, resolve_queue_names
 def test_resolve_queue_names_uses_default_when_unset(monkeypatch) -> None:
     monkeypatch.delenv("RQ_QUEUE_NAMES", raising=False)
 
-    assert resolve_queue_names() == ("ingestion", "matching")
+    assert resolve_queue_names() == ("ingestion", "matching", "streaming")
 
 
 def test_resolve_queue_names_strips_commas_and_whitespace() -> None:

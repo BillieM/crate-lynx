@@ -122,6 +122,7 @@ def test_streaming_accounts_endpoint_lists_persisted_accounts(
                 provider="youtube_music",
                 display_name="Main Account",
                 auth_token_blob="encrypted-token",
+                auth_state="connected",
             )
         )
 
@@ -139,6 +140,9 @@ def test_streaming_accounts_endpoint_lists_persisted_accounts(
     assert account.id == 1
     assert account.provider == "youtube_music"
     assert account.display_name == "Main Account"
+    assert account.auth_state == "connected"
+    assert account.auth_error is None
+    assert account.auth_error_at is None
     assert account.created_at
     assert account.updated_at
 
@@ -159,6 +163,7 @@ def test_streaming_playlists_endpoint_lists_synced_playlists(
                 provider="youtube_music",
                 display_name="Main Account",
                 auth_token_blob="encrypted-token",
+                auth_state="connected",
             )
         ).inserted_primary_key[0]
 
@@ -263,6 +268,9 @@ def test_streaming_accounts_endpoint_creates_youtube_music_account(
     assert response.id == 1
     assert response.provider == "youtube_music"
     assert response.display_name == "Billie"
+    assert response.auth_state == "connected"
+    assert response.auth_error is None
+    assert response.auth_error_at is None
     assert response.created_at
     assert response.updated_at
     assert seen["filepath"] is None
@@ -288,6 +296,7 @@ def test_streaming_account_sync_endpoint_enqueues_job(
                 provider="youtube_music",
                 display_name="Syncable Account",
                 auth_token_blob="encrypted-token",
+                auth_state="connected",
             )
         )
 
