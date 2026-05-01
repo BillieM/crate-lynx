@@ -2,6 +2,10 @@
 .env
 *.env
 
+# Local scripts config (contains secrets)
+scripts/*.conf
+!scripts/*.conf.example
+
 # Python
 __pycache__/
 *.py[cod]
