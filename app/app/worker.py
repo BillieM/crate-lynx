@@ -1,0 +1,47 @@
+from __future__ import annotations
+
+from collections.abc import Sequence
+import os
+
+from redis import Redis
+from rq import Queue, Worker
+
+
+DEFAULT_QUEUE_NAMES = ("ingestion", "matching")
+DEFAULT_REDIS_URL = "redis://localhost:6379/0"
+
+
+def resolve_queue_names(raw_queue_names: str | None = None) -> tuple[str, ...]:
+    candidate = raw_queue_names
+    if candidate is None:
+        candidate = os.environ.get("RQ_QUEUE_NAMES")
+
+    if candidate is None:
+        return DEFAULT_QUEUE_NAMES
+
+    queue_names = tuple(name.strip() for name in candidate.split(",") if name.strip())
+    if queue_names:
+        return queue_names
+
+    return DEFAULT_QUEUE_NAMES
+
+
+def build_worker(
+    *,
+    redis_url: str | None = None,
+    queue_names: Sequence[str] | None = None,
+) -> Worker:
+    resolved_redis_url = redis_url or os.environ.get("REDIS_URL", DEFAULT_REDIS_URL)
+    resolved_queue_names = tuple(queue_names or resolve_queue_names())
+    connection = Redis.from_url(resolved_redis_url)
+    queues = [Queue(name, connection=connection) for name in resolved_queue_names]
+    return Worker(queues, connection=connection)
+
+
+def main() -> None:
+    worker = build_worker()
+    worker.work()
+
+
+if __name__ == "__main__":
+    main()

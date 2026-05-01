@@ -35,7 +35,7 @@ def test_matching_job_enqueuer_uses_default_queue(monkeypatch) -> None:
     assert job_id == "job-abc"
     assert seen == {
         "redis_url": "redis://redis:6379/0",
-        "queue_name": "default",
+        "queue_name": "matching",
         "connection": seen["connection"],
         "func": "app.matching.run_matching_pipeline",
         "local_track_id": 17,

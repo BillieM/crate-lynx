@@ -9,7 +9,7 @@ from rq import Queue
 @dataclass(slots=True)
 class MatchingJobEnqueuer:
     redis_url: str
-    queue_name: str = "default"
+    queue_name: str = "matching"
     job_timeout: str = "10m"
 
     def enqueue(self, local_track_id: int) -> str:
