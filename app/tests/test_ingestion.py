@@ -400,3 +400,116 @@ def test_ingestion_processor_enqueues_matching_job_after_persisting(
     assert result.local_track_id is not None
     assert result.matching_job_id == "job-123"
     enqueuer.enqueue.assert_called_once_with(result.local_track_id)
+
+
+def test_ingestion_processor_smoke_ingests_flac_and_mp3_with_fingerprints(
+    tmp_path: Path, monkeypatch
+) -> None:
+    ingestion_root = tmp_path / "ingestion"
+    staging_root = tmp_path / "staging"
+    library_root = tmp_path / "library"
+    library_database = library_root / "library.db"
+    database_url = f"sqlite:///{tmp_path / 'app.db'}"
+    engine = create_engine(database_url)
+    metadata.create_all(engine)
+
+    ingestion_root.mkdir()
+    library_root.mkdir()
+
+    mp3_source = ingestion_root / "first-track.mp3"
+    flac_source = ingestion_root / "second-track.flac"
+    mp3_source.write_bytes(b"mp3-source")
+    flac_source.write_bytes(b"flac-source")
+
+    with sqlite3.connect(library_database) as connection:
+        connection.execute(
+            "CREATE TABLE items (id INTEGER PRIMARY KEY, path BLOB NOT NULL)"
+        )
+        connection.commit()
+
+    imported_ids: list[int] = []
+
+    def fake_run(
+        command: list[str], *, check: bool, capture_output: bool, text: bool
+    ) -> subprocess.CompletedProcess[str]:
+        if command[0] == "ffmpeg":
+            output_path = Path(command[-1])
+            output_path.write_bytes(b"transcoded-mp3")
+            return subprocess.CompletedProcess(command, 0, "", "")
+
+        if command[0] == "fpcalc":
+            prepared_path = Path(command[-1])
+            fingerprint = f"fingerprint-{prepared_path.stem}"
+            return subprocess.CompletedProcess(
+                command,
+                0,
+                f'{{"fingerprint":"{fingerprint}"}}',
+                "",
+            )
+
+        if command[0] == "beet":
+            prepared_path = Path(command[-1])
+            imported_id = len(imported_ids) + 1
+            imported_ids.append(imported_id)
+            imported_path = (
+                library_root / "Imported" / f"{prepared_path.stem}-imported.mp3"
+            )
+            imported_path.parent.mkdir(parents=True, exist_ok=True)
+            imported_path.write_bytes(prepared_path.read_bytes())
+            with sqlite3.connect(library_database) as connection:
+                connection.execute(
+                    "INSERT INTO items (id, path) VALUES (?, ?)",
+                    (imported_id, str(imported_path).encode("utf-8")),
+                )
+                connection.commit()
+            return subprocess.CompletedProcess(command, 0, "", "")
+
+        raise AssertionError(f"Unexpected subprocess command: {command}")
+
+    monkeypatch.setattr("app.ingestion.subprocess.run", fake_run)
+
+    processor = IngestionProcessor(
+        staging_root=staging_root,
+        beets_importer=BeetsImporter(
+            library_root=library_root,
+            library_database=library_database,
+        ),
+        track_store=LocalTrackStore(database_url),
+    )
+
+    mp3_result = processor.process(mp3_source)
+    flac_result = processor.process(flac_source)
+
+    with engine.connect() as connection:
+        rows = connection.execute(
+            select(local_tracks_table).order_by(local_tracks_table.c.id)
+        ).mappings()
+        persisted = list(rows)
+
+    assert mp3_result.transcoded is False
+    assert mp3_result.fingerprint == "fingerprint-first-track"
+    assert mp3_result.local_track_id == 1
+    assert (
+        mp3_result.library_path
+        == library_root / "Imported" / "first-track-imported.mp3"
+    )
+
+    assert flac_result.transcoded is True
+    assert flac_result.prepared_path.suffix == ".mp3"
+    assert flac_result.fingerprint == "fingerprint-second-track"
+    assert flac_result.local_track_id == 2
+    assert (
+        flac_result.library_path
+        == library_root / "Imported" / "second-track-imported.mp3"
+    )
+
+    assert [row["file_path"] for row in persisted] == [
+        "Imported/first-track-imported.mp3",
+        "Imported/second-track-imported.mp3",
+    ]
+    assert [row["fingerprint"] for row in persisted] == [
+        "fingerprint-first-track",
+        "fingerprint-second-track",
+    ]
+    assert mp3_source.exists() is False
+    assert flac_source.exists() is False
