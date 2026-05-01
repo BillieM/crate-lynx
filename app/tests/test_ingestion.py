@@ -1,4 +1,5 @@
 from pathlib import Path
+import sqlite3
 import subprocess
 from unittest.mock import Mock
 
@@ -8,12 +9,15 @@ from app.ingestion import (
     AudioPreparer,
     BeetsImporter,
     FingerprintGenerator,
+    ImportedTrack,
     IngestionEventHandler,
     IngestionProcessor,
     IngestionWatcher,
     PreparedTrack,
     UnsupportedAudioFormatError,
 )
+from app.local_tracks import LocalTrackStore, local_tracks_table, metadata
+from sqlalchemy import create_engine, select
 
 
 class StubObserver:
@@ -144,29 +148,53 @@ def test_audio_preparer_rejects_unsupported_formats(tmp_path: Path) -> None:
 
 def test_beets_importer_runs_quiet_move_import(tmp_path: Path, monkeypatch) -> None:
     library_root = tmp_path / "library"
+    library_database = library_root / "library.db"
     prepared_path = tmp_path / "staging" / "track.mp3"
     prepared_path.parent.mkdir()
     prepared_path.write_bytes(b"mp3")
     seen_commands: list[list[str]] = []
+    library_root.mkdir()
+
+    with sqlite3.connect(library_database) as connection:
+        connection.execute(
+            "CREATE TABLE items (id INTEGER PRIMARY KEY, path BLOB NOT NULL)"
+        )
+        connection.execute(
+            "INSERT INTO items (id, path) VALUES (?, ?)",
+            (1, str(library_root / "Existing" / "old.mp3").encode("utf-8")),
+        )
+        connection.commit()
 
     def fake_run(
         command: list[str], *, check: bool, capture_output: bool, text: bool
     ) -> subprocess.CompletedProcess[str]:
         seen_commands.append(command)
+        with sqlite3.connect(library_database) as connection:
+            connection.execute(
+                "INSERT INTO items (id, path) VALUES (?, ?)",
+                (2, str(library_root / "Artist" / "track.mp3").encode("utf-8")),
+            )
+            connection.commit()
         return subprocess.CompletedProcess(command, 0, "", "")
 
     monkeypatch.setattr("app.ingestion.subprocess.run", fake_run)
 
-    BeetsImporter(beet_binary="beet-test", library_root=library_root).import_file(
-        prepared_path
-    )
+    imported = BeetsImporter(
+        beet_binary="beet-test",
+        library_root=library_root,
+        library_database=library_database,
+    ).import_file(prepared_path)
 
+    assert imported == ImportedTrack(
+        library_path=library_root / "Artist" / "track.mp3",
+        beets_id=2,
+    )
     assert library_root.is_dir()
     assert seen_commands == [
         [
             "beet-test",
             "-l",
-            str(library_root / "library.db"),
+            str(library_database),
             "-d",
             str(library_root),
             "import",
@@ -242,6 +270,11 @@ def test_ingestion_processor_prepares_imports_and_deletes_source(
     preparer = Mock(spec=AudioPreparer)
     preparer.prepare.return_value = prepared
     importer = Mock(spec=BeetsImporter)
+    importer.library_root = tmp_path / "library"
+    importer.import_file.return_value = ImportedTrack(
+        library_path=tmp_path / "library" / "Artist" / "track.mp3",
+        beets_id=17,
+    )
     fingerprint_generator = Mock(spec=FingerprintGenerator)
     fingerprint_generator.generate.return_value = "abc123"
 
@@ -254,7 +287,51 @@ def test_ingestion_processor_prepares_imports_and_deletes_source(
 
     assert result is prepared
     assert result.fingerprint == "abc123"
+    assert result.library_path == tmp_path / "library" / "Artist" / "track.mp3"
+    assert result.beets_id == 17
     preparer.prepare.assert_called_once_with(source, tmp_path / "staging")
     fingerprint_generator.generate.assert_called_once_with(prepared.prepared_path)
     importer.import_file.assert_called_once_with(prepared.prepared_path)
     assert source.exists() is False
+
+
+def test_ingestion_processor_persists_relative_library_path(tmp_path: Path) -> None:
+    source = tmp_path / "ingestion" / "track.mp3"
+    source.parent.mkdir()
+    source.write_bytes(b"mp3")
+    prepared = PreparedTrack(
+        source_path=source,
+        prepared_path=tmp_path / "staging" / "track.mp3",
+        transcoded=False,
+    )
+    preparer = Mock(spec=AudioPreparer)
+    preparer.prepare.return_value = prepared
+    importer = Mock(spec=BeetsImporter)
+    importer.library_root = tmp_path / "library"
+    importer.import_file.return_value = ImportedTrack(
+        library_path=tmp_path / "library" / "Artist" / "track.mp3",
+        beets_id=42,
+    )
+    fingerprint_generator = Mock(spec=FingerprintGenerator)
+    fingerprint_generator.generate.return_value = "fp-42"
+
+    database_url = f"sqlite:///{tmp_path / 'app.db'}"
+    engine = create_engine(database_url)
+    metadata.create_all(engine)
+
+    result = IngestionProcessor(
+        staging_root=tmp_path / "staging",
+        audio_preparer=preparer,
+        beets_importer=importer,
+        fingerprint_generator=fingerprint_generator,
+        track_store=LocalTrackStore(database_url),
+    ).process(source)
+
+    with engine.connect() as connection:
+        row = connection.execute(select(local_tracks_table)).mappings().one()
+
+    assert result.local_track_id == row["id"]
+    assert row["file_path"] == "Artist/track.mp3"
+    assert row["library_root_rel_path"] == "Artist/track.mp3"
+    assert row["fingerprint"] == "fp-42"
+    assert row["beets_id"] == 42

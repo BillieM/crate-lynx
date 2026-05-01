@@ -4,9 +4,11 @@ from dataclasses import dataclass, field
 import json
 from pathlib import Path
 import shutil
+import sqlite3
 import subprocess
 from typing import Callable
 
+from app.local_tracks import LocalTrackStore
 from watchdog.events import FileCreatedEvent, FileSystemEventHandler
 from watchdog.observers import Observer
 
@@ -37,6 +39,15 @@ class PreparedTrack:
     prepared_path: Path
     transcoded: bool
     fingerprint: str | None = None
+    library_path: Path | None = None
+    beets_id: int | None = None
+    local_track_id: int | None = None
+
+
+@dataclass(slots=True)
+class ImportedTrack:
+    library_path: Path
+    beets_id: int | None = None
 
 
 @dataclass(slots=True)
@@ -97,7 +108,7 @@ class BeetsImporter:
     library_root: Path | str = "/library"
     library_database: Path | str | None = None
 
-    def import_file(self, prepared_path: Path | str) -> None:
+    def import_file(self, prepared_path: Path | str) -> ImportedTrack:
         library_root = Path(self.library_root)
         library_root.mkdir(parents=True, exist_ok=True)
 
@@ -106,6 +117,7 @@ class BeetsImporter:
             if self.library_database is not None
             else library_root / "library.db"
         )
+        previous_item_id = self._latest_item_id(library_database)
 
         subprocess.run(
             [
@@ -123,6 +135,41 @@ class BeetsImporter:
             capture_output=True,
             text=True,
         )
+        return self._fetch_imported_track(library_database, previous_item_id)
+
+    def _latest_item_id(self, library_database: Path) -> int:
+        if not library_database.exists():
+            return 0
+
+        with sqlite3.connect(library_database) as connection:
+            row = connection.execute(
+                "SELECT COALESCE(MAX(id), 0) FROM items"
+            ).fetchone()
+
+        return 0 if row is None else int(row[0])
+
+    def _fetch_imported_track(
+        self, library_database: Path, previous_item_id: int
+    ) -> ImportedTrack:
+        with sqlite3.connect(library_database) as connection:
+            row = connection.execute(
+                "SELECT id, path FROM items WHERE id > ? ORDER BY id DESC LIMIT 1",
+                (previous_item_id,),
+            ).fetchone()
+
+        if row is None:
+            raise ValueError("Beets import did not create a library item")
+
+        return ImportedTrack(
+            library_path=Path(self._decode_beets_path(row[1])),
+            beets_id=int(row[0]),
+        )
+
+    def _decode_beets_path(self, raw_path: bytes | str) -> str:
+        if isinstance(raw_path, bytes):
+            return raw_path.decode("utf-8", errors="surrogateescape")
+
+        return raw_path
 
 
 @dataclass(slots=True)
@@ -160,13 +207,24 @@ class IngestionProcessor:
     fingerprint_generator: FingerprintGenerator = field(
         default_factory=FingerprintGenerator
     )
+    track_store: LocalTrackStore | None = None
 
     def process(self, source_path: Path | str) -> PreparedTrack:
         prepared = self.audio_preparer.prepare(source_path, self.staging_root)
         prepared.fingerprint = self.fingerprint_generator.generate(
             prepared.prepared_path
         )
-        self.beets_importer.import_file(prepared.prepared_path)
+        imported_track = self.beets_importer.import_file(prepared.prepared_path)
+        prepared.library_path = imported_track.library_path
+        prepared.beets_id = imported_track.beets_id
+        if self.track_store is not None:
+            persisted = self.track_store.persist(
+                library_root=self.beets_importer.library_root,
+                library_path=imported_track.library_path,
+                fingerprint=prepared.fingerprint,
+                beets_id=imported_track.beets_id,
+            )
+            prepared.local_track_id = persisted.id
         self._cleanup_source(prepared.source_path)
         return prepared
 

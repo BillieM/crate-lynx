@@ -6,6 +6,7 @@ from pathlib import Path
 from fastapi import FastAPI
 
 from app.ingestion import BeetsImporter, IngestionProcessor, IngestionWatcher
+from app.local_tracks import LocalTrackStore
 
 
 logger = logging.getLogger(__name__)
@@ -18,6 +19,7 @@ async def lifespan(_: FastAPI):
         os.environ.get("INGESTION_STAGING_ROOT", "/tmp/crate-lynx-ingestion-staging")
     )
     library_root = Path(os.environ.get("LIBRARY_ROOT", "/library"))
+    database_url = os.environ.get("DATABASE_URL")
     processor = IngestionProcessor(
         staging_root=staging_root,
         beets_importer=BeetsImporter(
@@ -25,12 +27,13 @@ async def lifespan(_: FastAPI):
             library_root=library_root,
             library_database=os.environ.get("BEETS_LIBRARY"),
         ),
+        track_store=LocalTrackStore(database_url) if database_url else None,
     )
     watcher = IngestionWatcher(
         root=ingestion_root,
         on_new_file=lambda path: logger.info(
             "Ingested track candidate: %s",
-            processor.process(path).prepared_path,
+            processor.process(path).library_path,
         ),
     )
     watcher.start()
