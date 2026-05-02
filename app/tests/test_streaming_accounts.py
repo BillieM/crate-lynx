@@ -220,7 +220,7 @@ def test_streaming_account_store_persists_encrypted_token(
 
     account = StreamingAccountStore(database_url).create_youtube_music_account(
         display_name="Listener",
-        oauth_token={"refresh_token": "refresh-token"},
+        browser_headers={"refresh_token": "refresh-token"},
     )
 
     assert account == account.__class__(
@@ -240,6 +240,9 @@ def test_streaming_account_store_persists_encrypted_token(
     assert json.loads(_decrypt_token(stored_account["auth_token_blob"])) == {
         "refresh_token": "refresh-token"
     }
+    assert StreamingAccountStore(database_url).get_account(
+        account.id
+    ).browser_headers == {"refresh_token": "refresh-token"}
 
 
 def test_streaming_account_store_upserts_playlists(
@@ -254,7 +257,7 @@ def test_streaming_account_store_upserts_playlists(
     store = StreamingAccountStore(database_url)
     account = store.create_youtube_music_account(
         display_name="Listener",
-        oauth_token={"refresh_token": "refresh-token"},
+        browser_headers={"refresh_token": "refresh-token"},
     )
 
     inserted = store.upsert_playlists(
@@ -314,7 +317,7 @@ def test_streaming_account_store_syncs_youtube_music_playlists(
     store = StreamingAccountStore(database_url)
     account = store.create_youtube_music_account(
         display_name="Listener",
-        oauth_token={"refresh_token": "refresh-token"},
+        browser_headers={"refresh_token": "refresh-token"},
     )
 
     seen: dict[str, object] = {}
@@ -368,7 +371,7 @@ def test_streaming_account_store_lists_playlists_with_track_counts(
     store = StreamingAccountStore(database_url)
     account = store.create_youtube_music_account(
         display_name="Listener",
-        oauth_token={"refresh_token": "refresh-token"},
+        browser_headers={"refresh_token": "refresh-token"},
     )
     synced_at = datetime(2026, 5, 1, 8, 30, tzinfo=UTC)
 
@@ -435,7 +438,7 @@ def test_streaming_account_store_upserts_tracks_and_playlist_membership(
     store = StreamingAccountStore(database_url)
     account = store.create_youtube_music_account(
         display_name="Listener",
-        oauth_token={"refresh_token": "refresh-token"},
+        browser_headers={"refresh_token": "refresh-token"},
     )
     playlist = store.upsert_playlists(
         account_id=account.id,
@@ -545,7 +548,7 @@ def test_streaming_account_store_syncs_youtube_music_playlist_tracks(
     store = StreamingAccountStore(database_url)
     account = store.create_youtube_music_account(
         display_name="Listener",
-        oauth_token={"refresh_token": "refresh-token"},
+        browser_headers={"refresh_token": "refresh-token"},
     )
 
     seen: dict[str, object] = {}
@@ -625,7 +628,7 @@ def test_streaming_account_store_marks_auth_errors_without_crashing(
     store = StreamingAccountStore(database_url)
     account = store.create_youtube_music_account(
         display_name="Listener",
-        oauth_token={"refresh_token": "refresh-token"},
+        browser_headers={"refresh_token": "refresh-token"},
     )
 
     def fake_from_oauth_token(
@@ -669,7 +672,7 @@ def test_streaming_account_store_clears_auth_errors_after_successful_sync(
     store = StreamingAccountStore(database_url)
     account = store.create_youtube_music_account(
         display_name="Listener",
-        oauth_token={"refresh_token": "refresh-token"},
+        browser_headers={"refresh_token": "refresh-token"},
     )
     store.mark_account_auth_error(
         account_id=account.id,

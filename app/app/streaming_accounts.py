@@ -115,7 +115,7 @@ class StoredStreamingAccount:
     auth_state: str
     auth_error: str | None
     auth_error_at: datetime | None
-    oauth_token: dict[str, Any]
+    browser_headers: dict[str, Any]
 
 
 @dataclass(frozen=True, slots=True)
@@ -177,9 +177,9 @@ class StreamingAccountStore:
         self,
         *,
         display_name: str,
-        oauth_token: dict[str, Any],
+        browser_headers: dict[str, Any],
     ) -> PersistedStreamingAccount:
-        encrypted_token = encrypt_token(json.dumps(oauth_token, sort_keys=True))
+        encrypted_token = encrypt_token(json.dumps(browser_headers, sort_keys=True))
 
         with self._engine.begin() as connection:
             result = connection.execute(
@@ -257,7 +257,7 @@ class StreamingAccountStore:
             auth_state=row["auth_state"],
             auth_error=row["auth_error"],
             auth_error_at=row["auth_error_at"],
-            oauth_token=json.loads(decrypt_token(row["auth_token_blob"])),
+            browser_headers=json.loads(decrypt_token(row["auth_token_blob"])),
         )
 
     def clear_account_auth_error(self, *, account_id: int) -> None:
@@ -588,7 +588,7 @@ class StreamingAccountStore:
         account = self.get_account(account_id)
         try:
             adapter = YouTubeMusicAdapter.from_oauth_token(
-                account.oauth_token,
+                account.browser_headers,
                 oauth_credentials=credentials.to_ytmusicapi(),
             )
             synced = run_sync(adapter)
@@ -616,7 +616,7 @@ def connect_youtube_music_account(
 
     return StreamingAccountStore(database_url).create_youtube_music_account(
         display_name=display_name,
-        oauth_token=oauth_token,
+        browser_headers=oauth_token,
     )
 
 
@@ -641,7 +641,7 @@ def complete_youtube_music_account_oauth(
 
     return StreamingAccountStore(database_url).create_youtube_music_account(
         display_name=display_name,
-        oauth_token=oauth_token,
+        browser_headers=oauth_token,
     )
 
 

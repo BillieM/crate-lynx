@@ -306,7 +306,7 @@ def test_streaming_accounts_endpoint_completes_youtube_music_account(
         seen["device_code"] = device_code
         return StreamingAccountStore(database_url).create_youtube_music_account(
             display_name=display_name,
-            oauth_token={"refresh_token": "refresh-token"},
+            browser_headers={"refresh_token": "refresh-token"},
         )
 
     monkeypatch.setattr(
