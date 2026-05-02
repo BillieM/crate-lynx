@@ -21,7 +21,7 @@
 ### Switch to browser auth
 - [x] Remove `YouTubeMusicOAuthCredentials`, `begin_oauth`, `complete_oauth`, and `setup_oauth` from `youtube_music.py`
 - [x] Replace `create_youtube_music_account` in `streaming_accounts.py` with a version that accepts raw browser headers (dict) instead of an OAuth token; rename `StoredStreamingAccount.oauth_token` → `browser_headers`
-- [ ] Update `_run_youtube_music_sync` to call `from_browser_auth` instead of `from_oauth_token`; remove `credentials` param from all sync methods and `run_youtube_music_sync_job`
+- [x] Update `_run_youtube_music_sync` to call `from_browser_auth` instead of `from_oauth_token`; remove `credentials` param from all sync methods and `run_youtube_music_sync_job`
 - [ ] Remove `begin_youtube_music_account_oauth` / `complete_youtube_music_account_oauth` module-level functions from `streaming_accounts.py`
 - [ ] Replace the two-step OAuth flow in `POST /streaming/accounts` with a single endpoint that accepts `display_name` + `browser_headers` (raw headers dict copied from browser DevTools); remove `client_id` / `client_secret` from all request/response models
 - [ ] Remove `client_id` / `client_secret` from `SyncStreamingAccountRequest` and the sync job enqueuer

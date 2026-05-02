@@ -534,11 +534,9 @@ class StreamingAccountStore:
         self,
         *,
         account_id: int,
-        credentials: YouTubeMusicOAuthCredentials,
     ) -> list[StreamingPlaylistRecord]:
         return self._run_youtube_music_sync(
             account_id=account_id,
-            credentials=credentials,
             run_sync=lambda adapter: sync_library_playlists(
                 account_id=account_id,
                 adapter=adapter,
@@ -550,11 +548,9 @@ class StreamingAccountStore:
         self,
         *,
         account_id: int,
-        credentials: YouTubeMusicOAuthCredentials,
     ) -> list[PlaylistMembershipRecord]:
         return self._run_youtube_music_sync(
             account_id=account_id,
-            credentials=credentials,
             run_sync=lambda adapter: sync_library_playlist_tracks(
                 account_id=account_id,
                 adapter=adapter,
@@ -566,11 +562,9 @@ class StreamingAccountStore:
         self,
         *,
         account_id: int,
-        credentials: YouTubeMusicOAuthCredentials,
     ) -> list[PlaylistMembershipRecord]:
         return self._run_youtube_music_sync(
             account_id=account_id,
-            credentials=credentials,
             run_sync=lambda adapter: sync_library_playlist_tracks(
                 account_id=account_id,
                 adapter=adapter,
@@ -582,14 +576,12 @@ class StreamingAccountStore:
         self,
         *,
         account_id: int,
-        credentials: YouTubeMusicOAuthCredentials,
         run_sync: Any,
     ) -> list[Any]:
         account = self.get_account(account_id)
         try:
-            adapter = YouTubeMusicAdapter.from_oauth_token(
+            adapter = YouTubeMusicAdapter.from_browser_auth(
                 account.browser_headers,
-                oauth_credentials=credentials.to_ytmusicapi(),
             )
             synced = run_sync(adapter)
         except YTMusicError as exc:
@@ -647,8 +639,6 @@ def complete_youtube_music_account_oauth(
 
 def run_youtube_music_sync_job(
     account_id: int,
-    client_id: str,
-    client_secret: str,
 ) -> None:
     database_url = os.environ.get("DATABASE_URL")
     if not database_url:
@@ -657,11 +647,7 @@ def run_youtube_music_sync_job(
         )
 
     StreamingAccountStore(database_url).sync_youtube_music_account(
-        account_id=account_id,
-        credentials=YouTubeMusicOAuthCredentials(
-            client_id=client_id,
-            client_secret=client_secret,
-        ),
+        account_id=account_id
     )
 
 

@@ -7,7 +7,6 @@ from pathlib import Path
 
 from cryptography.fernet import Fernet
 from sqlalchemy import create_engine, select
-from ytmusicapi import OAuthCredentials
 from ytmusicapi.exceptions import YTMusicUserError
 
 from app.streaming_accounts import (
@@ -326,34 +325,26 @@ def test_streaming_account_store_syncs_youtube_music_playlists(
         def list_library_playlists(self):
             return [YouTubeMusicPlaylist(provider_playlist_id="PL9", title="Gym")]
 
-    def fake_from_oauth_token(
-        oauth_token, *, oauth_credentials, user=None, language="en", location=""
-    ):
-        seen["oauth_token"] = oauth_token
-        seen["oauth_credentials"] = oauth_credentials
+    def fake_from_browser_auth(auth, *, user=None, language="en", location=""):
+        seen["auth"] = auth
         seen["user"] = user
         seen["language"] = language
         seen["location"] = location
         return FakeAdapter()
 
     monkeypatch.setattr(
-        "app.streaming_accounts.YouTubeMusicAdapter.from_oauth_token",
-        fake_from_oauth_token,
+        "app.streaming_accounts.YouTubeMusicAdapter.from_browser_auth",
+        fake_from_browser_auth,
     )
 
     synced = store.sync_youtube_music_playlists(
         account_id=account.id,
-        credentials=YouTubeMusicOAuthCredentials(
-            client_id="client-id",
-            client_secret="client-secret",
-        ),
     )
 
     assert len(synced) == 1
     assert synced[0].provider_playlist_id == "PL9"
     assert synced[0].title == "Gym"
-    assert seen["oauth_token"] == {"refresh_token": "refresh-token"}
-    assert isinstance(seen["oauth_credentials"], OAuthCredentials)
+    assert seen["auth"] == {"refresh_token": "refresh-token"}
     assert seen["user"] is None
     assert seen["language"] == "en"
     assert seen["location"] == ""
@@ -571,34 +562,26 @@ def test_streaming_account_store_syncs_youtube_music_playlist_tracks(
                 )
             ]
 
-    def fake_from_oauth_token(
-        oauth_token, *, oauth_credentials, user=None, language="en", location=""
-    ):
-        seen["oauth_token"] = oauth_token
-        seen["oauth_credentials"] = oauth_credentials
+    def fake_from_browser_auth(auth, *, user=None, language="en", location=""):
+        seen["auth"] = auth
         seen["user"] = user
         seen["language"] = language
         seen["location"] = location
         return FakeAdapter()
 
     monkeypatch.setattr(
-        "app.streaming_accounts.YouTubeMusicAdapter.from_oauth_token",
-        fake_from_oauth_token,
+        "app.streaming_accounts.YouTubeMusicAdapter.from_browser_auth",
+        fake_from_browser_auth,
     )
 
     synced = store.sync_youtube_music_playlist_tracks(
         account_id=account.id,
-        credentials=YouTubeMusicOAuthCredentials(
-            client_id="client-id",
-            client_secret="client-secret",
-        ),
     )
 
     assert len(synced) == 1
     assert synced[0].position == 1
     assert seen["playlist_id"] == "PL9"
-    assert seen["oauth_token"] == {"refresh_token": "refresh-token"}
-    assert isinstance(seen["oauth_credentials"], OAuthCredentials)
+    assert seen["auth"] == {"refresh_token": "refresh-token"}
     assert seen["user"] is None
     assert seen["language"] == "en"
     assert seen["location"] == ""
@@ -631,23 +614,15 @@ def test_streaming_account_store_marks_auth_errors_without_crashing(
         browser_headers={"refresh_token": "refresh-token"},
     )
 
-    def fake_from_oauth_token(
-        oauth_token, *, oauth_credentials, user=None, language="en", location=""
-    ):
+    def fake_from_browser_auth(auth, *, user=None, language="en", location=""):
         raise YTMusicUserError("refresh token expired")
 
     monkeypatch.setattr(
-        "app.streaming_accounts.YouTubeMusicAdapter.from_oauth_token",
-        fake_from_oauth_token,
+        "app.streaming_accounts.YouTubeMusicAdapter.from_browser_auth",
+        fake_from_browser_auth,
     )
 
-    synced = store.sync_youtube_music_account(
-        account_id=account.id,
-        credentials=YouTubeMusicOAuthCredentials(
-            client_id="client-id",
-            client_secret="client-secret",
-        ),
-    )
+    synced = store.sync_youtube_music_account(account_id=account.id)
 
     assert synced == []
 
@@ -687,19 +662,11 @@ def test_streaming_account_store_clears_auth_errors_after_successful_sync(
             return []
 
     monkeypatch.setattr(
-        "app.streaming_accounts.YouTubeMusicAdapter.from_oauth_token",
-        lambda oauth_token, *, oauth_credentials, user=None, language="en", location="": (
-            FakeAdapter()
-        ),
+        "app.streaming_accounts.YouTubeMusicAdapter.from_browser_auth",
+        lambda auth, *, user=None, language="en", location="": FakeAdapter(),
     )
 
-    synced = store.sync_youtube_music_account(
-        account_id=account.id,
-        credentials=YouTubeMusicOAuthCredentials(
-            client_id="client-id",
-            client_secret="client-secret",
-        ),
-    )
+    synced = store.sync_youtube_music_account(account_id=account.id)
 
     assert synced == []
 
@@ -709,7 +676,7 @@ def test_streaming_account_store_clears_auth_errors_after_successful_sync(
     assert persisted.auth_error_at is None
 
 
-def test_run_youtube_music_sync_job_uses_database_and_credentials(
+def test_run_youtube_music_sync_job_uses_database(
     monkeypatch,
 ) -> None:
     monkeypatch.setenv("DATABASE_URL", "sqlite:///worker.db")
@@ -719,23 +686,16 @@ def test_run_youtube_music_sync_job_uses_database_and_credentials(
         def __init__(self, database_url: str) -> None:
             seen["database_url"] = database_url
 
-        def sync_youtube_music_account(
-            self, *, account_id, credentials
-        ) -> list[object]:
+        def sync_youtube_music_account(self, *, account_id) -> list[object]:
             seen["account_id"] = account_id
-            seen["credentials"] = credentials
             return []
 
     monkeypatch.setattr("app.streaming_accounts.StreamingAccountStore", FakeStore)
 
-    run_youtube_music_sync_job(7, "client-id", "client-secret")
+    run_youtube_music_sync_job(7)
 
     assert seen["database_url"] == "sqlite:///worker.db"
     assert seen["account_id"] == 7
-    assert seen["credentials"] == YouTubeMusicOAuthCredentials(
-        client_id="client-id",
-        client_secret="client-secret",
-    )
 
 
 def _decrypt_token(auth_token_blob: str) -> str:

@@ -42,8 +42,6 @@ class StreamingSyncJobEnqueuer:
         job = queue.enqueue(
             "app.streaming_accounts.run_youtube_music_sync_job",
             account_id,
-            client_id,
-            client_secret,
             job_timeout=self.job_timeout,
         )
         return job.id

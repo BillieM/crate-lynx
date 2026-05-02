@@ -103,15 +103,11 @@ def test_streaming_sync_job_enqueuer_uses_streaming_queue(monkeypatch) -> None:
             self,
             func: str,
             account_id: int,
-            client_id: str,
-            client_secret: str,
             *,
             job_timeout: str,
         ) -> SimpleNamespace:
             seen["func"] = func
             seen["account_id"] = account_id
-            seen["client_id"] = client_id
-            seen["client_secret"] = client_secret
             seen["job_timeout"] = job_timeout
             return SimpleNamespace(id="sync-job-123")
 
@@ -134,7 +130,5 @@ def test_streaming_sync_job_enqueuer_uses_streaming_queue(monkeypatch) -> None:
         "connection": seen["connection"],
         "func": "app.streaming_accounts.run_youtube_music_sync_job",
         "account_id": 19,
-        "client_id": "client-id",
-        "client_secret": "client-secret",
         "job_timeout": "20m",
     }
