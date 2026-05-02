@@ -9,7 +9,6 @@ from app.ingest_status import IngestionStatusStore
 from app.ingestion import PreparedTrack
 from app.main import (
     CreateStreamingAccountRequest,
-    SyncStreamingAccountRequest,
     create_app,
 )
 from app.streaming_accounts import (
@@ -300,12 +299,8 @@ def test_streaming_account_sync_endpoint_enqueues_job(
             self,
             *,
             account_id: int,
-            client_id: str,
-            client_secret: str,
         ) -> str:
             seen["account_id"] = account_id
-            seen["client_id"] = client_id
-            seen["client_secret"] = client_secret
             return "sync-job-999"
 
     monkeypatch.setattr("app.main.StreamingSyncJobEnqueuer", FakeSyncEnqueuer)
@@ -317,18 +312,11 @@ def test_streaming_account_sync_endpoint_enqueues_job(
         if getattr(route, "path", None) == "/streaming/accounts/{account_id}/sync"
         and "POST" in getattr(route, "methods", set())
     )
-    payload = SyncStreamingAccountRequest(
-        client_id="client-id",
-        client_secret="client-secret",
-    )
-
-    response = asyncio.run(route.endpoint(1, payload))
+    response = asyncio.run(route.endpoint(1))
 
     assert response.account_id == 1
     assert response.job_id == "sync-job-999"
     assert seen == {
         "redis_url": "redis://redis:6379/3",
         "account_id": 1,
-        "client_id": "client-id",
-        "client_secret": "client-secret",
     }

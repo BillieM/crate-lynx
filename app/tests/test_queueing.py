@@ -119,8 +119,6 @@ def test_streaming_sync_job_enqueuer_uses_streaming_queue(monkeypatch) -> None:
         job_timeout="20m",
     ).enqueue(
         account_id=19,
-        client_id="client-id",
-        client_secret="client-secret",
     )
 
     assert job_id == "sync-job-123"

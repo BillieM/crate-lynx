@@ -34,8 +34,6 @@ class StreamingSyncJobEnqueuer:
         self,
         *,
         account_id: int,
-        client_id: str,
-        client_secret: str,
     ) -> str:
         connection = Redis.from_url(self.redis_url)
         queue = Queue(self.queue_name, connection=connection)

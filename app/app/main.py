@@ -46,11 +46,6 @@ class CreateStreamingAccountRequest(BaseModel):
     browser_headers: dict[str, object]
 
 
-class SyncStreamingAccountRequest(BaseModel):
-    client_id: str
-    client_secret: str
-
-
 class StreamingSyncResponse(BaseModel):
     account_id: int
     job_id: str
@@ -205,7 +200,6 @@ def create_app() -> FastAPI:
     @app.post("/streaming/accounts/{account_id}/sync", status_code=202)
     async def sync_streaming_account(
         account_id: int,
-        payload: SyncStreamingAccountRequest,
     ) -> StreamingSyncResponse:
         database_url = require_database_url()
         store = StreamingAccountStore(database_url)
@@ -214,8 +208,6 @@ def create_app() -> FastAPI:
 
         job_id = StreamingSyncJobEnqueuer(require_redis_url()).enqueue(
             account_id=account_id,
-            client_id=payload.client_id,
-            client_secret=payload.client_secret,
         )
         return StreamingSyncResponse(account_id=account_id, job_id=job_id)
 
