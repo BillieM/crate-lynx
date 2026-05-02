@@ -250,7 +250,7 @@ def test_streaming_accounts_endpoint_creates_youtube_music_account(
         }
 
     monkeypatch.setattr(
-        "app.main.begin_youtube_music_account_oauth",
+        "app.main._begin_streaming_account_oauth",
         fake_begin_oauth,
     )
 
@@ -310,7 +310,7 @@ def test_streaming_accounts_endpoint_completes_youtube_music_account(
         )
 
     monkeypatch.setattr(
-        "app.main.complete_youtube_music_account_oauth",
+        "app.main._complete_streaming_account_oauth",
         fake_complete_oauth,
     )
 

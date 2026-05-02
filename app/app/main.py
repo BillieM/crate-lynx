@@ -17,13 +17,31 @@ from app.queueing import (
 from app.streaming_accounts import (
     StreamingAccountStore,
     YouTubeMusicOAuthCredentials,
-    begin_youtube_music_account_oauth,
-    complete_youtube_music_account_oauth,
 )
 from app.worker import resolve_queue_names
 
 
 logger = logging.getLogger(__name__)
+
+
+def _begin_streaming_account_oauth(
+    credentials: YouTubeMusicOAuthCredentials,
+) -> dict[str, object]:
+    return dict(credentials.to_ytmusicapi().get_code())
+
+
+def _complete_streaming_account_oauth(
+    *,
+    database_url: str,
+    display_name: str,
+    credentials: YouTubeMusicOAuthCredentials,
+    device_code: str,
+):
+    browser_headers = dict(credentials.to_ytmusicapi().token_from_code(device_code))
+    return StreamingAccountStore(database_url).create_youtube_music_account(
+        display_name=display_name,
+        browser_headers=browser_headers,
+    )
 
 
 class StreamingAccountResponse(BaseModel):
@@ -212,7 +230,7 @@ def create_app() -> FastAPI:
             client_secret=payload.client_secret,
         )
         if payload.device_code is None:
-            auth_code = begin_youtube_music_account_oauth(
+            auth_code = _begin_streaming_account_oauth(
                 credentials=credentials,
             )
             response.status_code = 202
@@ -224,7 +242,7 @@ def create_app() -> FastAPI:
                 interval=auth_code["interval"],
             )
 
-        account = complete_youtube_music_account_oauth(
+        account = _complete_streaming_account_oauth(
             database_url=database_url,
             display_name=payload.display_name,
             credentials=credentials,
