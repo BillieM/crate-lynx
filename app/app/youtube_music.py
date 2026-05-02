@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-import time
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
-from ytmusicapi import OAuthCredentials, YTMusic
+from ytmusicapi import YTMusic
 
 
 JsonMapping = dict[str, Any]
@@ -44,35 +43,6 @@ class YouTubeMusicAdapter:
         return cls(
             YTMusic(
                 auth=auth,
-                user=user,
-                language=language,
-                location=location,
-            )
-        )
-
-    @classmethod
-    def from_oauth_token(
-        cls,
-        oauth_token: str | JsonMapping,
-        *,
-        oauth_credentials: OAuthCredentials,
-        user: str | None = None,
-        language: str = "en",
-        location: str = "",
-    ) -> YouTubeMusicAdapter:
-        if isinstance(oauth_token, dict):
-            oauth_token = {
-                k: v for k, v in oauth_token.items() if k != "refresh_token_expires_in"
-            }
-            if "expires_at" not in oauth_token and "expires_in" in oauth_token:
-                oauth_token = {
-                    **oauth_token,
-                    "expires_at": int(time.time()) + int(oauth_token["expires_in"]),
-                }
-        return cls(
-            YTMusic(
-                auth=oauth_token,
-                oauth_credentials=oauth_credentials,
                 user=user,
                 language=language,
                 location=location,

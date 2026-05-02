@@ -4,7 +4,6 @@ import json
 import os
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from pathlib import Path
 from typing import Any
 
 from cryptography.fernet import Fernet
@@ -23,7 +22,6 @@ from sqlalchemy import (
     update,
 )
 from ytmusicapi.exceptions import YTMusicError
-from ytmusicapi import OAuthCredentials, setup_oauth
 
 from app.youtube_music import (
     YouTubeMusicAdapter,
@@ -116,18 +114,6 @@ class StoredStreamingAccount:
     auth_error: str | None
     auth_error_at: datetime | None
     browser_headers: dict[str, Any]
-
-
-@dataclass(frozen=True, slots=True)
-class YouTubeMusicOAuthCredentials:
-    client_id: str
-    client_secret: str
-
-    def to_ytmusicapi(self) -> OAuthCredentials:
-        return OAuthCredentials(
-            client_id=self.client_id,
-            client_secret=self.client_secret,
-        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -563,14 +549,7 @@ class StreamingAccountStore:
         *,
         account_id: int,
     ) -> list[PlaylistMembershipRecord]:
-        return self._run_youtube_music_sync(
-            account_id=account_id,
-            run_sync=lambda adapter: sync_library_playlist_tracks(
-                account_id=account_id,
-                adapter=adapter,
-                playlist_store=self,
-            ),
-        )
+        return self.sync_youtube_music_playlist_tracks(account_id=account_id)
 
     def _run_youtube_music_sync(
         self,
@@ -590,26 +569,6 @@ class StreamingAccountStore:
 
         self.clear_account_auth_error(account_id=account_id)
         return synced
-
-
-def connect_youtube_music_account(
-    *,
-    database_url: str,
-    display_name: str,
-    credentials: YouTubeMusicOAuthCredentials,
-    token_filepath: str | Path | None = None,
-    open_browser: bool = False,
-) -> PersistedStreamingAccount:
-    oauth_token = _setup_oauth(
-        credentials=credentials,
-        filepath=token_filepath,
-        open_browser=open_browser,
-    )
-
-    return StreamingAccountStore(database_url).create_youtube_music_account(
-        display_name=display_name,
-        browser_headers=oauth_token,
-    )
 
 
 def run_youtube_music_sync_job(
@@ -657,32 +616,3 @@ def _format_auth_error(error: Exception) -> str:
     if not message:
         return "Authentication with YouTube Music failed."
     return f"YouTube Music authentication failed: {message}"
-
-
-def _setup_oauth(
-    *,
-    credentials: YouTubeMusicOAuthCredentials,
-    filepath: str | Path | None = None,
-    open_browser: bool = False,
-) -> dict[str, Any]:
-    token = setup_oauth(
-        credentials.client_id,
-        credentials.client_secret,
-        filepath=None if filepath is None else str(filepath),
-        open_browser=open_browser,
-    )
-    return dict(token.as_dict())
-
-
-def _begin_oauth(
-    credentials: YouTubeMusicOAuthCredentials,
-) -> dict[str, Any]:
-    return dict(credentials.to_ytmusicapi().get_code())
-
-
-def _complete_oauth(
-    *,
-    credentials: YouTubeMusicOAuthCredentials,
-    device_code: str,
-) -> dict[str, Any]:
-    return dict(credentials.to_ytmusicapi().token_from_code(device_code))
