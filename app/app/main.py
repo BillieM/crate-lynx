@@ -3,7 +3,7 @@ import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, Request, Response
+from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel
 
 from app.ingest_status import IngestionStatusStore
@@ -14,34 +14,11 @@ from app.queueing import (
     QueueDepthReader,
     StreamingSyncJobEnqueuer,
 )
-from app.streaming_accounts import (
-    StreamingAccountStore,
-    YouTubeMusicOAuthCredentials,
-)
+from app.streaming_accounts import StreamingAccountStore
 from app.worker import resolve_queue_names
 
 
 logger = logging.getLogger(__name__)
-
-
-def _begin_streaming_account_oauth(
-    credentials: YouTubeMusicOAuthCredentials,
-) -> dict[str, object]:
-    return dict(credentials.to_ytmusicapi().get_code())
-
-
-def _complete_streaming_account_oauth(
-    *,
-    database_url: str,
-    display_name: str,
-    credentials: YouTubeMusicOAuthCredentials,
-    device_code: str,
-):
-    browser_headers = dict(credentials.to_ytmusicapi().token_from_code(device_code))
-    return StreamingAccountStore(database_url).create_youtube_music_account(
-        display_name=display_name,
-        browser_headers=browser_headers,
-    )
 
 
 class StreamingAccountResponse(BaseModel):
@@ -66,18 +43,7 @@ class StreamingPlaylistResponse(BaseModel):
 
 class CreateStreamingAccountRequest(BaseModel):
     display_name: str
-    client_id: str
-    client_secret: str
-    device_code: str | None = None
-    open_browser: bool = False
-
-
-class StreamingAccountAuthChallengeResponse(BaseModel):
-    device_code: str
-    user_code: str
-    verification_url: str
-    expires_in: int
-    interval: int
+    browser_headers: dict[str, object]
 
 
 class SyncStreamingAccountRequest(BaseModel):
@@ -222,31 +188,11 @@ def create_app() -> FastAPI:
     @app.post("/streaming/accounts", status_code=201)
     async def create_streaming_account(
         payload: CreateStreamingAccountRequest,
-        response: Response,
-    ) -> StreamingAccountResponse | StreamingAccountAuthChallengeResponse:
+    ) -> StreamingAccountResponse:
         database_url = require_database_url()
-        credentials = YouTubeMusicOAuthCredentials(
-            client_id=payload.client_id,
-            client_secret=payload.client_secret,
-        )
-        if payload.device_code is None:
-            auth_code = _begin_streaming_account_oauth(
-                credentials=credentials,
-            )
-            response.status_code = 202
-            return StreamingAccountAuthChallengeResponse(
-                device_code=auth_code["device_code"],
-                user_code=auth_code["user_code"],
-                verification_url=auth_code["verification_url"],
-                expires_in=auth_code["expires_in"],
-                interval=auth_code["interval"],
-            )
-
-        account = _complete_streaming_account_oauth(
-            database_url=database_url,
+        account = StreamingAccountStore(database_url).create_youtube_music_account(
             display_name=payload.display_name,
-            credentials=credentials,
-            device_code=payload.device_code,
+            browser_headers=payload.browser_headers,
         )
 
         created_account = next(

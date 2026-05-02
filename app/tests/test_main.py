@@ -20,7 +20,6 @@ from app.streaming_accounts import (
 from app.youtube_music import YouTubeMusicPlaylist, YouTubeMusicTrack
 from sqlalchemy import create_engine, insert
 from starlette.requests import Request
-from starlette.responses import Response
 
 
 def test_ingest_status_endpoint_reports_queue_depths_and_recent_results() -> None:
@@ -237,23 +236,6 @@ def test_streaming_accounts_endpoint_creates_youtube_music_account(
     monkeypatch.setenv("DATABASE_URL", database_url)
     monkeypatch.setenv("TOKEN_ENCRYPTION_KEY", Fernet.generate_key().decode("utf-8"))
 
-    seen: dict[str, object] = {}
-
-    def fake_begin_oauth(credentials):
-        seen["credentials"] = credentials
-        return {
-            "device_code": "device-code",
-            "user_code": "ABC-DEF-GHIJ",
-            "verification_url": "https://example.com/device",
-            "expires_in": 1800,
-            "interval": 5,
-        }
-
-    monkeypatch.setattr(
-        "app.main._begin_streaming_account_oauth",
-        fake_begin_oauth,
-    )
-
     app = create_app()
     route = next(
         route
@@ -263,73 +245,13 @@ def test_streaming_accounts_endpoint_creates_youtube_music_account(
     )
     payload = CreateStreamingAccountRequest(
         display_name="Billie",
-        client_id="client-id",
-        client_secret="client-secret",
-        open_browser=True,
+        browser_headers={
+            "Authorization": "Bearer token",
+            "X-Goog-AuthUser": "0",
+        },
     )
 
-    http_response = Response()
-    response = asyncio.run(route.endpoint(payload, http_response))
-
-    assert response.device_code == "device-code"
-    assert response.user_code == "ABC-DEF-GHIJ"
-    assert response.verification_url == "https://example.com/device"
-    assert response.expires_in == 1800
-    assert response.interval == 5
-    assert http_response.status_code == 202
-    assert seen["credentials"].client_id == "client-id"
-    assert seen["credentials"].client_secret == "client-secret"
-
-
-def test_streaming_accounts_endpoint_completes_youtube_music_account(
-    monkeypatch,
-    tmp_path: Path,
-) -> None:
-    database_url = f"sqlite:///{tmp_path / 'streaming-create-complete.db'}"
-    engine = create_engine(database_url)
-    metadata.create_all(engine)
-    monkeypatch.setenv("DATABASE_URL", database_url)
-    monkeypatch.setenv("TOKEN_ENCRYPTION_KEY", Fernet.generate_key().decode("utf-8"))
-
-    seen: dict[str, object] = {}
-
-    def fake_complete_oauth(
-        *,
-        database_url: str,
-        display_name: str,
-        credentials,
-        device_code: str,
-    ):
-        seen["database_url"] = database_url
-        seen["display_name"] = display_name
-        seen["credentials"] = credentials
-        seen["device_code"] = device_code
-        return StreamingAccountStore(database_url).create_youtube_music_account(
-            display_name=display_name,
-            browser_headers={"refresh_token": "refresh-token"},
-        )
-
-    monkeypatch.setattr(
-        "app.main._complete_streaming_account_oauth",
-        fake_complete_oauth,
-    )
-
-    app = create_app()
-    route = next(
-        route
-        for route in app.routes
-        if getattr(route, "path", None) == "/streaming/accounts"
-        and "POST" in getattr(route, "methods", set())
-    )
-    payload = CreateStreamingAccountRequest(
-        display_name="Billie",
-        client_id="client-id",
-        client_secret="client-secret",
-        device_code="device-code",
-    )
-
-    http_response = Response()
-    response = asyncio.run(route.endpoint(payload, http_response))
+    response = asyncio.run(route.endpoint(payload))
 
     assert response.id == 1
     assert response.provider == "youtube_music"
@@ -339,12 +261,12 @@ def test_streaming_accounts_endpoint_completes_youtube_music_account(
     assert response.auth_error_at is None
     assert response.created_at
     assert response.updated_at
-    assert http_response.status_code == 200
-    assert seen["database_url"] == database_url
-    assert seen["display_name"] == "Billie"
-    assert seen["device_code"] == "device-code"
-    assert seen["credentials"].client_id == "client-id"
-    assert seen["credentials"].client_secret == "client-secret"
+
+    stored_account = StreamingAccountStore(database_url).get_account(response.id)
+    assert stored_account.browser_headers == {
+        "Authorization": "Bearer token",
+        "X-Goog-AuthUser": "0",
+    }
 
 
 def test_streaming_account_sync_endpoint_enqueues_job(
