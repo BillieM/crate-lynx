@@ -19,7 +19,7 @@
 - [x] Remove `_WRONG_CLIENT_HINT` constant and the OAuth-specific branch from `_format_auth_error`
 
 ### Switch to browser auth
-- [ ] Remove `YouTubeMusicOAuthCredentials`, `begin_oauth`, `complete_oauth`, and `setup_oauth` from `youtube_music.py`
+- [x] Remove `YouTubeMusicOAuthCredentials`, `begin_oauth`, `complete_oauth`, and `setup_oauth` from `youtube_music.py`
 - [ ] Replace `create_youtube_music_account` in `streaming_accounts.py` with a version that accepts raw browser headers (dict) instead of an OAuth token; rename `StoredStreamingAccount.oauth_token` → `browser_headers`
 - [ ] Update `_run_youtube_music_sync` to call `from_browser_auth` instead of `from_oauth_token`; remove `credentials` param from all sync methods and `run_youtube_music_sync_job`
 - [ ] Remove `begin_youtube_music_account_oauth` / `complete_youtube_music_account_oauth` module-level functions from `streaming_accounts.py`

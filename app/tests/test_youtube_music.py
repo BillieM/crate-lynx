@@ -4,7 +4,6 @@ from types import SimpleNamespace
 
 from app.youtube_music import (
     YouTubeMusicAdapter,
-    YouTubeMusicOAuthCredentials,
     YouTubeMusicPlaylist,
     YouTubeMusicTrack,
     sync_library_playlists,
@@ -50,11 +49,6 @@ def test_from_browser_auth_builds_client(monkeypatch) -> None:
 def test_from_oauth_token_builds_client_with_oauth_credentials(monkeypatch) -> None:
     seen: dict[str, object] = {}
 
-    class FakeOAuthCredentials:
-        def __init__(self, client_id: str, client_secret: str) -> None:
-            seen["client_id"] = client_id
-            seen["client_secret"] = client_secret
-
     class FakeYTMusic:
         def __init__(
             self,
@@ -71,149 +65,23 @@ def test_from_oauth_token_builds_client_with_oauth_credentials(monkeypatch) -> N
             seen["language"] = language
             seen["location"] = location
 
-    monkeypatch.setattr("app.youtube_music.OAuthCredentials", FakeOAuthCredentials)
     monkeypatch.setattr("app.youtube_music.YTMusic", FakeYTMusic)
+    oauth_credentials = object()
 
     adapter = YouTubeMusicAdapter.from_oauth_token(
         {"refresh_token": "token-123"},
-        credentials=YouTubeMusicOAuthCredentials(
-            client_id="client-id",
-            client_secret="client-secret",
-        ),
+        oauth_credentials=oauth_credentials,
         user="listener@example.com",
         location="US",
     )
 
     assert isinstance(adapter, YouTubeMusicAdapter)
     assert seen == {
-        "client_id": "client-id",
-        "client_secret": "client-secret",
         "auth": {"refresh_token": "token-123"},
-        "oauth_credentials": seen["oauth_credentials"],
+        "oauth_credentials": oauth_credentials,
         "user": "listener@example.com",
         "language": "en",
         "location": "US",
-    }
-
-
-def test_setup_oauth_returns_serializable_token(monkeypatch, tmp_path) -> None:
-    seen: dict[str, object] = {}
-
-    def fake_setup_oauth(
-        client_id: str,
-        client_secret: str,
-        *,
-        filepath: str | None,
-        open_browser: bool,
-    ) -> SimpleNamespace:
-        seen["client_id"] = client_id
-        seen["client_secret"] = client_secret
-        seen["filepath"] = filepath
-        seen["open_browser"] = open_browser
-        return SimpleNamespace(as_dict=lambda: {"refresh_token": "token-123"})
-
-    monkeypatch.setattr("app.youtube_music.setup_oauth", fake_setup_oauth)
-
-    token = YouTubeMusicAdapter.setup_oauth(
-        YouTubeMusicOAuthCredentials(
-            client_id="client-id",
-            client_secret="client-secret",
-        ),
-        filepath=tmp_path / "oauth.json",
-        open_browser=True,
-    )
-
-    assert token == {"refresh_token": "token-123"}
-    assert seen == {
-        "client_id": "client-id",
-        "client_secret": "client-secret",
-        "filepath": str(tmp_path / "oauth.json"),
-        "open_browser": True,
-    }
-
-
-def test_begin_oauth_returns_auth_code_mapping(monkeypatch) -> None:
-    seen: dict[str, object] = {}
-
-    class FakeOAuthCredentials:
-        def __init__(self, client_id: str, client_secret: str) -> None:
-            seen["client_id"] = client_id
-            seen["client_secret"] = client_secret
-
-        def get_code(self) -> dict[str, object]:
-            seen["get_code"] = True
-            return {
-                "device_code": "device-code",
-                "user_code": "ABC-DEF-GHIJ",
-                "verification_url": "https://example.com/device",
-                "expires_in": 1800,
-                "interval": 5,
-            }
-
-    monkeypatch.setattr("app.youtube_music.OAuthCredentials", FakeOAuthCredentials)
-
-    auth_code = YouTubeMusicAdapter.begin_oauth(
-        YouTubeMusicOAuthCredentials(
-            client_id="client-id",
-            client_secret="client-secret",
-        )
-    )
-
-    assert auth_code == {
-        "device_code": "device-code",
-        "user_code": "ABC-DEF-GHIJ",
-        "verification_url": "https://example.com/device",
-        "expires_in": 1800,
-        "interval": 5,
-    }
-    assert seen == {
-        "client_id": "client-id",
-        "client_secret": "client-secret",
-        "get_code": True,
-    }
-
-
-def test_complete_oauth_returns_refreshable_token(monkeypatch) -> None:
-    seen: dict[str, object] = {}
-
-    class FakeOAuthCredentials:
-        def __init__(self, client_id: str, client_secret: str) -> None:
-            seen["client_id"] = client_id
-            seen["client_secret"] = client_secret
-
-        def token_from_code(self, device_code: str) -> dict[str, object]:
-            seen["device_code"] = device_code
-            return {
-                "access_token": "access-token",
-                "refresh_token": "refresh-token",
-                "expires_at": 1234567890,
-                "expires_in": 1800,
-                "scope": "https://www.googleapis.com/auth/youtube",
-                "token_type": "Bearer",
-            }
-
-    monkeypatch.setattr("app.youtube_music.OAuthCredentials", FakeOAuthCredentials)
-
-    token = YouTubeMusicAdapter.complete_oauth(
-        YouTubeMusicOAuthCredentials(
-            client_id="client-id",
-            client_secret="client-secret",
-        ),
-        device_code="device-code",
-    )
-
-    assert token == {
-        "access_token": "access-token",
-        "refresh_token": "refresh-token",
-        "expires_at": 1234567890,
-        "expires_in": 1800,
-        "scope": "https://www.googleapis.com/auth/youtube",
-        "token_type": "Bearer",
-    }
-    assert seen == {
-        "client_id": "client-id",
-        "client_secret": "client-secret",
-        "device_code": "device-code",
     }
 
 

@@ -16,11 +16,11 @@ from app.queueing import (
 )
 from app.streaming_accounts import (
     StreamingAccountStore,
+    YouTubeMusicOAuthCredentials,
     begin_youtube_music_account_oauth,
     complete_youtube_music_account_oauth,
 )
 from app.worker import resolve_queue_names
-from app.youtube_music import YouTubeMusicOAuthCredentials
 
 
 logger = logging.getLogger(__name__)

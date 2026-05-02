@@ -23,10 +23,10 @@ from sqlalchemy import (
     update,
 )
 from ytmusicapi.exceptions import YTMusicError
+from ytmusicapi import OAuthCredentials, setup_oauth
 
 from app.youtube_music import (
     YouTubeMusicAdapter,
-    YouTubeMusicOAuthCredentials,
     YouTubeMusicPlaylist,
     YouTubeMusicTrack,
     sync_library_playlists,
@@ -116,6 +116,18 @@ class StoredStreamingAccount:
     auth_error: str | None
     auth_error_at: datetime | None
     oauth_token: dict[str, Any]
+
+
+@dataclass(frozen=True, slots=True)
+class YouTubeMusicOAuthCredentials:
+    client_id: str
+    client_secret: str
+
+    def to_ytmusicapi(self) -> OAuthCredentials:
+        return OAuthCredentials(
+            client_id=self.client_id,
+            client_secret=self.client_secret,
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -577,7 +589,7 @@ class StreamingAccountStore:
         try:
             adapter = YouTubeMusicAdapter.from_oauth_token(
                 account.oauth_token,
-                credentials=credentials,
+                oauth_credentials=credentials.to_ytmusicapi(),
             )
             synced = run_sync(adapter)
         except YTMusicError as exc:
@@ -596,8 +608,8 @@ def connect_youtube_music_account(
     token_filepath: str | Path | None = None,
     open_browser: bool = False,
 ) -> PersistedStreamingAccount:
-    oauth_token = YouTubeMusicAdapter.setup_oauth(
-        credentials,
+    oauth_token = _setup_oauth(
+        credentials=credentials,
         filepath=token_filepath,
         open_browser=open_browser,
     )
@@ -612,7 +624,7 @@ def begin_youtube_music_account_oauth(
     *,
     credentials: YouTubeMusicOAuthCredentials,
 ) -> dict[str, Any]:
-    return YouTubeMusicAdapter.begin_oauth(credentials)
+    return _begin_oauth(credentials)
 
 
 def complete_youtube_music_account_oauth(
@@ -622,8 +634,8 @@ def complete_youtube_music_account_oauth(
     credentials: YouTubeMusicOAuthCredentials,
     device_code: str,
 ) -> PersistedStreamingAccount:
-    oauth_token = YouTubeMusicAdapter.complete_oauth(
-        credentials,
+    oauth_token = _complete_oauth(
+        credentials=credentials,
         device_code=device_code,
     )
 
@@ -684,3 +696,32 @@ def _format_auth_error(error: Exception) -> str:
     if not message:
         return "Authentication with YouTube Music failed."
     return f"YouTube Music authentication failed: {message}"
+
+
+def _setup_oauth(
+    *,
+    credentials: YouTubeMusicOAuthCredentials,
+    filepath: str | Path | None = None,
+    open_browser: bool = False,
+) -> dict[str, Any]:
+    token = setup_oauth(
+        credentials.client_id,
+        credentials.client_secret,
+        filepath=None if filepath is None else str(filepath),
+        open_browser=open_browser,
+    )
+    return dict(token.as_dict())
+
+
+def _begin_oauth(
+    credentials: YouTubeMusicOAuthCredentials,
+) -> dict[str, Any]:
+    return dict(credentials.to_ytmusicapi().get_code())
+
+
+def _complete_oauth(
+    *,
+    credentials: YouTubeMusicOAuthCredentials,
+    device_code: str,
+) -> dict[str, Any]:
+    return dict(credentials.to_ytmusicapi().token_from_code(device_code))

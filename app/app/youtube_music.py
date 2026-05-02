@@ -3,25 +3,12 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from pathlib import Path
 from typing import Any
 
-from ytmusicapi import OAuthCredentials, YTMusic, setup_oauth
+from ytmusicapi import OAuthCredentials, YTMusic
 
 
 JsonMapping = dict[str, Any]
-
-
-@dataclass(frozen=True, slots=True)
-class YouTubeMusicOAuthCredentials:
-    client_id: str
-    client_secret: str
-
-    def to_ytmusicapi(self) -> OAuthCredentials:
-        return OAuthCredentials(
-            client_id=self.client_id,
-            client_secret=self.client_secret,
-        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -68,53 +55,29 @@ class YouTubeMusicAdapter:
         cls,
         oauth_token: str | JsonMapping,
         *,
-        credentials: YouTubeMusicOAuthCredentials,
+        oauth_credentials: OAuthCredentials,
         user: str | None = None,
         language: str = "en",
         location: str = "",
     ) -> YouTubeMusicAdapter:
         if isinstance(oauth_token, dict):
-            oauth_token = {k: v for k, v in oauth_token.items() if k != "refresh_token_expires_in"}
+            oauth_token = {
+                k: v for k, v in oauth_token.items() if k != "refresh_token_expires_in"
+            }
             if "expires_at" not in oauth_token and "expires_in" in oauth_token:
-                oauth_token = {**oauth_token, "expires_at": int(time.time()) + int(oauth_token["expires_in"])}
+                oauth_token = {
+                    **oauth_token,
+                    "expires_at": int(time.time()) + int(oauth_token["expires_in"]),
+                }
         return cls(
             YTMusic(
                 auth=oauth_token,
-                oauth_credentials=credentials.to_ytmusicapi(),
+                oauth_credentials=oauth_credentials,
                 user=user,
                 language=language,
                 location=location,
             )
         )
-
-    @staticmethod
-    def begin_oauth(
-        credentials: YouTubeMusicOAuthCredentials,
-    ) -> JsonMapping:
-        return dict(credentials.to_ytmusicapi().get_code())
-
-    @staticmethod
-    def complete_oauth(
-        credentials: YouTubeMusicOAuthCredentials,
-        *,
-        device_code: str,
-    ) -> JsonMapping:
-        return dict(credentials.to_ytmusicapi().token_from_code(device_code))
-
-    @staticmethod
-    def setup_oauth(
-        credentials: YouTubeMusicOAuthCredentials,
-        *,
-        filepath: str | Path | None = None,
-        open_browser: bool = False,
-    ) -> JsonMapping:
-        token = setup_oauth(
-            credentials.client_id,
-            credentials.client_secret,
-            filepath=None if filepath is None else str(filepath),
-            open_browser=open_browser,
-        )
-        return dict(token.as_dict())
 
     def get_library_playlists(self, *, limit: int | None = None) -> list[JsonMapping]:
         return self._client.get_library_playlists(limit=limit)
