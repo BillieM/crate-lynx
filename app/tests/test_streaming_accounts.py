@@ -14,8 +14,6 @@ from app.streaming_accounts import (
     run_youtube_music_sync_job,
     YOUTUBE_MUSIC_PROVIDER,
     StreamingAccountStore,
-    YouTubeMusicOAuthCredentials,
-    connect_youtube_music_account,
     metadata,
     streaming_accounts_table,
     streaming_playlists_table,
@@ -24,7 +22,7 @@ from app.streaming_accounts import (
 from app.youtube_music import YouTubeMusicPlaylist, YouTubeMusicTrack
 
 
-def test_connect_youtube_music_account_encrypts_and_persists_token(
+def test_streaming_account_store_encrypts_and_persists_browser_headers(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
@@ -33,36 +31,15 @@ def test_connect_youtube_music_account_encrypts_and_persists_token(
     metadata.create_all(engine)
     monkeypatch.setenv("TOKEN_ENCRYPTION_KEY", Fernet.generate_key().decode("utf-8"))
 
-    seen: dict[str, object] = {}
+    browser_headers = {
+        "Authorization": "Bearer token-123",
+        "X-Goog-AuthUser": "0",
+        "Cookie": "VISITOR_INFO1_LIVE=value",
+    }
 
-    def fake_setup_oauth(
-        credentials: YouTubeMusicOAuthCredentials,
-        *,
-        filepath: str | Path | None = None,
-        open_browser: bool = False,
-    ) -> dict[str, str]:
-        seen["credentials"] = credentials
-        seen["filepath"] = filepath
-        seen["open_browser"] = open_browser
-        return {
-            "access_token": "access-token",
-            "refresh_token": "refresh-token",
-        }
-
-    monkeypatch.setattr(
-        "app.streaming_accounts._setup_oauth",
-        fake_setup_oauth,
-    )
-
-    account = connect_youtube_music_account(
-        database_url=database_url,
+    account = StreamingAccountStore(database_url).create_youtube_music_account(
         display_name="Billie",
-        credentials=YouTubeMusicOAuthCredentials(
-            client_id="client-id",
-            client_secret="client-secret",
-        ),
-        token_filepath=tmp_path / "oauth.json",
-        open_browser=True,
+        browser_headers=browser_headers,
     )
 
     assert account == account.__class__(
@@ -70,14 +47,6 @@ def test_connect_youtube_music_account_encrypts_and_persists_token(
         provider=YOUTUBE_MUSIC_PROVIDER,
         display_name="Billie",
     )
-    assert seen == {
-        "credentials": YouTubeMusicOAuthCredentials(
-            client_id="client-id",
-            client_secret="client-secret",
-        ),
-        "filepath": tmp_path / "oauth.json",
-        "open_browser": True,
-    }
 
     with engine.connect() as connection:
         stored_account = (
@@ -90,19 +59,14 @@ def test_connect_youtube_music_account_encrypts_and_persists_token(
     assert stored_account["auth_error"] is None
     assert stored_account["auth_error_at"] is None
     assert stored_account["auth_token_blob"] != json.dumps(
-        {
-            "access_token": "access-token",
-            "refresh_token": "refresh-token",
-        },
-        sort_keys=True,
+        browser_headers, sort_keys=True
     )
-    assert json.loads(_decrypt_token(stored_account["auth_token_blob"])) == {
-        "access_token": "access-token",
-        "refresh_token": "refresh-token",
-    }
+    assert (
+        json.loads(_decrypt_token(stored_account["auth_token_blob"])) == browser_headers
+    )
 
 
-def test_streaming_account_store_persists_encrypted_token(
+def test_streaming_account_store_get_account_returns_browser_headers(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
@@ -111,9 +75,13 @@ def test_streaming_account_store_persists_encrypted_token(
     metadata.create_all(engine)
     monkeypatch.setenv("TOKEN_ENCRYPTION_KEY", Fernet.generate_key().decode("utf-8"))
 
+    browser_headers = {
+        "Authorization": "Bearer token-456",
+        "X-Goog-AuthUser": "1",
+    }
     account = StreamingAccountStore(database_url).create_youtube_music_account(
         display_name="Listener",
-        browser_headers={"refresh_token": "refresh-token"},
+        browser_headers=browser_headers,
     )
 
     assert account == account.__class__(
@@ -130,12 +98,13 @@ def test_streaming_account_store_persists_encrypted_token(
     assert stored_account["auth_state"] == "connected"
     assert stored_account["auth_error"] is None
     assert stored_account["auth_error_at"] is None
-    assert json.loads(_decrypt_token(stored_account["auth_token_blob"])) == {
-        "refresh_token": "refresh-token"
-    }
-    assert StreamingAccountStore(database_url).get_account(
-        account.id
-    ).browser_headers == {"refresh_token": "refresh-token"}
+    assert (
+        json.loads(_decrypt_token(stored_account["auth_token_blob"])) == browser_headers
+    )
+    assert (
+        StreamingAccountStore(database_url).get_account(account.id).browser_headers
+        == browser_headers
+    )
 
 
 def test_streaming_account_store_upserts_playlists(

@@ -25,5 +25,5 @@
 - [x] Remove `begin_youtube_music_account_oauth` / `complete_youtube_music_account_oauth` module-level functions from `streaming_accounts.py`
 - [x] Replace the two-step OAuth flow in `POST /streaming/accounts` with a single endpoint that accepts `display_name` + `browser_headers` (raw headers dict copied from browser DevTools); remove `client_id` / `client_secret` from all request/response models
 - [x] Remove `client_id` / `client_secret` from `SyncStreamingAccountRequest` and the sync job enqueuer
-- [ ] Update unit tests: replace OAuth credential fixtures and mocks with browser-auth equivalents throughout `test_youtube_music.py`, `test_streaming_accounts.py`, `test_main.py`, and `test_queueing.py`
+- [x] Update unit tests: replace OAuth credential fixtures and mocks with browser-auth equivalents throughout `test_youtube_music.py`, `test_streaming_accounts.py`, `test_main.py`, and `test_queueing.py`
 - [ ] Remove `YOUTUBE_MUSIC_CLIENT_ID` / `YOUTUBE_MUSIC_CLIENT_SECRET` from `.env.example` if present

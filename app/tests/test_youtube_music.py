@@ -46,7 +46,7 @@ def test_from_browser_auth_builds_client(monkeypatch) -> None:
     }
 
 
-def test_from_oauth_token_builds_client_with_oauth_credentials(monkeypatch) -> None:
+def test_from_browser_auth_accepts_raw_header_mapping(monkeypatch) -> None:
     seen: dict[str, object] = {}
 
     class FakeYTMusic:
@@ -54,31 +54,32 @@ def test_from_oauth_token_builds_client_with_oauth_credentials(monkeypatch) -> N
             self,
             *,
             auth: dict[str, str],
-            oauth_credentials: object,
             user: str | None,
             language: str,
             location: str,
         ) -> None:
             seen["auth"] = auth
-            seen["oauth_credentials"] = oauth_credentials
             seen["user"] = user
             seen["language"] = language
             seen["location"] = location
 
     monkeypatch.setattr("app.youtube_music.YTMusic", FakeYTMusic)
-    oauth_credentials = object()
 
-    adapter = YouTubeMusicAdapter.from_oauth_token(
-        {"refresh_token": "token-123"},
-        oauth_credentials=oauth_credentials,
+    adapter = YouTubeMusicAdapter.from_browser_auth(
+        {
+            "Authorization": "Bearer token-123",
+            "X-Goog-AuthUser": "0",
+        },
         user="listener@example.com",
         location="US",
     )
 
     assert isinstance(adapter, YouTubeMusicAdapter)
     assert seen == {
-        "auth": {"refresh_token": "token-123"},
-        "oauth_credentials": oauth_credentials,
+        "auth": {
+            "Authorization": "Bearer token-123",
+            "X-Goog-AuthUser": "0",
+        },
         "user": "listener@example.com",
         "language": "en",
         "location": "US",
