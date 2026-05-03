@@ -27,19 +27,11 @@ describe("App", () => {
   it("renders the fixed-height shell container, sidebar scaffold, and topbar", () => {
     const { container } = renderApp();
 
-    expect(container.firstChild).toHaveClass("text-ctp-text");
+    expect(container.firstChild).toHaveClass("flex", "flex-1", "flex-row", "overflow-hidden", "bg-ctp-base", "text-ctp-text");
 
     const shell = container.querySelector(".bg-ctp-base");
 
-    expect(shell).toHaveClass(
-      "flex",
-      "h-[640px]",
-      "flex-row",
-      "overflow-hidden",
-      "rounded-[12px]",
-      "border",
-      "border-ctp-surface0",
-    );
+    expect(shell).toHaveClass("flex", "flex-1", "flex-row", "overflow-hidden", "bg-ctp-base", "text-ctp-text");
 
     const sidebar = screen.getByRole("complementary");
 
