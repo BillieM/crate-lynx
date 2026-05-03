@@ -3,7 +3,7 @@ import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException
 
 from app.core.queueing import (
     MatchingJobEnqueuer,
@@ -11,9 +11,11 @@ from app.core.queueing import (
 )
 from app.core.worker import resolve_queue_names
 from app.ingestion import BeetsImporter, IngestionProcessor, IngestionWatcher
+from app.ingestion.router import router as ingestion_router
 from app.ingestion.status import IngestionStatusStore
 from app.local_tracks.store import LocalTrackStore
-from app.streaming.router import create_router
+from app.streaming.router import create_router as create_streaming_router
+from app.system.router import router as system_router
 
 
 logger = logging.getLogger(__name__)
@@ -94,16 +96,10 @@ def create_app() -> FastAPI:
             )
         return redis_url
 
-    @app.get("/health")
-    async def health() -> dict[str, str]:
-        return {"status": "ok"}
-
-    @app.get("/ingest/status")
-    async def ingest_status(request: Request) -> dict[str, object]:
-        return {"status": "ok", **request.app.state.ingestion_status.snapshot()}
-
+    app.include_router(system_router)
+    app.include_router(ingestion_router)
     app.include_router(
-        create_router(
+        create_streaming_router(
             require_database_url=require_database_url,
             require_redis_url=require_redis_url,
         )

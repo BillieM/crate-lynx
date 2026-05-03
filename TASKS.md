@@ -6,7 +6,7 @@
 - [x] Create `streaming/adapters/` subpackage: define `StreamingAdapter` protocol in `base.py`; move `youtube_music.py` → `adapters/youtube_music.py` implementing the protocol
 - [x] Split `streaming_accounts.py` into `streaming/models.py` (dataclasses/DB row types), `streaming/store.py` (StreamingAccountStore), `streaming/crypto.py` (encrypt/decrypt), `streaming/jobs.py` (RQ job functions)
 - [x] Extract Pydantic schemas from `main.py` → `streaming/schemas.py` and route handlers → `streaming/router.py`
-- [ ] Slim `main.py` to app factory only: remove all route definitions, mount routers from each domain package
+- [x] Slim `main.py` to app factory only: remove all route definitions, mount routers from each domain package
 - [ ] Update all tests for new import paths; confirm test suite passes
 
 ---

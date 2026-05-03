@@ -9,6 +9,7 @@ from app.ingestion.pipeline import (
     PreparedTrack,
     UnsupportedAudioFormatError,
 )
+from app.ingestion.router import router
 from app.ingestion.status import IngestionStatusEntry, IngestionStatusStore
 from app.ingestion.watcher import (
     FileCallback,
@@ -28,5 +29,6 @@ __all__ = [
     "IngestionStatusStore",
     "IngestionWatcher",
     "PreparedTrack",
+    "router",
     "UnsupportedAudioFormatError",
 ]
