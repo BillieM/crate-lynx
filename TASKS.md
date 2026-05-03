@@ -4,7 +4,7 @@
 - [x] Build `PlaylistHeader` component: cover art thumbnail, playlist name, progress ring (linked/total), linked/pending/unlinked counts
 - [x] Build `TrackStatusDot` component: coloured dot mapped to linked (green), pending (yellow), unlinked (red/subtext) status
 - [ ] Build `PlaylistTrackRow` component: status dot, track title, artist, album, duration, and per-track action button slot
-- [ ] Implement per-track action buttons: "Linked" (opens final link info), "Review" (navigates to proposals filtered to this track), "Match" (triggers re-match API call)
+- [x] Implement per-track action buttons: "Linked" (opens final link info), "Review" (navigates to proposals filtered to this track), "Match" (triggers re-match API call)
 - [ ] Build `FilterChips` component: All / Linked / Pending / Unlinked chips — filters the track list client-side
 - [ ] Assemble `PlaylistView` layout: `PlaylistHeader` + `FilterChips` + scrollable `PlaylistTrackRow` list, all within the existing stub shell div
 - [ ] Wire the Sync button in the topbar action slot: call the YTM sync API endpoint for the active playlist, show loading state
