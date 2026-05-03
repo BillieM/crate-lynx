@@ -11,11 +11,8 @@ from app.main import (
     CreateStreamingAccountRequest,
     create_app,
 )
-from app.streaming_accounts import (
-    StreamingAccountStore,
-    metadata,
-    streaming_accounts_table,
-)
+from app.streaming.models import metadata, streaming_accounts_table
+from app.streaming.store import StreamingAccountStore
 from app.streaming.adapters.youtube_music import (
     YouTubeMusicPlaylist,
     YouTubeMusicTrack,

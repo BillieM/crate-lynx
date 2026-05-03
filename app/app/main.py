@@ -15,7 +15,7 @@ from app.core.worker import resolve_queue_names
 from app.ingestion import BeetsImporter, IngestionProcessor, IngestionWatcher
 from app.ingestion.status import IngestionStatusStore
 from app.local_tracks.store import LocalTrackStore
-from app.streaming_accounts import StreamingAccountStore
+from app.streaming.store import StreamingAccountStore
 
 
 logger = logging.getLogger(__name__)

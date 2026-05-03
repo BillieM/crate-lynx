@@ -38,7 +38,7 @@ class StreamingSyncJobEnqueuer:
         connection = Redis.from_url(self.redis_url)
         queue = Queue(self.queue_name, connection=connection)
         job = queue.enqueue(
-            "app.streaming_accounts.run_youtube_music_sync_job",
+            "app.streaming.jobs.run_youtube_music_sync_job",
             account_id,
             job_timeout=self.job_timeout,
         )

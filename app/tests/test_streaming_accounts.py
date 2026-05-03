@@ -9,16 +9,16 @@ from cryptography.fernet import Fernet
 from sqlalchemy import create_engine, select
 from ytmusicapi.exceptions import YTMusicUserError
 
-from app.streaming_accounts import (
-    playlist_membership_table,
-    run_youtube_music_sync_job,
+from app.streaming.jobs import run_youtube_music_sync_job
+from app.streaming.models import (
     YOUTUBE_MUSIC_PROVIDER,
-    StreamingAccountStore,
     metadata,
+    playlist_membership_table,
     streaming_accounts_table,
     streaming_playlists_table,
     streaming_tracks_table,
 )
+from app.streaming.store import StreamingAccountStore
 from app.streaming.adapters.youtube_music import (
     YouTubeMusicPlaylist,
     YouTubeMusicTrack,
@@ -199,7 +199,7 @@ def test_streaming_account_store_syncs_youtube_music_playlists(
         return FakeAdapter()
 
     monkeypatch.setattr(
-        "app.streaming_accounts.YouTubeMusicAdapter.from_browser_auth",
+        "app.streaming.store.YouTubeMusicAdapter.from_browser_auth",
         fake_from_browser_auth,
     )
 
@@ -436,7 +436,7 @@ def test_streaming_account_store_syncs_youtube_music_playlist_tracks(
         return FakeAdapter()
 
     monkeypatch.setattr(
-        "app.streaming_accounts.YouTubeMusicAdapter.from_browser_auth",
+        "app.streaming.store.YouTubeMusicAdapter.from_browser_auth",
         fake_from_browser_auth,
     )
 
@@ -484,7 +484,7 @@ def test_streaming_account_store_marks_auth_errors_without_crashing(
         raise YTMusicUserError("refresh token expired")
 
     monkeypatch.setattr(
-        "app.streaming_accounts.YouTubeMusicAdapter.from_browser_auth",
+        "app.streaming.store.YouTubeMusicAdapter.from_browser_auth",
         fake_from_browser_auth,
     )
 
@@ -528,7 +528,7 @@ def test_streaming_account_store_clears_auth_errors_after_successful_sync(
             return []
 
     monkeypatch.setattr(
-        "app.streaming_accounts.YouTubeMusicAdapter.from_browser_auth",
+        "app.streaming.store.YouTubeMusicAdapter.from_browser_auth",
         lambda auth, *, user=None, language="en", location="": FakeAdapter(),
     )
 
@@ -556,7 +556,7 @@ def test_run_youtube_music_sync_job_uses_database(
             seen["account_id"] = account_id
             return []
 
-    monkeypatch.setattr("app.streaming_accounts.StreamingAccountStore", FakeStore)
+    monkeypatch.setattr("app.streaming.jobs.StreamingAccountStore", FakeStore)
 
     run_youtube_music_sync_job(7)
 

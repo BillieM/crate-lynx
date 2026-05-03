@@ -1,26 +1,11 @@
 from __future__ import annotations
 
 import json
-import os
-from dataclasses import dataclass
+from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any
 
-from cryptography.fernet import Fernet
-from sqlalchemy import (
-    Column,
-    DateTime,
-    delete,
-    Integer,
-    MetaData,
-    String,
-    Table,
-    create_engine,
-    func,
-    insert,
-    select,
-    update,
-)
+from sqlalchemy import create_engine, delete, func, insert, select, update
 from ytmusicapi.exceptions import YTMusicError
 
 from app.streaming.adapters.youtube_music import (
@@ -30,129 +15,23 @@ from app.streaming.adapters.youtube_music import (
     sync_library_playlists,
     sync_library_playlist_tracks,
 )
-
-
-YOUTUBE_MUSIC_PROVIDER = "youtube_music"
-STREAMING_ACCOUNT_AUTH_STATE_CONNECTED = "connected"
-STREAMING_ACCOUNT_AUTH_STATE_ERROR = "error"
-
-metadata = MetaData()
-
-streaming_accounts_table = Table(
-    "streaming_accounts",
-    metadata,
-    Column("id", Integer, primary_key=True),
-    Column("provider", String, nullable=False),
-    Column("display_name", String, nullable=False),
-    Column("auth_token_blob", String, nullable=False),
-    Column("auth_state", String, nullable=False),
-    Column("auth_error", String, nullable=True),
-    Column("auth_error_at", DateTime(timezone=True), nullable=True),
-    Column(
-        "created_at", DateTime(timezone=True), server_default=func.now(), nullable=False
-    ),
-    Column(
-        "updated_at", DateTime(timezone=True), server_default=func.now(), nullable=False
-    ),
+from app.streaming.crypto import decrypt_token, encrypt_token
+from app.streaming.models import (
+    PlaylistMembershipRecord,
+    PersistedStreamingAccount,
+    StoredStreamingAccount,
+    StreamingAccountRecord,
+    StreamingPlaylistRecord,
+    StreamingPlaylistSummary,
+    StreamingTrackRecord,
+    STREAMING_ACCOUNT_AUTH_STATE_CONNECTED,
+    STREAMING_ACCOUNT_AUTH_STATE_ERROR,
+    YOUTUBE_MUSIC_PROVIDER,
+    playlist_membership_table,
+    streaming_accounts_table,
+    streaming_playlists_table,
+    streaming_tracks_table,
 )
-
-streaming_playlists_table = Table(
-    "streaming_playlists",
-    metadata,
-    Column("id", Integer, primary_key=True),
-    Column("account_id", Integer, nullable=False),
-    Column("provider_playlist_id", String, nullable=False),
-    Column("title", String, nullable=False),
-    Column("synced_at", DateTime(timezone=True), nullable=True),
-)
-
-streaming_tracks_table = Table(
-    "streaming_tracks",
-    metadata,
-    Column("id", Integer, primary_key=True),
-    Column("provider_track_id", String, nullable=False),
-    Column("title", String, nullable=False),
-    Column("artist", String, nullable=False),
-    Column("album", String, nullable=True),
-    Column("year", Integer, nullable=True),
-    Column("isrc", String, nullable=True),
-    Column("duration_ms", Integer, nullable=True),
-)
-
-playlist_membership_table = Table(
-    "playlist_membership",
-    metadata,
-    Column("id", Integer, primary_key=True),
-    Column("playlist_id", Integer, nullable=False),
-    Column("streaming_track_id", Integer, nullable=False),
-    Column("position", Integer, nullable=False),
-)
-
-
-@dataclass(frozen=True, slots=True)
-class PersistedStreamingAccount:
-    id: int
-    provider: str
-    display_name: str
-
-
-@dataclass(frozen=True, slots=True)
-class StreamingAccountRecord(PersistedStreamingAccount):
-    auth_state: str
-    auth_error: str | None
-    auth_error_at: datetime | None
-    created_at: datetime
-    updated_at: datetime
-
-
-@dataclass(frozen=True, slots=True)
-class StoredStreamingAccount:
-    id: int
-    provider: str
-    display_name: str
-    auth_state: str
-    auth_error: str | None
-    auth_error_at: datetime | None
-    browser_headers: dict[str, Any]
-
-
-@dataclass(frozen=True, slots=True)
-class StreamingPlaylistRecord:
-    id: int
-    account_id: int
-    provider_playlist_id: str
-    title: str
-    synced_at: datetime | None
-
-
-@dataclass(frozen=True, slots=True)
-class StreamingPlaylistSummary:
-    id: int
-    account_id: int
-    provider_playlist_id: str
-    title: str
-    track_count: int
-    synced_at: datetime | None
-
-
-@dataclass(frozen=True, slots=True)
-class StreamingTrackRecord:
-    id: int
-    provider_track_id: str
-    title: str
-    artist: str
-    album: str | None
-    year: int | None
-    isrc: str | None
-    duration_ms: int | None
-
-
-@dataclass(frozen=True, slots=True)
-class PlaylistMembershipRecord:
-    id: int
-    playlist_id: int
-    streaming_track_id: int
-    position: int
 
 
 class StreamingAccountStore:
@@ -555,7 +434,7 @@ class StreamingAccountStore:
         self,
         *,
         account_id: int,
-        run_sync: Any,
+        run_sync: Callable[[YouTubeMusicAdapter], list[Any]],
     ) -> list[Any]:
         account = self.get_account(account_id)
         try:
@@ -569,46 +448,6 @@ class StreamingAccountStore:
 
         self.clear_account_auth_error(account_id=account_id)
         return synced
-
-
-def run_youtube_music_sync_job(
-    account_id: int,
-) -> None:
-    database_url = os.environ.get("DATABASE_URL")
-    if not database_url:
-        raise RuntimeError(
-            "DATABASE_URL must be configured for YouTube Music sync jobs"
-        )
-
-    StreamingAccountStore(database_url).sync_youtube_music_account(
-        account_id=account_id
-    )
-
-
-def encrypt_token(raw_token: str) -> str:
-    key = os.environ.get("TOKEN_ENCRYPTION_KEY")
-    if not key:
-        raise RuntimeError("TOKEN_ENCRYPTION_KEY is required for token encryption")
-
-    try:
-        fernet = Fernet(key.encode("utf-8"))
-    except ValueError as exc:
-        raise RuntimeError("TOKEN_ENCRYPTION_KEY must be a valid Fernet key") from exc
-
-    return fernet.encrypt(raw_token.encode("utf-8")).decode("utf-8")
-
-
-def decrypt_token(auth_token_blob: str) -> str:
-    key = os.environ.get("TOKEN_ENCRYPTION_KEY")
-    if not key:
-        raise RuntimeError("TOKEN_ENCRYPTION_KEY is required for token encryption")
-
-    try:
-        fernet = Fernet(key.encode("utf-8"))
-    except ValueError as exc:
-        raise RuntimeError("TOKEN_ENCRYPTION_KEY must be a valid Fernet key") from exc
-
-    return fernet.decrypt(auth_token_blob.encode("utf-8")).decode("utf-8")
 
 
 def _format_auth_error(error: Exception) -> str:

@@ -126,7 +126,7 @@ def test_streaming_sync_job_enqueuer_uses_streaming_queue(monkeypatch) -> None:
         "redis_url": "redis://redis:6379/2",
         "queue_name": "streaming",
         "connection": seen["connection"],
-        "func": "app.streaming_accounts.run_youtube_music_sync_job",
+        "func": "app.streaming.jobs.run_youtube_music_sync_job",
         "account_id": 19,
         "job_timeout": "20m",
     }
