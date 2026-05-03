@@ -20,7 +20,7 @@ from app.matching.pipeline import (
     suggested_links_table,
 )
 from app.m3u.generator import (
-    DEFAULT_M3U_OUTPUT_DIR,
+    get_m3u_output_dir,
     regenerate_m3us_for_streaming_track,
 )
 from app.streaming.models import streaming_tracks_table
@@ -34,7 +34,7 @@ def create_router(*, require_database_url: Callable[[], str]) -> APIRouter:
             streaming_track_id,
             database_url=require_database_url(),
             base_path=Path(os.environ.get("LIBRARY_ROOT", "/library")),
-            output_dir=DEFAULT_M3U_OUTPUT_DIR,
+            output_dir=get_m3u_output_dir(),
         )
 
     @router.get("/proposals", response_model=ProposalListResponse)

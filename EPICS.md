@@ -46,13 +46,13 @@ Sequential pipeline: ISRC match → fuzzy tag match (rapidfuzz) → acoustic fin
 
 ---
 
-### E06 — Link proposal & approval API `in progress`
+### E06 — Link proposal & approval API `done`
 **Subdir:** `app/`
 REST endpoints for the full approval lifecycle: list proposals (with confidence band filtering), approve (writes to `final_links`), reject (updates `suggested_links.status` + `rejected_at`), break link (removes from `final_links`, writes rejected suggestion), re-match (clears suggestion, re-enqueues pipeline). Rejected pairs must never resurface.
 
 ---
 
-### E07 — M3U generation
+### E07 — M3U generation `in progress`
 **Subdir:** `app/`
 Generate one M3U per streaming playlist based on `playlist_membership` joined through `final_links` to `local_tracks`. Paths resolved relative to consuming tool (not container path). Auto-regenerated whenever a link is approved, rejected, or broken. Export endpoint for on-demand download.
 

@@ -298,7 +298,7 @@ def test_approve_proposal_regenerates_playlist_m3u(
     links_metadata.create_all(engine)
     monkeypatch.setenv("DATABASE_URL", database_url)
     monkeypatch.setenv("LIBRARY_ROOT", str(tmp_path / "library"))
-    monkeypatch.setattr("app.links.router.DEFAULT_M3U_OUTPUT_DIR", tmp_path / "m3u")
+    monkeypatch.setenv("M3U_OUTPUT_DIR", str(tmp_path / "m3u"))
 
     with engine.begin() as connection:
         connection.execute(
@@ -555,7 +555,7 @@ def test_reject_proposal_regenerates_playlist_m3u(
     links_metadata.create_all(engine)
     monkeypatch.setenv("DATABASE_URL", database_url)
     monkeypatch.setenv("LIBRARY_ROOT", str(tmp_path / "library"))
-    monkeypatch.setattr("app.links.router.DEFAULT_M3U_OUTPUT_DIR", tmp_path / "m3u")
+    monkeypatch.setenv("M3U_OUTPUT_DIR", str(tmp_path / "m3u"))
 
     output_path = tmp_path / "m3u" / "Road-Trip-Mix.m3u"
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -730,7 +730,7 @@ def test_break_final_link_regenerates_playlist_m3u(
     links_metadata.create_all(engine)
     monkeypatch.setenv("DATABASE_URL", database_url)
     monkeypatch.setenv("LIBRARY_ROOT", str(tmp_path / "library"))
-    monkeypatch.setattr("app.links.router.DEFAULT_M3U_OUTPUT_DIR", tmp_path / "m3u")
+    monkeypatch.setenv("M3U_OUTPUT_DIR", str(tmp_path / "m3u"))
 
     output_path = tmp_path / "m3u" / "Road-Trip-Mix.m3u"
     output_path.parent.mkdir(parents=True, exist_ok=True)

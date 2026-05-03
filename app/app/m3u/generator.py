@@ -17,6 +17,10 @@ from app.streaming.models import (
 DEFAULT_M3U_OUTPUT_DIR = Path("/tmp/crate-lynx-m3u")
 
 
+def get_m3u_output_dir() -> Path:
+    return Path(os.environ.get("M3U_OUTPUT_DIR", str(DEFAULT_M3U_OUTPUT_DIR)))
+
+
 def generate_m3u(playlist_id: int, base_path: Path | str) -> str:
     """Generate M3U contents for a playlist."""
     database_url = _require_database_url()
