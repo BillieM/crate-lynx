@@ -113,9 +113,7 @@ def create_app() -> FastAPI:
             require_redis_url=require_redis_url,
         )
     )
-    app.include_router(
-        create_rescue_router(require_database_url=require_database_url)
-    )
+    app.include_router(create_rescue_router(require_database_url=require_database_url))
     app.include_router(
         create_links_router(require_database_url=require_database_url),
         prefix="/api",
