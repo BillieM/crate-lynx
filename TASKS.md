@@ -6,5 +6,5 @@
 - [x] Apply the same per-iteration error isolation to the ISRC backfill loop in `_lookup_missing_isrcs` (`youtube_music.py:144`) so one bad lookup does not abort the whole pass
 - [x] Persist per-playlist sync failures: add fields (last-error string + timestamp) to `streaming_playlists` (or equivalent job-result store) and write them whenever a playlist iteration fails
 - [x] Add Alembic migration for the new per-playlist last-error/timestamp columns (if stored on `streaming_playlists`) and update SQLAlchemy models accordingly
-- [ ] Add unit/integration tests covering: malformed payload raises and skips replace; legitimately empty playlist returns `[]` and clears membership normally; one failing playlist does not abort the loop; ISRC backfill failure is isolated; last-error fields are written
-- [ ] Run validation: backend `ruff check .`, `ruff format --check .`, `pytest`
+- [x] Add unit/integration tests covering: malformed payload raises and skips replace; legitimately empty playlist returns `[]` and clears membership normally; one failing playlist does not abort the loop; ISRC backfill failure is isolated; last-error fields are written
+- [x] Run validation: backend `ruff check .`, `ruff format --check .`, `pytest`
