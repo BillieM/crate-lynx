@@ -1,23 +1,52 @@
 import { render, screen } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
 import App from "./App";
 
 describe("App", () => {
-  it("renders the scaffold heading", () => {
-    render(<App />);
+  it("redirects the root route to maintenance", () => {
+    render(
+      <MemoryRouter initialEntries={["/"]}>
+        <App />
+      </MemoryRouter>,
+    );
 
     expect(
       screen.getByRole("heading", {
-        name: /frontend scaffold ready for the playlist ui/i,
+        name: /^maintenance$/i,
       }),
     ).toBeInTheDocument();
   });
 
-  it("renders the Tailwind setup callout", () => {
-    render(<App />);
+  it("renders the youtube music route", () => {
+    render(
+      <MemoryRouter initialEntries={["/youtube-music"]}>
+        <App />
+      </MemoryRouter>,
+    );
 
-    expect(screen.getByText(/tailwind v4/i)).toBeInTheDocument();
     expect(
-      screen.getByText(/^the palette is available directly through `ctp` colour tokens\.$/i),
+      screen.getByRole("heading", {
+        name: /^youtube music$/i,
+      }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", {
+        name: /^local library$/i,
+      }),
+    ).toBeInTheDocument();
+  });
+
+  it("renders the local library route", () => {
+    render(
+      <MemoryRouter initialEntries={["/local-library"]}>
+        <App />
+      </MemoryRouter>,
+    );
+
+    expect(
+      screen.getByRole("heading", {
+        name: /^local library$/i,
+      }),
     ).toBeInTheDocument();
   });
 });
