@@ -327,6 +327,25 @@ function Topbar({ view }: { view: ViewConfig }) {
   );
 }
 
+function ViewPanel({
+  activeViewId,
+  view,
+}: {
+  activeViewId: ViewConfig["id"];
+  view: ViewConfig;
+}) {
+  const isActive = activeViewId === view.id;
+
+  return (
+    <div
+      aria-hidden={!isActive}
+      className={isActive ? "flex-1" : "hidden"}
+      data-view-active={isActive ? "true" : "false"}
+      id={view.id}
+    />
+  );
+}
+
 function App() {
   const [activeViewId, setActiveViewId] = useState<ViewConfig["id"]>("proposals");
   const activeView = viewConfigById[activeViewId];
@@ -417,7 +436,11 @@ function App() {
 
         <main className="flex flex-1 flex-col bg-ctp-base">
           <Topbar view={activeView} />
-          <div className="flex-1" />
+          <div className="flex flex-1 flex-col">
+            {viewConfigs.map((view) => (
+              <ViewPanel key={view.id} activeViewId={activeViewId} view={view} />
+            ))}
+          </div>
         </main>
       </div>
     </div>

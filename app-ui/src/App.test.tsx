@@ -39,6 +39,9 @@ describe("App", () => {
   it("updates the topbar config when a playlist nav item is selected", () => {
     render(<App />);
 
+    expect(document.getElementById("proposals")).toHaveAttribute("data-view-active", "true");
+    expect(document.getElementById("playlist")).toHaveAttribute("data-view-active", "false");
+
     fireEvent.click(screen.getByRole("button", { name: /Late Night Drive/i }));
 
     expect(screen.getByRole("heading", { name: "Late Night Drive" })).toBeInTheDocument();
@@ -46,6 +49,8 @@ describe("App", () => {
     expect(screen.getAllByText("YouTube Music")).toHaveLength(2);
     expect(screen.getByRole("button", { name: "Sync" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Export M3U" })).toBeInTheDocument();
+    expect(document.getElementById("proposals")).toHaveAttribute("data-view-active", "false");
+    expect(document.getElementById("playlist")).toHaveAttribute("data-view-active", "true");
   });
 
   it("interpolates scalar values with rounding", () => {
