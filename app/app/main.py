@@ -106,13 +106,15 @@ def create_app() -> FastAPI:
         create_streaming_router(
             require_database_url=require_database_url,
             require_redis_url=require_redis_url,
-        )
+        ),
+        prefix="/api",
     )
     app.include_router(
         create_matching_router(
             require_database_url=require_database_url,
             require_redis_url=require_redis_url,
-        )
+        ),
+        prefix="/api",
     )
     app.include_router(create_rescue_router(require_database_url=require_database_url))
     app.include_router(create_search_router(require_database_url=require_database_url))

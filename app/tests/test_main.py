@@ -44,7 +44,11 @@ def test_links_routes_are_mounted_under_api_prefix() -> None:
     assert "/api/proposals/{proposal_id}/reject" in route_paths
     assert "/api/final-links/{final_link_id}" in route_paths
     assert "/local-tracks/{local_track_id}/rescue" in route_paths
-    assert "/playlists/{playlist_id}/m3u" in route_paths
+    assert "/api/playlists/{playlist_id}" in route_paths
+    assert "/api/playlists/{playlist_id}/tracks" in route_paths
+    assert "/api/playlists/{playlist_id}/m3u" in route_paths
+    assert "/api/streaming/accounts/{account_id}/sync" in route_paths
+    assert "/api/local-tracks/{local_track_id}/rematch" in route_paths
 
 
 def test_ingest_status_endpoint_reports_queue_depths_and_recent_results() -> None:
@@ -155,7 +159,7 @@ def test_streaming_accounts_endpoint_lists_persisted_accounts(
     route = next(
         route
         for route in app.routes
-        if getattr(route, "path", None) == "/streaming/accounts"
+        if getattr(route, "path", None) == "/api/streaming/accounts"
         and "GET" in getattr(route, "methods", set())
     )
     response = asyncio.run(route.endpoint())
@@ -235,7 +239,7 @@ def test_streaming_playlists_endpoint_lists_synced_playlists(
     route = next(
         route
         for route in app.routes
-        if getattr(route, "path", None) == "/streaming/playlists"
+        if getattr(route, "path", None) == "/api/streaming/playlists"
         and "GET" in getattr(route, "methods", set())
     )
     response = asyncio.run(route.endpoint())
@@ -340,7 +344,7 @@ def test_streaming_accounts_endpoint_creates_youtube_music_account(
     route = next(
         route
         for route in app.routes
-        if getattr(route, "path", None) == "/streaming/accounts"
+        if getattr(route, "path", None) == "/api/streaming/accounts"
         and "POST" in getattr(route, "methods", set())
     )
     payload = CreateStreamingAccountRequest(
@@ -430,7 +434,7 @@ def test_playlist_m3u_export_endpoint_returns_attachment(
     route = next(
         route
         for route in app.routes
-        if getattr(route, "path", None) == "/playlists/{playlist_id}/m3u"
+        if getattr(route, "path", None) == "/api/playlists/{playlist_id}/m3u"
         and "GET" in getattr(route, "methods", set())
     )
 
@@ -490,7 +494,7 @@ def test_streaming_account_sync_endpoint_enqueues_job(
     route = next(
         route
         for route in app.routes
-        if getattr(route, "path", None) == "/streaming/accounts/{account_id}/sync"
+        if getattr(route, "path", None) == "/api/streaming/accounts/{account_id}/sync"
         and "POST" in getattr(route, "methods", set())
     )
     response = asyncio.run(route.endpoint(1))
@@ -547,7 +551,7 @@ def test_matching_status_endpoint_lists_suggestions_with_confidence_bands(
     route = next(
         route
         for route in app.routes
-        if getattr(route, "path", None) == "/matching/status"
+        if getattr(route, "path", None) == "/api/matching/status"
         and "GET" in getattr(route, "methods", set())
     )
     response = asyncio.run(route.endpoint())
@@ -612,7 +616,7 @@ def test_matching_run_endpoint_enqueues_job_for_existing_local_track(
     route = next(
         route
         for route in app.routes
-        if getattr(route, "path", None) == "/matching/tracks/{local_track_id}/run"
+        if getattr(route, "path", None) == "/api/matching/tracks/{local_track_id}/run"
         and "POST" in getattr(route, "methods", set())
     )
     response = asyncio.run(route.endpoint(11))
@@ -641,7 +645,7 @@ def test_matching_run_endpoint_returns_404_for_unknown_local_track(
     route = next(
         route
         for route in app.routes
-        if getattr(route, "path", None) == "/matching/tracks/{local_track_id}/run"
+        if getattr(route, "path", None) == "/api/matching/tracks/{local_track_id}/run"
         and "POST" in getattr(route, "methods", set())
     )
 
@@ -718,7 +722,7 @@ def test_local_track_rematch_endpoint_clears_non_final_suggestions_and_enqueues_
     route = next(
         route
         for route in app.routes
-        if getattr(route, "path", None) == "/local-tracks/{local_track_id}/rematch"
+        if getattr(route, "path", None) == "/api/local-tracks/{local_track_id}/rematch"
         and "POST" in getattr(route, "methods", set())
     )
     response = asyncio.run(route.endpoint(15))
@@ -771,7 +775,7 @@ def test_local_track_rematch_endpoint_returns_404_for_unknown_track(
     route = next(
         route
         for route in app.routes
-        if getattr(route, "path", None) == "/local-tracks/{local_track_id}/rematch"
+        if getattr(route, "path", None) == "/api/local-tracks/{local_track_id}/rematch"
         and "POST" in getattr(route, "methods", set())
     )
 
