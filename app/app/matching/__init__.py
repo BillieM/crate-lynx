@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 
+from app.matching.isrc import IsrcMatcher
 from app.matching.models import ConfidenceBand, MatchResult
 
 
@@ -17,6 +18,7 @@ def run_matching_pipeline(local_track_id: int) -> None:
 
 __all__ = [
     "ConfidenceBand",
+    "IsrcMatcher",
     "MatchResult",
     "run_matching_pipeline",
 ]
