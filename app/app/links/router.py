@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import os
 from collections.abc import Callable
 from datetime import UTC, datetime
+from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
 from sqlalchemy import and_, create_engine, delete, insert, select, update
@@ -17,11 +19,23 @@ from app.matching.pipeline import (
     SuggestedLinkStore,
     suggested_links_table,
 )
+from app.m3u.generator import (
+    DEFAULT_M3U_OUTPUT_DIR,
+    regenerate_m3us_for_streaming_track,
+)
 from app.streaming.models import streaming_tracks_table
 
 
 def create_router(*, require_database_url: Callable[[], str]) -> APIRouter:
     router = APIRouter()
+
+    def _regenerate_m3u_exports(streaming_track_id: int) -> None:
+        regenerate_m3us_for_streaming_track(
+            streaming_track_id,
+            database_url=require_database_url(),
+            base_path=Path(os.environ.get("LIBRARY_ROOT", "/library")),
+            output_dir=DEFAULT_M3U_OUTPUT_DIR,
+        )
 
     @router.get("/proposals", response_model=ProposalListResponse)
     async def list_proposals(
@@ -126,6 +140,8 @@ def create_router(*, require_database_url: Callable[[], str]) -> APIRouter:
                 .values(status=SUGGESTED_LINK_STATUS_APPROVED)
             )
 
+        _regenerate_m3u_exports(proposal["streaming_track_id"])
+
         final_link_id = result.inserted_primary_key[0]
         if not isinstance(final_link_id, int):
             raise ValueError("Failed to persist final link")
@@ -138,15 +154,17 @@ def create_router(*, require_database_url: Callable[[], str]) -> APIRouter:
 
     @router.post("/proposals/{proposal_id}/reject")
     async def reject_proposal(proposal_id: int) -> dict[str, object]:
-        engine = create_engine(require_database_url())
+        database_url = require_database_url()
+        engine = create_engine(database_url)
         rejected_at = datetime.now(UTC)
 
         with engine.begin() as connection:
             proposal = (
                 connection.execute(
-                    select(suggested_links_table.c.id).where(
-                        suggested_links_table.c.id == proposal_id
-                    )
+                    select(
+                        suggested_links_table.c.id,
+                        suggested_links_table.c.streaming_track_id,
+                    ).where(suggested_links_table.c.id == proposal_id)
                 )
                 .mappings()
                 .one_or_none()
@@ -163,6 +181,8 @@ def create_router(*, require_database_url: Callable[[], str]) -> APIRouter:
                     rejected_at=rejected_at,
                 )
             )
+
+        _regenerate_m3u_exports(proposal["streaming_track_id"])
 
         return {
             "proposal_id": proposal_id,
@@ -204,6 +224,8 @@ def create_router(*, require_database_url: Callable[[], str]) -> APIRouter:
                     rejected_at=rejected_at,
                 )
             )
+
+        _regenerate_m3u_exports(final_link["streaming_track_id"])
 
         rejected_suggestion_id = rejected_suggestion.inserted_primary_key[0]
         if not isinstance(rejected_suggestion_id, int):

@@ -16,7 +16,11 @@ from app.matching.pipeline import (
     suggested_links_table,
 )
 from app.streaming.models import metadata as streaming_metadata
-from app.streaming.models import streaming_tracks_table
+from app.streaming.models import (
+    playlist_membership_table,
+    streaming_playlists_table,
+    streaming_tracks_table,
+)
 
 
 def test_list_proposals_returns_joined_records(tmp_path: Path) -> None:
@@ -282,6 +286,87 @@ def test_approve_proposal_writes_final_link_and_marks_suggestion_approved(
     assert suggestion["status"] == SUGGESTED_LINK_STATUS_APPROVED
 
 
+def test_approve_proposal_regenerates_playlist_m3u(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite:///{tmp_path / 'approve-proposal-regenerates-m3u.db'}"
+    engine = create_engine(database_url)
+    local_tracks_metadata.create_all(engine)
+    streaming_metadata.create_all(engine)
+    suggested_links_metadata.create_all(engine)
+    links_metadata.create_all(engine)
+    monkeypatch.setenv("DATABASE_URL", database_url)
+    monkeypatch.setenv("LIBRARY_ROOT", str(tmp_path / "library"))
+    monkeypatch.setattr("app.links.router.DEFAULT_M3U_OUTPUT_DIR", tmp_path / "m3u")
+
+    with engine.begin() as connection:
+        connection.execute(
+            insert(local_tracks_table).values(
+                id=4,
+                file_path="Artist/approved.mp3",
+                library_root_rel_path="Artist/approved.mp3",
+                fingerprint="fp-4",
+                beets_id=4,
+            )
+        )
+        connection.execute(
+            insert(streaming_tracks_table).values(
+                id=9,
+                provider_track_id="ytm-9",
+                title="Approved Track",
+                artist="Artist",
+                album="Album",
+                year=2024,
+                isrc="ABC123456789",
+                duration_ms=123000,
+            )
+        )
+        connection.execute(
+            insert(streaming_playlists_table).values(
+                id=7,
+                account_id=1,
+                provider_playlist_id="PL7",
+                title="Road Trip Mix",
+            )
+        )
+        connection.execute(
+            insert(playlist_membership_table).values(
+                playlist_id=7,
+                streaming_track_id=9,
+                position=1,
+            )
+        )
+        connection.execute(
+            insert(suggested_links_table).values(
+                id=13,
+                local_track_id=4,
+                streaming_track_id=9,
+                match_method="tags",
+                score=0.82,
+                status="pending",
+            )
+        )
+
+    router = create_router(require_database_url=lambda: database_url)
+    route = next(
+        route
+        for route in router.routes
+        if getattr(route, "path", None) == "/proposals/{proposal_id}/approve"
+        and "POST" in getattr(route, "methods", set())
+    )
+
+    asyncio.run(route.endpoint(13))
+
+    assert (tmp_path / "m3u" / "Road-Trip-Mix.m3u").read_text(
+        encoding="utf-8"
+    ).splitlines() == [
+        "#EXTM3U",
+        "#EXTINF:123,Artist - Approved Track",
+        str((tmp_path / "library" / "Artist/approved.mp3").resolve()),
+    ]
+
+
 def test_approve_proposal_returns_404_when_missing(tmp_path: Path) -> None:
     database_url = f"sqlite:///{tmp_path / 'approve-proposal-missing.db'}"
     engine = create_engine(database_url)
@@ -458,6 +543,85 @@ def test_reject_proposal_marks_suggestion_rejected(tmp_path: Path) -> None:
     assert suggestion["rejected_at"] is not None
 
 
+def test_reject_proposal_regenerates_playlist_m3u(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite:///{tmp_path / 'reject-proposal-regenerates-m3u.db'}"
+    engine = create_engine(database_url)
+    local_tracks_metadata.create_all(engine)
+    streaming_metadata.create_all(engine)
+    suggested_links_metadata.create_all(engine)
+    links_metadata.create_all(engine)
+    monkeypatch.setenv("DATABASE_URL", database_url)
+    monkeypatch.setenv("LIBRARY_ROOT", str(tmp_path / "library"))
+    monkeypatch.setattr("app.links.router.DEFAULT_M3U_OUTPUT_DIR", tmp_path / "m3u")
+
+    output_path = tmp_path / "m3u" / "Road-Trip-Mix.m3u"
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text("stale", encoding="utf-8")
+
+    with engine.begin() as connection:
+        connection.execute(
+            insert(local_tracks_table).values(
+                id=4,
+                file_path="Artist/rejected.mp3",
+                library_root_rel_path="Artist/rejected.mp3",
+                fingerprint="fp-4",
+                beets_id=4,
+            )
+        )
+        connection.execute(
+            insert(streaming_tracks_table).values(
+                id=9,
+                provider_track_id="ytm-9",
+                title="Rejected Track",
+                artist="Artist",
+                album="Album",
+                year=2024,
+                isrc="ABC123456789",
+                duration_ms=123000,
+            )
+        )
+        connection.execute(
+            insert(streaming_playlists_table).values(
+                id=7,
+                account_id=1,
+                provider_playlist_id="PL7",
+                title="Road Trip Mix",
+            )
+        )
+        connection.execute(
+            insert(playlist_membership_table).values(
+                playlist_id=7,
+                streaming_track_id=9,
+                position=1,
+            )
+        )
+        connection.execute(
+            insert(suggested_links_table).values(
+                id=13,
+                local_track_id=4,
+                streaming_track_id=9,
+                match_method="tags",
+                score=0.82,
+                status="pending",
+            )
+        )
+
+    router = create_router(require_database_url=lambda: database_url)
+    route = next(
+        route
+        for route in router.routes
+        if getattr(route, "path", None) == "/proposals/{proposal_id}/reject"
+        and "POST" in getattr(route, "methods", set())
+    )
+
+    asyncio.run(route.endpoint(13))
+
+    assert output_path.read_text(encoding="utf-8") == "#EXTM3U"
+
+
 def test_reject_proposal_returns_404_when_missing(tmp_path: Path) -> None:
     database_url = f"sqlite:///{tmp_path / 'reject-proposal-missing.db'}"
     engine = create_engine(database_url)
@@ -552,6 +716,82 @@ def test_break_final_link_removes_final_link_and_writes_rejected_suggestion(
     assert suggestion["score"] == 0.0
     assert suggestion["status"] == SUGGESTED_LINK_STATUS_REJECTED
     assert suggestion["rejected_at"] is not None
+
+
+def test_break_final_link_regenerates_playlist_m3u(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite:///{tmp_path / 'break-final-link-regenerates-m3u.db'}"
+    engine = create_engine(database_url)
+    local_tracks_metadata.create_all(engine)
+    streaming_metadata.create_all(engine)
+    suggested_links_metadata.create_all(engine)
+    links_metadata.create_all(engine)
+    monkeypatch.setenv("DATABASE_URL", database_url)
+    monkeypatch.setenv("LIBRARY_ROOT", str(tmp_path / "library"))
+    monkeypatch.setattr("app.links.router.DEFAULT_M3U_OUTPUT_DIR", tmp_path / "m3u")
+
+    output_path = tmp_path / "m3u" / "Road-Trip-Mix.m3u"
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text("stale", encoding="utf-8")
+
+    with engine.begin() as connection:
+        connection.execute(
+            insert(local_tracks_table).values(
+                id=4,
+                file_path="Artist/broken.mp3",
+                library_root_rel_path="Artist/broken.mp3",
+                fingerprint="fp-4",
+                beets_id=4,
+            )
+        )
+        connection.execute(
+            insert(streaming_tracks_table).values(
+                id=9,
+                provider_track_id="ytm-9",
+                title="Broken Link Track",
+                artist="Artist",
+                album="Album",
+                year=2024,
+                isrc="ABC123456789",
+                duration_ms=123000,
+            )
+        )
+        connection.execute(
+            insert(streaming_playlists_table).values(
+                id=7,
+                account_id=1,
+                provider_playlist_id="PL7",
+                title="Road Trip Mix",
+            )
+        )
+        connection.execute(
+            insert(playlist_membership_table).values(
+                playlist_id=7,
+                streaming_track_id=9,
+                position=1,
+            )
+        )
+        connection.execute(
+            insert(final_links_table).values(
+                id=7,
+                local_track_id=4,
+                streaming_track_id=9,
+            )
+        )
+
+    router = create_router(require_database_url=lambda: database_url)
+    route = next(
+        route
+        for route in router.routes
+        if getattr(route, "path", None) == "/final-links/{final_link_id}"
+        and "DELETE" in getattr(route, "methods", set())
+    )
+
+    asyncio.run(route.endpoint(7))
+
+    assert output_path.read_text(encoding="utf-8") == "#EXTM3U"
 
 
 def test_break_final_link_returns_404_when_missing(tmp_path: Path) -> None:

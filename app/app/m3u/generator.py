@@ -1,20 +1,25 @@
 from __future__ import annotations
 
 import os
+import re
 from pathlib import Path
 
 from sqlalchemy import create_engine, select
 
 from app.links.store import final_links_table
 from app.local_tracks.store import local_tracks_table
-from app.streaming.models import playlist_membership_table, streaming_tracks_table
+from app.streaming.models import (
+    playlist_membership_table,
+    streaming_playlists_table,
+    streaming_tracks_table,
+)
+
+DEFAULT_M3U_OUTPUT_DIR = Path("/tmp/crate-lynx-m3u")
 
 
 def generate_m3u(playlist_id: int, base_path: Path | str) -> str:
     """Generate M3U contents for a playlist."""
-    database_url = os.environ.get("DATABASE_URL")
-    if not database_url:
-        raise RuntimeError("DATABASE_URL must be configured for M3U generation")
+    database_url = _require_database_url()
 
     base_path = Path(base_path).resolve()
     engine = create_engine(database_url)
@@ -58,8 +63,74 @@ def generate_m3u(playlist_id: int, base_path: Path | str) -> str:
     return "\n".join(lines)
 
 
+def build_m3u_filename(title: str) -> str:
+    sanitized = re.sub(r"[^A-Za-z0-9._-]+", "-", title).strip("-")
+    if not sanitized:
+        sanitized = "playlist"
+    return f"{sanitized}.m3u"
+
+
+def write_m3u(
+    playlist_id: int,
+    playlist_title: str,
+    base_path: Path | str,
+    output_dir: Path | str = DEFAULT_M3U_OUTPUT_DIR,
+) -> Path:
+    resolved_output_dir = Path(output_dir).resolve()
+    resolved_output_dir.mkdir(parents=True, exist_ok=True)
+    output_path = resolved_output_dir / build_m3u_filename(playlist_title)
+    output_path.write_text(generate_m3u(playlist_id, base_path), encoding="utf-8")
+    return output_path
+
+
+def regenerate_m3us_for_streaming_track(
+    streaming_track_id: int,
+    *,
+    database_url: str | None = None,
+    base_path: Path | str,
+    output_dir: Path | str = DEFAULT_M3U_OUTPUT_DIR,
+) -> list[Path]:
+    engine = create_engine(database_url or _require_database_url())
+    query = (
+        select(
+            streaming_playlists_table.c.id,
+            streaming_playlists_table.c.title,
+        )
+        .select_from(
+            streaming_playlists_table.join(
+                playlist_membership_table,
+                playlist_membership_table.c.playlist_id
+                == streaming_playlists_table.c.id,
+            )
+        )
+        .where(playlist_membership_table.c.streaming_track_id == streaming_track_id)
+        .distinct()
+        .order_by(streaming_playlists_table.c.id.asc())
+    )
+
+    with engine.connect() as connection:
+        playlists = connection.execute(query).mappings().all()
+
+    return [
+        write_m3u(
+            playlist["id"],
+            playlist["title"],
+            base_path=base_path,
+            output_dir=output_dir,
+        )
+        for playlist in playlists
+    ]
+
+
 def _format_duration_seconds(duration_ms: int | None) -> int:
     if duration_ms is None:
         return -1
 
     return duration_ms // 1000
+
+
+def _require_database_url() -> str:
+    database_url = os.environ.get("DATABASE_URL")
+    if not database_url:
+        raise RuntimeError("DATABASE_URL must be configured for M3U generation")
+    return database_url
