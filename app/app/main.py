@@ -14,7 +14,7 @@ from app.core.queueing import (
 from app.core.worker import resolve_queue_names
 from app.ingest_status import IngestionStatusStore
 from app.ingestion import BeetsImporter, IngestionProcessor, IngestionWatcher
-from app.local_tracks import LocalTrackStore
+from app.local_tracks.store import LocalTrackStore
 from app.streaming_accounts import StreamingAccountStore
 
 
