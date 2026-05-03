@@ -99,6 +99,7 @@ class YouTubeMusicAdapter(StreamingAdapter):
             return []
 
         tracks: list[YouTubeMusicTrack] = []
+        missing_isrc_track_ids: set[str] = set()
         for track in raw_tracks:
             if not isinstance(track, dict):
                 continue
@@ -119,7 +120,7 @@ class YouTubeMusicAdapter(StreamingAdapter):
             duration_seconds = track.get("duration_seconds")
             isrc = _extract_isrc(track)
             if isrc is None:
-                isrc = _extract_isrc(self.get_song(provider_track_id))
+                missing_isrc_track_ids.add(provider_track_id)
 
             tracks.append(
                 YouTubeMusicTrack(
@@ -137,7 +138,24 @@ class YouTubeMusicAdapter(StreamingAdapter):
                 )
             )
 
-        return tracks
+        if not missing_isrc_track_ids:
+            return tracks
+
+        isrc_by_track_id = self._lookup_missing_isrcs(missing_isrc_track_ids)
+        return [
+            track
+            if track.isrc is not None
+            else YouTubeMusicTrack(
+                provider_track_id=track.provider_track_id,
+                title=track.title,
+                artist=track.artist,
+                album=track.album,
+                year=track.year,
+                isrc=isrc_by_track_id.get(track.provider_track_id),
+                duration_ms=track.duration_ms,
+            )
+            for track in tracks
+        ]
 
     def get_playlist(
         self,
@@ -208,6 +226,15 @@ class YouTubeMusicAdapter(StreamingAdapter):
             or _extract_best_thumbnail_url(song)
             or _extract_best_thumbnail_url(watch_playlist),
         )
+
+    def _lookup_missing_isrcs(
+        self,
+        provider_track_ids: set[str],
+    ) -> dict[str, str | None]:
+        return {
+            provider_track_id: _extract_isrc(self.get_song(provider_track_id))
+            for provider_track_id in provider_track_ids
+        }
 
 
 def sync_library_playlists(

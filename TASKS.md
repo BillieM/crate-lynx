@@ -25,7 +25,7 @@
 
 **File:** `app/app/streaming/adapters/youtube_music.py`
 
-- [ ] Check whether ytmusicapi exposes a bulk song-detail endpoint that could replace individual `get_song()` calls
-- [ ] Restructure the loop to collect tracks missing ISRCs in a first pass, then enrich them in a second pass — keeps the hot path readable and makes future batching straightforward
-- [ ] If no batch API exists, add an in-memory cache (dict keyed by `provider_track_id`) so repeated calls for the same track within one sync don't hit the network twice
-- [ ] Add a test that mocks the playlist response with multiple ISRC-less tracks and asserts `get_song()` is called at most once per unique track ID
+- [x] Check whether ytmusicapi exposes a bulk song-detail endpoint that could replace individual `get_song()` calls
+- [x] Restructure the loop to collect tracks missing ISRCs in a first pass, then enrich them in a second pass — keeps the hot path readable and makes future batching straightforward
+- [x] If no batch API exists, add an in-memory cache (dict keyed by `provider_track_id`) so repeated calls for the same track within one sync don't hit the network twice
+- [x] Add a test that mocks the playlist response with multiple ISRC-less tracks and asserts `get_song()` is called at most once per unique track ID
