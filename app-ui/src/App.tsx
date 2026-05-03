@@ -1,6 +1,7 @@
 /* eslint-disable react-refresh/only-export-components */
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 
 export type ProgressStatus = "unlinked" | "pending" | "linked";
 
@@ -58,6 +59,19 @@ type NavItem = {
 };
 
 type TopbarPillTone = "pill-info" | "pill-pending" | "pill-lib";
+
+type SearchResult = {
+  id: number;
+  kind: "playlist" | "streaming_track" | "local_track";
+  route_path: string;
+  subtitle: string;
+  title: string;
+};
+
+type SearchResponse = {
+  query: string;
+  results: SearchResult[];
+};
 
 type ViewConfig = {
   actionLabels: string[];
@@ -177,6 +191,38 @@ const viewShellIds = [
   "playlist5",
   "library",
 ] satisfies ViewConfig["id"][];
+
+const searchKindLabels: Record<SearchResult["kind"], string> = {
+  playlist: "Playlist",
+  streaming_track: "Streaming",
+  local_track: "Local",
+};
+
+function useDebouncedValue(value: string, delayMs: number) {
+  const [debouncedValue, setDebouncedValue] = useState(value);
+
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      setDebouncedValue(value);
+    }, delayMs);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [delayMs, value]);
+
+  return debouncedValue;
+}
+
+async function fetchSearchResults(query: string) {
+  const response = await fetch(`/api/search?q=${encodeURIComponent(query)}`);
+
+  if (!response.ok) {
+    throw new Error(`Search request failed with status ${response.status}`);
+  }
+
+  return (await response.json()) as SearchResponse;
+}
 
 function getBadgeClasses(tone: NavItem["tone"]) {
   switch (tone) {
@@ -339,6 +385,88 @@ function Topbar({ view }: { view: ViewConfig }) {
   );
 }
 
+function SearchPanel() {
+  const [query, setQuery] = useState("");
+  const debouncedQuery = useDebouncedValue(query.trim(), 250);
+  const hasQuery = debouncedQuery.length > 0;
+  const { data, error, isFetching } = useQuery({
+    queryKey: ["sidebar-search", debouncedQuery],
+    queryFn: () => fetchSearchResults(debouncedQuery),
+    enabled: hasQuery,
+    retry: false,
+  });
+
+  const results = data?.results ?? [];
+  const isOpen = query.trim().length > 0;
+
+  return (
+    <div className="relative">
+      <label className="sr-only" htmlFor="sidebar-search">
+        Search library
+      </label>
+      <div className="flex items-center gap-2 rounded-[10px] bg-ctp-surface0 px-3 py-2.5 text-ctp-subtext0 ring-1 ring-inset ring-ctp-surface1/70 focus-within:text-ctp-text focus-within:ring-ctp-overlay0">
+        <svg aria-hidden="true" className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24">
+          <path
+            d="m21 21-4.35-4.35m1.85-5.15a7 7 0 1 1-14 0 7 7 0 0 1 14 0Z"
+            stroke="currentColor"
+            strokeLinecap="round"
+            strokeWidth="1.8"
+          />
+        </svg>
+        <input
+          autoComplete="off"
+          className="w-full border-0 bg-transparent p-0 text-[13px] text-ctp-text outline-none placeholder:text-ctp-subtext0"
+          id="sidebar-search"
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder="Search tracks, artists, playlists"
+          type="search"
+          value={query}
+        />
+      </div>
+
+      {isOpen ? (
+        <div className="absolute inset-x-0 top-[calc(100%+0.5rem)] z-10 overflow-hidden rounded-[12px] border border-ctp-surface1 bg-ctp-mantle shadow-[0_20px_48px_rgba(17,17,27,0.38)]">
+          {isFetching ? (
+            <p className="px-3 py-3 text-[12px] text-ctp-subtext0">Searching library…</p>
+          ) : null}
+
+          {!isFetching && error ? (
+            <p className="px-3 py-3 text-[12px] text-ctp-red">Search unavailable right now.</p>
+          ) : null}
+
+          {!isFetching && !error && hasQuery && results.length === 0 ? (
+            <p className="px-3 py-3 text-[12px] text-ctp-subtext0">No matching playlists or tracks.</p>
+          ) : null}
+
+          {!isFetching && !error && results.length > 0 ? (
+            <div className="py-1.5">
+              {results.map((result) => (
+                <button
+                  key={`${result.kind}-${result.id}`}
+                  className="flex w-full items-start gap-3 px-3 py-2.5 text-left transition-colors hover:bg-ctp-surface0/80"
+                  type="button"
+                >
+                  <span className="mt-0.5 rounded-full bg-ctp-surface0 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-ctp-subtext0 ring-1 ring-inset ring-ctp-surface1/70">
+                    {searchKindLabels[result.kind]}
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-[12px] font-semibold text-ctp-text">
+                      {result.title}
+                    </span>
+                    <span className="mt-1 block truncate text-[11px] text-ctp-subtext0">
+                      {result.subtitle}
+                    </span>
+                  </span>
+                </button>
+              ))}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function ViewShell({
   activeViewId,
   viewId,
@@ -403,25 +531,7 @@ function App() {
           </div>
 
           <div className="border-b border-ctp-surface0 px-4 py-4">
-            <label className="sr-only" htmlFor="sidebar-search">
-              Search library
-            </label>
-            <div className="flex items-center gap-2 rounded-[10px] bg-ctp-surface0 px-3 py-2.5 text-ctp-subtext0">
-              <svg aria-hidden="true" className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24">
-                <path
-                  d="m21 21-4.35-4.35m1.85-5.15a7 7 0 1 1-14 0 7 7 0 0 1 14 0Z"
-                  stroke="currentColor"
-                  strokeLinecap="round"
-                  strokeWidth="1.8"
-                />
-              </svg>
-              <input
-                className="w-full border-0 bg-transparent p-0 text-[13px] text-ctp-text outline-none placeholder:text-ctp-subtext0"
-                id="sidebar-search"
-                placeholder="Search tracks, artists, playlists"
-                type="search"
-              />
-            </div>
+            <SearchPanel />
           </div>
 
           <div className="flex-1 space-y-6 overflow-y-auto px-0 py-5">

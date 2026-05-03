@@ -1,9 +1,31 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import App, { asRgb, getProgressColor, lerp, mixColors } from "./App";
 
+function renderApp() {
+  const queryClient = new QueryClient({
+    defaultOptions: {
+      queries: {
+        retry: false,
+      },
+    },
+  });
+
+  return render(
+    <QueryClientProvider client={queryClient}>
+      <App />
+    </QueryClientProvider>,
+  );
+}
+
 describe("App", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.useRealTimers();
+  });
+
   it("renders the fixed-height shell container, sidebar scaffold, and topbar", () => {
-    const { container } = render(<App />);
+    const { container } = renderApp();
 
     expect(container.firstChild).toHaveClass("text-ctp-text");
 
@@ -51,7 +73,7 @@ describe("App", () => {
   });
 
   it("updates the topbar config when a playlist nav item is selected", () => {
-    render(<App />);
+    renderApp();
 
     expect(document.getElementById("proposals")).toHaveAttribute("data-view-active", "true");
     expect(document.getElementById("playlist")).toHaveAttribute("data-view-active", "false");
@@ -65,6 +87,48 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: "Export M3U" })).toBeInTheDocument();
     expect(document.getElementById("proposals")).toHaveAttribute("data-view-active", "false");
     expect(document.getElementById("playlist")).toHaveAttribute("data-view-active", "true");
+  });
+
+  it("debounces sidebar search requests and renders compact results", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        query: "mix",
+        results: [
+          {
+            id: 1,
+            kind: "playlist",
+            title: "Morning Mix",
+            subtitle: "Playlist • 12 tracks",
+            route_path: "/youtube-music",
+          },
+          {
+            id: 2,
+            kind: "local_track",
+            title: "Mixdown.mp3",
+            subtitle: "Local file • Artist/Mixdown.mp3",
+            route_path: "/local-library",
+          },
+        ],
+      }),
+    } as Response);
+
+    renderApp();
+
+    fireEvent.change(screen.getByPlaceholderText("Search tracks, artists, playlists"), {
+      target: { value: "mix" },
+    });
+
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith("/api/search?q=mix");
+    });
+
+    expect(await screen.findByText("Morning Mix")).toBeInTheDocument();
+    expect(screen.getByText("Mixdown.mp3")).toBeInTheDocument();
+    expect(screen.getByText("Playlist")).toBeInTheDocument();
+    expect(screen.getByText("Local")).toBeInTheDocument();
   });
 
   it("interpolates scalar values with rounding", () => {

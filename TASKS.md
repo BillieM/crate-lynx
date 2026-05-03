@@ -14,5 +14,5 @@
   - Right: action buttons rendered from a per-view config (e.g. Sync + Export M3U for playlist views, empty for maintenance views)
 - [x] Wire view switching: each nav item click activates the matching view div and updates the topbar title/pill/actions — no React Router needed, replicate the `showView` pattern from the mockup using React state
 - [x] Add stub view shells (empty `<div>` with an id) for: `proposals`, `unidentified`, `missing`, `playlist` (Late Night Drive), `playlist2`–`playlist5`, `library` — content filled by E10–E12
-- [ ] Move `SearchPanel` into the sidebar search bar slot; keep the existing debounce + TanStack Query fetch logic, drop the full-screen dropdown styling in favour of the compact sidebar context
+- [x] Move `SearchPanel` into the sidebar search bar slot; keep the existing debounce + TanStack Query fetch logic, drop the full-screen dropdown styling in favour of the compact sidebar context
 - [ ] Verify the Catppuccin Mocha palette is applied throughout: no grays, no default Tailwind colours — every element maps to a named Catppuccin token
