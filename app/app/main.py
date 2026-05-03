@@ -12,6 +12,7 @@ from app.core.worker import resolve_queue_names
 from app.ingestion import BeetsImporter, IngestionProcessor, IngestionWatcher
 from app.ingestion.router import router as ingestion_router
 from app.ingestion.status import IngestionStatusStore
+from app.links.router import create_router as create_links_router
 from app.local_tracks.store import LocalTrackStore
 from app.matching.jobs import MatchingJobEnqueuer
 from app.matching.router import create_router as create_matching_router
@@ -110,6 +111,10 @@ def create_app() -> FastAPI:
             require_database_url=require_database_url,
             require_redis_url=require_redis_url,
         )
+    )
+    app.include_router(
+        create_links_router(require_database_url=require_database_url),
+        prefix="/api",
     )
 
     return app

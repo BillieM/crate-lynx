@@ -31,6 +31,28 @@ The UI is served at `http://localhost:18100` (Nginx). The API is available at `h
 
 ---
 
+## Deployment
+
+Production runs on a remote Docker host via the `gluesoup-1` SSH context. Switch to it with:
+
+```bash
+docker context use gluesoup-1
+```
+
+The remote host does not have the Docker Compose plugin installed, so use `docker-compose` rather than `docker compose`:
+
+```bash
+docker-compose up --build -d
+```
+
+Services are exposed on the same ports as local development (`18100`–`18103`). To verify the deploy, check that all containers are healthy:
+
+```bash
+docker-compose ps
+```
+
+---
+
 ## Environment variables
 
 | Variable | Purpose |

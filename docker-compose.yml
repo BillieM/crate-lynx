@@ -49,6 +49,7 @@ services:
       REDIS_URL: redis://redis:6379/0
       TOKEN_ENCRYPTION_KEY: ${TOKEN_ENCRYPTION_KEY:-change-me}
       LIBRARY_ROOT: ${LIBRARY_ROOT:-/library}
+      BEETS_LIBRARY: ${BEETS_LIBRARY:-/library/library.db}
       INGESTION_ROOT: /ingestion
     ports:
       - "18101:8000"

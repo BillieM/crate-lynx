@@ -18,18 +18,9 @@ source .venv/bin/activate
 pip install -r app/requirements.txt -r requirements-dev.txt
 ```
 
-When a subtask is complete, always commit and push:
+When a subtask is complete, follow the instructions in `.codex/commands/next-task.md`.
 
-1. Run any available linters and tests for changed code
-2. Fix any issues surfaced before committing
-3. Stage only files changed during the subtask
-4. Commit with a concise message (`feat/fix/refactor/chore: description`)
-5. Push to origin
-
-Only skip committing if one of these specific conditions applies:
-- Tests or linting are failing and you cannot fix them
-- The user explicitly said not to commit
-- No files were changed
+To deploy to production, follow the instructions in `.codex/commands/deploy.md`.
 
 ## Linting & tests
 

@@ -23,9 +23,19 @@ from app.streaming.adapters.youtube_music import (
     YouTubeMusicPlaylist,
     YouTubeMusicTrack,
 )
-from sqlalchemy import create_engine, insert
+from sqlalchemy import create_engine, insert, select
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.requests import Request
+
+
+def test_links_routes_are_mounted_under_api_prefix() -> None:
+    app = create_app()
+    route_paths = {getattr(route, "path", None) for route in app.routes}
+
+    assert "/api/proposals" in route_paths
+    assert "/api/proposals/{proposal_id}/approve" in route_paths
+    assert "/api/proposals/{proposal_id}/reject" in route_paths
+    assert "/api/final-links/{final_link_id}" in route_paths
 
 
 def test_ingest_status_endpoint_reports_queue_depths_and_recent_results() -> None:
@@ -470,6 +480,136 @@ def test_matching_run_endpoint_returns_404_for_unknown_local_track(
         route
         for route in app.routes
         if getattr(route, "path", None) == "/matching/tracks/{local_track_id}/run"
+        and "POST" in getattr(route, "methods", set())
+    )
+
+    try:
+        asyncio.run(route.endpoint(999))
+    except StarletteHTTPException as exc:
+        assert exc.status_code == 404
+        assert exc.detail == "Local track not found"
+    else:
+        raise AssertionError("Expected HTTPException for missing local track")
+
+
+def test_local_track_rematch_endpoint_clears_non_final_suggestions_and_enqueues_job(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite:///{tmp_path / 'local-track-rematch.db'}"
+    engine = create_engine(database_url)
+    local_tracks_metadata.create_all(engine)
+    suggested_links_metadata.create_all(engine)
+    monkeypatch.setenv("DATABASE_URL", database_url)
+    monkeypatch.setenv("REDIS_URL", "redis://redis:6379/7")
+
+    with engine.begin() as connection:
+        connection.execute(
+            insert(local_tracks_table).values(
+                id=15,
+                file_path="Artist/rematch.mp3",
+                library_root_rel_path="Artist/rematch.mp3",
+                fingerprint="fp-15",
+                beets_id=15,
+            )
+        )
+        connection.execute(
+            insert(suggested_links_table),
+            [
+                {
+                    "local_track_id": 15,
+                    "streaming_track_id": 101,
+                    "match_method": "tags",
+                    "score": 0.2,
+                    "status": "pending",
+                },
+                {
+                    "local_track_id": 15,
+                    "streaming_track_id": 102,
+                    "match_method": "manual_break",
+                    "score": 0.0,
+                    "status": "rejected",
+                },
+                {
+                    "local_track_id": 15,
+                    "streaming_track_id": 103,
+                    "match_method": "isrc",
+                    "score": 1.0,
+                    "status": "approved",
+                },
+            ],
+        )
+
+    seen: dict[str, object] = {}
+
+    class FakeMatchingEnqueuer:
+        def __init__(self, redis_url: str) -> None:
+            seen["redis_url"] = redis_url
+
+        def enqueue(self, local_track_id: int) -> str:
+            seen["local_track_id"] = local_track_id
+            return "rematch-job-123"
+
+    monkeypatch.setattr("app.matching.router.MatchingJobEnqueuer", FakeMatchingEnqueuer)
+
+    app = create_app()
+    route = next(
+        route
+        for route in app.routes
+        if getattr(route, "path", None) == "/local-tracks/{local_track_id}/rematch"
+        and "POST" in getattr(route, "methods", set())
+    )
+    response = asyncio.run(route.endpoint(15))
+
+    assert response == {
+        "local_track_id": 15,
+        "job_id": "rematch-job-123",
+    }
+    assert seen == {
+        "redis_url": "redis://redis:6379/7",
+        "local_track_id": 15,
+    }
+
+    with engine.connect() as connection:
+        suggestions = (
+            connection.execute(
+                select(suggested_links_table).order_by(suggested_links_table.c.id.asc())
+            )
+            .mappings()
+            .all()
+        )
+
+    assert len(suggestions) == 2
+    assert suggestions[0]["local_track_id"] == 15
+    assert suggestions[0]["streaming_track_id"] == 102
+    assert suggestions[0]["match_method"] == "manual_break"
+    assert suggestions[0]["score"] == 0.0
+    assert suggestions[0]["status"] == "rejected"
+    assert suggestions[0]["rejected_at"] is None
+
+    assert suggestions[1]["local_track_id"] == 15
+    assert suggestions[1]["streaming_track_id"] == 103
+    assert suggestions[1]["match_method"] == "isrc"
+    assert suggestions[1]["score"] == 1.0
+    assert suggestions[1]["status"] == "approved"
+    assert suggestions[1]["rejected_at"] is None
+
+
+def test_local_track_rematch_endpoint_returns_404_for_unknown_track(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite:///{tmp_path / 'local-track-rematch-missing.db'}"
+    engine = create_engine(database_url)
+    local_tracks_metadata.create_all(engine)
+    monkeypatch.setenv("DATABASE_URL", database_url)
+    monkeypatch.setenv("REDIS_URL", "redis://redis:6379/8")
+
+    app = create_app()
+    route = next(
+        route
+        for route in app.routes
+        if getattr(route, "path", None) == "/local-tracks/{local_track_id}/rematch"
         and "POST" in getattr(route, "methods", set())
     )
 

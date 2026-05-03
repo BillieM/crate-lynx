@@ -34,19 +34,19 @@ Watchdog monitors `ingestion/` folder. Format check — MP3 passes through, loss
 
 ---
 
-### E04 — YouTube Music adapter `in progress`
+### E04 — YouTube Music adapter `done`
 **Subdir:** `app/`
 `YouTubeMusicAdapter` module wrapping ytmusicapi. All ytmusicapi calls routed through this adapter — no direct library calls elsewhere in the codebase. Auth flow writing encrypted token to `streaming_accounts`. Playlist sync populating `streaming_playlists`, `streaming_tracks`, and `playlist_membership`. ISRC extraction from track metadata where available.
 
 ---
 
-### E05 — Matching pipeline
+### E05 — Matching pipeline `done`
 **Subdir:** `app/`
 Sequential pipeline: ISRC match → fuzzy tag match (rapidfuzz) → acoustic fingerprint fallback (only when tag score is below threshold). Threshold bands: high (`isrc_match=true` or tag > 0.85), medium (0.5–0.85), low (< 0.5, triggers acoustic RQ job). Results written to `suggested_links`. Pipeline is re-runnable per track.
 
 ---
 
-### E06 — Link proposal & approval API
+### E06 — Link proposal & approval API `in progress`
 **Subdir:** `app/`
 REST endpoints for the full approval lifecycle: list proposals (with confidence band filtering), approve (writes to `final_links`), reject (updates `suggested_links.status` + `rejected_at`), break link (removes from `final_links`, writes rejected suggestion), re-match (clears suggestion, re-enqueues pipeline). Rejected pairs must never resurface.
 
