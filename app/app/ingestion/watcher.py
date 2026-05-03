@@ -5,7 +5,7 @@ import logging
 from pathlib import Path
 from typing import Callable
 
-from watchdog.events import FileCreatedEvent, FileSystemEventHandler
+from watchdog.events import FileClosedEvent, FileSystemEventHandler
 from watchdog.observers import Observer
 
 
@@ -17,10 +17,7 @@ class IngestionEventHandler(FileSystemEventHandler):
     def __init__(self, on_new_file: FileCallback) -> None:
         self._on_new_file = on_new_file
 
-    def on_created(self, event: FileCreatedEvent) -> None:
-        if event.is_directory:
-            return
-
+    def on_closed(self, event: FileClosedEvent) -> None:
         source_path = Path(event.src_path)
         try:
             self._on_new_file(source_path)

@@ -3,7 +3,7 @@ import sqlite3
 import subprocess
 from unittest.mock import Mock
 
-from watchdog.events import DirCreatedEvent, FileCreatedEvent
+from watchdog.events import FileClosedEvent
 
 from app.ingestion.pipeline import (
     AudioPreparer,
@@ -40,20 +40,11 @@ class StubObserver:
         self.joined = True
 
 
-def test_ingestion_event_handler_ignores_directories() -> None:
-    seen: list[Path] = []
-    handler = IngestionEventHandler(seen.append)
-
-    handler.on_created(DirCreatedEvent("/tmp/ingestion"))
-
-    assert seen == []
-
-
 def test_ingestion_event_handler_forwards_new_files() -> None:
     seen: list[Path] = []
     handler = IngestionEventHandler(seen.append)
 
-    handler.on_created(FileCreatedEvent("/tmp/ingestion/track.mp3"))
+    handler.on_closed(FileClosedEvent("/tmp/ingestion/track.mp3"))
 
     assert seen == [Path("/tmp/ingestion/track.mp3")]
 
@@ -74,7 +65,7 @@ def test_ingestion_event_handler_logs_failures_without_raising(
     monkeypatch.setattr("app.ingestion.watcher.logger.exception", fake_exception)
     handler = IngestionEventHandler(on_new_file)
 
-    handler.on_created(FileCreatedEvent("/tmp/ingestion/bad.flac"))
+    handler.on_closed(FileClosedEvent("/tmp/ingestion/bad.flac"))
 
     assert seen == [Path("/tmp/ingestion/bad.flac")]
     assert logged == [Path("/tmp/ingestion/bad.flac")]
