@@ -94,6 +94,10 @@ const streamingPlaylistsResponse: StreamingPlaylistsResponse = {
   ],
 };
 
+function failUnexpectedFetch(url: string, init?: RequestInit): never {
+  throw new Error(`Unexpected fetch request: ${init?.method ?? "GET"} ${url}`);
+}
+
 function buildPlaylistDetail(id: number, name: string): PlaylistDetailResponse {
   return {
     playlist: {
@@ -181,10 +185,7 @@ function mockPlaylistFetch() {
       } as Response;
     }
 
-    return {
-      ok: true,
-      json: async () => playlistDetailResponse,
-    } as Response;
+    failUnexpectedFetch(url, init);
   });
 }
 
@@ -337,10 +338,7 @@ describe("App", () => {
         } as Response;
       }
 
-      return {
-        ok: true,
-        json: async () => ({ query: "", results: [] }),
-      } as Response;
+      failUnexpectedFetch(url);
     });
 
     renderApp();
@@ -427,28 +425,32 @@ describe("App", () => {
         } as Response;
       }
 
-      return {
-        ok: true,
-        json: async () => ({
-          query: "mix",
-          results: [
-            {
-              id: 1,
-              kind: "playlist",
-              title: "Morning Mix",
-              subtitle: "Playlist • 12 tracks",
-              route_path: "/youtube-music",
-            },
-            {
-              id: 2,
-              kind: "local_track",
-              title: "Mixdown.mp3",
-              subtitle: "Local file • Artist/Mixdown.mp3",
-              route_path: "/local-library",
-            },
-          ],
-        }),
-      } as Response;
+      if (url === "/api/search?q=mix") {
+        return {
+          ok: true,
+          json: async () => ({
+            query: "mix",
+            results: [
+              {
+                id: 1,
+                kind: "playlist",
+                title: "Morning Mix",
+                subtitle: "Playlist • 12 tracks",
+                route_path: "/youtube-music",
+              },
+              {
+                id: 2,
+                kind: "local_track",
+                title: "Mixdown.mp3",
+                subtitle: "Local file • Artist/Mixdown.mp3",
+                route_path: "/local-library",
+              },
+            ],
+          }),
+        } as Response;
+      }
+
+      failUnexpectedFetch(url);
     });
 
     renderApp();
@@ -467,6 +469,17 @@ describe("App", () => {
     expect(screen.getByText("Mixdown.mp3")).toBeInTheDocument();
     expect(screen.getByText("Playlist")).toBeInTheDocument();
     expect(screen.getByText("Local")).toBeInTheDocument();
+  });
+
+  it("fails playlist UI tests on unsupported playlist API routes", async () => {
+    const fetchMock = mockPlaylistFetch();
+
+    renderApp();
+
+    expect(await screen.findByRole("heading", { level: 1, name: "Late Night Drive" })).toBeInTheDocument();
+
+    await expect(fetch("/api/playlists")).rejects.toThrow("Unexpected fetch request: GET /api/playlists");
+    expect(fetchMock).toHaveBeenCalledWith("/api/streaming/playlists");
   });
 
   it("interpolates scalar values with rounding", () => {

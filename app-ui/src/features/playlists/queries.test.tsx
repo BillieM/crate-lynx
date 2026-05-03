@@ -27,6 +27,10 @@ function createWrapper() {
   };
 }
 
+function failUnexpectedFetch(url: string): never {
+  throw new Error(`Unexpected fetch request: GET ${url}`);
+}
+
 describe("playlist queries", () => {
   afterEach(() => {
     vi.restoreAllMocks();
@@ -117,22 +121,30 @@ describe("playlist queries", () => {
     expect(fetchMock).toHaveBeenCalledWith("/api/playlists/12/tracks");
   });
 
-  it("fetches synced streaming playlists for sidebar navigation", async () => {
-    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({
-      ok: true,
-      json: async () => ({
-        playlists: [
-          {
-            id: 12,
-            account_id: 4,
-            provider_playlist_id: "PL12",
-            title: "Late Night Drive",
-            track_count: 62,
-            synced_at: "2026-05-01T09:00:00",
-          },
-        ],
-      }),
-    } as Response);
+  it("fetches synced streaming playlists from the backend sidebar endpoint", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async (input: RequestInfo | URL) => {
+      const url = String(input);
+
+      if (url === "/api/streaming/playlists") {
+        return {
+          ok: true,
+          json: async () => ({
+            playlists: [
+              {
+                id: 12,
+                account_id: 4,
+                provider_playlist_id: "PL12",
+                title: "Late Night Drive",
+                track_count: 62,
+                synced_at: "2026-05-01T09:00:00",
+              },
+            ],
+          }),
+        } as Response;
+      }
+
+      failUnexpectedFetch(url);
+    });
 
     await expect(fetchStreamingPlaylists()).resolves.toEqual({
       playlists: [
@@ -147,6 +159,7 @@ describe("playlist queries", () => {
       ],
     });
     expect(fetchMock).toHaveBeenCalledWith("/api/streaming/playlists");
+    expect(fetchMock).not.toHaveBeenCalledWith("/api/playlists");
   });
 
   it("exports a playlist M3U blob and filename", async () => {
