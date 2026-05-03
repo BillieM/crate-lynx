@@ -8,4 +8,4 @@
 - [x] Implement `POST /local-tracks/{id}/rematch` endpoint: clear existing non-final suggestion for the track, re-enqueue matching pipeline RQ job
 - [x] Enforce rejected-pair guard: matching pipeline and approve endpoint must check `suggested_links` for rejected status before writing or approving a link for the same local+streaming pair
 - [x] Mount router in `main.py` under `/api` prefix
-- [ ] Write tests: list filtering by band, approve writes final_link, reject marks rejected, break link removes final and writes rejected suggestion, rematch re-enqueues, rejected pair cannot be re-approved
+- [x] Write tests: list filtering by band, approve writes final_link, reject marks rejected, break link removes final and writes rejected suggestion, rematch re-enqueues, rejected pair cannot be re-approved
