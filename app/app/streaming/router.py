@@ -7,6 +7,10 @@ from fastapi import APIRouter, HTTPException, Response
 from app.core.queueing import StreamingSyncJobEnqueuer
 from app.streaming.schemas import (
     CreateStreamingAccountRequest,
+    PlaylistDetail,
+    PlaylistDetailResponse,
+    PlaylistTrackResponse,
+    PlaylistTracksResponse,
     StreamingAccountResponse,
     StreamingPlaylistResponse,
     StreamingSyncResponse,
@@ -51,6 +55,41 @@ def create_router(
             ),
         )
 
+    def serialize_playlist_detail(playlist: object) -> PlaylistDetailResponse:
+        return PlaylistDetailResponse(
+            playlist=PlaylistDetail(
+                id=playlist.id,
+                account_id=playlist.account_id,
+                provider_playlist_id=playlist.provider_playlist_id,
+                name=playlist.title,
+                cover_art_url=playlist.cover_art_url,
+                track_count=playlist.track_count,
+                linked_count=playlist.linked_count,
+                pending_count=playlist.pending_count,
+                unlinked_count=playlist.unlinked_count,
+                synced_at=(
+                    playlist.synced_at.isoformat()
+                    if playlist.synced_at is not None
+                    else None
+                ),
+            )
+        )
+
+    def serialize_playlist_track(track: object) -> PlaylistTrackResponse:
+        return PlaylistTrackResponse(
+            id=track.id,
+            provider_track_id=track.provider_track_id,
+            title=track.title,
+            artist=track.artist,
+            album=track.album,
+            duration_ms=track.duration_ms,
+            position=track.position,
+            status=track.status,
+            final_link_id=track.final_link_id,
+            local_track_id=track.local_track_id,
+            proposal_id=track.proposal_id,
+        )
+
     @router.get("/streaming/accounts")
     async def list_streaming_accounts() -> dict[str, list[StreamingAccountResponse]]:
         accounts = StreamingAccountStore(require_database_url()).list_accounts()
@@ -66,6 +105,29 @@ def create_router(
                 serialize_streaming_playlist(playlist) for playlist in playlists
             ]
         }
+
+    @router.get("/playlists/{playlist_id}")
+    async def get_playlist_detail(playlist_id: int) -> PlaylistDetailResponse:
+        playlist = StreamingAccountStore(require_database_url()).get_playlist_detail(
+            playlist_id
+        )
+        if playlist is None:
+            raise HTTPException(status_code=404, detail="Playlist not found")
+
+        return serialize_playlist_detail(playlist)
+
+    @router.get("/playlists/{playlist_id}/tracks")
+    async def list_playlist_tracks(playlist_id: int) -> PlaylistTracksResponse:
+        store = StreamingAccountStore(require_database_url())
+        if store.get_playlist_detail(playlist_id) is None:
+            raise HTTPException(status_code=404, detail="Playlist not found")
+
+        return PlaylistTracksResponse(
+            tracks=[
+                serialize_playlist_track(track)
+                for track in store.list_playlist_tracks(playlist_id)
+            ]
+        )
 
     @router.get("/playlists/{playlist_id}/m3u")
     async def export_playlist_m3u(playlist_id: int) -> Response:

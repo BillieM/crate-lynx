@@ -20,7 +20,9 @@ depends_on = None
 def upgrade() -> None:
     op.add_column(
         "streaming_accounts",
-        sa.Column("auth_state", sa.String(), nullable=False, server_default="connected"),
+        sa.Column(
+            "auth_state", sa.String(), nullable=False, server_default="connected"
+        ),
     )
     op.add_column(
         "streaming_accounts",

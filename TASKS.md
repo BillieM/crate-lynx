@@ -1,13 +1,9 @@
-# E10 — Frontend: playlist views
+# E10 — Frontend: playlist views integration fixes
 
-- [x] Define TanStack Query hooks for playlist detail endpoint: fetch playlist metadata (name, cover art, track count, linked/pending/unlinked counts) and track list
-- [x] Build `PlaylistHeader` component: cover art thumbnail, playlist name, progress ring (linked/total), linked/pending/unlinked counts
-- [x] Build `TrackStatusDot` component: coloured dot mapped to linked (green), pending (yellow), unlinked (red/subtext) status
-- [x] Build `PlaylistTrackRow` component: status dot, track title, artist, album, duration, and per-track action button slot
-- [x] Implement per-track action buttons: "Linked" (opens final link info), "Review" (navigates to proposals filtered to this track), "Match" (triggers re-match API call)
-- [x] Build `FilterChips` component: All / Linked / Pending / Unlinked chips — filters the track list client-side
-- [x] Assemble `PlaylistView` layout: `PlaylistHeader` + `FilterChips` + scrollable `PlaylistTrackRow` list, all within the existing stub shell div
-- [x] Wire the Sync button in the topbar action slot: call the YTM sync API endpoint for the active playlist, show loading state
-- [x] Wire the Export M3U button in the topbar action slot: hit the M3U export endpoint and trigger a file download
-- [x] Replace the five `playlist2`–`playlist5` stub shells with the same `PlaylistView` component, driven by different playlist IDs from sidebar nav state
-- [x] Apply Catppuccin Mocha tokens throughout — no grays, no default Tailwind colours
+- [x] Add or align backend endpoints for playlist detail and playlist tracks so the frontend can load real playlist metadata, linked/pending/unlinked counts, and track rows from deployed data
+- [x] Standardize browser-facing API paths under `/api` for playlist detail, playlist tracks, M3U export, streaming sync, and per-track rematch so they work through the deployed Nginx proxy
+- [ ] Replace hard-coded playlist sidebar fixture names, counts, and IDs with real playlist data from the streaming playlists API
+- [ ] Update the playlist view default/selection behavior so the app opens a real playlist when available and shows a clear empty state when no synced playlists exist
+- [ ] Update frontend tests so mocked routes match the real backend API contract instead of testing nonexistent `/api/playlists` endpoints only in isolation
+- [ ] Add backend route tests for the playlist detail, playlist tracks, and `/api`-prefixed action endpoints used by the deployed UI
+- [ ] Run relevant validation: backend `ruff check .`, `ruff format --check .`, `pytest`; frontend `npm run lint`, `npm test`, `npm run build`

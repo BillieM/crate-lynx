@@ -49,7 +49,9 @@ class StreamingAccount(Base):
     auth_token_blob: Mapped[str] = mapped_column(String, nullable=False)
     auth_state: Mapped[str] = mapped_column(String, nullable=False)
     auth_error: Mapped[str] = mapped_column(String, nullable=True)
-    auth_error_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True)
+    auth_error_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),

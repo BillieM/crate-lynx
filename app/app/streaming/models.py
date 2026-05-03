@@ -110,6 +110,14 @@ class StreamingPlaylistSummary:
 
 
 @dataclass(frozen=True, slots=True)
+class StreamingPlaylistDetail(StreamingPlaylistSummary):
+    cover_art_url: str | None
+    linked_count: int
+    pending_count: int
+    unlinked_count: int
+
+
+@dataclass(frozen=True, slots=True)
 class StreamingTrackRecord:
     id: int
     provider_track_id: str
@@ -127,3 +135,18 @@ class PlaylistMembershipRecord:
     playlist_id: int
     streaming_track_id: int
     position: int
+
+
+@dataclass(frozen=True, slots=True)
+class StreamingPlaylistTrack:
+    id: int
+    provider_track_id: str
+    title: str
+    artist: str
+    album: str | None
+    duration_ms: int | None
+    position: int
+    status: str
+    final_link_id: int | None
+    local_track_id: int | None
+    proposal_id: int | None

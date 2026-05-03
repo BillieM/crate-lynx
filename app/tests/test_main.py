@@ -14,6 +14,7 @@ from app.local_tracks.store import (
 from app.links.store import final_links_table, metadata as links_metadata
 from app.main import create_app
 from app.matching.pipeline import (
+    SUGGESTED_LINK_STATUS_PENDING,
     metadata as suggested_links_metadata,
     suggested_links_table,
 )
@@ -371,6 +372,231 @@ def test_streaming_accounts_endpoint_creates_youtube_music_account(
         "Authorization": "Bearer token",
         "X-Goog-AuthUser": "0",
     }
+
+
+def test_playlist_detail_endpoint_returns_real_link_counts(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite:///{tmp_path / 'playlist-detail.db'}"
+    engine = create_engine(database_url)
+    metadata.create_all(engine)
+    local_tracks_metadata.create_all(engine)
+    links_metadata.create_all(engine)
+    suggested_links_metadata.create_all(engine)
+    monkeypatch.setenv("DATABASE_URL", database_url)
+
+    with engine.begin() as connection:
+        connection.execute(
+            insert(streaming_playlists_table).values(
+                id=7,
+                account_id=1,
+                provider_playlist_id="PL7",
+                title="Road Trip Mix",
+                synced_at=datetime(2026, 5, 1, 9, 0, tzinfo=UTC),
+            )
+        )
+        connection.execute(
+            insert(local_tracks_table),
+            [
+                {
+                    "id": 5,
+                    "file_path": "Artist/linked.mp3",
+                    "library_root_rel_path": "Artist/linked.mp3",
+                },
+                {
+                    "id": 6,
+                    "file_path": "Artist/pending.mp3",
+                    "library_root_rel_path": "Artist/pending.mp3",
+                },
+            ],
+        )
+        connection.execute(
+            insert(streaming_tracks_table),
+            [
+                {
+                    "id": 9,
+                    "provider_track_id": "ytm-9",
+                    "title": "Linked Song",
+                    "artist": "Artist",
+                },
+                {
+                    "id": 10,
+                    "provider_track_id": "ytm-10",
+                    "title": "Pending Song",
+                    "artist": "Artist",
+                },
+                {
+                    "id": 11,
+                    "provider_track_id": "ytm-11",
+                    "title": "Unlinked Song",
+                    "artist": "Artist",
+                },
+            ],
+        )
+        connection.execute(
+            insert(playlist_membership_table),
+            [
+                {"playlist_id": 7, "streaming_track_id": 9, "position": 1},
+                {"playlist_id": 7, "streaming_track_id": 10, "position": 2},
+                {"playlist_id": 7, "streaming_track_id": 11, "position": 3},
+            ],
+        )
+        connection.execute(
+            insert(final_links_table).values(
+                id=3,
+                local_track_id=5,
+                streaming_track_id=9,
+            )
+        )
+        connection.execute(
+            insert(suggested_links_table).values(
+                id=4,
+                local_track_id=6,
+                streaming_track_id=10,
+                match_method="tag",
+                score=0.82,
+                status=SUGGESTED_LINK_STATUS_PENDING,
+            )
+        )
+
+    app = create_app()
+    route = next(
+        route
+        for route in app.routes
+        if getattr(route, "path", None) == "/api/playlists/{playlist_id}"
+        and "GET" in getattr(route, "methods", set())
+    )
+
+    response = asyncio.run(route.endpoint(7))
+
+    assert response.playlist.id == 7
+    assert response.playlist.name == "Road Trip Mix"
+    assert response.playlist.cover_art_url is None
+    assert response.playlist.track_count == 3
+    assert response.playlist.linked_count == 1
+    assert response.playlist.pending_count == 1
+    assert response.playlist.unlinked_count == 1
+    assert response.playlist.synced_at == "2026-05-01T09:00:00"
+
+
+def test_playlist_tracks_endpoint_returns_rows_with_link_status(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite:///{tmp_path / 'playlist-tracks.db'}"
+    engine = create_engine(database_url)
+    metadata.create_all(engine)
+    local_tracks_metadata.create_all(engine)
+    links_metadata.create_all(engine)
+    suggested_links_metadata.create_all(engine)
+    monkeypatch.setenv("DATABASE_URL", database_url)
+
+    with engine.begin() as connection:
+        connection.execute(
+            insert(streaming_playlists_table).values(
+                id=7,
+                account_id=1,
+                provider_playlist_id="PL7",
+                title="Road Trip Mix",
+            )
+        )
+        connection.execute(
+            insert(local_tracks_table),
+            [
+                {
+                    "id": 5,
+                    "file_path": "Artist/linked.mp3",
+                    "library_root_rel_path": "Artist/linked.mp3",
+                },
+                {
+                    "id": 6,
+                    "file_path": "Artist/pending.mp3",
+                    "library_root_rel_path": "Artist/pending.mp3",
+                },
+            ],
+        )
+        connection.execute(
+            insert(streaming_tracks_table),
+            [
+                {
+                    "id": 9,
+                    "provider_track_id": "ytm-9",
+                    "title": "Linked Song",
+                    "artist": "Artist A",
+                    "album": "Album A",
+                    "duration_ms": 181000,
+                },
+                {
+                    "id": 10,
+                    "provider_track_id": "ytm-10",
+                    "title": "Pending Song",
+                    "artist": "Artist B",
+                    "album": None,
+                    "duration_ms": None,
+                },
+                {
+                    "id": 11,
+                    "provider_track_id": "ytm-11",
+                    "title": "Unlinked Song",
+                    "artist": "Artist C",
+                    "album": "Album C",
+                    "duration_ms": 200000,
+                },
+            ],
+        )
+        connection.execute(
+            insert(playlist_membership_table),
+            [
+                {"playlist_id": 7, "streaming_track_id": 9, "position": 1},
+                {"playlist_id": 7, "streaming_track_id": 10, "position": 2},
+                {"playlist_id": 7, "streaming_track_id": 11, "position": 3},
+            ],
+        )
+        connection.execute(
+            insert(final_links_table).values(
+                id=3,
+                local_track_id=5,
+                streaming_track_id=9,
+            )
+        )
+        connection.execute(
+            insert(suggested_links_table).values(
+                id=4,
+                local_track_id=6,
+                streaming_track_id=10,
+                match_method="tag",
+                score=0.82,
+                status=SUGGESTED_LINK_STATUS_PENDING,
+            )
+        )
+
+    app = create_app()
+    route = next(
+        route
+        for route in app.routes
+        if getattr(route, "path", None) == "/api/playlists/{playlist_id}/tracks"
+        and "GET" in getattr(route, "methods", set())
+    )
+
+    response = asyncio.run(route.endpoint(7))
+
+    assert [track.title for track in response.tracks] == [
+        "Linked Song",
+        "Pending Song",
+        "Unlinked Song",
+    ]
+    assert [track.position for track in response.tracks] == [1, 2, 3]
+    assert response.tracks[0].status == "linked"
+    assert response.tracks[0].final_link_id == 3
+    assert response.tracks[0].local_track_id == 5
+    assert response.tracks[0].proposal_id is None
+    assert response.tracks[1].status == "pending"
+    assert response.tracks[1].final_link_id is None
+    assert response.tracks[1].local_track_id == 6
+    assert response.tracks[1].proposal_id == 4
+    assert response.tracks[2].status == "unlinked"
+    assert response.tracks[2].local_track_id is None
 
 
 def test_playlist_m3u_export_endpoint_returns_attachment(
