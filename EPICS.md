@@ -58,19 +58,19 @@ Generate one M3U per streaming playlist based on `playlist_membership` joined th
 
 ---
 
-### E08 — Metadata rescue `in progress`
+### E08 — Metadata rescue `done`
 **Subdir:** `app/`
 Endpoint to overwrite a local MP3's ID3 tags with metadata from its linked streaming track (title, artist, album, year, high-res album art) using mutagen. Only available when a final link exists.
 
 ---
 
-### E09 — Frontend scaffolding & layout
+### E09 — Frontend scaffolding & layout `done`
 **Subdir:** `app-ui/`
 Vite + React + TypeScript. Tailwind CSS with official Catppuccin Mocha plugin. TanStack Query for server state. React Router for view routing. App shell: sidebar (Maintenance / YouTube Music / Local Library sections), topbar, main content area. Global search bar wired to API. Progress bubble component with lerp colour logic.
 
 ---
 
-### E10 — Frontend: playlist views
+### E10 — Frontend: playlist views `in progress`
 **Subdir:** `app-ui/`
 Per-playlist view: playlist header with progress ring, track list with status dots (linked/pending/unlinked), duration, per-track action buttons (linked / review / match). Filter chips (All / Linked / Pending / Unlinked). Topbar sync and Export M3U buttons wired to API.
 
@@ -87,3 +87,9 @@ Proposals list grouped by confidence band (High / Medium / Low). Per-card: confi
 **Library:** stats cards (total / linked / pending / unlinked), faceted filter bar (link status / match method / file status), flat track list.
 **Unidentified:** list of Beets-failed tracks with filename, fingerprint hash, Rescue button (triggers E08).
 **Missing Locally:** list of streaming tracks with no local match.
+
+---
+
+### E13 — Acoustic fingerprint matching via yt-dlp
+**Subdir:** `app/`
+Implement the acoustic fallback stage that is currently a stub (`pipeline.py` enqueues acoustic jobs with empty fingerprints). For each low-confidence tag match, download the linked streaming track audio via yt-dlp to a temp file, run `fpcalc` (Chromaprint) on it, compare the resulting fingerprint against the local track's stored fingerprint, then delete the temp file. Promote or discard the suggestion based on the acoustic similarity score. Requires wiring fingerprint population into the streaming track model and updating the acoustic RQ job handler.
