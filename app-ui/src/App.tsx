@@ -1,5 +1,7 @@
 /* eslint-disable react-refresh/only-export-components */
 
+import { useState } from "react";
+
 export type ProgressStatus = "unlinked" | "pending" | "linked";
 
 export type RgbColor = {
@@ -55,6 +57,17 @@ type NavItem = {
   tone: ProgressStatus | "alert" | "accent";
 };
 
+type TopbarPillTone = "pill-info" | "pill-pending" | "pill-lib";
+
+type ViewConfig = {
+  actionLabels: string[];
+  icon: "spark" | "playlist" | "library";
+  id: string;
+  pillLabel: string;
+  pillTone: TopbarPillTone;
+  title: string;
+};
+
 const maintenanceItems: NavItem[] = [
   { id: "proposals", label: "Link proposals", badge: 14, tone: "pending" },
   { id: "unidentified", label: "Unidentified", badge: 3, tone: "alert" },
@@ -62,7 +75,7 @@ const maintenanceItems: NavItem[] = [
 ];
 
 const playlistItems: NavItem[] = [
-  { id: "playlist1", label: "Late Night Drive", progress: { complete: 58, total: 62 }, tone: "linked" },
+  { id: "playlist", label: "Late Night Drive", progress: { complete: 58, total: 62 }, tone: "linked" },
   { id: "playlist2", label: "Static Bloom", progress: { complete: 24, total: 41 }, tone: "pending" },
   { id: "playlist3", label: "Afterglow", progress: { complete: 19, total: 36 }, tone: "pending" },
   { id: "playlist4", label: "Signal Loss", progress: { complete: 11, total: 29 }, tone: "unlinked" },
@@ -72,6 +85,86 @@ const playlistItems: NavItem[] = [
 const libraryItems: NavItem[] = [
   { id: "library", label: "All tracks", badge: 312, tone: "accent" },
 ];
+
+const viewConfigs = [
+  {
+    id: "proposals",
+    title: "Link proposals",
+    pillLabel: "Needs approval",
+    pillTone: "pill-pending",
+    actionLabels: [],
+    icon: "spark",
+  },
+  {
+    id: "unidentified",
+    title: "Unidentified",
+    pillLabel: "Rescue queue",
+    pillTone: "pill-info",
+    actionLabels: [],
+    icon: "spark",
+  },
+  {
+    id: "missing",
+    title: "Missing locally",
+    pillLabel: "Gap report",
+    pillTone: "pill-info",
+    actionLabels: [],
+    icon: "spark",
+  },
+  {
+    id: "playlist",
+    title: "Late Night Drive",
+    pillLabel: "YouTube Music",
+    pillTone: "pill-info",
+    actionLabels: ["Sync", "Export M3U"],
+    icon: "playlist",
+  },
+  {
+    id: "playlist2",
+    title: "Static Bloom",
+    pillLabel: "YouTube Music",
+    pillTone: "pill-info",
+    actionLabels: ["Sync", "Export M3U"],
+    icon: "playlist",
+  },
+  {
+    id: "playlist3",
+    title: "Afterglow",
+    pillLabel: "YouTube Music",
+    pillTone: "pill-info",
+    actionLabels: ["Sync", "Export M3U"],
+    icon: "playlist",
+  },
+  {
+    id: "playlist4",
+    title: "Signal Loss",
+    pillLabel: "YouTube Music",
+    pillTone: "pill-info",
+    actionLabels: ["Sync", "Export M3U"],
+    icon: "playlist",
+  },
+  {
+    id: "playlist5",
+    title: "Chrome Hearts",
+    pillLabel: "YouTube Music",
+    pillTone: "pill-info",
+    actionLabels: ["Sync", "Export M3U"],
+    icon: "playlist",
+  },
+  {
+    id: "library",
+    title: "All tracks",
+    pillLabel: "Local library",
+    pillTone: "pill-lib",
+    actionLabels: [],
+    icon: "library",
+  },
+] satisfies ViewConfig[];
+
+const viewConfigById = Object.fromEntries(viewConfigs.map((view) => [view.id, view])) as Record<
+  ViewConfig["id"],
+  ViewConfig
+>;
 
 function getBadgeClasses(tone: NavItem["tone"]) {
   switch (tone) {
@@ -88,11 +181,69 @@ function getBadgeClasses(tone: NavItem["tone"]) {
   }
 }
 
+function getTopbarPillClasses(tone: TopbarPillTone) {
+  switch (tone) {
+    case "pill-pending":
+      return "bg-ctp-yellow/18 text-ctp-yellow ring-1 ring-inset ring-ctp-yellow/30";
+    case "pill-lib":
+      return "bg-ctp-mauve/20 text-ctp-mauve ring-1 ring-inset ring-ctp-mauve/30";
+    case "pill-info":
+      return "bg-ctp-surface0 text-ctp-subtext0 ring-1 ring-inset ring-ctp-surface1/70";
+  }
+}
+
+function TopbarIcon({ icon }: { icon: ViewConfig["icon"] }) {
+  if (icon === "playlist") {
+    return (
+      <svg aria-hidden="true" className="h-4 w-4" fill="none" viewBox="0 0 24 24">
+        <path
+          d="M8 18a2 2 0 1 1-4 0 2 2 0 0 1 4 0Zm10-3a2 2 0 1 1-4 0 2 2 0 0 1 4 0Zm-4 0V6l6-1.5v9"
+          stroke="currentColor"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth="1.7"
+        />
+      </svg>
+    );
+  }
+
+  if (icon === "library") {
+    return (
+      <svg aria-hidden="true" className="h-4 w-4" fill="none" viewBox="0 0 24 24">
+        <path
+          d="M5 6.5A2.5 2.5 0 0 1 7.5 4h9A2.5 2.5 0 0 1 19 6.5v11a1.5 1.5 0 0 1-1.5 1.5h-10A2.5 2.5 0 0 1 5 16.5v-10Z"
+          stroke="currentColor"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth="1.7"
+        />
+        <path d="M8.5 8.5h7m-7 3h7m-7 3h4" stroke="currentColor" strokeLinecap="round" strokeWidth="1.7" />
+      </svg>
+    );
+  }
+
+  return (
+    <svg aria-hidden="true" className="h-4 w-4" fill="none" viewBox="0 0 24 24">
+      <path
+        d="m12 3 1.9 4.97L19 10l-5.1 2.03L12 17l-1.9-4.97L5 10l5.1-2.03L12 3Z"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="1.7"
+      />
+    </svg>
+  );
+}
+
 function SidebarSection({
+  activeItemId,
   items,
+  onSelect,
   title,
 }: {
+  activeItemId: string;
   items: NavItem[];
+  onSelect: (itemId: string) => void;
   title: string;
 }) {
   return (
@@ -104,10 +255,13 @@ function SidebarSection({
         {items.map((item) => (
           <button
             key={item.id}
-            className="flex w-full items-center gap-3 rounded-[10px] px-4 py-2.5 text-left transition-colors hover:bg-ctp-surface0/80"
+            className={`flex w-full items-center gap-3 rounded-[10px] px-4 py-2.5 text-left transition-colors hover:bg-ctp-surface0/80 ${
+              item.id === activeItemId ? "bg-ctp-surface0 text-ctp-text" : "text-ctp-subtext1"
+            }`}
+            onClick={() => onSelect(item.id)}
             type="button"
           >
-            <span className="min-w-0 flex-1 truncate text-[14px] font-medium text-ctp-text">
+            <span className="min-w-0 flex-1 truncate text-[14px] font-medium">
               {item.label}
             </span>
             {item.progress ? (
@@ -141,7 +295,42 @@ function ProgressFraction({ complete, total }: { complete: number; total: number
   );
 }
 
+function Topbar({ view }: { view: ViewConfig }) {
+  return (
+    <header className="flex h-11 items-center justify-between border-b border-ctp-surface0 bg-ctp-mantle px-5">
+      <div className="flex min-w-0 items-center gap-3">
+        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] bg-ctp-surface0 text-ctp-mauve">
+          <TopbarIcon icon={view.icon} />
+        </span>
+        <div className="flex min-w-0 items-center gap-3">
+          <h1 className="truncate text-[15px] font-semibold text-ctp-text">{view.title}</h1>
+          <span
+            className={`rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] ${getTopbarPillClasses(view.pillTone)}`}
+          >
+            {view.pillLabel}
+          </span>
+        </div>
+      </div>
+
+      <div className="flex items-center gap-2">
+        {view.actionLabels.map((actionLabel) => (
+          <button
+            key={actionLabel}
+            className="rounded-[10px] border border-ctp-surface1 bg-ctp-surface0 px-3 py-1.5 text-[12px] font-semibold text-ctp-text transition-colors hover:border-ctp-overlay0 hover:bg-ctp-surface1"
+            type="button"
+          >
+            {actionLabel}
+          </button>
+        ))}
+      </div>
+    </header>
+  );
+}
+
 function App() {
+  const [activeViewId, setActiveViewId] = useState<ViewConfig["id"]>("proposals");
+  const activeView = viewConfigById[activeViewId];
+
   return (
     <div className="flex min-h-screen items-center justify-center bg-transparent px-6 py-10 text-ctp-text">
       <div
@@ -205,13 +394,31 @@ function App() {
           </div>
 
           <div className="flex-1 space-y-6 overflow-y-auto px-0 py-5">
-            <SidebarSection items={maintenanceItems} title="Maintenance" />
-            <SidebarSection items={playlistItems} title="YouTube Music" />
-            <SidebarSection items={libraryItems} title="Local Library" />
+            <SidebarSection
+              activeItemId={activeViewId}
+              items={maintenanceItems}
+              onSelect={setActiveViewId}
+              title="Maintenance"
+            />
+            <SidebarSection
+              activeItemId={activeViewId}
+              items={playlistItems}
+              onSelect={setActiveViewId}
+              title="YouTube Music"
+            />
+            <SidebarSection
+              activeItemId={activeViewId}
+              items={libraryItems}
+              onSelect={setActiveViewId}
+              title="Local Library"
+            />
           </div>
         </aside>
 
-        <main className="flex-1 bg-ctp-base" />
+        <main className="flex flex-1 flex-col bg-ctp-base">
+          <Topbar view={activeView} />
+          <div className="flex-1" />
+        </main>
       </div>
     </div>
   );

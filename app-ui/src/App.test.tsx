@@ -1,8 +1,8 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import App, { asRgb, getProgressColor, lerp, mixColors } from "./App";
 
 describe("App", () => {
-  it("renders the fixed-height shell container and sidebar scaffold", () => {
+  it("renders the fixed-height shell container, sidebar scaffold, and topbar", () => {
     const { container } = render(<App />);
 
     expect(container.firstChild).toHaveClass("text-ctp-text");
@@ -27,10 +27,25 @@ describe("App", () => {
     expect(screen.getByText("Maintenance")).toBeInTheDocument();
     expect(screen.getByText("YouTube Music")).toBeInTheDocument();
     expect(screen.getByText("Local Library")).toBeInTheDocument();
-    expect(screen.getByText("Link proposals")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Link proposals/i })).toBeInTheDocument();
     expect(screen.getByText("58")).toBeInTheDocument();
     expect(screen.getByText("62")).toBeInTheDocument();
     expect(screen.getByText("312")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Link proposals" })).toBeInTheDocument();
+    expect(screen.getByText("Needs approval")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Sync" })).not.toBeInTheDocument();
+  });
+
+  it("updates the topbar config when a playlist nav item is selected", () => {
+    render(<App />);
+
+    fireEvent.click(screen.getByRole("button", { name: /Late Night Drive/i }));
+
+    expect(screen.getByRole("heading", { name: "Late Night Drive" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Late Night Drive/i })).toBeInTheDocument();
+    expect(screen.getAllByText("YouTube Music")).toHaveLength(2);
+    expect(screen.getByRole("button", { name: "Sync" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Export M3U" })).toBeInTheDocument();
   });
 
   it("interpolates scalar values with rounding", () => {

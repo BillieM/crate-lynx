@@ -9,7 +9,7 @@
   - YouTube Music section with section label and five per-playlist nav items, each with a progress bubble
   - Local Library section with section label and an All tracks nav item (mauve badge 312)
 - [x] Redesign the progress bubble as a compact sidebar fraction (e.g. `5/62`), right-aligned in the nav item, coloured via the existing lerp helper — remove the large decorative bubble card entirely
-- [ ] Build the topbar (44px, `mantle` background, `border-bottom: surface0`, flex row, space-between):
+- [x] Build the topbar (44px, `mantle` background, `border-bottom: surface0`, flex row, space-between):
   - Left: section icon + title text + context pill (pill-info / pill-pending / pill-lib)
   - Right: action buttons rendered from a per-view config (e.g. Sync + Export M3U for playlist views, empty for maintenance views)
 - [ ] Wire view switching: each nav item click activates the matching view div and updates the topbar title/pill/actions — no React Router needed, replicate the `showView` pattern from the mockup using React state
