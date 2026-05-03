@@ -34,6 +34,20 @@ describe("App", () => {
     expect(screen.getByRole("heading", { name: "Link proposals" })).toBeInTheDocument();
     expect(screen.getByText("Needs approval")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Sync" })).not.toBeInTheDocument();
+
+    for (const viewId of [
+      "proposals",
+      "unidentified",
+      "missing",
+      "playlist",
+      "playlist2",
+      "playlist3",
+      "playlist4",
+      "playlist5",
+      "library",
+    ]) {
+      expect(document.getElementById(viewId)).toBeInTheDocument();
+    }
   });
 
   it("updates the topbar config when a playlist nav item is selected", () => {

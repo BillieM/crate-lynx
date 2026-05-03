@@ -166,6 +166,18 @@ const viewConfigById = Object.fromEntries(viewConfigs.map((view) => [view.id, vi
   ViewConfig
 >;
 
+const viewShellIds = [
+  "proposals",
+  "unidentified",
+  "missing",
+  "playlist",
+  "playlist2",
+  "playlist3",
+  "playlist4",
+  "playlist5",
+  "library",
+] satisfies ViewConfig["id"][];
+
 function getBadgeClasses(tone: NavItem["tone"]) {
   switch (tone) {
     case "pending":
@@ -327,21 +339,21 @@ function Topbar({ view }: { view: ViewConfig }) {
   );
 }
 
-function ViewPanel({
+function ViewShell({
   activeViewId,
-  view,
+  viewId,
 }: {
   activeViewId: ViewConfig["id"];
-  view: ViewConfig;
+  viewId: ViewConfig["id"];
 }) {
-  const isActive = activeViewId === view.id;
+  const isActive = activeViewId === viewId;
 
   return (
     <div
       aria-hidden={!isActive}
-      className={isActive ? "flex-1" : "hidden"}
+      className={isActive ? "flex flex-1 flex-col" : "hidden"}
       data-view-active={isActive ? "true" : "false"}
-      id={view.id}
+      id={viewId}
     />
   );
 }
@@ -437,8 +449,8 @@ function App() {
         <main className="flex flex-1 flex-col bg-ctp-base">
           <Topbar view={activeView} />
           <div className="flex flex-1 flex-col">
-            {viewConfigs.map((view) => (
-              <ViewPanel key={view.id} activeViewId={activeViewId} view={view} />
+            {viewShellIds.map((viewId) => (
+              <ViewShell key={viewId} activeViewId={activeViewId} viewId={viewId} />
             ))}
           </div>
         </main>
