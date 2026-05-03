@@ -9,8 +9,8 @@ import sqlite3
 import subprocess
 from typing import Callable
 
+from app.core.queueing import MatchingJobEnqueuer
 from app.local_tracks import LocalTrackStore
-from app.queueing import MatchingJobEnqueuer
 from watchdog.events import FileCreatedEvent, FileSystemEventHandler
 from watchdog.observers import Observer
 

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from app.worker import build_worker, main, resolve_queue_names
+from app.core.worker import build_worker, main, resolve_queue_names
 
 
 def test_resolve_queue_names_uses_default_when_unset(monkeypatch) -> None:
@@ -39,9 +39,9 @@ def test_build_worker_uses_redis_url_and_queue_names(monkeypatch) -> None:
             seen["worker_queue_names"] = [queue.name for queue in queues]
             seen["worker_connection"] = connection
 
-    monkeypatch.setattr("app.worker.Redis", FakeRedis)
-    monkeypatch.setattr("app.worker.Queue", FakeQueue)
-    monkeypatch.setattr("app.worker.Worker", FakeWorker)
+    monkeypatch.setattr("app.core.worker.Redis", FakeRedis)
+    monkeypatch.setattr("app.core.worker.Queue", FakeQueue)
+    monkeypatch.setattr("app.core.worker.Worker", FakeWorker)
 
     build_worker(
         redis_url="redis://redis:6379/5",
@@ -63,7 +63,7 @@ def test_main_starts_worker(monkeypatch) -> None:
     def fake_build_worker() -> SimpleNamespace:
         return SimpleNamespace(work=lambda: seen.__setitem__("worked", True))
 
-    monkeypatch.setattr("app.worker.build_worker", fake_build_worker)
+    monkeypatch.setattr("app.core.worker.build_worker", fake_build_worker)
 
     main()
 

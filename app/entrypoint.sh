@@ -4,7 +4,7 @@ set -euo pipefail
 uvicorn app.main:app --host 0.0.0.0 --port 8000 &
 api_pid=$!
 
-python -m app.worker &
+python -m app.core.worker &
 worker_pid=$!
 
 shutdown() {

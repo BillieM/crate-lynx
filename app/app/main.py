@@ -6,16 +6,16 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel
 
-from app.ingest_status import IngestionStatusStore
-from app.ingestion import BeetsImporter, IngestionProcessor, IngestionWatcher
-from app.local_tracks import LocalTrackStore
-from app.queueing import (
+from app.core.queueing import (
     MatchingJobEnqueuer,
     QueueDepthReader,
     StreamingSyncJobEnqueuer,
 )
+from app.core.worker import resolve_queue_names
+from app.ingest_status import IngestionStatusStore
+from app.ingestion import BeetsImporter, IngestionProcessor, IngestionWatcher
+from app.local_tracks import LocalTrackStore
 from app.streaming_accounts import StreamingAccountStore
-from app.worker import resolve_queue_names
 
 
 logger = logging.getLogger(__name__)

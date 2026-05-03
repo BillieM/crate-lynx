@@ -17,7 +17,7 @@ from app.ingestion import (
     UnsupportedAudioFormatError,
 )
 from app.local_tracks import LocalTrackStore, local_tracks_table, metadata
-from app.queueing import MatchingJobEnqueuer
+from app.core.queueing import MatchingJobEnqueuer
 from sqlalchemy import create_engine, select
 
 
