@@ -16,6 +16,7 @@ from app.streaming.schemas import (
     StreamingPlaylistConfigResponse,
     StreamingPlaylistResponse,
     StreamingSyncResponse,
+    UpdateStreamingPlaylistRequest,
 )
 from app.streaming.store import StreamingAccountStore
 
@@ -155,6 +156,22 @@ def create_router(
                 serialize_streaming_playlist_config(playlist) for playlist in playlists
             ]
         }
+
+    @router.patch("/streaming/playlists/{playlist_id}")
+    async def update_streaming_playlist(
+        playlist_id: int,
+        payload: UpdateStreamingPlaylistRequest,
+    ) -> StreamingPlaylistConfigResponse:
+        playlist = StreamingAccountStore(
+            require_database_url()
+        ).set_playlist_selected_for_sync(
+            playlist_id=playlist_id,
+            selected_for_sync=payload.selected_for_sync,
+        )
+        if playlist is None:
+            raise HTTPException(status_code=404, detail="Playlist not found")
+
+        return serialize_streaming_playlist_config(playlist)
 
     @router.get("/playlists/{playlist_id}")
     async def get_playlist_detail(playlist_id: int) -> PlaylistDetailResponse:

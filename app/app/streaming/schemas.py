@@ -27,6 +27,10 @@ class StreamingPlaylistConfigResponse(StreamingPlaylistResponse):
     selected_for_sync: bool
 
 
+class UpdateStreamingPlaylistRequest(BaseModel):
+    selected_for_sync: bool
+
+
 class PlaylistDetail(BaseModel):
     id: int
     account_id: int

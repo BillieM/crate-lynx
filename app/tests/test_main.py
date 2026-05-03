@@ -18,7 +18,10 @@ from app.matching.pipeline import (
     metadata as suggested_links_metadata,
     suggested_links_table,
 )
-from app.streaming.schemas import CreateStreamingAccountRequest
+from app.streaming.schemas import (
+    CreateStreamingAccountRequest,
+    UpdateStreamingPlaylistRequest,
+)
 from app.streaming.models import metadata, streaming_accounts_table
 from app.streaming.models import (
     playlist_membership_table,
@@ -51,6 +54,7 @@ def test_links_routes_are_mounted_under_api_prefix() -> None:
     assert "/api/streaming/accounts/{account_id}/sync" in route_paths
     assert "/api/streaming/accounts/{account_id}/refresh-metadata" in route_paths
     assert "/api/streaming/playlists/config" in route_paths
+    assert "/api/streaming/playlists/{playlist_id}" in route_paths
     assert "/api/streaming/playlists/{playlist_id}/sync" in route_paths
     assert "/api/local-tracks/{local_track_id}/rematch" in route_paths
 
@@ -336,6 +340,107 @@ def test_streaming_playlists_config_endpoint_lists_all_discovered_playlists(
     assert selected.last_sync_error_at is None
     assert unselected.selected_for_sync is False
     assert unselected.track_count == 0
+
+
+def test_streaming_playlist_patch_endpoint_toggles_selection(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite:///{tmp_path / 'streaming-playlist-patch.db'}"
+    engine = create_engine(database_url)
+    metadata.create_all(engine)
+    monkeypatch.setenv("DATABASE_URL", database_url)
+    monkeypatch.setenv("TOKEN_ENCRYPTION_KEY", Fernet.generate_key().decode("utf-8"))
+    m3u_path = tmp_path / "m3u" / "Morning-Mix.m3u"
+    m3u_path.parent.mkdir()
+    m3u_path.write_text("existing m3u", encoding="utf-8")
+
+    store = StreamingAccountStore(database_url)
+    account = store.create_youtube_music_account(
+        display_name="Listener",
+        browser_headers={"refresh_token": "refresh-token"},
+    )
+    playlist = store.upsert_playlists(
+        account_id=account.id,
+        playlists=[
+            YouTubeMusicPlaylist(
+                provider_playlist_id="PL1",
+                title="Morning Mix",
+            )
+        ],
+        synced_at=datetime(2026, 5, 1, 9, 0, tzinfo=UTC),
+    )[0]
+    store.replace_playlist_membership(
+        playlist_id=playlist.id,
+        tracks=[
+            YouTubeMusicTrack(
+                provider_track_id="track-1",
+                title="Track 1",
+                artist="Artist 1",
+                album=None,
+                year=None,
+                isrc=None,
+                duration_ms=180000,
+            )
+        ],
+    )
+    store.set_playlist_selected_for_sync(
+        playlist_id=playlist.id,
+        selected_for_sync=True,
+    )
+
+    app = create_app()
+    route = next(
+        route
+        for route in app.routes
+        if getattr(route, "path", None) == "/api/streaming/playlists/{playlist_id}"
+        and "PATCH" in getattr(route, "methods", set())
+    )
+    response = asyncio.run(
+        route.endpoint(
+            playlist.id,
+            UpdateStreamingPlaylistRequest(selected_for_sync=False),
+        )
+    )
+
+    assert response.id == playlist.id
+    assert response.selected_for_sync is False
+    assert response.track_count == 1
+    with engine.connect() as connection:
+        memberships = connection.execute(select(playlist_membership_table)).all()
+    assert len(memberships) == 1
+    assert m3u_path.read_text(encoding="utf-8") == "existing m3u"
+
+
+def test_streaming_playlist_patch_endpoint_returns_404_for_missing_playlist(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite:///{tmp_path / 'streaming-playlist-patch-missing.db'}"
+    engine = create_engine(database_url)
+    metadata.create_all(engine)
+    monkeypatch.setenv("DATABASE_URL", database_url)
+
+    app = create_app()
+    route = next(
+        route
+        for route in app.routes
+        if getattr(route, "path", None) == "/api/streaming/playlists/{playlist_id}"
+        and "PATCH" in getattr(route, "methods", set())
+    )
+
+    try:
+        asyncio.run(
+            route.endpoint(
+                999,
+                UpdateStreamingPlaylistRequest(selected_for_sync=True),
+            )
+        )
+    except StarletteHTTPException as exc:
+        assert exc.status_code == 404
+        assert exc.detail == "Playlist not found"
+    else:
+        raise AssertionError("Expected playlist update to return 404")
 
 
 def test_search_endpoint_returns_playlist_streaming_and_local_matches(
