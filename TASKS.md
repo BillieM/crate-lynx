@@ -5,5 +5,5 @@
 - [x] Replace hard-coded playlist sidebar fixture names, counts, and IDs with real playlist data from the streaming playlists API
 - [x] Update the playlist view default/selection behavior so the app opens a real playlist when available and shows a clear empty state when no synced playlists exist
 - [x] Update frontend tests so mocked routes match the real backend API contract instead of testing nonexistent `/api/playlists` endpoints only in isolation
-- [ ] Add backend route tests for the playlist detail, playlist tracks, and `/api`-prefixed action endpoints used by the deployed UI
+- [x] Add backend route tests for the playlist detail, playlist tracks, and `/api`-prefixed action endpoints used by the deployed UI
 - [ ] Run relevant validation: backend `ruff check .`, `ruff format --check .`, `pytest`; frontend `npm run lint`, `npm test`, `npm run build`
