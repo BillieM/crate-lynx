@@ -14,6 +14,7 @@ from app.ingestion.router import router as ingestion_router
 from app.ingestion.status import IngestionStatusStore
 from app.local_tracks.store import LocalTrackStore
 from app.matching.jobs import MatchingJobEnqueuer
+from app.matching.router import create_router as create_matching_router
 from app.streaming.router import create_router as create_streaming_router
 from app.system.router import router as system_router
 
@@ -100,6 +101,12 @@ def create_app() -> FastAPI:
     app.include_router(ingestion_router)
     app.include_router(
         create_streaming_router(
+            require_database_url=require_database_url,
+            require_redis_url=require_redis_url,
+        )
+    )
+    app.include_router(
+        create_matching_router(
             require_database_url=require_database_url,
             require_redis_url=require_redis_url,
         )

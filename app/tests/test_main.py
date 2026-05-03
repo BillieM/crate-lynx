@@ -7,7 +7,15 @@ from pathlib import Path
 from cryptography.fernet import Fernet
 from app.ingestion.pipeline import PreparedTrack
 from app.ingestion.status import IngestionStatusStore
+from app.local_tracks.store import (
+    local_tracks_table,
+    metadata as local_tracks_metadata,
+)
 from app.main import create_app
+from app.matching.pipeline import (
+    metadata as suggested_links_metadata,
+    suggested_links_table,
+)
 from app.streaming.schemas import CreateStreamingAccountRequest
 from app.streaming.models import metadata, streaming_accounts_table
 from app.streaming.store import StreamingAccountStore
@@ -16,6 +24,7 @@ from app.streaming.adapters.youtube_music import (
     YouTubeMusicTrack,
 )
 from sqlalchemy import create_engine, insert
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.requests import Request
 
 
@@ -320,3 +329,154 @@ def test_streaming_account_sync_endpoint_enqueues_job(
         "redis_url": "redis://redis:6379/3",
         "account_id": 1,
     }
+
+
+def test_matching_status_endpoint_lists_suggestions_with_confidence_bands(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite:///{tmp_path / 'matching-status.db'}"
+    engine = create_engine(database_url)
+    local_tracks_metadata.create_all(engine)
+    suggested_links_metadata.create_all(engine)
+    monkeypatch.setenv("DATABASE_URL", database_url)
+
+    with engine.begin() as connection:
+        connection.execute(
+            insert(local_tracks_table).values(
+                id=7,
+                file_path="Artist/track.mp3",
+                library_root_rel_path="Artist/track.mp3",
+                fingerprint="fp-7",
+                beets_id=7,
+            )
+        )
+        connection.execute(
+            insert(suggested_links_table),
+            [
+                {
+                    "local_track_id": 7,
+                    "streaming_track_id": 14,
+                    "match_method": "isrc",
+                    "score": 1.0,
+                    "status": "pending",
+                },
+                {
+                    "local_track_id": 7,
+                    "streaming_track_id": 15,
+                    "match_method": "tags",
+                    "score": 0.62,
+                    "status": "approved",
+                },
+            ],
+        )
+
+    app = create_app()
+    route = next(
+        route
+        for route in app.routes
+        if getattr(route, "path", None) == "/matching/status"
+        and "GET" in getattr(route, "methods", set())
+    )
+    response = asyncio.run(route.endpoint())
+
+    assert response == {
+        "status": "ok",
+        "suggestions": [
+            {
+                "local_track_id": 7,
+                "streaming_track_id": 14,
+                "match_method": "isrc",
+                "score": 1.0,
+                "status": "pending",
+                "confidence_band": "high",
+            },
+            {
+                "local_track_id": 7,
+                "streaming_track_id": 15,
+                "match_method": "tags",
+                "score": 0.62,
+                "status": "approved",
+                "confidence_band": "medium",
+            },
+        ],
+    }
+
+
+def test_matching_run_endpoint_enqueues_job_for_existing_local_track(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite:///{tmp_path / 'matching-run.db'}"
+    engine = create_engine(database_url)
+    local_tracks_metadata.create_all(engine)
+    monkeypatch.setenv("DATABASE_URL", database_url)
+    monkeypatch.setenv("REDIS_URL", "redis://redis:6379/5")
+
+    with engine.begin() as connection:
+        connection.execute(
+            insert(local_tracks_table).values(
+                id=11,
+                file_path="Artist/run.mp3",
+                library_root_rel_path="Artist/run.mp3",
+                fingerprint="fp-11",
+                beets_id=11,
+            )
+        )
+
+    seen: dict[str, object] = {}
+
+    class FakeMatchingEnqueuer:
+        def __init__(self, redis_url: str) -> None:
+            seen["redis_url"] = redis_url
+
+        def enqueue(self, local_track_id: int) -> str:
+            seen["local_track_id"] = local_track_id
+            return "match-job-123"
+
+    monkeypatch.setattr("app.matching.router.MatchingJobEnqueuer", FakeMatchingEnqueuer)
+
+    app = create_app()
+    route = next(
+        route
+        for route in app.routes
+        if getattr(route, "path", None) == "/matching/tracks/{local_track_id}/run"
+        and "POST" in getattr(route, "methods", set())
+    )
+    response = asyncio.run(route.endpoint(11))
+
+    assert response == {
+        "local_track_id": 11,
+        "job_id": "match-job-123",
+    }
+    assert seen == {
+        "redis_url": "redis://redis:6379/5",
+        "local_track_id": 11,
+    }
+
+
+def test_matching_run_endpoint_returns_404_for_unknown_local_track(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite:///{tmp_path / 'matching-run-missing.db'}"
+    engine = create_engine(database_url)
+    local_tracks_metadata.create_all(engine)
+    monkeypatch.setenv("DATABASE_URL", database_url)
+    monkeypatch.setenv("REDIS_URL", "redis://redis:6379/6")
+
+    app = create_app()
+    route = next(
+        route
+        for route in app.routes
+        if getattr(route, "path", None) == "/matching/tracks/{local_track_id}/run"
+        and "POST" in getattr(route, "methods", set())
+    )
+
+    try:
+        asyncio.run(route.endpoint(999))
+    except StarletteHTTPException as exc:
+        assert exc.status_code == 404
+        assert exc.detail == "Local track not found"
+    else:
+        raise AssertionError("Expected HTTPException for missing local track")
