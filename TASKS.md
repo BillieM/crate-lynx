@@ -1,7 +1,7 @@
 # E10 — Frontend: playlist views
 
 - [x] Define TanStack Query hooks for playlist detail endpoint: fetch playlist metadata (name, cover art, track count, linked/pending/unlinked counts) and track list
-- [ ] Build `PlaylistHeader` component: cover art thumbnail, playlist name, progress ring (linked/total), linked/pending/unlinked counts
+- [x] Build `PlaylistHeader` component: cover art thumbnail, playlist name, progress ring (linked/total), linked/pending/unlinked counts
 - [ ] Build `TrackStatusDot` component: coloured dot mapped to linked (green), pending (yellow), unlinked (red/subtext) status
 - [ ] Build `PlaylistTrackRow` component: status dot, track title, artist, album, duration, and per-track action button slot
 - [ ] Implement per-track action buttons: "Linked" (opens final link info), "Review" (navigates to proposals filtered to this track), "Match" (triggers re-match API call)

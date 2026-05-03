@@ -65,6 +65,24 @@ describe("App", () => {
   });
 
   it("updates the topbar config when a playlist nav item is selected", () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        playlist: {
+          id: 12,
+          account_id: 4,
+          provider_playlist_id: "PL12",
+          name: "Late Night Drive",
+          cover_art_url: "https://cdn.example.test/late-night-drive.jpg",
+          track_count: 62,
+          linked_count: 58,
+          pending_count: 3,
+          unlinked_count: 1,
+          synced_at: "2026-05-01T09:00:00Z",
+        },
+      }),
+    } as Response);
+
     renderApp();
 
     expect(document.getElementById("proposals")).toHaveAttribute("data-view-active", "true");
@@ -79,6 +97,34 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: "Export M3U" })).toBeInTheDocument();
     expect(document.getElementById("proposals")).toHaveAttribute("data-view-active", "false");
     expect(document.getElementById("playlist")).toHaveAttribute("data-view-active", "true");
+  });
+
+  it("renders the playlist header inside the active playlist shell", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        playlist: {
+          id: 12,
+          account_id: 4,
+          provider_playlist_id: "PL12",
+          name: "Late Night Drive",
+          cover_art_url: "https://cdn.example.test/late-night-drive.jpg",
+          track_count: 62,
+          linked_count: 58,
+          pending_count: 3,
+          unlinked_count: 1,
+          synced_at: "2026-05-01T09:00:00Z",
+        },
+      }),
+    } as Response);
+
+    renderApp();
+    fireEvent.click(screen.getByRole("button", { name: /Late Night Drive/i }));
+
+    expect(await screen.findByRole("img", { name: "Late Night Drive cover art" })).toBeInTheDocument();
+    expect(screen.getByText("Playlist overview")).toBeInTheDocument();
+    expect(screen.getByText("58 / 62")).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledWith("/api/playlists/12");
   });
 
   it("debounces sidebar search requests and renders compact results", async () => {

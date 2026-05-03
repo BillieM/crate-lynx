@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { PlaylistHeader } from "./features/playlists/PlaylistHeader";
+import { usePlaylistDetailQuery } from "./features/playlists/queries";
 
 export type ProgressStatus = "unlinked" | "pending" | "linked";
 
@@ -77,6 +79,7 @@ type ViewConfig = {
   actionLabels: string[];
   icon: "spark" | "playlist" | "library";
   id: string;
+  playlistResourceId?: number;
   pillLabel: string;
   pillTone: TopbarPillTone;
   title: string;
@@ -130,6 +133,7 @@ const viewConfigs = [
     title: "Late Night Drive",
     pillLabel: "YouTube Music",
     pillTone: "pill-info",
+    playlistResourceId: 12,
     actionLabels: ["Sync", "Export M3U"],
     icon: "playlist",
   },
@@ -138,6 +142,7 @@ const viewConfigs = [
     title: "Static Bloom",
     pillLabel: "YouTube Music",
     pillTone: "pill-info",
+    playlistResourceId: 9,
     actionLabels: ["Sync", "Export M3U"],
     icon: "playlist",
   },
@@ -146,6 +151,7 @@ const viewConfigs = [
     title: "Afterglow",
     pillLabel: "YouTube Music",
     pillTone: "pill-info",
+    playlistResourceId: 14,
     actionLabels: ["Sync", "Export M3U"],
     icon: "playlist",
   },
@@ -154,6 +160,7 @@ const viewConfigs = [
     title: "Signal Loss",
     pillLabel: "YouTube Music",
     pillTone: "pill-info",
+    playlistResourceId: 18,
     actionLabels: ["Sync", "Export M3U"],
     icon: "playlist",
   },
@@ -162,6 +169,7 @@ const viewConfigs = [
     title: "Chrome Hearts",
     pillLabel: "YouTube Music",
     pillTone: "pill-info",
+    playlistResourceId: 27,
     actionLabels: ["Sync", "Export M3U"],
     icon: "playlist",
   },
@@ -469,20 +477,45 @@ function SearchPanel() {
 
 function ViewShell({
   activeViewId,
+  playlistResourceId,
   viewId,
 }: {
   activeViewId: ViewConfig["id"];
+  playlistResourceId?: number;
   viewId: ViewConfig["id"];
 }) {
   const isActive = activeViewId === viewId;
+  const playlistDetailQuery = usePlaylistDetailQuery(isActive ? playlistResourceId : null);
+
+  let content = null;
+
+  if (playlistResourceId !== undefined) {
+    if (playlistDetailQuery.isPending) {
+      content = (
+        <section className="rounded-[30px] border border-ctp-surface1/80 bg-ctp-mantle px-6 py-6 text-[13px] text-ctp-subtext0">
+          Loading playlist overview…
+        </section>
+      );
+    } else if (playlistDetailQuery.isError) {
+      content = (
+        <section className="rounded-[30px] border border-ctp-red/30 bg-ctp-surface0/60 px-6 py-6 text-[13px] text-ctp-red">
+          Playlist overview is unavailable right now.
+        </section>
+      );
+    } else if (playlistDetailQuery.data) {
+      content = <PlaylistHeader playlist={playlistDetailQuery.data.playlist} />;
+    }
+  }
 
   return (
     <div
       aria-hidden={!isActive}
-      className={isActive ? "flex flex-1 flex-col" : "hidden"}
+      className={isActive ? "flex flex-1 flex-col overflow-y-auto" : "hidden"}
       data-view-active={isActive ? "true" : "false"}
       id={viewId}
-    />
+    >
+      {isActive ? <div className="flex flex-1 flex-col p-6">{content}</div> : null}
+    </div>
   );
 }
 
@@ -491,11 +524,8 @@ function App() {
   const activeView = viewConfigById[activeViewId];
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-transparent px-6 py-10 text-ctp-text">
-      <div
-        className="flex h-[640px] w-full max-w-[1280px] flex-row overflow-hidden rounded-[12px] border border-ctp-surface0 bg-ctp-base shadow-[0_32px_120px_rgba(17,17,27,0.45)]"
-      >
-        <aside className="flex w-[220px] shrink-0 flex-col border-r border-ctp-surface0 bg-ctp-mantle">
+    <div className="flex flex-1 flex-row overflow-hidden bg-ctp-base text-ctp-text">
+      <aside className="flex w-[220px] shrink-0 flex-col border-r border-ctp-surface0 bg-ctp-mantle">
           <div className="border-b border-ctp-surface0 px-5 py-5">
             <div className="flex items-center gap-3">
               <div className="flex h-10 w-10 items-center justify-center rounded-[12px] bg-ctp-surface0 text-ctp-mauve">
@@ -560,11 +590,15 @@ function App() {
           <Topbar view={activeView} />
           <div className="flex flex-1 flex-col">
             {viewShellIds.map((viewId) => (
-              <ViewShell key={viewId} activeViewId={activeViewId} viewId={viewId} />
+              <ViewShell
+                key={viewId}
+                activeViewId={activeViewId}
+                playlistResourceId={viewConfigById[viewId].playlistResourceId}
+                viewId={viewId}
+              />
             ))}
           </div>
         </main>
-      </div>
     </div>
   );
 }
