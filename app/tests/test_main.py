@@ -237,6 +237,10 @@ def test_streaming_playlists_endpoint_lists_synced_playlists(
             ),
         ],
     )
+    store.set_playlist_selected_for_sync(
+        playlist_id=playlists[0].id,
+        selected_for_sync=True,
+    )
 
     app = create_app()
     route = next(
@@ -247,15 +251,13 @@ def test_streaming_playlists_endpoint_lists_synced_playlists(
     )
     response = asyncio.run(route.endpoint())
 
-    assert len(response["playlists"]) == 2
+    assert len(response["playlists"]) == 1
     playlist = response["playlists"][0]
     assert playlist.account_id == 1
     assert playlist.provider_playlist_id == "PL1"
     assert playlist.title == "Morning Mix"
     assert playlist.track_count == 2
     assert playlist.synced_at == "2026-05-01T09:00:00"
-    assert response["playlists"][1].provider_playlist_id == "PL2"
-    assert response["playlists"][1].track_count == 0
 
 
 def test_search_endpoint_returns_playlist_streaming_and_local_matches(

@@ -115,7 +115,9 @@ def create_router(
         playlists = StreamingAccountStore(require_database_url()).list_playlists()
         return {
             "playlists": [
-                serialize_streaming_playlist(playlist) for playlist in playlists
+                serialize_streaming_playlist(playlist)
+                for playlist in playlists
+                if playlist.selected_for_sync
             ]
         }
 
