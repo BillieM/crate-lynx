@@ -1,11 +1,11 @@
-# E05 — Matching pipeline
+# E06 — Link proposal & approval API
 
-- [x] Add `matching/` package under `app/`: `__init__.py`, `models.py` (dataclasses for match result, confidence band enum: high/medium/low)
-- [x] Implement ISRC match step in `matching/isrc.py`: query `streaming_tracks` by ISRC, return high-confidence result when found
-- [x] Implement fuzzy tag match step in `matching/tags.py`: compare title/artist/album with rapidfuzz, return score; band = high if > 0.85, medium if 0.5–0.85, low if < 0.5
-- [x] Implement acoustic fingerprint fallback in `matching/acoustic.py`: RQ job that runs fpcalc comparison, triggered only when tag score is below threshold
-- [x] Implement sequential pipeline orchestrator in `matching/pipeline.py`: ISRC → fuzzy tag → acoustic (enqueue RQ job if low), write result to `suggested_links`
-- [x] Ensure pipeline is re-runnable per track: clear any existing non-approved `suggested_links` row before writing new result
-- [x] Wire matching pipeline as an RQ job in `matching/jobs.py`; enqueue from ingestion pipeline on track completion
-- [x] Mount any needed status/trigger endpoints in `matching/router.py` and register in `main.py`
-- [x] Write tests: ISRC hit returns high confidence, fuzzy match scoring bands, low score triggers acoustic job enqueue, re-run clears old suggestion
+- [x] Add `links/` package under `app/`: `__init__.py`, `models.py` (Pydantic schemas for proposal response, approve/reject request bodies)
+- [ ] Implement `GET /proposals` endpoint: list `suggested_links` joined with `local_tracks` and `streaming_tracks`, supporting confidence band filter query param
+- [ ] Implement `POST /proposals/{id}/approve` endpoint: write row to `final_links`, update `suggested_links.status` to approved
+- [ ] Implement `POST /proposals/{id}/reject` endpoint: set `suggested_links.status = rejected` and `rejected_at = now()`
+- [ ] Implement `DELETE /final-links/{id}` (break link) endpoint: remove from `final_links`, write a rejected `suggested_links` entry for the same pair
+- [ ] Implement `POST /local-tracks/{id}/rematch` endpoint: clear existing non-final suggestion for the track, re-enqueue matching pipeline RQ job
+- [ ] Enforce rejected-pair guard: matching pipeline and approve endpoint must check `suggested_links` for rejected status before writing or approving a link for the same local+streaming pair
+- [ ] Mount router in `main.py` under `/api` prefix
+- [ ] Write tests: list filtering by band, approve writes final_link, reject marks rejected, break link removes final and writes rejected suggestion, rematch re-enqueues, rejected pair cannot be re-approved
