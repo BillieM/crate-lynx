@@ -226,20 +226,21 @@ describe("App", () => {
     expect(screen.getByText("MUSEBRIDGE")).toBeInTheDocument();
     expect(screen.getByPlaceholderText("Search tracks, artists, playlists")).toBeInTheDocument();
     expect(screen.getByText("Maintenance")).toBeInTheDocument();
-    expect(screen.getByText("YouTube Music")).toBeInTheDocument();
+    expect(screen.getAllByText("YouTube Music").length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText("Local Library")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Link proposals/i })).toBeInTheDocument();
     expect(await screen.findByRole("button", { name: /Late Night Drive/i })).toBeInTheDocument();
     expect(screen.getByText("62")).toBeInTheDocument();
     expect(screen.getByText("312")).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Link proposals" })).toBeInTheDocument();
-    expect(screen.getByText("Needs approval")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Sync" })).not.toBeInTheDocument();
+    expect(await screen.findByRole("heading", { level: 1, name: "Late Night Drive" })).toBeInTheDocument();
+    expect(screen.getAllByText("YouTube Music")).toHaveLength(2);
+    expect(screen.getByRole("button", { name: "Sync" })).toBeInTheDocument();
 
     for (const viewId of [
       "proposals",
       "unidentified",
       "missing",
+      "playlists",
       "playlist-12",
       "playlist-9",
       "playlist-14",
@@ -256,13 +257,21 @@ describe("App", () => {
 
     renderApp();
 
-    expect(document.getElementById("proposals")).toHaveAttribute("data-view-active", "true");
     expect(await screen.findByRole("button", { name: /Late Night Drive/i })).toBeInTheDocument();
+    await waitFor(() => {
+      expect(document.getElementById("playlist-12")).toHaveAttribute("data-view-active", "true");
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /Link proposals/i }));
+
+    expect(screen.getByRole("heading", { name: "Link proposals" })).toBeInTheDocument();
+    expect(screen.getByText("Needs approval")).toBeInTheDocument();
+    expect(document.getElementById("proposals")).toHaveAttribute("data-view-active", "true");
     expect(document.getElementById("playlist-12")).toHaveAttribute("data-view-active", "false");
 
     fireEvent.click(screen.getByRole("button", { name: /Late Night Drive/i }));
 
-    expect(screen.getByRole("heading", { name: "Late Night Drive" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 1, name: "Late Night Drive" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Late Night Drive/i })).toBeInTheDocument();
     expect(screen.getAllByText("YouTube Music")).toHaveLength(2);
     expect(screen.getByRole("button", { name: "Sync" })).toBeInTheDocument();
@@ -271,11 +280,22 @@ describe("App", () => {
     expect(document.getElementById("playlist-12")).toHaveAttribute("data-view-active", "true");
   });
 
+  it("opens the first synced playlist by default", async () => {
+    const fetchMock = mockPlaylistFetch();
+
+    renderApp();
+
+    expect(await screen.findByRole("heading", { level: 1, name: "Late Night Drive" })).toBeInTheDocument();
+    expect(await screen.findByRole("img", { name: "Late Night Drive cover art" })).toBeInTheDocument();
+    expect(document.getElementById("playlist-12")).toHaveAttribute("data-view-active", "true");
+    expect(fetchMock).toHaveBeenCalledWith("/api/playlists/12");
+    expect(fetchMock).toHaveBeenCalledWith("/api/playlists/12/tracks");
+  });
+
   it("renders the playlist view inside the active playlist shell", async () => {
     const fetchMock = mockPlaylistFetch();
 
     renderApp();
-    fireEvent.click(await screen.findByRole("button", { name: /Late Night Drive/i }));
 
     expect(await screen.findByRole("img", { name: "Late Night Drive cover art" })).toBeInTheDocument();
     expect(screen.getByText("Playlist overview")).toBeInTheDocument();
@@ -304,6 +324,31 @@ describe("App", () => {
       expect(fetchMock).toHaveBeenCalledWith(`/api/playlists/${playlist.id}`);
       expect(fetchMock).toHaveBeenCalledWith(`/api/playlists/${playlist.id}/tracks`);
     }
+  });
+
+  it("shows a playlist empty state when no synced playlists exist", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input: RequestInfo | URL) => {
+      const url = String(input);
+
+      if (url === "/api/streaming/playlists") {
+        return {
+          ok: true,
+          json: async () => ({ playlists: [] }),
+        } as Response;
+      }
+
+      return {
+        ok: true,
+        json: async () => ({ query: "", results: [] }),
+      } as Response;
+    });
+
+    renderApp();
+
+    expect(await screen.findByRole("heading", { name: "No synced playlists" })).toBeInTheDocument();
+    expect(screen.getByText("No synced playlists found.")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Sync" })).not.toBeInTheDocument();
+    expect(document.getElementById("playlists")).toHaveAttribute("data-view-active", "true");
   });
 
   it("queues a YouTube Music sync from the active playlist topbar", async () => {

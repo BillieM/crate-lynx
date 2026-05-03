@@ -104,6 +104,8 @@ type ViewConfig = {
   title: string;
 };
 
+type PlaylistCollectionStatus = "empty" | "error" | "loading";
+
 const maintenanceItems: NavItem[] = [
   { id: "proposals", label: "Link proposals", badge: 14, tone: "pending" },
   { id: "unidentified", label: "Unidentified", badge: 3, tone: "alert" },
@@ -150,6 +152,15 @@ const baseViewConfigs = [
 ] satisfies ViewConfig[];
 
 const emptyStreamingPlaylists: StreamingPlaylist[] = [];
+const playlistCollectionViewId = "playlists";
+const playlistCollectionViewConfig = {
+  id: playlistCollectionViewId,
+  title: "YouTube Music",
+  pillLabel: "Playlist sync",
+  pillTone: "pill-info",
+  actionLabels: [],
+  icon: "playlist",
+} satisfies ViewConfig;
 
 const searchKindLabels: Record<SearchResult["kind"], string> = {
   playlist: "Playlist",
@@ -615,12 +626,40 @@ function PlaylistView({ isActive, playlistResourceId }: { isActive: boolean; pla
   );
 }
 
+function PlaylistCollectionState({ status }: { status: PlaylistCollectionStatus }) {
+  const copy = {
+    empty: {
+      title: "No synced playlists",
+      body: "Sync a YouTube Music account to review playlist metadata, track matches, and M3U exports here.",
+    },
+    error: {
+      title: "Playlists unavailable",
+      body: "The synced playlist list could not be loaded. Try again after the backend is reachable.",
+    },
+    loading: {
+      title: "Loading playlists",
+      body: "Checking for synced YouTube Music playlists.",
+    },
+  } satisfies Record<PlaylistCollectionStatus, { body: string; title: string }>;
+
+  return (
+    <section className="flex min-h-0 flex-1 items-center justify-center">
+      <div className="max-w-[420px] rounded-[24px] border border-ctp-surface1/80 bg-ctp-mantle px-6 py-7 text-center">
+        <h2 className="text-[18px] font-semibold text-ctp-text">{copy[status].title}</h2>
+        <p className="mt-2 text-[13px] leading-6 text-ctp-subtext0">{copy[status].body}</p>
+      </div>
+    </section>
+  );
+}
+
 function ViewShell({
   activeViewId,
+  playlistCollectionStatus,
   playlistResourceId,
   viewId,
 }: {
   activeViewId: string;
+  playlistCollectionStatus: PlaylistCollectionStatus;
   playlistResourceId?: number;
   viewId: string;
 }) {
@@ -637,6 +676,8 @@ function ViewShell({
         <div className="flex min-h-0 flex-1 flex-col p-6">
           {playlistResourceId !== undefined ? (
             <PlaylistView isActive={isActive} playlistResourceId={playlistResourceId} />
+          ) : viewId === playlistCollectionViewId ? (
+            <PlaylistCollectionState status={playlistCollectionStatus} />
           ) : null}
         </div>
       ) : null}
@@ -645,12 +686,14 @@ function ViewShell({
 }
 
 function App() {
-  const [activeViewId, setActiveViewId] = useState("proposals");
+  const [activeViewId, setActiveViewId] = useState(playlistCollectionViewId);
+  const [hasUserSelectedView, setHasUserSelectedView] = useState(false);
   const playlistsQuery = useStreamingPlaylistsQuery();
   const streamingPlaylists = playlistsQuery.data?.playlists ?? emptyStreamingPlaylists;
+  const defaultPlaylistViewId = streamingPlaylists[0] ? getPlaylistViewId(streamingPlaylists[0].id) : playlistCollectionViewId;
   const playlistItems = useMemo(() => buildPlaylistNavItems(streamingPlaylists), [streamingPlaylists]);
   const viewConfigs = useMemo(
-    () => [...baseViewConfigs, ...buildPlaylistViewConfigs(streamingPlaylists)],
+    () => [...baseViewConfigs, playlistCollectionViewConfig, ...buildPlaylistViewConfigs(streamingPlaylists)],
     [streamingPlaylists],
   );
   const viewConfigById = useMemo(
@@ -659,11 +702,27 @@ function App() {
   );
   const activeView = viewConfigById[activeViewId] ?? viewConfigById.proposals;
   const viewShellIds = useMemo(() => viewConfigs.map((view) => view.id), [viewConfigs]);
+  const playlistCollectionStatus = playlistsQuery.isPending ? "loading" : playlistsQuery.isError ? "error" : "empty";
   const playlistEmptyMessage = playlistsQuery.isPending
     ? "Loading playlists..."
     : playlistsQuery.isError
       ? "Playlists unavailable."
-    : "No synced playlists found.";
+      : "No synced playlists found.";
+
+  useEffect(() => {
+    if (playlistsQuery.isPending) {
+      return;
+    }
+
+    if (!hasUserSelectedView || viewConfigById[activeViewId] === undefined) {
+      setActiveViewId(defaultPlaylistViewId);
+    }
+  }, [activeViewId, defaultPlaylistViewId, hasUserSelectedView, playlistsQuery.isPending, viewConfigById]);
+
+  function handleViewSelect(viewId: string) {
+    setHasUserSelectedView(true);
+    setActiveViewId(viewId);
+  }
 
   return (
     <div className="flex flex-1 flex-row overflow-hidden bg-ctp-base text-ctp-text">
@@ -710,20 +769,20 @@ function App() {
             <SidebarSection
               activeItemId={activeViewId}
               items={maintenanceItems}
-              onSelect={setActiveViewId}
+              onSelect={handleViewSelect}
               title="Maintenance"
             />
             <SidebarSection
               activeItemId={activeViewId}
               emptyMessage={playlistEmptyMessage}
               items={playlistItems}
-              onSelect={setActiveViewId}
+              onSelect={handleViewSelect}
               title="YouTube Music"
             />
             <SidebarSection
               activeItemId={activeViewId}
               items={libraryItems}
-              onSelect={setActiveViewId}
+              onSelect={handleViewSelect}
               title="Local Library"
             />
           </div>
@@ -736,6 +795,7 @@ function App() {
               <ViewShell
                 key={viewId}
                 activeViewId={activeViewId}
+                playlistCollectionStatus={playlistCollectionStatus}
                 playlistResourceId={viewConfigById[viewId].playlistResourceId}
                 viewId={viewId}
               />
