@@ -12,8 +12,8 @@ from app.core.queueing import (
     StreamingSyncJobEnqueuer,
 )
 from app.core.worker import resolve_queue_names
-from app.ingest_status import IngestionStatusStore
 from app.ingestion import BeetsImporter, IngestionProcessor, IngestionWatcher
+from app.ingestion.status import IngestionStatusStore
 from app.local_tracks.store import LocalTrackStore
 from app.streaming_accounts import StreamingAccountStore
 

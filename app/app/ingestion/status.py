@@ -8,7 +8,7 @@ from pathlib import Path
 from threading import Lock
 from typing import Any
 
-from app.ingestion import PreparedTrack
+from app.ingestion.pipeline import PreparedTrack
 
 
 QueueDepthReader = Callable[[], Mapping[str, int | None]]

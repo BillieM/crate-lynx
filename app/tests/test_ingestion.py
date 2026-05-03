@@ -72,7 +72,7 @@ def test_ingestion_event_handler_logs_failures_without_raising(
     def fake_exception(message: str, source_path: Path) -> None:
         logged.append(source_path)
 
-    monkeypatch.setattr("app.ingestion.logger.exception", fake_exception)
+    monkeypatch.setattr("app.ingestion.watcher.logger.exception", fake_exception)
     handler = IngestionEventHandler(on_new_file)
 
     handler.on_created(FileCreatedEvent("/tmp/ingestion/bad.flac"))
@@ -135,7 +135,7 @@ def test_audio_preparer_transcodes_lossless_formats_to_mp3(
         seen_commands.append(command)
         return subprocess.CompletedProcess(command, 0, "", "")
 
-    monkeypatch.setattr("app.ingestion.subprocess.run", fake_run)
+    monkeypatch.setattr("app.ingestion.pipeline.subprocess.run", fake_run)
 
     prepared = AudioPreparer(ffmpeg_binary="ffmpeg-test").prepare(source, output_root)
 
@@ -202,7 +202,7 @@ def test_beets_importer_runs_quiet_singleton_move_import(
             connection.commit()
         return subprocess.CompletedProcess(command, 0, "", "")
 
-    monkeypatch.setattr("app.ingestion.subprocess.run", fake_run)
+    monkeypatch.setattr("app.ingestion.pipeline.subprocess.run", fake_run)
 
     imported = BeetsImporter(
         beet_binary="beet-test",
@@ -251,7 +251,7 @@ def test_fingerprint_generator_runs_fpcalc_and_parses_json(
             "",
         )
 
-    monkeypatch.setattr("app.ingestion.subprocess.run", fake_run)
+    monkeypatch.setattr("app.ingestion.pipeline.subprocess.run", fake_run)
 
     fingerprint = FingerprintGenerator(fpcalc_binary="fpcalc-test").generate(
         prepared_path
@@ -273,7 +273,7 @@ def test_fingerprint_generator_rejects_missing_fingerprint(
     ) -> subprocess.CompletedProcess[str]:
         return subprocess.CompletedProcess(command, 0, '{"duration":123.45}', "")
 
-    monkeypatch.setattr("app.ingestion.subprocess.run", fake_run)
+    monkeypatch.setattr("app.ingestion.pipeline.subprocess.run", fake_run)
 
     try:
         FingerprintGenerator().generate(prepared_path)
@@ -470,7 +470,7 @@ def test_ingestion_processor_smoke_ingests_flac_and_mp3_with_fingerprints(
 
         raise AssertionError(f"Unexpected subprocess command: {command}")
 
-    monkeypatch.setattr("app.ingestion.subprocess.run", fake_run)
+    monkeypatch.setattr("app.ingestion.pipeline.subprocess.run", fake_run)
 
     processor = IngestionProcessor(
         staging_root=staging_root,

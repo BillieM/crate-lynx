@@ -5,8 +5,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from cryptography.fernet import Fernet
-from app.ingest_status import IngestionStatusStore
 from app.ingestion import PreparedTrack
+from app.ingestion.status import IngestionStatusStore
 from app.main import (
     CreateStreamingAccountRequest,
     create_app,
