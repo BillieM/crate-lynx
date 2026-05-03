@@ -127,3 +127,52 @@ def test_streaming_sync_job_enqueuer_uses_streaming_queue(monkeypatch) -> None:
         "account_id": 19,
         "job_timeout": "20m",
     }
+
+
+def test_streaming_sync_job_enqueuer_enqueues_metadata_refresh_job(
+    monkeypatch,
+) -> None:
+    seen: dict[str, object] = {}
+
+    class FakeRedis:
+        @classmethod
+        def from_url(cls, url: str) -> object:
+            seen["redis_url"] = url
+            return object()
+
+    class FakeQueue:
+        def __init__(self, name: str, connection: object) -> None:
+            seen["queue_name"] = name
+            seen["connection"] = connection
+
+        def enqueue(
+            self,
+            func: str,
+            account_id: int,
+            *,
+            job_timeout: str,
+        ) -> SimpleNamespace:
+            seen["func"] = func
+            seen["account_id"] = account_id
+            seen["job_timeout"] = job_timeout
+            return SimpleNamespace(id="metadata-refresh-job-123")
+
+    monkeypatch.setattr("app.core.queueing.Redis", FakeRedis)
+    monkeypatch.setattr("app.core.queueing.Queue", FakeQueue)
+
+    job_id = StreamingSyncJobEnqueuer(
+        redis_url="redis://redis:6379/2",
+        job_timeout="20m",
+    ).enqueue_metadata_refresh(
+        account_id=19,
+    )
+
+    assert job_id == "metadata-refresh-job-123"
+    assert seen == {
+        "redis_url": "redis://redis:6379/2",
+        "queue_name": "streaming",
+        "connection": seen["connection"],
+        "func": "app.streaming.jobs.run_youtube_music_playlist_metadata_refresh_job",
+        "account_id": 19,
+        "job_timeout": "20m",
+    }

@@ -1,6 +1,9 @@
 """Streaming domain package."""
 
-from app.streaming.jobs import run_youtube_music_sync_job
+from app.streaming.jobs import (
+    run_youtube_music_playlist_metadata_refresh_job,
+    run_youtube_music_sync_job,
+)
 from app.streaming.models import (
     PlaylistMembershipRecord,
     PersistedStreamingAccount,
@@ -58,6 +61,7 @@ __all__ = [
     "create_router",
     "metadata",
     "playlist_membership_table",
+    "run_youtube_music_playlist_metadata_refresh_job",
     "run_youtube_music_sync_job",
     "streaming_accounts_table",
     "streaming_playlists_table",

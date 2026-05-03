@@ -18,10 +18,31 @@ class StreamingSyncJobEnqueuer:
         *,
         account_id: int,
     ) -> str:
+        return self._enqueue(
+            "app.streaming.jobs.run_youtube_music_sync_job",
+            account_id=account_id,
+        )
+
+    def enqueue_metadata_refresh(
+        self,
+        *,
+        account_id: int,
+    ) -> str:
+        return self._enqueue(
+            "app.streaming.jobs.run_youtube_music_playlist_metadata_refresh_job",
+            account_id=account_id,
+        )
+
+    def _enqueue(
+        self,
+        job_function: str,
+        *,
+        account_id: int,
+    ) -> str:
         connection = Redis.from_url(self.redis_url)
         queue = Queue(self.queue_name, connection=connection)
         job = queue.enqueue(
-            "app.streaming.jobs.run_youtube_music_sync_job",
+            job_function,
             account_id,
             job_timeout=self.job_timeout,
         )

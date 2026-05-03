@@ -9,7 +9,10 @@ from cryptography.fernet import Fernet
 from sqlalchemy import create_engine, select
 from ytmusicapi.exceptions import YTMusicUserError
 
-from app.streaming.jobs import run_youtube_music_sync_job
+from app.streaming.jobs import (
+    run_youtube_music_playlist_metadata_refresh_job,
+    run_youtube_music_sync_job,
+)
 from app.streaming.models import (
     YOUTUBE_MUSIC_PROVIDER,
     metadata,
@@ -769,6 +772,28 @@ def test_run_youtube_music_sync_job_uses_database(
     monkeypatch.setattr("app.streaming.jobs.StreamingAccountStore", FakeStore)
 
     run_youtube_music_sync_job(7)
+
+    assert seen["database_url"] == "sqlite:///worker.db"
+    assert seen["account_id"] == 7
+
+
+def test_run_youtube_music_playlist_metadata_refresh_job_uses_database(
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("DATABASE_URL", "sqlite:///worker.db")
+    seen: dict[str, object] = {}
+
+    class FakeStore:
+        def __init__(self, database_url: str) -> None:
+            seen["database_url"] = database_url
+
+        def sync_youtube_music_playlists(self, *, account_id) -> list[object]:
+            seen["account_id"] = account_id
+            return []
+
+    monkeypatch.setattr("app.streaming.jobs.StreamingAccountStore", FakeStore)
+
+    run_youtube_music_playlist_metadata_refresh_job(7)
 
     assert seen["database_url"] == "sqlite:///worker.db"
     assert seen["account_id"] == 7
