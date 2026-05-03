@@ -1,8 +1,8 @@
-import { render } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import App, { asRgb, getProgressColor, lerp, mixColors } from "./App";
 
 describe("App", () => {
-  it("renders the fixed-height shell container", () => {
+  it("renders the fixed-height shell container and sidebar scaffold", () => {
     const { container } = render(<App />);
 
     expect(container.firstChild).toHaveClass("text-ctp-text");
@@ -18,6 +18,18 @@ describe("App", () => {
       "border",
       "border-ctp-surface0",
     );
+
+    const sidebar = screen.getByRole("complementary");
+
+    expect(sidebar).toHaveClass("w-[220px]", "bg-ctp-mantle", "border-r", "border-ctp-surface0");
+    expect(screen.getByText("MUSEBRIDGE")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("Search tracks, artists, playlists")).toBeInTheDocument();
+    expect(screen.getByText("Maintenance")).toBeInTheDocument();
+    expect(screen.getByText("YouTube Music")).toBeInTheDocument();
+    expect(screen.getByText("Local Library")).toBeInTheDocument();
+    expect(screen.getByText("Link proposals")).toBeInTheDocument();
+    expect(screen.getByText("58/62")).toBeInTheDocument();
+    expect(screen.getByText("312")).toBeInTheDocument();
   });
 
   it("interpolates scalar values with rounding", () => {
