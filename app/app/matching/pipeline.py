@@ -16,6 +16,7 @@ from sqlalchemy import (
     String,
     Table,
     create_engine,
+    delete,
     func,
     insert,
     select,
@@ -30,6 +31,7 @@ from app.matching.tags import TagMatcher
 logger = logging.getLogger(__name__)
 
 SUGGESTED_LINK_STATUS_PENDING = "pending"
+SUGGESTED_LINK_STATUS_APPROVED = "approved"
 
 metadata = MetaData()
 
@@ -77,6 +79,12 @@ class SuggestedLinkStore:
 
     def persist(self, result: MatchResult) -> None:
         with self._engine.begin() as connection:
+            connection.execute(
+                delete(suggested_links_table).where(
+                    suggested_links_table.c.local_track_id == result.local_track_id,
+                    suggested_links_table.c.status != SUGGESTED_LINK_STATUS_APPROVED,
+                )
+            )
             connection.execute(
                 insert(suggested_links_table).values(
                     local_track_id=result.local_track_id,

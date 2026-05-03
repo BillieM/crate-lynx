@@ -4,11 +4,13 @@ from dataclasses import dataclass
 from types import SimpleNamespace
 
 from sqlalchemy import create_engine
+from sqlalchemy import insert
 
 from app.matching import ConfidenceBand, MatchResult, MatchingPipeline
 from app.matching.pipeline import (
     fetch_suggested_links,
     metadata as suggested_links_metadata,
+    suggested_links_table,
 )
 
 
@@ -177,3 +179,73 @@ def test_matching_pipeline_enqueues_acoustic_job_for_low_confidence_tag_match(
         ],
         "job_timeout": "10m",
     }
+
+
+def test_matching_pipeline_rerun_clears_existing_non_approved_suggestion(
+    tmp_path,
+) -> None:
+    database_url = f"sqlite:///{tmp_path / 'app.db'}"
+    engine = create_engine(database_url)
+    suggested_links_metadata.create_all(engine)
+
+    with engine.begin() as connection:
+        connection.execute(
+            insert(suggested_links_table),
+            [
+                {
+                    "local_track_id": 33,
+                    "streaming_track_id": 70,
+                    "match_method": "tags",
+                    "score": 0.4,
+                    "status": "pending",
+                },
+                {
+                    "local_track_id": 33,
+                    "streaming_track_id": 71,
+                    "match_method": "tags",
+                    "score": 0.3,
+                    "status": "rejected",
+                },
+                {
+                    "local_track_id": 33,
+                    "streaming_track_id": 72,
+                    "match_method": "isrc",
+                    "score": 1.0,
+                    "status": "approved",
+                },
+            ],
+        )
+
+    result = MatchingPipeline(
+        database_url=database_url,
+        beets_library=tmp_path / "library.db",
+        isrc_matcher=FakeMatcher(result=None, calls=[]),
+        tag_matcher=FakeMatcher(
+            result=MatchResult(
+                local_track_id=33,
+                streaming_track_id=99,
+                match_method="tags",
+                score=0.82,
+                confidence_band=ConfidenceBand.MEDIUM,
+            ),
+            calls=[],
+        ),
+    ).run(33)
+
+    assert result is not None
+    assert fetch_suggested_links(database_url) == [
+        {
+            "local_track_id": 33,
+            "streaming_track_id": 72,
+            "match_method": "isrc",
+            "score": 1.0,
+            "status": "approved",
+        },
+        {
+            "local_track_id": 33,
+            "streaming_track_id": 99,
+            "match_method": "tags",
+            "score": 0.82,
+            "status": "pending",
+        },
+    ]
