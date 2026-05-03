@@ -4,51 +4,19 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
-from pydantic import BaseModel
 
 from app.core.queueing import (
     MatchingJobEnqueuer,
     QueueDepthReader,
-    StreamingSyncJobEnqueuer,
 )
 from app.core.worker import resolve_queue_names
 from app.ingestion import BeetsImporter, IngestionProcessor, IngestionWatcher
 from app.ingestion.status import IngestionStatusStore
 from app.local_tracks.store import LocalTrackStore
-from app.streaming.store import StreamingAccountStore
+from app.streaming.router import create_router
 
 
 logger = logging.getLogger(__name__)
-
-
-class StreamingAccountResponse(BaseModel):
-    id: int
-    provider: str
-    display_name: str
-    auth_state: str
-    auth_error: str | None
-    auth_error_at: str | None
-    created_at: str
-    updated_at: str
-
-
-class StreamingPlaylistResponse(BaseModel):
-    id: int
-    account_id: int
-    provider_playlist_id: str
-    title: str
-    track_count: int
-    synced_at: str | None
-
-
-class CreateStreamingAccountRequest(BaseModel):
-    display_name: str
-    browser_headers: dict[str, object]
-
-
-class StreamingSyncResponse(BaseModel):
-    account_id: int
-    job_id: str
 
 
 def create_app() -> FastAPI:
@@ -126,36 +94,6 @@ def create_app() -> FastAPI:
             )
         return redis_url
 
-    def serialize_streaming_account(account: object) -> StreamingAccountResponse:
-        return StreamingAccountResponse(
-            id=account.id,
-            provider=account.provider,
-            display_name=account.display_name,
-            auth_state=account.auth_state,
-            auth_error=account.auth_error,
-            auth_error_at=(
-                account.auth_error_at.isoformat()
-                if account.auth_error_at is not None
-                else None
-            ),
-            created_at=account.created_at.isoformat(),
-            updated_at=account.updated_at.isoformat(),
-        )
-
-    def serialize_streaming_playlist(playlist: object) -> StreamingPlaylistResponse:
-        return StreamingPlaylistResponse(
-            id=playlist.id,
-            account_id=playlist.account_id,
-            provider_playlist_id=playlist.provider_playlist_id,
-            title=playlist.title,
-            track_count=playlist.track_count,
-            synced_at=(
-                playlist.synced_at.isoformat()
-                if playlist.synced_at is not None
-                else None
-            ),
-        )
-
     @app.get("/health")
     async def health() -> dict[str, str]:
         return {"status": "ok"}
@@ -164,52 +102,12 @@ def create_app() -> FastAPI:
     async def ingest_status(request: Request) -> dict[str, object]:
         return {"status": "ok", **request.app.state.ingestion_status.snapshot()}
 
-    @app.get("/streaming/accounts")
-    async def list_streaming_accounts() -> dict[str, list[StreamingAccountResponse]]:
-        accounts = StreamingAccountStore(require_database_url()).list_accounts()
-        return {
-            "accounts": [serialize_streaming_account(account) for account in accounts]
-        }
-
-    @app.get("/streaming/playlists")
-    async def list_streaming_playlists() -> dict[str, list[StreamingPlaylistResponse]]:
-        playlists = StreamingAccountStore(require_database_url()).list_playlists()
-        return {
-            "playlists": [
-                serialize_streaming_playlist(playlist) for playlist in playlists
-            ]
-        }
-
-    @app.post("/streaming/accounts", status_code=201)
-    async def create_streaming_account(
-        payload: CreateStreamingAccountRequest,
-    ) -> StreamingAccountResponse:
-        database_url = require_database_url()
-        account = StreamingAccountStore(database_url).create_youtube_music_account(
-            display_name=payload.display_name,
-            browser_headers=payload.browser_headers,
+    app.include_router(
+        create_router(
+            require_database_url=require_database_url,
+            require_redis_url=require_redis_url,
         )
-
-        created_account = next(
-            account_record
-            for account_record in StreamingAccountStore(database_url).list_accounts()
-            if account_record.id == account.id
-        )
-        return serialize_streaming_account(created_account)
-
-    @app.post("/streaming/accounts/{account_id}/sync", status_code=202)
-    async def sync_streaming_account(
-        account_id: int,
-    ) -> StreamingSyncResponse:
-        database_url = require_database_url()
-        store = StreamingAccountStore(database_url)
-        if not any(account.id == account_id for account in store.list_accounts()):
-            raise HTTPException(status_code=404, detail="Streaming account not found")
-
-        job_id = StreamingSyncJobEnqueuer(require_redis_url()).enqueue(
-            account_id=account_id,
-        )
-        return StreamingSyncResponse(account_id=account_id, job_id=job_id)
+    )
 
     return app
 

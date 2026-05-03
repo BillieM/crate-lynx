@@ -18,6 +18,13 @@ from app.streaming.models import (
     streaming_playlists_table,
     streaming_tracks_table,
 )
+from app.streaming.router import create_router
+from app.streaming.schemas import (
+    CreateStreamingAccountRequest,
+    StreamingAccountResponse,
+    StreamingPlaylistResponse,
+    StreamingSyncResponse,
+)
 from app.streaming.store import StreamingAccountStore
 
 __all__ = [
@@ -31,7 +38,12 @@ __all__ = [
     "StreamingTrackRecord",
     "STREAMING_ACCOUNT_AUTH_STATE_CONNECTED",
     "STREAMING_ACCOUNT_AUTH_STATE_ERROR",
+    "CreateStreamingAccountRequest",
+    "StreamingAccountResponse",
+    "StreamingPlaylistResponse",
     "YOUTUBE_MUSIC_PROVIDER",
+    "StreamingSyncResponse",
+    "create_router",
     "metadata",
     "playlist_membership_table",
     "run_youtube_music_sync_job",

@@ -7,10 +7,8 @@ from pathlib import Path
 from cryptography.fernet import Fernet
 from app.ingestion import PreparedTrack
 from app.ingestion.status import IngestionStatusStore
-from app.main import (
-    CreateStreamingAccountRequest,
-    create_app,
-)
+from app.main import create_app
+from app.streaming.schemas import CreateStreamingAccountRequest
 from app.streaming.models import metadata, streaming_accounts_table
 from app.streaming.store import StreamingAccountStore
 from app.streaming.adapters.youtube_music import (
@@ -303,7 +301,9 @@ def test_streaming_account_sync_endpoint_enqueues_job(
             seen["account_id"] = account_id
             return "sync-job-999"
 
-    monkeypatch.setattr("app.main.StreamingSyncJobEnqueuer", FakeSyncEnqueuer)
+    monkeypatch.setattr(
+        "app.streaming.router.StreamingSyncJobEnqueuer", FakeSyncEnqueuer
+    )
 
     app = create_app()
     route = next(
