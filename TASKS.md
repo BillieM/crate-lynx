@@ -8,4 +8,4 @@
 - [x] Ensure pipeline is re-runnable per track: clear any existing non-approved `suggested_links` row before writing new result
 - [x] Wire matching pipeline as an RQ job in `matching/jobs.py`; enqueue from ingestion pipeline on track completion
 - [x] Mount any needed status/trigger endpoints in `matching/router.py` and register in `main.py`
-- [ ] Write tests: ISRC hit returns high confidence, fuzzy match scoring bands, low score triggers acoustic job enqueue, re-run clears old suggestion
+- [x] Write tests: ISRC hit returns high confidence, fuzzy match scoring bands, low score triggers acoustic job enqueue, re-run clears old suggestion
