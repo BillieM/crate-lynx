@@ -23,6 +23,7 @@ from app.streaming.adapters.youtube_music import (
     YouTubeMusicTrack,
     sync_library_playlists,
     sync_library_playlist_tracks,
+    sync_single_library_playlist_tracks,
 )
 from app.streaming.crypto import decrypt_token, encrypt_token
 from app.streaming.models import (
@@ -673,6 +674,24 @@ class StreamingAccountStore:
             account_id=account_id,
             run_sync=lambda adapter: sync_library_playlist_tracks(
                 account_id=account_id,
+                adapter=adapter,
+                playlist_store=self,
+            ),
+        )
+
+    def sync_youtube_music_playlist(
+        self,
+        *,
+        playlist_id: int,
+    ) -> list[PlaylistMembershipRecord]:
+        playlist = self._get_playlist_summary(playlist_id)
+        if playlist is None:
+            return []
+
+        return self._run_youtube_music_sync(
+            account_id=playlist.account_id,
+            run_sync=lambda adapter: sync_single_library_playlist_tracks(
+                playlist=playlist,
                 adapter=adapter,
                 playlist_store=self,
             ),

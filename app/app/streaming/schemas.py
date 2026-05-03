@@ -68,3 +68,8 @@ class CreateStreamingAccountRequest(BaseModel):
 class StreamingSyncResponse(BaseModel):
     account_id: int
     job_id: str
+
+
+class PlaylistSyncResponse(BaseModel):
+    playlist_id: int
+    job_id: str

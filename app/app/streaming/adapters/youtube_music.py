@@ -290,7 +290,13 @@ def sync_library_playlist_tracks(
     )
 
     synced_memberships: list[Any] = []
-    for playlist in stored_playlists:
+    selected_playlists = [
+        playlist
+        for playlist in stored_playlists
+        if getattr(playlist, "selected_for_sync", False)
+    ]
+
+    for playlist in selected_playlists:
         try:
             tracks = adapter.list_playlist_tracks(playlist.provider_playlist_id)
             synced_memberships.extend(
@@ -327,6 +333,47 @@ def sync_library_playlist_tracks(
             continue
 
     return synced_memberships
+
+
+def sync_single_library_playlist_tracks(
+    *,
+    playlist: Any,
+    adapter: StreamingAdapter,
+    playlist_store: Any,
+) -> list[Any]:
+    try:
+        tracks = adapter.list_playlist_tracks(playlist.provider_playlist_id)
+        synced_memberships = playlist_store.replace_playlist_membership(
+            playlist_id=playlist.id,
+            tracks=tracks,
+        )
+        _clear_playlist_sync_failure(playlist_store, playlist_id=playlist.id)
+        return synced_memberships
+    except MalformedPlaylistPayloadError as exc:
+        _mark_playlist_sync_failure(
+            playlist_store,
+            playlist_id=playlist.id,
+            error=str(exc),
+            failed_at=datetime.now(UTC),
+        )
+        logger.warning(
+            "Skipping YouTube Music playlist %s because its track payload is malformed",
+            playlist.provider_playlist_id,
+            exc_info=True,
+        )
+        return []
+    except Exception as exc:
+        _mark_playlist_sync_failure(
+            playlist_store,
+            playlist_id=playlist.id,
+            error=_format_sync_failure(exc),
+            failed_at=datetime.now(UTC),
+        )
+        logger.exception(
+            "Skipping YouTube Music playlist %s after sync failed",
+            playlist.provider_playlist_id,
+        )
+        return []
 
 
 def _mark_playlist_sync_failure(

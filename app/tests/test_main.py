@@ -49,6 +49,8 @@ def test_links_routes_are_mounted_under_api_prefix() -> None:
     assert "/api/playlists/{playlist_id}/tracks" in route_paths
     assert "/api/playlists/{playlist_id}/m3u" in route_paths
     assert "/api/streaming/accounts/{account_id}/sync" in route_paths
+    assert "/api/streaming/accounts/{account_id}/refresh-metadata" in route_paths
+    assert "/api/streaming/playlists/{playlist_id}/sync" in route_paths
     assert "/api/local-tracks/{local_track_id}/rematch" in route_paths
 
 
@@ -730,6 +732,119 @@ def test_streaming_account_sync_endpoint_enqueues_job(
     assert seen == {
         "redis_url": "redis://redis:6379/3",
         "account_id": 1,
+    }
+
+
+def test_streaming_refresh_metadata_endpoint_enqueues_job(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite:///{tmp_path / 'streaming-refresh.db'}"
+    engine = create_engine(database_url)
+    metadata.create_all(engine)
+    monkeypatch.setenv("DATABASE_URL", database_url)
+    monkeypatch.setenv("REDIS_URL", "redis://redis:6379/3")
+    monkeypatch.setenv("TOKEN_ENCRYPTION_KEY", Fernet.generate_key().decode("utf-8"))
+
+    with engine.begin() as connection:
+        connection.execute(
+            insert(streaming_accounts_table).values(
+                provider="youtube_music",
+                display_name="Refreshable Account",
+                auth_token_blob="encrypted-token",
+                auth_state="connected",
+            )
+        )
+
+    seen: dict[str, object] = {}
+
+    class FakeSyncEnqueuer:
+        def __init__(self, redis_url: str) -> None:
+            seen["redis_url"] = redis_url
+
+        def enqueue_metadata_refresh(
+            self,
+            *,
+            account_id: int,
+        ) -> str:
+            seen["account_id"] = account_id
+            return "metadata-refresh-job-999"
+
+    monkeypatch.setattr(
+        "app.streaming.router.StreamingSyncJobEnqueuer", FakeSyncEnqueuer
+    )
+
+    app = create_app()
+    route = next(
+        route
+        for route in app.routes
+        if getattr(route, "path", None)
+        == "/api/streaming/accounts/{account_id}/refresh-metadata"
+        and "POST" in getattr(route, "methods", set())
+    )
+    response = asyncio.run(route.endpoint(1))
+
+    assert response.account_id == 1
+    assert response.job_id == "metadata-refresh-job-999"
+    assert seen == {
+        "redis_url": "redis://redis:6379/3",
+        "account_id": 1,
+    }
+
+
+def test_streaming_playlist_sync_endpoint_enqueues_job(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite:///{tmp_path / 'streaming-playlist-sync.db'}"
+    engine = create_engine(database_url)
+    metadata.create_all(engine)
+    monkeypatch.setenv("DATABASE_URL", database_url)
+    monkeypatch.setenv("REDIS_URL", "redis://redis:6379/3")
+    monkeypatch.setenv("TOKEN_ENCRYPTION_KEY", Fernet.generate_key().decode("utf-8"))
+
+    store = StreamingAccountStore(database_url)
+    account = store.create_youtube_music_account(
+        display_name="Listener",
+        browser_headers={"refresh_token": "refresh-token"},
+    )
+    playlist = store.upsert_playlists(
+        account_id=account.id,
+        playlists=[YouTubeMusicPlaylist(provider_playlist_id="PL9", title="Gym")],
+    )[0]
+
+    seen: dict[str, object] = {}
+
+    class FakeSyncEnqueuer:
+        def __init__(self, redis_url: str) -> None:
+            seen["redis_url"] = redis_url
+
+        def enqueue_playlist_sync(
+            self,
+            *,
+            playlist_id: int,
+        ) -> str:
+            seen["playlist_id"] = playlist_id
+            return "playlist-sync-job-999"
+
+    monkeypatch.setattr(
+        "app.streaming.router.StreamingSyncJobEnqueuer", FakeSyncEnqueuer
+    )
+
+    app = create_app()
+    route = next(
+        route
+        for route in app.routes
+        if getattr(route, "path", None) == "/api/streaming/playlists/{playlist_id}/sync"
+        and "POST" in getattr(route, "methods", set())
+    )
+    response = asyncio.run(route.endpoint(playlist.id))
+
+    assert response.playlist_id == playlist.id
+    assert response.job_id == "playlist-sync-job-999"
+    assert seen == {
+        "redis_url": "redis://redis:6379/3",
+        "playlist_id": playlist.id,
     }
 
 

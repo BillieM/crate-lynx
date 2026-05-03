@@ -9,6 +9,7 @@ from app.streaming.schemas import (
     CreateStreamingAccountRequest,
     PlaylistDetail,
     PlaylistDetailResponse,
+    PlaylistSyncResponse,
     PlaylistTrackResponse,
     PlaylistTracksResponse,
     StreamingAccountResponse,
@@ -194,5 +195,33 @@ def create_router(
             account_id=account_id,
         )
         return StreamingSyncResponse(account_id=account_id, job_id=job_id)
+
+    @router.post(
+        "/streaming/accounts/{account_id}/refresh-metadata",
+        status_code=202,
+    )
+    async def refresh_streaming_account_metadata(
+        account_id: int,
+    ) -> StreamingSyncResponse:
+        database_url = require_database_url()
+        store = StreamingAccountStore(database_url)
+        if not any(account.id == account_id for account in store.list_accounts()):
+            raise HTTPException(status_code=404, detail="Streaming account not found")
+
+        job_id = StreamingSyncJobEnqueuer(require_redis_url()).enqueue_metadata_refresh(
+            account_id=account_id,
+        )
+        return StreamingSyncResponse(account_id=account_id, job_id=job_id)
+
+    @router.post("/streaming/playlists/{playlist_id}/sync", status_code=202)
+    async def sync_streaming_playlist(playlist_id: int) -> PlaylistSyncResponse:
+        store = StreamingAccountStore(require_database_url())
+        if not any(playlist.id == playlist_id for playlist in store.list_playlists()):
+            raise HTTPException(status_code=404, detail="Playlist not found")
+
+        job_id = StreamingSyncJobEnqueuer(require_redis_url()).enqueue_playlist_sync(
+            playlist_id=playlist_id,
+        )
+        return PlaylistSyncResponse(playlist_id=playlist_id, job_id=job_id)
 
     return router

@@ -11,6 +11,7 @@ from ytmusicapi.exceptions import YTMusicUserError
 
 from app.streaming.jobs import (
     run_youtube_music_playlist_metadata_refresh_job,
+    run_youtube_music_playlist_sync_job,
     run_youtube_music_sync_job,
 )
 from app.streaming.models import (
@@ -240,6 +241,14 @@ def test_streaming_account_store_syncs_youtube_music_playlists(
     account = store.create_youtube_music_account(
         display_name="Listener",
         browser_headers={"refresh_token": "refresh-token"},
+    )
+    playlist = store.upsert_playlists(
+        account_id=account.id,
+        playlists=[YouTubeMusicPlaylist(provider_playlist_id="PL9", title="Gym")],
+    )[0]
+    store.set_playlist_selected_for_sync(
+        playlist_id=playlist.id,
+        selected_for_sync=True,
     )
 
     seen: dict[str, object] = {}
@@ -506,6 +515,14 @@ def test_streaming_account_store_syncs_youtube_music_playlist_tracks(
         display_name="Listener",
         browser_headers={"refresh_token": "refresh-token"},
     )
+    playlist = store.upsert_playlists(
+        account_id=account.id,
+        playlists=[YouTubeMusicPlaylist(provider_playlist_id="PL9", title="Gym")],
+    )[0]
+    store.set_playlist_selected_for_sync(
+        playlist_id=playlist.id,
+        selected_for_sync=True,
+    )
 
     seen: dict[str, object] = {}
 
@@ -564,6 +581,130 @@ def test_streaming_account_store_syncs_youtube_music_playlist_tracks(
     assert len(stored_memberships) == 1
 
 
+def test_streaming_account_store_syncs_only_selected_playlist_tracks(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite:///{tmp_path / 'streaming-selected-sync.db'}"
+    engine = create_engine(database_url)
+    metadata.create_all(engine)
+    monkeypatch.setenv("TOKEN_ENCRYPTION_KEY", Fernet.generate_key().decode("utf-8"))
+
+    store = StreamingAccountStore(database_url)
+    account = store.create_youtube_music_account(
+        display_name="Listener",
+        browser_headers={"refresh_token": "refresh-token"},
+    )
+    playlists = store.upsert_playlists(
+        account_id=account.id,
+        playlists=[
+            YouTubeMusicPlaylist(provider_playlist_id="PL1", title="Selected Mix"),
+            YouTubeMusicPlaylist(provider_playlist_id="PL2", title="Skipped Mix"),
+        ],
+    )
+    store.set_playlist_selected_for_sync(
+        playlist_id=playlists[0].id,
+        selected_for_sync=True,
+    )
+
+    seen: dict[str, list[str]] = {"playlist_ids": []}
+
+    class FakeAdapter:
+        def list_library_playlists(self):
+            return [
+                YouTubeMusicPlaylist(provider_playlist_id="PL1", title="Selected Mix"),
+                YouTubeMusicPlaylist(provider_playlist_id="PL2", title="Skipped Mix"),
+            ]
+
+        def list_playlist_tracks(self, playlist_id):
+            seen["playlist_ids"].append(playlist_id)
+            return [
+                YouTubeMusicTrack(
+                    provider_track_id=f"{playlist_id}-track",
+                    title="Synced Track",
+                    artist="Artist",
+                    album=None,
+                    year=None,
+                    isrc=None,
+                    duration_ms=120000,
+                )
+            ]
+
+    monkeypatch.setattr(
+        "app.streaming.store.YouTubeMusicAdapter.from_browser_auth",
+        lambda auth, *, user=None, language="en", location="": FakeAdapter(),
+    )
+
+    synced = store.sync_youtube_music_playlist_tracks(account_id=account.id)
+
+    with engine.connect() as connection:
+        stored_memberships = list(
+            connection.execute(select(playlist_membership_table)).mappings()
+        )
+
+    assert seen["playlist_ids"] == ["PL1"]
+    assert [membership.playlist_id for membership in synced] == [playlists[0].id]
+    assert [membership["playlist_id"] for membership in stored_memberships] == [
+        playlists[0].id
+    ]
+
+
+def test_streaming_account_store_syncs_single_playlist_ignoring_selected_flag(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite:///{tmp_path / 'streaming-single-playlist-sync.db'}"
+    engine = create_engine(database_url)
+    metadata.create_all(engine)
+    monkeypatch.setenv("TOKEN_ENCRYPTION_KEY", Fernet.generate_key().decode("utf-8"))
+
+    store = StreamingAccountStore(database_url)
+    account = store.create_youtube_music_account(
+        display_name="Listener",
+        browser_headers={"refresh_token": "refresh-token"},
+    )
+    playlist = store.upsert_playlists(
+        account_id=account.id,
+        playlists=[YouTubeMusicPlaylist(provider_playlist_id="PL9", title="Gym")],
+    )[0]
+
+    seen: dict[str, object] = {}
+
+    class FakeAdapter:
+        def list_playlist_tracks(self, playlist_id):
+            seen["playlist_id"] = playlist_id
+            return [
+                YouTubeMusicTrack(
+                    provider_track_id="track-9",
+                    title="Workout",
+                    artist="Artist 9",
+                    album=None,
+                    year=None,
+                    isrc=None,
+                    duration_ms=120000,
+                )
+            ]
+
+    monkeypatch.setattr(
+        "app.streaming.store.YouTubeMusicAdapter.from_browser_auth",
+        lambda auth, *, user=None, language="en", location="": FakeAdapter(),
+    )
+
+    synced = store.sync_youtube_music_playlist(playlist_id=playlist.id)
+
+    with engine.connect() as connection:
+        stored_memberships = list(
+            connection.execute(select(playlist_membership_table)).mappings()
+        )
+
+    assert seen["playlist_id"] == "PL9"
+    assert [membership.playlist_id for membership in synced] == [playlist.id]
+    assert [membership["playlist_id"] for membership in stored_memberships] == [
+        playlist.id
+    ]
+    assert store.list_playlists()[0].selected_for_sync is False
+
+
 def test_streaming_account_store_preserves_membership_for_malformed_playlist(
     monkeypatch,
     tmp_path: Path,
@@ -585,6 +726,11 @@ def test_streaming_account_store_preserves_membership_for_malformed_playlist(
             YouTubeMusicPlaylist(provider_playlist_id="PL2", title="Fresh Mix"),
         ],
     )
+    for playlist in playlists:
+        store.set_playlist_selected_for_sync(
+            playlist_id=playlist.id,
+            selected_for_sync=True,
+        )
     store.replace_playlist_membership(
         playlist_id=playlists[0].id,
         tracks=[
@@ -685,6 +831,10 @@ def test_streaming_account_store_empty_playlist_clears_membership_and_error(
         account_id=account.id,
         playlists=[YouTubeMusicPlaylist(provider_playlist_id="PL1", title="Saved Mix")],
     )[0]
+    store.set_playlist_selected_for_sync(
+        playlist_id=playlist.id,
+        selected_for_sync=True,
+    )
     store.replace_playlist_membership(
         playlist_id=playlist.id,
         tracks=[
@@ -850,6 +1000,28 @@ def test_run_youtube_music_playlist_metadata_refresh_job_uses_database(
 
     assert seen["database_url"] == "sqlite:///worker.db"
     assert seen["account_id"] == 7
+
+
+def test_run_youtube_music_playlist_sync_job_uses_database(
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("DATABASE_URL", "sqlite:///worker.db")
+    seen: dict[str, object] = {}
+
+    class FakeStore:
+        def __init__(self, database_url: str) -> None:
+            seen["database_url"] = database_url
+
+        def sync_youtube_music_playlist(self, *, playlist_id) -> list[object]:
+            seen["playlist_id"] = playlist_id
+            return []
+
+    monkeypatch.setattr("app.streaming.jobs.StreamingAccountStore", FakeStore)
+
+    run_youtube_music_playlist_sync_job(11)
+
+    assert seen["database_url"] == "sqlite:///worker.db"
+    assert seen["playlist_id"] == 11
 
 
 def _decrypt_token(auth_token_blob: str) -> str:

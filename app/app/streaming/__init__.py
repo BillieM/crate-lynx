@@ -2,6 +2,7 @@
 
 from app.streaming.jobs import (
     run_youtube_music_playlist_metadata_refresh_job,
+    run_youtube_music_playlist_sync_job,
     run_youtube_music_sync_job,
 )
 from app.streaming.models import (
@@ -28,6 +29,7 @@ from app.streaming.schemas import (
     CreateStreamingAccountRequest,
     PlaylistDetail,
     PlaylistDetailResponse,
+    PlaylistSyncResponse,
     PlaylistTrackResponse,
     PlaylistTracksResponse,
     StreamingAccountResponse,
@@ -52,6 +54,7 @@ __all__ = [
     "CreateStreamingAccountRequest",
     "PlaylistDetail",
     "PlaylistDetailResponse",
+    "PlaylistSyncResponse",
     "PlaylistTrackResponse",
     "PlaylistTracksResponse",
     "StreamingAccountResponse",
@@ -62,6 +65,7 @@ __all__ = [
     "metadata",
     "playlist_membership_table",
     "run_youtube_music_playlist_metadata_refresh_job",
+    "run_youtube_music_playlist_sync_job",
     "run_youtube_music_sync_job",
     "streaming_accounts_table",
     "streaming_playlists_table",
