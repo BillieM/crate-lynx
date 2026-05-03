@@ -63,7 +63,7 @@ def test_generate_m3u_returns_only_final_linked_tracks_in_playlist_order(
                     "album": None,
                     "year": None,
                     "isrc": None,
-                    "duration_ms": None,
+                    "duration_ms": 121000,
                 },
                 {
                     "id": 12,
@@ -124,12 +124,15 @@ def test_generate_m3u_returns_only_final_linked_tracks_in_playlist_order(
     output = generate_m3u(7, tmp_path / "exports")
 
     assert output.splitlines() == [
+        "#EXTM3U",
+        "#EXTINF:-1,Artist - Second",
         str((tmp_path / "exports" / "Artist/second.mp3").resolve()),
+        "#EXTINF:121,Artist - First",
         str((tmp_path / "exports" / "Artist/first.mp3").resolve()),
     ]
 
 
-def test_generate_m3u_returns_empty_string_for_playlist_without_final_links(
+def test_generate_m3u_returns_header_only_for_playlist_without_final_links(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
@@ -161,4 +164,4 @@ def test_generate_m3u_returns_empty_string_for_playlist_without_final_links(
             )
         )
 
-    assert generate_m3u(7, tmp_path / "exports") == ""
+    assert generate_m3u(7, tmp_path / "exports") == "#EXTM3U"

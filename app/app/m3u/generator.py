@@ -7,7 +7,7 @@ from sqlalchemy import create_engine, select
 
 from app.links.store import final_links_table
 from app.local_tracks.store import local_tracks_table
-from app.streaming.models import playlist_membership_table
+from app.streaming.models import playlist_membership_table, streaming_tracks_table
 
 
 def generate_m3u(playlist_id: int, base_path: Path | str) -> str:
@@ -19,13 +19,24 @@ def generate_m3u(playlist_id: int, base_path: Path | str) -> str:
     base_path = Path(base_path).resolve()
     engine = create_engine(database_url)
     query = (
-        select(local_tracks_table.c.file_path)
+        select(
+            local_tracks_table.c.file_path,
+            streaming_tracks_table.c.artist,
+            streaming_tracks_table.c.title,
+            streaming_tracks_table.c.duration_ms,
+        )
         .select_from(
             playlist_membership_table.join(
                 final_links_table,
                 final_links_table.c.streaming_track_id
                 == playlist_membership_table.c.streaming_track_id,
-            ).join(
+            )
+            .join(
+                streaming_tracks_table,
+                streaming_tracks_table.c.id
+                == playlist_membership_table.c.streaming_track_id,
+            )
+            .join(
                 local_tracks_table,
                 local_tracks_table.c.id == final_links_table.c.local_track_id,
             )
@@ -35,9 +46,20 @@ def generate_m3u(playlist_id: int, base_path: Path | str) -> str:
     )
 
     with engine.connect() as connection:
-        rows = connection.execute(query).scalars().all()
+        rows = connection.execute(query).mappings().all()
 
-    resolved_paths = [
-        str((base_path / Path(file_path)).resolve()) for file_path in rows
-    ]
-    return "\n".join(resolved_paths)
+    lines = ["#EXTM3U"]
+    for row in rows:
+        duration_seconds = _format_duration_seconds(row["duration_ms"])
+        resolved_path = str((base_path / Path(row["file_path"])).resolve())
+        lines.append(f"#EXTINF:{duration_seconds},{row['artist']} - {row['title']}")
+        lines.append(resolved_path)
+
+    return "\n".join(lines)
+
+
+def _format_duration_seconds(duration_ms: int | None) -> int:
+    if duration_ms is None:
+        return -1
+
+    return duration_ms // 1000
