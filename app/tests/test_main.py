@@ -39,6 +39,7 @@ def test_links_routes_are_mounted_under_api_prefix() -> None:
     route_paths = {getattr(route, "path", None) for route in app.routes}
 
     assert "/api/proposals" in route_paths
+    assert "/api/search" in route_paths
     assert "/api/proposals/{proposal_id}/approve" in route_paths
     assert "/api/proposals/{proposal_id}/reject" in route_paths
     assert "/api/final-links/{final_link_id}" in route_paths
@@ -248,6 +249,81 @@ def test_streaming_playlists_endpoint_lists_synced_playlists(
     assert playlist.synced_at == "2026-05-01T09:00:00"
     assert response["playlists"][1].provider_playlist_id == "PL2"
     assert response["playlists"][1].track_count == 0
+
+
+def test_search_endpoint_returns_playlist_streaming_and_local_matches(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite:///{tmp_path / 'search.db'}"
+    engine = create_engine(database_url)
+    metadata.create_all(engine)
+    local_tracks_metadata.create_all(engine)
+    monkeypatch.setenv("DATABASE_URL", database_url)
+    monkeypatch.setenv("TOKEN_ENCRYPTION_KEY", Fernet.generate_key().decode("utf-8"))
+
+    with engine.begin() as connection:
+        account_id = connection.execute(
+            insert(streaming_accounts_table).values(
+                provider="youtube_music",
+                display_name="Main Account",
+                auth_token_blob="encrypted-token",
+                auth_state="connected",
+            )
+        ).inserted_primary_key[0]
+        playlist_id = connection.execute(
+            insert(streaming_playlists_table).values(
+                account_id=account_id,
+                provider_playlist_id="mix-1",
+                title="Morning Mix",
+            )
+        ).inserted_primary_key[0]
+        streaming_track_id = connection.execute(
+            insert(streaming_tracks_table).values(
+                provider_track_id="track-1",
+                title="Mix Tape",
+                artist="DJ Example",
+                album="Morning Blend",
+                year=2026,
+                isrc=None,
+                duration_ms=180000,
+            )
+        ).inserted_primary_key[0]
+        connection.execute(
+            insert(playlist_membership_table).values(
+                playlist_id=playlist_id,
+                streaming_track_id=streaming_track_id,
+                position=0,
+            )
+        )
+        connection.execute(
+            insert(local_tracks_table).values(
+                file_path="Artist/Mixdown.mp3",
+                library_root_rel_path="Artist/Mixdown.mp3",
+                fingerprint=None,
+                beets_id=None,
+            )
+        )
+
+    app = create_app()
+    route = next(
+        route
+        for route in app.routes
+        if getattr(route, "path", None) == "/api/search"
+        and "GET" in getattr(route, "methods", set())
+    )
+    response = asyncio.run(route.endpoint(q="mix"))
+
+    assert response.query == "mix"
+    assert [result.kind for result in response.results] == [
+        "playlist",
+        "streaming_track",
+        "local_track",
+    ]
+    assert response.results[0].title == "Morning Mix"
+    assert response.results[0].subtitle == "Playlist • 1 tracks"
+    assert response.results[1].subtitle == "DJ Example • Morning Blend"
+    assert response.results[2].route_path == "/local-library"
 
 
 def test_streaming_accounts_endpoint_creates_youtube_music_account(

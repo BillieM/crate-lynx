@@ -1,14 +1,33 @@
-import { render, screen } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import App from "./App";
 
-describe("App", () => {
-  it("redirects the root route to maintenance inside the shared shell", () => {
-    render(
-      <MemoryRouter initialEntries={["/"]}>
+function renderApp(initialEntries: string[]) {
+  const queryClient = new QueryClient({
+    defaultOptions: {
+      queries: {
+        retry: false,
+      },
+    },
+  });
+
+  return render(
+    <QueryClientProvider client={queryClient}>
+      <MemoryRouter initialEntries={initialEntries}>
         <App />
-      </MemoryRouter>,
-    );
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+}
+
+describe("App", () => {
+  afterEach(() => {
+    window.fetch = fetch;
+  });
+
+  it("redirects the root route to maintenance inside the shared shell", () => {
+    renderApp(["/"]);
 
     expect(
       screen.getByRole("heading", {
@@ -28,11 +47,7 @@ describe("App", () => {
   });
 
   it("keeps the shell visible on the youtube music route", () => {
-    render(
-      <MemoryRouter initialEntries={["/youtube-music"]}>
-        <App />
-      </MemoryRouter>,
-    );
+    renderApp(["/youtube-music"]);
 
     expect(
       screen.getByRole("heading", {
@@ -52,11 +67,7 @@ describe("App", () => {
   });
 
   it("renders the local library route content within the shared main area", () => {
-    render(
-      <MemoryRouter initialEntries={["/local-library"]}>
-        <App />
-      </MemoryRouter>,
-    );
+    renderApp(["/local-library"]);
 
     expect(
       screen.getByRole("heading", {
@@ -64,5 +75,36 @@ describe("App", () => {
       }),
     ).toBeInTheDocument();
     expect(screen.getByText(/main content area/i)).toBeInTheDocument();
+  });
+
+  it("shows API-backed search results in the shared topbar", async () => {
+    window.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        query: "mix",
+        results: [
+          {
+            id: 1,
+            kind: "playlist",
+            route_path: "/youtube-music",
+            subtitle: "Playlist • 12 tracks",
+            title: "Morning Mix",
+          },
+        ],
+      }),
+    } as Response);
+
+    renderApp(["/maintenance"]);
+
+    fireEvent.change(screen.getByRole("searchbox", { name: /global search/i }), {
+      target: { value: "mix" },
+    });
+
+    await waitFor(() => {
+      expect(window.fetch).toHaveBeenCalledWith("/api/search?q=mix");
+    });
+
+    expect(await screen.findByText("Morning Mix")).toBeInTheDocument();
+    expect(screen.getByText("Playlist • 12 tracks")).toBeInTheDocument();
   });
 });

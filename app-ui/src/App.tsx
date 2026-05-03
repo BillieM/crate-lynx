@@ -1,4 +1,19 @@
-import { NavLink, Navigate, Route, Routes } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
+import { useEffect, useState } from "react";
+import { Link, NavLink, Navigate, Route, Routes, useLocation } from "react-router-dom";
+
+type SearchResult = {
+  id: number;
+  kind: "playlist" | "streaming_track" | "local_track";
+  route_path: string;
+  subtitle: string;
+  title: string;
+};
+
+type SearchResponse = {
+  query: string;
+  results: SearchResult[];
+};
 
 type AppRoute = {
   description: string;
@@ -174,6 +189,108 @@ function SectionView({ description, heading, kicker, stats, section }: AppRoute)
   );
 }
 
+async function fetchSearchResults(query: string): Promise<SearchResponse> {
+  const response = await fetch(`/api/search?q=${encodeURIComponent(query)}`);
+  if (!response.ok) {
+    throw new Error(`Search request failed with status ${response.status}`);
+  }
+
+  return (await response.json()) as SearchResponse;
+}
+
+function SearchPanel() {
+  const location = useLocation();
+  const [query, setQuery] = useState("");
+  const [debouncedQuery, setDebouncedQuery] = useState("");
+
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      setDebouncedQuery(query.trim());
+    }, 180);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [query]);
+
+  useEffect(() => {
+    setQuery("");
+    setDebouncedQuery("");
+  }, [location.pathname]);
+
+  const searchQuery = useQuery({
+    queryKey: ["global-search", debouncedQuery],
+    queryFn: () => fetchSearchResults(debouncedQuery),
+    enabled: debouncedQuery.length > 1,
+  });
+
+  const isOpen = query.trim().length > 1;
+  const results = searchQuery.data?.results ?? [];
+
+  return (
+    <div className="relative min-w-[18rem] flex-1 sm:min-w-[24rem]">
+      <label className="block">
+        <span className="sr-only">Global search</span>
+        <input
+          aria-autocomplete="list"
+          aria-controls="global-search-results"
+          aria-expanded={isOpen}
+          aria-label="Global search"
+          className="w-full rounded-full border border-ctp-surface1 bg-ctp-mantle/85 px-5 py-3 text-sm text-ctp-text outline-none transition placeholder:text-ctp-overlay0 focus:border-ctp-sky focus:ring-2 focus:ring-ctp-sky/35"
+          name="global-search"
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder="Search playlists, tracks, and matches"
+          type="search"
+          value={query}
+        />
+      </label>
+
+      {isOpen ? (
+        <div
+          className="absolute left-0 right-0 top-[calc(100%+0.75rem)] z-20 overflow-hidden rounded-[1.5rem] border border-ctp-surface1 bg-ctp-base/95 shadow-2xl shadow-ctp-crust/35 backdrop-blur"
+          id="global-search-results"
+        >
+          {searchQuery.isPending ? (
+            <p className="px-5 py-4 text-sm text-ctp-subtext1">Searching…</p>
+          ) : null}
+          {searchQuery.isError ? (
+            <p className="px-5 py-4 text-sm text-ctp-maroon">
+              Search is temporarily unavailable.
+            </p>
+          ) : null}
+          {!searchQuery.isPending && !searchQuery.isError && results.length === 0 ? (
+            <p className="px-5 py-4 text-sm text-ctp-subtext1">
+              No matches for “{query.trim()}”.
+            </p>
+          ) : null}
+          {results.length > 0 ? (
+            <ul className="py-2">
+              {results.map((result) => (
+                <li key={`${result.kind}-${result.id}`}>
+                  <Link
+                    className="flex items-start justify-between gap-4 px-5 py-3 transition hover:bg-ctp-surface0/60"
+                    to={result.route_path}
+                  >
+                    <div>
+                      <p className="text-sm font-semibold text-ctp-text">
+                        {result.title}
+                      </p>
+                      <p className="mt-1 text-sm text-ctp-subtext1">
+                        {result.subtitle}
+                      </p>
+                    </div>
+                    <span className="rounded-full border border-ctp-surface1 bg-ctp-mantle/80 px-2 py-1 text-[0.65rem] font-semibold tracking-[0.2em] uppercase text-ctp-lavender">
+                      {result.kind.replace("_", " ")}
+                    </span>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function AppShell() {
   return (
     <div className="min-h-screen bg-transparent px-4 py-4 text-ctp-text sm:px-6 lg:px-8">
@@ -227,16 +344,7 @@ function AppShell() {
               </div>
 
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-                <label className="relative block min-w-[18rem] flex-1 sm:min-w-[24rem]">
-                  <span className="sr-only">Global search</span>
-                  <input
-                    aria-label="Global search"
-                    className="w-full rounded-full border border-ctp-surface1 bg-ctp-mantle/85 px-5 py-3 text-sm text-ctp-text outline-none transition placeholder:text-ctp-overlay0 focus:border-ctp-sky focus:ring-2 focus:ring-ctp-sky/35"
-                    name="global-search"
-                    placeholder="Search playlists, tracks, and matches"
-                    type="search"
-                  />
-                </label>
+                <SearchPanel />
                 <button
                   className="rounded-full border border-ctp-surface1 bg-ctp-base px-4 py-3 text-sm font-semibold text-ctp-subtext0 transition hover:border-ctp-sky hover:text-ctp-text"
                   type="button"
