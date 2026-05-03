@@ -4,7 +4,7 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, HTTPException
-from sqlalchemy import and_, create_engine, insert, select, update
+from sqlalchemy import and_, create_engine, delete, insert, select, update
 from sqlalchemy.sql.elements import ColumnElement
 
 from app.links.models import ProposalListResponse, ProposalResponse
@@ -154,6 +154,52 @@ def create_router(*, require_database_url: Callable[[], str]) -> APIRouter:
 
         return {
             "proposal_id": proposal_id,
+            "status": SUGGESTED_LINK_STATUS_REJECTED,
+            "rejected_at": rejected_at.isoformat(),
+        }
+
+    @router.delete("/final-links/{final_link_id}")
+    async def break_final_link(final_link_id: int) -> dict[str, object]:
+        engine = create_engine(require_database_url())
+        rejected_at = datetime.now(UTC)
+
+        with engine.begin() as connection:
+            final_link = (
+                connection.execute(
+                    select(
+                        final_links_table.c.id,
+                        final_links_table.c.local_track_id,
+                        final_links_table.c.streaming_track_id,
+                    ).where(final_links_table.c.id == final_link_id)
+                )
+                .mappings()
+                .one_or_none()
+            )
+
+            if final_link is None:
+                raise HTTPException(status_code=404, detail="Final link not found")
+
+            connection.execute(
+                delete(final_links_table).where(final_links_table.c.id == final_link_id)
+            )
+            rejected_suggestion = connection.execute(
+                insert(suggested_links_table).values(
+                    local_track_id=final_link["local_track_id"],
+                    streaming_track_id=final_link["streaming_track_id"],
+                    match_method="manual_break",
+                    score=0.0,
+                    status=SUGGESTED_LINK_STATUS_REJECTED,
+                    rejected_at=rejected_at,
+                )
+            )
+
+        rejected_suggestion_id = rejected_suggestion.inserted_primary_key[0]
+        if not isinstance(rejected_suggestion_id, int):
+            raise ValueError("Failed to persist rejected suggestion")
+
+        return {
+            "final_link_id": final_link_id,
+            "rejected_suggestion_id": rejected_suggestion_id,
             "status": SUGGESTED_LINK_STATUS_REJECTED,
             "rejected_at": rejected_at.isoformat(),
         }

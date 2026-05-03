@@ -400,3 +400,100 @@ def test_reject_proposal_returns_404_when_missing(tmp_path: Path) -> None:
         raise AssertionError(
             "Expected reject endpoint to raise 404 for missing proposal"
         )
+
+
+def test_break_final_link_removes_final_link_and_writes_rejected_suggestion(
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite:///{tmp_path / 'break-final-link.db'}"
+    engine = create_engine(database_url)
+    local_tracks_metadata.create_all(engine)
+    streaming_metadata.create_all(engine)
+    suggested_links_metadata.create_all(engine)
+    links_metadata.create_all(engine)
+
+    with engine.begin() as connection:
+        connection.execute(
+            insert(local_tracks_table).values(
+                id=4,
+                file_path="Artist/broken.mp3",
+                library_root_rel_path="Artist/broken.mp3",
+                fingerprint="fp-4",
+                beets_id=4,
+            )
+        )
+        connection.execute(
+            insert(streaming_tracks_table).values(
+                id=9,
+                provider_track_id="ytm-9",
+                title="Broken Link Track",
+                artist="Artist",
+                album="Album",
+                year=2024,
+                isrc="ABC123456789",
+                duration_ms=123000,
+            )
+        )
+        connection.execute(
+            insert(final_links_table).values(
+                id=7,
+                local_track_id=4,
+                streaming_track_id=9,
+            )
+        )
+
+    router = create_router(require_database_url=lambda: database_url)
+    route = next(
+        route
+        for route in router.routes
+        if getattr(route, "path", None) == "/final-links/{final_link_id}"
+        and "DELETE" in getattr(route, "methods", set())
+    )
+
+    response = asyncio.run(route.endpoint(7))
+
+    assert response["final_link_id"] == 7
+    assert response["rejected_suggestion_id"] == 1
+    assert response["status"] == SUGGESTED_LINK_STATUS_REJECTED
+    assert response["rejected_at"] is not None
+
+    with engine.connect() as connection:
+        remaining_final_links = (
+            connection.execute(select(final_links_table)).mappings().all()
+        )
+        suggestion = connection.execute(select(suggested_links_table)).mappings().one()
+
+    assert remaining_final_links == []
+    assert suggestion["local_track_id"] == 4
+    assert suggestion["streaming_track_id"] == 9
+    assert suggestion["match_method"] == "manual_break"
+    assert suggestion["score"] == 0.0
+    assert suggestion["status"] == SUGGESTED_LINK_STATUS_REJECTED
+    assert suggestion["rejected_at"] is not None
+
+
+def test_break_final_link_returns_404_when_missing(tmp_path: Path) -> None:
+    database_url = f"sqlite:///{tmp_path / 'break-final-link-missing.db'}"
+    engine = create_engine(database_url)
+    local_tracks_metadata.create_all(engine)
+    streaming_metadata.create_all(engine)
+    suggested_links_metadata.create_all(engine)
+    links_metadata.create_all(engine)
+
+    router = create_router(require_database_url=lambda: database_url)
+    route = next(
+        route
+        for route in router.routes
+        if getattr(route, "path", None) == "/final-links/{final_link_id}"
+        and "DELETE" in getattr(route, "methods", set())
+    )
+
+    try:
+        asyncio.run(route.endpoint(999))
+    except StarletteHTTPException as exc:
+        assert exc.status_code == 404
+        assert exc.detail == "Final link not found"
+    else:
+        raise AssertionError(
+            "Expected break final link endpoint to raise 404 for missing link"
+        )
