@@ -20,6 +20,7 @@ from app.streaming.models import (
 )
 from app.streaming.store import StreamingAccountStore
 from app.streaming.adapters.youtube_music import (
+    MalformedPlaylistPayloadError,
     YouTubeMusicPlaylist,
     YouTubeMusicTrack,
 )
@@ -505,6 +506,173 @@ def test_streaming_account_store_syncs_youtube_music_playlist_tracks(
     assert len(stored_tracks) == 1
     assert stored_tracks[0]["provider_track_id"] == "track-9"
     assert len(stored_memberships) == 1
+
+
+def test_streaming_account_store_preserves_membership_for_malformed_playlist(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite:///{tmp_path / 'streaming-malformed-playlist.db'}"
+    engine = create_engine(database_url)
+    metadata.create_all(engine)
+    monkeypatch.setenv("TOKEN_ENCRYPTION_KEY", Fernet.generate_key().decode("utf-8"))
+
+    store = StreamingAccountStore(database_url)
+    account = store.create_youtube_music_account(
+        display_name="Listener",
+        browser_headers={"refresh_token": "refresh-token"},
+    )
+    playlists = store.upsert_playlists(
+        account_id=account.id,
+        playlists=[
+            YouTubeMusicPlaylist(provider_playlist_id="PL1", title="Saved Mix"),
+            YouTubeMusicPlaylist(provider_playlist_id="PL2", title="Fresh Mix"),
+        ],
+    )
+    store.replace_playlist_membership(
+        playlist_id=playlists[0].id,
+        tracks=[
+            YouTubeMusicTrack(
+                provider_track_id="old-track",
+                title="Old Track",
+                artist="Old Artist",
+                album=None,
+                year=None,
+                isrc=None,
+                duration_ms=90000,
+            )
+        ],
+    )
+
+    class FakeAdapter:
+        def list_library_playlists(self):
+            return [
+                YouTubeMusicPlaylist(provider_playlist_id="PL1", title="Saved Mix"),
+                YouTubeMusicPlaylist(provider_playlist_id="PL2", title="Fresh Mix"),
+            ]
+
+        def list_playlist_tracks(self, playlist_id):
+            if playlist_id == "PL1":
+                raise MalformedPlaylistPayloadError("invalid tracks payload")
+            return [
+                YouTubeMusicTrack(
+                    provider_track_id="new-track",
+                    title="New Track",
+                    artist="New Artist",
+                    album=None,
+                    year=None,
+                    isrc=None,
+                    duration_ms=120000,
+                )
+            ]
+
+    monkeypatch.setattr(
+        "app.streaming.store.YouTubeMusicAdapter.from_browser_auth",
+        lambda auth, *, user=None, language="en", location="": FakeAdapter(),
+    )
+
+    synced = store.sync_youtube_music_playlist_tracks(account_id=account.id)
+
+    with engine.connect() as connection:
+        stored_memberships = list(
+            connection.execute(
+                select(
+                    playlist_membership_table.c.playlist_id,
+                    playlist_membership_table.c.position,
+                    streaming_tracks_table.c.provider_track_id,
+                )
+                .select_from(
+                    playlist_membership_table.join(
+                        streaming_tracks_table,
+                        streaming_tracks_table.c.id
+                        == playlist_membership_table.c.streaming_track_id,
+                    )
+                )
+                .order_by(
+                    playlist_membership_table.c.playlist_id.asc(),
+                    playlist_membership_table.c.position.asc(),
+                )
+            ).mappings()
+        )
+
+    assert [membership.playlist_id for membership in synced] == [playlists[1].id]
+    assert [
+        (membership["playlist_id"], membership["provider_track_id"])
+        for membership in stored_memberships
+    ] == [
+        (playlists[0].id, "old-track"),
+        (playlists[1].id, "new-track"),
+    ]
+
+    persisted = store.list_playlists()
+    assert persisted[0].last_sync_error == "invalid tracks payload"
+    assert persisted[0].last_sync_error_at is not None
+    assert persisted[1].last_sync_error is None
+    assert persisted[1].last_sync_error_at is None
+
+
+def test_streaming_account_store_empty_playlist_clears_membership_and_error(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite:///{tmp_path / 'streaming-empty-playlist.db'}"
+    engine = create_engine(database_url)
+    metadata.create_all(engine)
+    monkeypatch.setenv("TOKEN_ENCRYPTION_KEY", Fernet.generate_key().decode("utf-8"))
+
+    store = StreamingAccountStore(database_url)
+    account = store.create_youtube_music_account(
+        display_name="Listener",
+        browser_headers={"refresh_token": "refresh-token"},
+    )
+    playlist = store.upsert_playlists(
+        account_id=account.id,
+        playlists=[YouTubeMusicPlaylist(provider_playlist_id="PL1", title="Saved Mix")],
+    )[0]
+    store.replace_playlist_membership(
+        playlist_id=playlist.id,
+        tracks=[
+            YouTubeMusicTrack(
+                provider_track_id="old-track",
+                title="Old Track",
+                artist="Old Artist",
+                album=None,
+                year=None,
+                isrc=None,
+                duration_ms=90000,
+            )
+        ],
+    )
+    store.mark_playlist_sync_failure(
+        playlist_id=playlist.id,
+        error="previous sync failed",
+        failed_at=datetime(2026, 5, 2, 11, 45, tzinfo=UTC),
+    )
+
+    class FakeAdapter:
+        def list_library_playlists(self):
+            return [YouTubeMusicPlaylist(provider_playlist_id="PL1", title="Saved Mix")]
+
+        def list_playlist_tracks(self, playlist_id):
+            return []
+
+    monkeypatch.setattr(
+        "app.streaming.store.YouTubeMusicAdapter.from_browser_auth",
+        lambda auth, *, user=None, language="en", location="": FakeAdapter(),
+    )
+
+    synced = store.sync_youtube_music_playlist_tracks(account_id=account.id)
+
+    with engine.connect() as connection:
+        stored_memberships = list(
+            connection.execute(select(playlist_membership_table)).mappings()
+        )
+
+    assert synced == []
+    assert stored_memberships == []
+    persisted = store.list_playlists()[0]
+    assert persisted.last_sync_error is None
+    assert persisted.last_sync_error_at is None
 
 
 def test_streaming_account_store_marks_auth_errors_without_crashing(
