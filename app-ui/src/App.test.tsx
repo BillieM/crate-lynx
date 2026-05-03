@@ -1,124 +1,36 @@
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
-import App from "./App";
-
-function renderApp(initialEntries: string[]) {
-  const queryClient = new QueryClient({
-    defaultOptions: {
-      queries: {
-        retry: false,
-      },
-    },
-  });
-
-  return render(
-    <QueryClientProvider client={queryClient}>
-      <MemoryRouter initialEntries={initialEntries}>
-        <App />
-      </MemoryRouter>
-    </QueryClientProvider>,
-  );
-}
+import { render } from "@testing-library/react";
+import App, { asRgb, getProgressColor, lerp, mixColors } from "./App";
 
 describe("App", () => {
-  afterEach(() => {
-    window.fetch = fetch;
+  it("renders an empty placeholder root while the new shell is under construction", () => {
+    const { container } = render(<App />);
+
+    expect(container.firstChild).toHaveClass("text-ctp-text");
+    expect(container.firstChild).toBeEmptyDOMElement();
   });
 
-  it("redirects the root route to maintenance inside the shared shell", () => {
-    renderApp(["/"]);
-
-    expect(
-      screen.getByRole("heading", {
-        name: /keep ingestion and recovery moving\./i,
-      }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("navigation", {
-        name: /sidebar/i,
-      }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("searchbox", {
-        name: /global search/i,
-      }),
-    ).toBeInTheDocument();
+  it("interpolates scalar values with rounding", () => {
+    expect(lerp(10, 20, 0.45)).toBe(15);
   });
 
-  it("keeps the shell visible on the youtube music route", () => {
-    renderApp(["/youtube-music"]);
-
+  it("mixes RGB colors channel by channel", () => {
     expect(
-      screen.getByRole("heading", {
-        name: /review sync status and playlist linkage\./i,
-      }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("link", {
-        name: /^local library$/i,
-      }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("button", {
-        name: /recent activity/i,
-      }),
-    ).toBeInTheDocument();
+      mixColors(
+        { red: 10, green: 20, blue: 30 },
+        { red: 40, green: 80, blue: 120 },
+        0.5,
+      ),
+    ).toEqual({ red: 25, green: 50, blue: 75 });
   });
 
-  it("renders the local library route content within the shared main area", () => {
-    renderApp(["/local-library"]);
-
-    expect(
-      screen.getByRole("heading", {
-        name: /manage your source-of-truth music archive\./i,
-      }),
-    ).toBeInTheDocument();
-    expect(screen.getByText(/main content area/i)).toBeInTheDocument();
+  it("maps progress percentages onto the Catppuccin gradient", () => {
+    expect(getProgressColor(-10)).toEqual({ red: 108, green: 112, blue: 134 });
+    expect(getProgressColor(50)).toEqual({ red: 249, green: 226, blue: 175 });
+    expect(getProgressColor(100)).toEqual({ red: 166, green: 227, blue: 161 });
   });
 
-  it("renders progress bubbles with interpolated match states in the workspace", () => {
-    renderApp(["/youtube-music"]);
-
-    expect(
-      screen.getByLabelText(/roadtrip mix: unlinked at 24% match/i),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByLabelText(/deep cuts sync: pending at 63% match/i),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByLabelText(/daily rotation: linked at 88% match/i),
-    ).toBeInTheDocument();
-  });
-
-  it("shows API-backed search results in the shared topbar", async () => {
-    window.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({
-        query: "mix",
-        results: [
-          {
-            id: 1,
-            kind: "playlist",
-            route_path: "/youtube-music",
-            subtitle: "Playlist • 12 tracks",
-            title: "Morning Mix",
-          },
-        ],
-      }),
-    } as Response);
-
-    renderApp(["/maintenance"]);
-
-    fireEvent.change(screen.getByRole("searchbox", { name: /global search/i }), {
-      target: { value: "mix" },
-    });
-
-    await waitFor(() => {
-      expect(window.fetch).toHaveBeenCalledWith("/api/search?q=mix");
-    });
-
-    expect(await screen.findByText("Morning Mix")).toBeInTheDocument();
-    expect(screen.getByText("Playlist • 12 tracks")).toBeInTheDocument();
+  it("formats rgba strings with optional alpha", () => {
+    expect(asRgb({ red: 1, green: 2, blue: 3 })).toBe("rgba(1, 2, 3, 1)");
+    expect(asRgb({ red: 1, green: 2, blue: 3 }, 0.4)).toBe("rgba(1, 2, 3, 0.4)");
   });
 });
