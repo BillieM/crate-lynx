@@ -128,6 +128,21 @@ def create_router(*, require_database_url: Callable[[], str]) -> APIRouter:
                     detail="Rejected pair cannot be approved",
                 )
 
+            existing_final_link = (
+                connection.execute(
+                    select(final_links_table.c.id).where(
+                        final_links_table.c.local_track_id == proposal["local_track_id"]
+                    )
+                )
+                .mappings()
+                .one_or_none()
+            )
+            if existing_final_link is not None:
+                raise HTTPException(
+                    status_code=409,
+                    detail="Track already has an approved link",
+                )
+
             result = connection.execute(
                 insert(final_links_table).values(
                     local_track_id=proposal["local_track_id"],

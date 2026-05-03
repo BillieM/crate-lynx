@@ -476,6 +476,108 @@ def test_approve_proposal_returns_409_for_rejected_pair(tmp_path: Path) -> None:
     assert pending_suggestion["status"] == "pending"
 
 
+def test_approve_proposal_returns_409_when_track_already_has_final_link(
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite:///{tmp_path / 'approve-proposal-duplicate-final-link.db'}"
+    engine = create_engine(database_url)
+    local_tracks_metadata.create_all(engine)
+    streaming_metadata.create_all(engine)
+    suggested_links_metadata.create_all(engine)
+    links_metadata.create_all(engine)
+
+    with engine.begin() as connection:
+        connection.execute(
+            insert(local_tracks_table).values(
+                id=4,
+                file_path="Artist/already-approved.mp3",
+                library_root_rel_path="Artist/already-approved.mp3",
+                fingerprint="fp-4",
+                beets_id=4,
+            )
+        )
+        connection.execute(
+            insert(streaming_tracks_table),
+            [
+                {
+                    "id": 9,
+                    "provider_track_id": "ytm-9",
+                    "title": "Approved Track",
+                    "artist": "Artist",
+                    "album": "Album",
+                    "year": 2024,
+                    "isrc": "ABC123456789",
+                    "duration_ms": 123000,
+                },
+                {
+                    "id": 10,
+                    "provider_track_id": "ytm-10",
+                    "title": "Second Candidate",
+                    "artist": "Artist",
+                    "album": "Album",
+                    "year": 2024,
+                    "isrc": "XYZ123456789",
+                    "duration_ms": 123000,
+                },
+            ],
+        )
+        connection.execute(
+            insert(final_links_table).values(
+                local_track_id=4,
+                streaming_track_id=9,
+            )
+        )
+        connection.execute(
+            insert(suggested_links_table).values(
+                id=13,
+                local_track_id=4,
+                streaming_track_id=10,
+                match_method="tags",
+                score=0.82,
+                status="pending",
+            )
+        )
+
+    router = create_router(require_database_url=lambda: database_url)
+    route = next(
+        route
+        for route in router.routes
+        if getattr(route, "path", None) == "/proposals/{proposal_id}/approve"
+        and "POST" in getattr(route, "methods", set())
+    )
+
+    try:
+        asyncio.run(route.endpoint(13))
+    except StarletteHTTPException as exc:
+        assert exc.status_code == 409
+        assert exc.detail == "Track already has an approved link"
+    else:
+        raise AssertionError(
+            "Expected approve endpoint to raise 409 when final link exists"
+        )
+
+    with engine.connect() as connection:
+        final_links = (
+            connection.execute(
+                select(final_links_table).order_by(final_links_table.c.id.asc())
+            )
+            .mappings()
+            .all()
+        )
+        pending_suggestion = (
+            connection.execute(
+                select(suggested_links_table).where(suggested_links_table.c.id == 13)
+            )
+            .mappings()
+            .one()
+        )
+
+    assert len(final_links) == 1
+    assert final_links[0]["local_track_id"] == 4
+    assert final_links[0]["streaming_track_id"] == 9
+    assert pending_suggestion["status"] == "pending"
+
+
 def test_reject_proposal_marks_suggestion_rejected(tmp_path: Path) -> None:
     database_url = f"sqlite:///{tmp_path / 'reject-proposal.db'}"
     engine = create_engine(database_url)
