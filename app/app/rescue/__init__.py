@@ -7,11 +7,13 @@ from app.rescue.metadata import (
     rescue_metadata,
     write_id3_tags,
 )
+from app.rescue.router import create_router
 
 __all__ = [
     "ArtworkPayload",
     "MetadataRescueError",
     "RescueMetadata",
+    "create_router",
     "rescue_metadata",
     "write_id3_tags",
 ]

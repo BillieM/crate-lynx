@@ -16,6 +16,7 @@ from app.links.router import create_router as create_links_router
 from app.local_tracks.store import LocalTrackStore
 from app.matching.jobs import MatchingJobEnqueuer
 from app.matching.router import create_router as create_matching_router
+from app.rescue.router import create_router as create_rescue_router
 from app.streaming.router import create_router as create_streaming_router
 from app.system.router import router as system_router
 
@@ -111,6 +112,9 @@ def create_app() -> FastAPI:
             require_database_url=require_database_url,
             require_redis_url=require_redis_url,
         )
+    )
+    app.include_router(
+        create_rescue_router(require_database_url=require_database_url)
     )
     app.include_router(
         create_links_router(require_database_url=require_database_url),

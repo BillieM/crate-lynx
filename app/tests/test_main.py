@@ -42,6 +42,7 @@ def test_links_routes_are_mounted_under_api_prefix() -> None:
     assert "/api/proposals/{proposal_id}/approve" in route_paths
     assert "/api/proposals/{proposal_id}/reject" in route_paths
     assert "/api/final-links/{final_link_id}" in route_paths
+    assert "/local-tracks/{local_track_id}/rescue" in route_paths
     assert "/playlists/{playlist_id}/m3u" in route_paths
 
 
@@ -705,3 +706,106 @@ def test_local_track_rematch_endpoint_returns_404_for_unknown_track(
         assert exc.detail == "Local track not found"
     else:
         raise AssertionError("Expected HTTPException for missing local track")
+
+
+def test_local_track_rescue_endpoint_returns_updated_track_record(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite:///{tmp_path / 'local-track-rescue.db'}"
+    engine = create_engine(database_url)
+    local_tracks_metadata.create_all(engine)
+    links_metadata.create_all(engine)
+    monkeypatch.setenv("DATABASE_URL", database_url)
+    monkeypatch.setenv("LIBRARY_ROOT", str(tmp_path / "library"))
+
+    with engine.begin() as connection:
+        connection.execute(
+            insert(local_tracks_table).values(
+                id=21,
+                file_path="Artist/rescue.mp3",
+                library_root_rel_path="Artist/rescue.mp3",
+                fingerprint="fp-21",
+                beets_id=21,
+            )
+        )
+        connection.execute(
+            insert(final_links_table).values(
+                local_track_id=21,
+                streaming_track_id=121,
+            )
+        )
+
+    seen: dict[str, object] = {}
+
+    def fake_rescue_metadata(
+        local_track_id: int,
+        *,
+        database_url: str | None = None,
+        library_root: Path | str | None = None,
+    ) -> None:
+        seen["local_track_id"] = local_track_id
+        seen["database_url"] = database_url
+        seen["library_root"] = str(library_root) if library_root is not None else None
+
+    monkeypatch.setattr("app.rescue.router.rescue_metadata", fake_rescue_metadata)
+
+    app = create_app()
+    route = next(
+        route
+        for route in app.routes
+        if getattr(route, "path", None) == "/local-tracks/{local_track_id}/rescue"
+        and "POST" in getattr(route, "methods", set())
+    )
+    response = asyncio.run(route.endpoint(21))
+
+    assert response == {
+        "id": 21,
+        "file_path": "Artist/rescue.mp3",
+        "library_root_rel_path": "Artist/rescue.mp3",
+        "fingerprint": "fp-21",
+        "beets_id": 21,
+    }
+    assert seen == {
+        "local_track_id": 21,
+        "database_url": database_url,
+        "library_root": str(tmp_path / "library"),
+    }
+
+
+def test_local_track_rescue_endpoint_returns_409_without_final_link(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite:///{tmp_path / 'local-track-rescue-no-link.db'}"
+    engine = create_engine(database_url)
+    local_tracks_metadata.create_all(engine)
+    links_metadata.create_all(engine)
+    monkeypatch.setenv("DATABASE_URL", database_url)
+
+    with engine.begin() as connection:
+        connection.execute(
+            insert(local_tracks_table).values(
+                id=22,
+                file_path="Artist/unlinked.mp3",
+                library_root_rel_path="Artist/unlinked.mp3",
+                fingerprint="fp-22",
+                beets_id=22,
+            )
+        )
+
+    app = create_app()
+    route = next(
+        route
+        for route in app.routes
+        if getattr(route, "path", None) == "/local-tracks/{local_track_id}/rescue"
+        and "POST" in getattr(route, "methods", set())
+    )
+
+    try:
+        asyncio.run(route.endpoint(22))
+    except StarletteHTTPException as exc:
+        assert exc.status_code == 409
+        assert exc.detail == "No final link exists for local track 22"
+    else:
+        raise AssertionError("Expected HTTPException when final link is missing")
