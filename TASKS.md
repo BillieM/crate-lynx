@@ -14,10 +14,10 @@
 
 **File:** `app/app/ingestion/pipeline.py`
 
-- [ ] Replace `output_root / source.name` (MP3 branch) with a UUID-prefixed staging filename, e.g. `output_root / f"{uuid.uuid4().hex}_{source.name}"`
-- [ ] Replace `output_root / f"{source.stem}.mp3"` (lossless branch) with `output_root / f"{uuid.uuid4().hex}_{source.stem}.mp3"`
-- [ ] Verify `PreparedTrack` downstream consumers use the returned `prepared_path` and nothing hardcodes the old naming scheme
-- [ ] Run existing ingestion tests to confirm no regressions
+- [x] Replace `output_root / source.name` (MP3 branch) with a UUID-prefixed staging filename, e.g. `output_root / f"{uuid.uuid4().hex}_{source.name}"`
+- [x] Replace `output_root / f"{source.stem}.mp3"` (lossless branch) with `output_root / f"{uuid.uuid4().hex}_{source.stem}.mp3"`
+- [x] Verify `PreparedTrack` downstream consumers use the returned `prepared_path` and nothing hardcodes the old naming scheme
+- [x] Run existing ingestion tests to confirm no regressions
 
 ---
 

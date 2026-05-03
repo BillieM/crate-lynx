@@ -95,20 +95,53 @@ def test_ingestion_watcher_starts_and_stops(tmp_path: Path) -> None:
     assert stub_observer.joined is True
 
 
-def test_audio_preparer_passes_mp3_through_unchanged(tmp_path: Path) -> None:
+def test_audio_preparer_passes_mp3_through_unchanged(
+    tmp_path: Path, monkeypatch
+) -> None:
     source = tmp_path / "track.MP3"
     source.write_bytes(b"mp3")
     output_root = tmp_path / "staging"
+
+    monkeypatch.setattr(
+        "app.ingestion.pipeline.uuid.uuid4",
+        lambda: type("StubUUID", (), {"hex": "abc123"})(),
+    )
 
     prepared = AudioPreparer().prepare(source, output_root)
 
     assert prepared == PreparedTrack(
         source_path=source,
-        prepared_path=output_root / "track.MP3",
+        prepared_path=output_root / "abc123_track.MP3",
         transcoded=False,
     )
     assert output_root.is_dir()
     assert prepared.prepared_path.read_bytes() == b"mp3"
+
+
+def test_audio_preparer_uses_unique_staging_paths_for_same_basename_mp3s(
+    tmp_path: Path, monkeypatch
+) -> None:
+    first_source = tmp_path / "one" / "track.mp3"
+    second_source = tmp_path / "two" / "track.mp3"
+    first_source.parent.mkdir()
+    second_source.parent.mkdir()
+    first_source.write_bytes(b"first")
+    second_source.write_bytes(b"second")
+    output_root = tmp_path / "staging"
+    uuids = iter(("aaa111", "bbb222"))
+
+    monkeypatch.setattr(
+        "app.ingestion.pipeline.uuid.uuid4",
+        lambda: type("StubUUID", (), {"hex": next(uuids)})(),
+    )
+
+    first_prepared = AudioPreparer().prepare(first_source, output_root)
+    second_prepared = AudioPreparer().prepare(second_source, output_root)
+
+    assert first_prepared.prepared_path == output_root / "aaa111_track.mp3"
+    assert second_prepared.prepared_path == output_root / "bbb222_track.mp3"
+    assert first_prepared.prepared_path.read_bytes() == b"first"
+    assert second_prepared.prepared_path.read_bytes() == b"second"
 
 
 def test_audio_preparer_transcodes_lossless_formats_to_mp3(
@@ -125,13 +158,17 @@ def test_audio_preparer_transcodes_lossless_formats_to_mp3(
         seen_commands.append(command)
         return subprocess.CompletedProcess(command, 0, "", "")
 
+    monkeypatch.setattr(
+        "app.ingestion.pipeline.uuid.uuid4",
+        lambda: type("StubUUID", (), {"hex": "def456"})(),
+    )
     monkeypatch.setattr("app.ingestion.pipeline.subprocess.run", fake_run)
 
     prepared = AudioPreparer(ffmpeg_binary="ffmpeg-test").prepare(source, output_root)
 
     assert prepared == PreparedTrack(
         source_path=source,
-        prepared_path=output_root / "track.mp3",
+        prepared_path=output_root / "def456_track.mp3",
         transcoded=True,
     )
     assert seen_commands == [
@@ -142,7 +179,7 @@ def test_audio_preparer_transcodes_lossless_formats_to_mp3(
             str(source),
             "-codec:a",
             "libmp3lame",
-            str(output_root / "track.mp3"),
+            str(output_root / "def456_track.mp3"),
         ]
     ]
 
@@ -422,6 +459,7 @@ def test_ingestion_processor_smoke_ingests_flac_and_mp3_with_fingerprints(
         connection.commit()
 
     imported_ids: list[int] = []
+    uuids = iter(("mp3uuid", "flacuuid"))
 
     def fake_run(
         command: list[str], *, check: bool, capture_output: bool, text: bool
@@ -460,6 +498,10 @@ def test_ingestion_processor_smoke_ingests_flac_and_mp3_with_fingerprints(
 
         raise AssertionError(f"Unexpected subprocess command: {command}")
 
+    monkeypatch.setattr(
+        "app.ingestion.pipeline.uuid.uuid4",
+        lambda: type("StubUUID", (), {"hex": next(uuids)})(),
+    )
     monkeypatch.setattr("app.ingestion.pipeline.subprocess.run", fake_run)
 
     processor = IngestionProcessor(
@@ -481,29 +523,29 @@ def test_ingestion_processor_smoke_ingests_flac_and_mp3_with_fingerprints(
         persisted = list(rows)
 
     assert mp3_result.transcoded is False
-    assert mp3_result.fingerprint == "fingerprint-first-track"
+    assert mp3_result.fingerprint == "fingerprint-mp3uuid_first-track"
     assert mp3_result.local_track_id == 1
     assert (
         mp3_result.library_path
-        == library_root / "Imported" / "first-track-imported.mp3"
+        == library_root / "Imported" / "mp3uuid_first-track-imported.mp3"
     )
 
     assert flac_result.transcoded is True
     assert flac_result.prepared_path.suffix == ".mp3"
-    assert flac_result.fingerprint == "fingerprint-second-track"
+    assert flac_result.fingerprint == "fingerprint-flacuuid_second-track"
     assert flac_result.local_track_id == 2
     assert (
         flac_result.library_path
-        == library_root / "Imported" / "second-track-imported.mp3"
+        == library_root / "Imported" / "flacuuid_second-track-imported.mp3"
     )
 
     assert [row["file_path"] for row in persisted] == [
-        "Imported/first-track-imported.mp3",
-        "Imported/second-track-imported.mp3",
+        "Imported/mp3uuid_first-track-imported.mp3",
+        "Imported/flacuuid_second-track-imported.mp3",
     ]
     assert [row["fingerprint"] for row in persisted] == [
-        "fingerprint-first-track",
-        "fingerprint-second-track",
+        "fingerprint-mp3uuid_first-track",
+        "fingerprint-flacuuid_second-track",
     ]
     assert mp3_source.exists() is False
     assert flac_source.exists() is False

@@ -6,6 +6,7 @@ from pathlib import Path
 import shutil
 import sqlite3
 import subprocess
+import uuid
 
 from app.local_tracks.store import LocalTrackStore
 from app.matching.jobs import MatchingJobEnqueuer
@@ -56,7 +57,7 @@ class AudioPreparer:
         output_root.mkdir(parents=True, exist_ok=True)
 
         if extension == ".mp3":
-            prepared_path = output_root / source.name
+            prepared_path = output_root / f"{uuid.uuid4().hex}_{source.name}"
             shutil.copy2(source, prepared_path)
             return PreparedTrack(
                 source_path=source,
@@ -64,7 +65,7 @@ class AudioPreparer:
                 transcoded=False,
             )
 
-        prepared_path = output_root / f"{source.stem}.mp3"
+        prepared_path = output_root / f"{uuid.uuid4().hex}_{source.stem}.mp3"
         self._transcode_to_mp3(source, prepared_path)
         return PreparedTrack(
             source_path=source,
