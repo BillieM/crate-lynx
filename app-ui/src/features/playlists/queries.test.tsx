@@ -3,6 +3,7 @@ import { renderHook, waitFor } from "@testing-library/react";
 import type { PropsWithChildren } from "react";
 
 import {
+  exportPlaylistM3u,
   fetchPlaylistDetail,
   fetchPlaylistTracks,
   playlistQueryKeys,
@@ -111,6 +112,23 @@ describe("playlist queries", () => {
       ],
     });
     expect(fetchMock).toHaveBeenCalledWith("/api/playlists/12/tracks");
+  });
+
+  it("exports a playlist M3U blob and filename", async () => {
+    const blob = new Blob(["#EXTM3U\n/library/open-road.flac\n"], { type: "audio/x-mpegurl" });
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      blob: async () => blob,
+      headers: new Headers({
+        "Content-Disposition": 'attachment; filename="Late Night Drive.m3u"',
+      }),
+    } as Response);
+
+    await expect(exportPlaylistM3u(12)).resolves.toEqual({
+      blob,
+      filename: "Late Night Drive.m3u",
+    });
+    expect(fetchMock).toHaveBeenCalledWith("/api/playlists/12/m3u");
   });
 
   it("does not run the detail query without a playlist id", () => {

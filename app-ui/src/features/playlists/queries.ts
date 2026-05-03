@@ -37,6 +37,11 @@ export type PlaylistTracksResponse = {
   tracks: PlaylistTrack[];
 };
 
+export type PlaylistM3uExport = {
+  blob: Blob;
+  filename: string;
+};
+
 export const playlistQueryKeys = {
   all: ["playlists"] as const,
   detail: (playlistId: number | string) => ["playlists", playlistId, "detail"] as const,
@@ -61,12 +66,36 @@ async function fetchJson<T>(input: RequestInfo | URL): Promise<T> {
   return (await response.json()) as T;
 }
 
+function getFilenameFromContentDisposition(contentDisposition: string | null) {
+  const fallbackFilename = "playlist.m3u";
+
+  if (!contentDisposition) {
+    return fallbackFilename;
+  }
+
+  const filenameMatch = /filename="?(?<filename>[^";]+)"?/i.exec(contentDisposition);
+  return filenameMatch?.groups?.filename ?? fallbackFilename;
+}
+
 export async function fetchPlaylistDetail(playlistId: number | string): Promise<PlaylistDetailResponse> {
   return fetchJson<PlaylistDetailResponse>(`/api/playlists/${encodeURIComponent(String(playlistId))}`);
 }
 
 export async function fetchPlaylistTracks(playlistId: number | string): Promise<PlaylistTracksResponse> {
   return fetchJson<PlaylistTracksResponse>(`/api/playlists/${encodeURIComponent(String(playlistId))}/tracks`);
+}
+
+export async function exportPlaylistM3u(playlistId: number | string): Promise<PlaylistM3uExport> {
+  const response = await fetch(`/api/playlists/${encodeURIComponent(String(playlistId))}/m3u`);
+
+  if (!response.ok) {
+    throw new Error(`M3U export request failed with status ${response.status}`);
+  }
+
+  return {
+    blob: await response.blob(),
+    filename: getFilenameFromContentDisposition(response.headers.get("Content-Disposition")),
+  };
 }
 
 export function usePlaylistDetailQuery(playlistId: number | string | null | undefined) {

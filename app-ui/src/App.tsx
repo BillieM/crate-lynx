@@ -7,6 +7,7 @@ import { PlaylistHeader } from "./features/playlists/PlaylistHeader";
 import { PlaylistTrackActions } from "./features/playlists/PlaylistTrackActions";
 import { PlaylistTrackRow } from "./features/playlists/PlaylistTrackRow";
 import {
+  exportPlaylistM3u,
   usePlaylistDetailQuery,
   usePlaylistTracksQuery,
 } from "./features/playlists/queries";
@@ -260,6 +261,18 @@ async function syncStreamingAccount(accountId: number): Promise<StreamingSyncRes
   return (await response.json()) as StreamingSyncResponse;
 }
 
+function downloadBlob(blob: Blob, filename: string) {
+  const url = window.URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+
+  anchor.href = url;
+  anchor.download = filename;
+  document.body.append(anchor);
+  anchor.click();
+  anchor.remove();
+  window.URL.revokeObjectURL(url);
+}
+
 function getBadgeClasses(tone: NavItem["tone"]) {
   switch (tone) {
     case "pending":
@@ -393,6 +406,12 @@ function Topbar({ view }: { view: ViewConfig }) {
   const queryClient = useQueryClient();
   const playlistDetailQuery = usePlaylistDetailQuery(view.playlistResourceId ?? null);
   const playlist = playlistDetailQuery.data?.playlist;
+  const exportMutation = useMutation({
+    mutationFn: exportPlaylistM3u,
+    onSuccess: ({ blob, filename }) => {
+      downloadBlob(blob, filename);
+    },
+  });
   const syncMutation = useMutation({
     mutationFn: syncStreamingAccount,
     onSuccess: async () => {
@@ -421,6 +440,27 @@ function Topbar({ view }: { view: ViewConfig }) {
           type="button"
         >
           {syncMutation.isPending ? "Syncing..." : actionLabel}
+        </button>
+      );
+    }
+
+    if (actionLabel === "Export M3U") {
+      const canExport = view.playlistResourceId !== undefined && !exportMutation.isPending;
+
+      return (
+        <button
+          aria-live="polite"
+          className="rounded-[10px] border border-ctp-surface1 bg-ctp-surface0 px-3 py-1.5 text-[12px] font-semibold text-ctp-text transition-colors hover:border-ctp-overlay0 hover:bg-ctp-surface1 disabled:cursor-not-allowed disabled:border-ctp-surface0 disabled:text-ctp-overlay1 disabled:hover:bg-ctp-surface0"
+          disabled={!canExport}
+          key={actionLabel}
+          onClick={() => {
+            if (view.playlistResourceId !== undefined) {
+              exportMutation.mutate(view.playlistResourceId);
+            }
+          }}
+          type="button"
+        >
+          {exportMutation.isPending ? "Exporting..." : actionLabel}
         </button>
       );
     }
@@ -455,6 +495,8 @@ function Topbar({ view }: { view: ViewConfig }) {
       <div className="flex items-center gap-2">
         {syncMutation.isSuccess ? <span className="text-[11px] font-medium text-ctp-green">Sync queued.</span> : null}
         {syncMutation.isError ? <span className="text-[11px] font-medium text-ctp-red">Sync failed.</span> : null}
+        {exportMutation.isSuccess ? <span className="text-[11px] font-medium text-ctp-green">M3U ready.</span> : null}
+        {exportMutation.isError ? <span className="text-[11px] font-medium text-ctp-red">Export failed.</span> : null}
         {view.actionLabels.map((actionLabel) => renderActionButton(actionLabel))}
       </div>
     </header>

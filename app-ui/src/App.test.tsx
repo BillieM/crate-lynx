@@ -65,6 +65,16 @@ function mockPlaylistFetch() {
   return vi.spyOn(globalThis, "fetch").mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
 
+    if (url === "/api/playlists/12/m3u") {
+      return {
+        ok: true,
+        blob: async () => new Blob(["#EXTM3U\n/library/night-runner.flac\n"], { type: "audio/x-mpegurl" }),
+        headers: new Headers({
+          "Content-Disposition": 'attachment; filename="Late Night Drive.m3u"',
+        }),
+      } as Response;
+    }
+
     if (url === "/api/streaming/accounts/4/sync" && init?.method === "POST") {
       return {
         ok: true,
@@ -201,6 +211,37 @@ describe("App", () => {
       expect(fetchMock).toHaveBeenCalledWith("/api/streaming/accounts/4/sync", { method: "POST" });
     });
     expect(await screen.findByText("Sync queued.")).toBeInTheDocument();
+  });
+
+  it("downloads an M3U export from the active playlist topbar", async () => {
+    const fetchMock = mockPlaylistFetch();
+    const createObjectUrlMock = vi.fn(() => "blob:playlist-export");
+    const revokeObjectUrlMock = vi.fn();
+    const clickMock = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+
+    Object.defineProperty(window.URL, "createObjectURL", {
+      configurable: true,
+      value: createObjectUrlMock,
+    });
+    Object.defineProperty(window.URL, "revokeObjectURL", {
+      configurable: true,
+      value: revokeObjectUrlMock,
+    });
+
+    renderApp();
+    fireEvent.click(screen.getByRole("button", { name: /Late Night Drive/i }));
+
+    const exportButton = await screen.findByRole("button", { name: "Export M3U" });
+    fireEvent.click(exportButton);
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith("/api/playlists/12/m3u");
+    });
+
+    expect(await screen.findByText("M3U ready.")).toBeInTheDocument();
+    expect(createObjectUrlMock).toHaveBeenCalledWith(expect.any(Blob));
+    expect(clickMock).toHaveBeenCalled();
+    expect(revokeObjectUrlMock).toHaveBeenCalledWith("blob:playlist-export");
   });
 
   it("filters playlist tracks by status", async () => {
