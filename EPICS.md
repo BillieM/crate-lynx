@@ -70,19 +70,72 @@ Vite + React + TypeScript. Tailwind CSS with official Catppuccin Mocha plugin. T
 
 ---
 
-### E10 — Frontend: playlist views `in progress`
+### E10 — Frontend: playlist views `done`
 **Subdir:** `app-ui/`
 Per-playlist view: playlist header with progress ring, track list with status dots (linked/pending/unlinked), duration, per-track action buttons (linked / review / match). Filter chips (All / Linked / Pending / Unlinked). Topbar sync and Export M3U buttons wired to API.
 
 ---
 
-### E11 — Frontend: link proposals view
+### E11 — YouTube Music sync reliability `in progress`
+**Subdir:** `app/`
+Make per-account playlist track sync resilient so one bad playlist cannot corrupt or abort the rest.
+
+- **Fix the silent-wipe bug.** `list_playlist_tracks()` (`app/app/streaming/adapters/youtube_music.py:98`) currently returns `[]` when the upstream payload is malformed; combined with `replace_playlist_membership()` (`app/app/streaming/store.py:548-553`) deleting before insert, a malformed payload silently wipes the playlist. Distinguish "empty playlist" (legitimate, return `[]`) from "malformed/unparseable payload" (raise a typed error). Per-playlist callers must catch the error and skip `replace_playlist_membership` so prior memberships are preserved.
+- **Per-playlist isolation.** Wrap each iteration of the playlist sync loop (around `youtube_music.py:271-277`) in try/except so one failure logs and skips that playlist; sync continues for the rest. Apply the same isolation to ISRC backfill (`_lookup_missing_isrcs` at `youtube_music.py:144`), which currently raises and aborts the loop.
+- **No shape-based podcast detection.** Skipping "special playlist shapes" was proposed but there is no reliable adapter field; per-playlist error isolation is the robust fix.
+- **Surface failures.** Record per-playlist last-error string + timestamp (on `streaming_playlists` or via job result) so the frontend can show them later (E14 owns the UI).
+
+Out of scope: the discovery-call `get_library_playlists()` HTTP 400 (tracked separately). Track-list scrolling (no concrete repro; existing `min-h-0 flex-1 overflow-y-auto` at `App.tsx:608` appears correct).
+
+---
+
+### E12 — Backend: configurable per-playlist sync
+**Subdir:** `app/`
+Add per-playlist sync selection and split discovery from track-sync.
+
+- **Schema.** Add `streaming_playlists.selected_for_sync BOOLEAN NOT NULL DEFAULT false`. **Migration must backfill `true` for any playlist with at least one row in `playlist_membership`** so existing users do not lose their sidebar on upgrade. Newly discovered playlists default to `false`.
+- **Reuse existing helper.** `sync_youtube_music_playlists()` at `store.py:577` is already metadata-only; wire it to the new refresh-metadata endpoint instead of inventing a parallel discovery path.
+- **Endpoints:**
+  - `POST /api/streaming/accounts/{id}/refresh-metadata` — discover playlists, no track sync. Wraps `sync_youtube_music_playlists`.
+  - `POST /api/streaming/accounts/{id}/sync` — **semantic change**: now syncs tracks for `selected_for_sync = true` playlists only (previously synced all). This is a behavior break; update job, callers, and the hardcoded test fixtures at `app-ui/src/App.test.tsx:181,366`.
+  - `POST /api/streaming/playlists/{id}/sync` — sync tracks for one playlist regardless of selected state (used by the per-playlist topbar action in E14).
+  - `GET /api/streaming/playlists` — sidebar payload; filtered to `selected_for_sync = true`.
+  - `GET /api/streaming/playlists/config` — config-UI payload; all discovered playlists with `selected_for_sync` and metadata.
+  - `PATCH /api/streaming/playlists/{id}` — body `{ "selected_for_sync": bool }`.
+- **Deselect semantics.** Setting `selected_for_sync = false` only hides the playlist from the sidebar payload. Memberships and the M3U file are preserved on disk; re-selection is instant and requires no re-sync.
+
+---
+
+### E13 — Frontend: playlist sync configuration UI
+**Subdir:** `app-ui/`
+Build the YouTube Music config surface (no existing settings/config shell — start from zero).
+
+- New "YouTube Music configuration" view (modal or routed page; pick in implementation), triggered from a tertiary action in the topbar or sidebar.
+- Lists all playlists from `GET /api/streaming/playlists/config` with a toggle bound to `selected_for_sync`. Newly discovered playlists default to unselected.
+- Toggle calls `PATCH /api/streaming/playlists/{id}` and invalidates both the sidebar and config TanStack queries on success.
+- "Refresh playlist metadata" button → `POST .../refresh-metadata`; pending/success/error state visible.
+- "Sync selected" button → `POST .../accounts/{id}/sync` (the now-repurposed endpoint); pending/success/error state visible.
+
+---
+
+### E14 — Frontend: sidebar, topbar, and per-playlist UX
+**Subdir:** `app-ui/`
+Wire the new endpoints into navigation and per-playlist views.
+
+- **Sidebar.** Once E12's filter ships, `GET /api/streaming/playlists` returns selected only — no client-side filter needed (`App.tsx:694`).
+- **Topbar sync (per-playlist).** When viewing a playlist, the topbar sync button calls `POST /api/streaming/playlists/{id}/sync` (replacing `syncStreamingAccount` at `App.tsx:226-236, 394-416`). When not in a playlist view, hide it or route to "sync selected".
+- **Tests.** Update the hardcoded account-sync expectations at `App.test.tsx:181` and `:366` to match the per-playlist contract.
+- **States.** Add empty/loading/error states for: no selected playlists ("Configure which YouTube Music playlists to sync"), metadata refresh in progress, selected sync in progress, per-playlist sync in progress, per-playlist sync failure (surface E11's per-playlist error string here). Reuse existing patterns: `PlaylistCollectionState` (`App.tsx:629-652`) and the status badges at `App.tsx:475-478`; extract `StatusMessage` / `EmptyStateCard` if reused 3+ times.
+
+---
+
+### E15 — Frontend: link proposals view
 **Subdir:** `app-ui/`
 Proposals list grouped by confidence band (High / Medium / Low). Per-card: confidence bar, local vs streaming track columns, match method badge (ISRC / Tag / Acoustic), score, Approve / Reject buttons. Filter chips by band. Approve/reject actions optimistically update UI via TanStack Query mutation.
 
 ---
 
-### E12 — Frontend: library & maintenance views
+### E16 — Frontend: library & maintenance views
 **Subdir:** `app-ui/`
 **Library:** stats cards (total / linked / pending / unlinked), faceted filter bar (link status / match method / file status), flat track list.
 **Unidentified:** list of Beets-failed tracks with filename, fingerprint hash, Rescue button (triggers E08).
@@ -90,6 +143,6 @@ Proposals list grouped by confidence band (High / Medium / Low). Per-card: confi
 
 ---
 
-### E13 — Acoustic fingerprint matching via yt-dlp
+### E17 — Acoustic fingerprint matching via yt-dlp
 **Subdir:** `app/`
 Implement the acoustic fallback stage that is currently a stub (`pipeline.py` enqueues acoustic jobs with empty fingerprints). For each low-confidence tag match, download the linked streaming track audio via yt-dlp to a temp file, run `fpcalc` (Chromaprint) on it, compare the resulting fingerprint against the local track's stored fingerprint, then delete the temp file. Promote or discard the suggestion based on the acoustic similarity score. Requires wiring fingerprint population into the streaming track model and updating the acoustic RQ job handler.
