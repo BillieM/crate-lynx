@@ -1,8 +1,9 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import App, { asRgb, getProgressColor, lerp, mixColors } from "./App";
+import type { PlaylistDetailResponse, PlaylistTracksResponse } from "./features/playlists/queries";
 
-const playlistDetailResponse = {
+const playlistDetailResponse: PlaylistDetailResponse = {
   playlist: {
     id: 12,
     account_id: 4,
@@ -17,7 +18,7 @@ const playlistDetailResponse = {
   },
 };
 
-const playlistTracksResponse = {
+const playlistTracksResponse: PlaylistTracksResponse = {
   tracks: [
     {
       id: 101,
@@ -61,17 +62,83 @@ const playlistTracksResponse = {
   ],
 };
 
+const secondaryPlaylistFixtures = [
+  { id: 9, name: "Static Bloom", trackTitle: "Bloom Protocol", viewId: "playlist2" },
+  { id: 14, name: "Afterglow", trackTitle: "Afterimage Delay", viewId: "playlist3" },
+  { id: 18, name: "Signal Loss", trackTitle: "Packet Fade", viewId: "playlist4" },
+  { id: 27, name: "Chrome Hearts", trackTitle: "Mirror Finish", viewId: "playlist5" },
+] as const;
+
+function buildPlaylistDetail(id: number, name: string): PlaylistDetailResponse {
+  return {
+    playlist: {
+      ...playlistDetailResponse.playlist,
+      id,
+      account_id: id + 100,
+      provider_playlist_id: `PL${id}`,
+      name,
+      cover_art_url: `https://cdn.example.test/${id}.jpg`,
+      track_count: 1,
+      linked_count: 1,
+      pending_count: 0,
+      unlinked_count: 0,
+    },
+  };
+}
+
+function buildPlaylistTracks(id: number, title: string): PlaylistTracksResponse {
+  return {
+    tracks: [
+      {
+        ...playlistTracksResponse.tracks[0],
+        id: id * 100,
+        provider_track_id: `ytm-${id}`,
+        title,
+        album: `${title} Album`,
+      },
+    ],
+  };
+}
+
 function mockPlaylistFetch() {
+  const playlistDetailsById = new Map<string, typeof playlistDetailResponse>([
+    ["12", playlistDetailResponse],
+    ...secondaryPlaylistFixtures.map(({ id, name }) => [String(id), buildPlaylistDetail(id, name)] as const),
+  ]);
+  const playlistTracksById = new Map<string, typeof playlistTracksResponse>([
+    ["12", playlistTracksResponse],
+    ...secondaryPlaylistFixtures.map(({ id, trackTitle }) => [String(id), buildPlaylistTracks(id, trackTitle)] as const),
+  ]);
+
   return vi.spyOn(globalThis, "fetch").mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
+    const playlistEndpointMatch = url.match(/^\/api\/playlists\/(\d+)(\/tracks|\/m3u)?$/);
 
-    if (url === "/api/playlists/12/m3u") {
+    if (playlistEndpointMatch) {
+      const [, playlistId, suffix] = playlistEndpointMatch;
+
+      if (suffix === "/m3u") {
+        const playlistName = playlistDetailsById.get(playlistId)?.playlist.name ?? "Playlist";
+
+        return {
+          ok: true,
+          blob: async () => new Blob(["#EXTM3U\n/library/night-runner.flac\n"], { type: "audio/x-mpegurl" }),
+          headers: new Headers({
+            "Content-Disposition": `attachment; filename="${playlistName}.m3u"`,
+          }),
+        } as Response;
+      }
+
+      if (suffix === "/tracks") {
+        return {
+          ok: true,
+          json: async () => playlistTracksById.get(playlistId) ?? playlistTracksResponse,
+        } as Response;
+      }
+
       return {
         ok: true,
-        blob: async () => new Blob(["#EXTM3U\n/library/night-runner.flac\n"], { type: "audio/x-mpegurl" }),
-        headers: new Headers({
-          "Content-Disposition": 'attachment; filename="Late Night Drive.m3u"',
-        }),
+        json: async () => playlistDetailsById.get(playlistId) ?? playlistDetailResponse,
       } as Response;
     }
 
@@ -79,13 +146,6 @@ function mockPlaylistFetch() {
       return {
         ok: true,
         json: async () => ({ account_id: 4, job_id: "sync-job-4" }),
-      } as Response;
-    }
-
-    if (url === "/api/playlists/12/tracks") {
-      return {
-        ok: true,
-        json: async () => playlistTracksResponse,
       } as Response;
     }
 
@@ -192,6 +252,24 @@ describe("App", () => {
     expect(screen.getByText("Showing 3 of 3 tracks")).toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledWith("/api/playlists/12");
     expect(fetchMock).toHaveBeenCalledWith("/api/playlists/12/tracks");
+  });
+
+  it("renders secondary playlist shells with their configured playlist resources", async () => {
+    const fetchMock = mockPlaylistFetch();
+
+    renderApp();
+
+    for (const playlist of secondaryPlaylistFixtures) {
+      fireEvent.click(screen.getByRole("button", { name: new RegExp(playlist.name, "i") }));
+
+      expect(await screen.findByRole("img", { name: `${playlist.name} cover art` })).toBeInTheDocument();
+      expect(screen.getByRole("heading", { level: 2, name: playlist.name })).toBeInTheDocument();
+      expect(screen.getByText(playlist.trackTitle)).toBeInTheDocument();
+      expect(screen.getByText("Showing 1 of 1 tracks")).toBeInTheDocument();
+      expect(document.getElementById(playlist.viewId)).toHaveAttribute("data-view-active", "true");
+      expect(fetchMock).toHaveBeenCalledWith(`/api/playlists/${playlist.id}`);
+      expect(fetchMock).toHaveBeenCalledWith(`/api/playlists/${playlist.id}/tracks`);
+    }
   });
 
   it("queues a YouTube Music sync from the active playlist topbar", async () => {
