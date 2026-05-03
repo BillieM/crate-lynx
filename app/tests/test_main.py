@@ -50,6 +50,7 @@ def test_links_routes_are_mounted_under_api_prefix() -> None:
     assert "/api/playlists/{playlist_id}/m3u" in route_paths
     assert "/api/streaming/accounts/{account_id}/sync" in route_paths
     assert "/api/streaming/accounts/{account_id}/refresh-metadata" in route_paths
+    assert "/api/streaming/playlists/config" in route_paths
     assert "/api/streaming/playlists/{playlist_id}/sync" in route_paths
     assert "/api/local-tracks/{local_track_id}/rematch" in route_paths
 
@@ -258,6 +259,83 @@ def test_streaming_playlists_endpoint_lists_synced_playlists(
     assert playlist.title == "Morning Mix"
     assert playlist.track_count == 2
     assert playlist.synced_at == "2026-05-01T09:00:00"
+
+
+def test_streaming_playlists_config_endpoint_lists_all_discovered_playlists(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite:///{tmp_path / 'streaming-playlists-config.db'}"
+    engine = create_engine(database_url)
+    metadata.create_all(engine)
+    monkeypatch.setenv("DATABASE_URL", database_url)
+    monkeypatch.setenv("TOKEN_ENCRYPTION_KEY", Fernet.generate_key().decode("utf-8"))
+
+    with engine.begin() as connection:
+        account_id = connection.execute(
+            insert(streaming_accounts_table).values(
+                provider="youtube_music",
+                display_name="Main Account",
+                auth_token_blob="encrypted-token",
+                auth_state="connected",
+            )
+        ).inserted_primary_key[0]
+
+    store = StreamingAccountStore(database_url)
+    playlists = store.upsert_playlists(
+        account_id=account_id,
+        playlists=[
+            YouTubeMusicPlaylist(
+                provider_playlist_id="PL1",
+                title="Morning Mix",
+            ),
+            YouTubeMusicPlaylist(
+                provider_playlist_id="PL2",
+                title="Empty Playlist",
+            ),
+        ],
+        synced_at=datetime(2026, 5, 1, 9, 0, tzinfo=UTC),
+    )
+    store.replace_playlist_membership(
+        playlist_id=playlists[0].id,
+        tracks=[
+            YouTubeMusicTrack(
+                provider_track_id="track-1",
+                title="Track 1",
+                artist="Artist 1",
+                album=None,
+                year=None,
+                isrc=None,
+                duration_ms=180000,
+            )
+        ],
+    )
+    store.set_playlist_selected_for_sync(
+        playlist_id=playlists[0].id,
+        selected_for_sync=True,
+    )
+
+    app = create_app()
+    route = next(
+        route
+        for route in app.routes
+        if getattr(route, "path", None) == "/api/streaming/playlists/config"
+        and "GET" in getattr(route, "methods", set())
+    )
+    response = asyncio.run(route.endpoint())
+
+    assert [playlist.provider_playlist_id for playlist in response["playlists"]] == [
+        "PL1",
+        "PL2",
+    ]
+    selected, unselected = response["playlists"]
+    assert selected.selected_for_sync is True
+    assert selected.track_count == 1
+    assert selected.synced_at == "2026-05-01T09:00:00"
+    assert selected.last_sync_error is None
+    assert selected.last_sync_error_at is None
+    assert unselected.selected_for_sync is False
+    assert unselected.track_count == 0
 
 
 def test_search_endpoint_returns_playlist_streaming_and_local_matches(

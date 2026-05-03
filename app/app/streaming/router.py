@@ -13,6 +13,7 @@ from app.streaming.schemas import (
     PlaylistTrackResponse,
     PlaylistTracksResponse,
     StreamingAccountResponse,
+    StreamingPlaylistConfigResponse,
     StreamingPlaylistResponse,
     StreamingSyncResponse,
 )
@@ -48,6 +49,29 @@ def create_router(
             account_id=playlist.account_id,
             provider_playlist_id=playlist.provider_playlist_id,
             title=playlist.title,
+            track_count=playlist.track_count,
+            synced_at=(
+                playlist.synced_at.isoformat()
+                if playlist.synced_at is not None
+                else None
+            ),
+            last_sync_error=playlist.last_sync_error,
+            last_sync_error_at=(
+                playlist.last_sync_error_at.isoformat()
+                if playlist.last_sync_error_at is not None
+                else None
+            ),
+        )
+
+    def serialize_streaming_playlist_config(
+        playlist: object,
+    ) -> StreamingPlaylistConfigResponse:
+        return StreamingPlaylistConfigResponse(
+            id=playlist.id,
+            account_id=playlist.account_id,
+            provider_playlist_id=playlist.provider_playlist_id,
+            title=playlist.title,
+            selected_for_sync=playlist.selected_for_sync,
             track_count=playlist.track_count,
             synced_at=(
                 playlist.synced_at.isoformat()
@@ -118,6 +142,17 @@ def create_router(
                 serialize_streaming_playlist(playlist)
                 for playlist in playlists
                 if playlist.selected_for_sync
+            ]
+        }
+
+    @router.get("/streaming/playlists/config")
+    async def list_streaming_playlist_config() -> dict[
+        str, list[StreamingPlaylistConfigResponse]
+    ]:
+        playlists = StreamingAccountStore(require_database_url()).list_playlists()
+        return {
+            "playlists": [
+                serialize_streaming_playlist_config(playlist) for playlist in playlists
             ]
         }
 

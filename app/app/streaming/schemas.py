@@ -23,6 +23,10 @@ class StreamingPlaylistResponse(BaseModel):
     last_sync_error_at: str | None
 
 
+class StreamingPlaylistConfigResponse(StreamingPlaylistResponse):
+    selected_for_sync: bool
+
+
 class PlaylistDetail(BaseModel):
     id: int
     account_id: int

@@ -33,6 +33,7 @@ from app.streaming.schemas import (
     PlaylistTrackResponse,
     PlaylistTracksResponse,
     StreamingAccountResponse,
+    StreamingPlaylistConfigResponse,
     StreamingPlaylistResponse,
     StreamingSyncResponse,
 )
@@ -58,6 +59,7 @@ __all__ = [
     "PlaylistTrackResponse",
     "PlaylistTracksResponse",
     "StreamingAccountResponse",
+    "StreamingPlaylistConfigResponse",
     "StreamingPlaylistResponse",
     "YOUTUBE_MUSIC_PROVIDER",
     "StreamingSyncResponse",

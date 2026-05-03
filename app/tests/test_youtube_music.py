@@ -667,8 +667,12 @@ def test_sync_library_playlist_tracks_uses_adapter_and_store() -> None:
             seen["playlists"] = playlists
             seen["synced_at"] = synced_at
             return [
-                SimpleNamespace(id=11, provider_playlist_id="PL1"),
-                SimpleNamespace(id=12, provider_playlist_id="PL2"),
+                SimpleNamespace(
+                    id=11, provider_playlist_id="PL1", selected_for_sync=True
+                ),
+                SimpleNamespace(
+                    id=12, provider_playlist_id="PL2", selected_for_sync=True
+                ),
             ]
 
         def replace_playlist_membership(self, *, playlist_id, tracks):
@@ -752,8 +756,12 @@ def test_sync_library_playlist_tracks_skips_malformed_playlist_payload() -> None
     class FakePlaylistStore:
         def upsert_playlists(self, *, account_id, playlists, synced_at):
             return [
-                SimpleNamespace(id=11, provider_playlist_id="PL1"),
-                SimpleNamespace(id=12, provider_playlist_id="PL2"),
+                SimpleNamespace(
+                    id=11, provider_playlist_id="PL1", selected_for_sync=True
+                ),
+                SimpleNamespace(
+                    id=12, provider_playlist_id="PL2", selected_for_sync=True
+                ),
             ]
 
         def replace_playlist_membership(self, *, playlist_id, tracks):
@@ -806,8 +814,12 @@ def test_sync_library_playlist_tracks_isolates_playlist_failures() -> None:
     class FakePlaylistStore:
         def upsert_playlists(self, *, account_id, playlists, synced_at):
             return [
-                SimpleNamespace(id=11, provider_playlist_id="PL1"),
-                SimpleNamespace(id=12, provider_playlist_id="PL2"),
+                SimpleNamespace(
+                    id=11, provider_playlist_id="PL1", selected_for_sync=True
+                ),
+                SimpleNamespace(
+                    id=12, provider_playlist_id="PL2", selected_for_sync=True
+                ),
             ]
 
         def replace_playlist_membership(self, *, playlist_id, tracks):
