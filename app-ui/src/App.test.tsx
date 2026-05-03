@@ -11,4 +11,13 @@ describe("App", () => {
       }),
     ).toBeInTheDocument();
   });
+
+  it("renders the Tailwind setup callout", () => {
+    render(<App />);
+
+    expect(screen.getByText(/tailwind v4/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/^the palette is available directly through `ctp` colour tokens\.$/i),
+    ).toBeInTheDocument();
+  });
 });

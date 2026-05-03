@@ -1,7 +1,7 @@
 # E09 — Frontend scaffolding & layout
 
 - [x] Scaffold a new Vite + React + TypeScript project in `app-ui/`
-- [ ] Install and configure Tailwind CSS with the official Catppuccin Mocha plugin
+- [x] Install and configure Tailwind CSS with the official Catppuccin Mocha plugin
 - [ ] Install TanStack Query and set up a `QueryClient` provider at the app root
 - [ ] Install React Router and define top-level routes (Maintenance, YouTube Music, Local Library)
 - [ ] Build the app shell: persistent sidebar with the three navigation sections, topbar, and main content area
