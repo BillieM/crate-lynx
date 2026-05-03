@@ -1,7 +1,7 @@
 # E06 — Link proposal & approval API
 
 - [x] Add `links/` package under `app/`: `__init__.py`, `models.py` (Pydantic schemas for proposal response, approve/reject request bodies)
-- [ ] Implement `GET /proposals` endpoint: list `suggested_links` joined with `local_tracks` and `streaming_tracks`, supporting confidence band filter query param
+- [x] Implement `GET /proposals` endpoint: list `suggested_links` joined with `local_tracks` and `streaming_tracks`, supporting confidence band filter query param
 - [ ] Implement `POST /proposals/{id}/approve` endpoint: write row to `final_links`, update `suggested_links.status` to approved
 - [ ] Implement `POST /proposals/{id}/reject` endpoint: set `suggested_links.status = rejected` and `rejected_at = now()`
 - [ ] Implement `DELETE /final-links/{id}` (break link) endpoint: remove from `final_links`, write a rejected `suggested_links` entry for the same pair

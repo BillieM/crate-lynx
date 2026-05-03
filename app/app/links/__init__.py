@@ -6,10 +6,12 @@ from app.links.models import (
     ProposalResponse,
     RejectProposalRequest,
 )
+from app.links.router import create_router
 
 __all__ = [
     "ApproveProposalRequest",
     "ProposalListResponse",
     "ProposalResponse",
     "RejectProposalRequest",
+    "create_router",
 ]
