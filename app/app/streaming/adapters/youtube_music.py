@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
@@ -10,6 +11,7 @@ from app.streaming.adapters.base import StreamingAdapter
 
 
 JsonMapping = dict[str, Any]
+logger = logging.getLogger(__name__)
 
 
 class MalformedPlaylistPayloadError(RuntimeError):
@@ -280,10 +282,20 @@ def sync_library_playlist_tracks(
 
     synced_memberships: list[Any] = []
     for playlist in stored_playlists:
+        try:
+            tracks = adapter.list_playlist_tracks(playlist.provider_playlist_id)
+        except MalformedPlaylistPayloadError:
+            logger.warning(
+                "Skipping YouTube Music playlist %s because its track payload is malformed",
+                playlist.provider_playlist_id,
+                exc_info=True,
+            )
+            continue
+
         synced_memberships.extend(
             playlist_store.replace_playlist_membership(
                 playlist_id=playlist.id,
-                tracks=adapter.list_playlist_tracks(playlist.provider_playlist_id),
+                tracks=tracks,
             )
         )
 

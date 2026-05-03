@@ -670,3 +670,49 @@ def test_sync_library_playlist_tracks_uses_adapter_and_store() -> None:
             ],
         },
     ]
+
+
+def test_sync_library_playlist_tracks_skips_malformed_playlist_payload() -> None:
+    seen: dict[str, object] = {"replaced_playlist_ids": []}
+
+    class FakePlaylistStore:
+        def upsert_playlists(self, *, account_id, playlists, synced_at):
+            return [
+                SimpleNamespace(id=11, provider_playlist_id="PL1"),
+                SimpleNamespace(id=12, provider_playlist_id="PL2"),
+            ]
+
+        def replace_playlist_membership(self, *, playlist_id, tracks):
+            seen["replaced_playlist_ids"].append(playlist_id)
+            return [f"membership-{playlist_id}"]
+
+    class FakeAdapter:
+        def list_library_playlists(self):
+            return [
+                YouTubeMusicPlaylist(provider_playlist_id="PL1", title="Road Trip"),
+                YouTubeMusicPlaylist(provider_playlist_id="PL2", title="Focus"),
+            ]
+
+        def list_playlist_tracks(self, playlist_id):
+            if playlist_id == "PL1":
+                raise MalformedPlaylistPayloadError("invalid tracks payload")
+            return [
+                YouTubeMusicTrack(
+                    provider_track_id="PL2-track-1",
+                    title="Track 1",
+                    artist="Artist 1",
+                    album=None,
+                    year=None,
+                    isrc=None,
+                    duration_ms=None,
+                )
+            ]
+
+    result = sync_library_playlist_tracks(
+        account_id=7,
+        adapter=FakeAdapter(),  # type: ignore[arg-type]
+        playlist_store=FakePlaylistStore(),
+    )
+
+    assert result == ["membership-12"]
+    assert seen["replaced_playlist_ids"] == [12]
