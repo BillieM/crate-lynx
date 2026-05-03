@@ -1,9 +1,8 @@
-# E07 — M3U generation
+# E08 — Metadata rescue
 
-- [x] Add `m3u/` package under `app/`: `__init__.py`, `generator.py` (core generation logic)
-- [x] Implement `generate_m3u(playlist_id, base_path)` function: query `playlist_membership` joined through `final_links` to `local_tracks`, resolve file paths relative to `base_path`
-- [x] Format output as valid M3U with `#EXTM3U` header and `#EXTINF` lines (duration + artist/title from `local_tracks` metadata)
-- [x] Implement `GET /playlists/{id}/m3u` export endpoint: call generator and return file response with `audio/x-mpegurl` content type and appropriate filename
-- [x] Hook auto-regeneration: call generator (write M3U to a defined output directory) after approve, reject, and break-link operations
-- [x] Define output directory via env var (e.g. `M3U_OUTPUT_DIR`) and add to `.env.example`
-- [x] Write tests: M3U contains only final-linked tracks, paths are resolved relative to base_path, `#EXTINF` metadata is correct, empty playlist produces valid M3U with header only
+- [x] Add `rescue/` package under `app/`: `__init__.py`, `metadata.py` (core rewrite logic)
+- [ ] Implement `rescue_metadata(local_track_id)` function: look up `final_links` to find the linked streaming track, fetch streaming track metadata (title, artist, album, year, album art URL)
+- [ ] Write ID3 tags to the local MP3 file using mutagen: TIT2, TPE1, TALB, TDRC, and APIC (album art, downloaded from URL and embedded)
+- [ ] Add `POST /local-tracks/{id}/rescue` endpoint: validate a final link exists, call `rescue_metadata`, return updated track record
+- [ ] Return 409 if no final link exists for the given local track
+- [ ] Write tests: tags are correctly written, APIC frame is embedded, 409 is returned when no final link exists
