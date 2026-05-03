@@ -30,7 +30,7 @@ function getAlbumLabel(album: string | null) {
 
 export function PlaylistTrackRow({ actionSlot, track }: PlaylistTrackRowProps) {
   return (
-    <article className="grid gap-4 rounded-[24px] border border-ctp-surface1/80 bg-[linear-gradient(180deg,rgba(49,50,68,0.92),rgba(30,30,46,0.96))] px-5 py-4 shadow-[0_16px_36px_rgba(17,17,27,0.18)] lg:grid-cols-[minmax(0,1.8fr)_minmax(0,1.1fr)_minmax(0,1fr)_auto_auto] lg:items-center">
+    <article className="grid gap-4 rounded-[24px] border border-ctp-surface1/80 bg-[linear-gradient(180deg,color-mix(in_srgb,var(--color-ctp-surface0)_92%,transparent),color-mix(in_srgb,var(--color-ctp-base)_96%,transparent))] px-5 py-4 shadow-[0_16px_36px_color-mix(in_srgb,var(--color-ctp-crust)_18%,transparent)] lg:grid-cols-[minmax(0,1.8fr)_minmax(0,1.1fr)_minmax(0,1fr)_auto_auto] lg:items-center">
       <div className="flex min-w-0 items-start gap-3">
         <div className="flex items-center gap-3 pt-1">
           <TrackStatusDot status={track.status} />

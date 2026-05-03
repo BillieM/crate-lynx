@@ -543,7 +543,7 @@ function SearchPanel() {
       </div>
 
       {isOpen ? (
-        <div className="absolute inset-x-0 top-[calc(100%+0.5rem)] z-10 overflow-hidden rounded-[12px] border border-ctp-surface1 bg-ctp-mantle shadow-[0_20px_48px_rgba(17,17,27,0.38)]">
+        <div className="absolute inset-x-0 top-[calc(100%+0.5rem)] z-10 overflow-hidden rounded-[12px] border border-ctp-surface1 bg-ctp-mantle shadow-[0_20px_48px_color-mix(in_srgb,var(--color-ctp-crust)_38%,transparent)]">
           {isFetching ? (
             <p className="px-3 py-3 text-[12px] text-ctp-subtext0">Searching library…</p>
           ) : null}

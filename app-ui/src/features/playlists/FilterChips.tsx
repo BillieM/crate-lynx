@@ -16,22 +16,26 @@ const filterChips: FilterChipConfig[] = [
   {
     filter: "all",
     label: "All",
-    selectedClassName: "border-ctp-blue bg-ctp-blue/18 text-ctp-blue shadow-[0_0_0_4px_rgba(137,180,250,0.12)]",
+    selectedClassName:
+      "border-ctp-blue bg-ctp-blue/18 text-ctp-blue shadow-[0_0_0_4px_color-mix(in_srgb,var(--color-ctp-blue)_12%,transparent)]",
   },
   {
     filter: "linked",
     label: "Linked",
-    selectedClassName: "border-ctp-green bg-ctp-green/18 text-ctp-green shadow-[0_0_0_4px_rgba(166,227,161,0.12)]",
+    selectedClassName:
+      "border-ctp-green bg-ctp-green/18 text-ctp-green shadow-[0_0_0_4px_color-mix(in_srgb,var(--color-ctp-green)_12%,transparent)]",
   },
   {
     filter: "pending",
     label: "Pending",
-    selectedClassName: "border-ctp-yellow bg-ctp-yellow/18 text-ctp-yellow shadow-[0_0_0_4px_rgba(249,226,175,0.12)]",
+    selectedClassName:
+      "border-ctp-yellow bg-ctp-yellow/18 text-ctp-yellow shadow-[0_0_0_4px_color-mix(in_srgb,var(--color-ctp-yellow)_12%,transparent)]",
   },
   {
     filter: "unlinked",
     label: "Unlinked",
-    selectedClassName: "border-ctp-red bg-ctp-red/18 text-ctp-red shadow-[0_0_0_4px_rgba(243,139,168,0.12)]",
+    selectedClassName:
+      "border-ctp-red bg-ctp-red/18 text-ctp-red shadow-[0_0_0_4px_color-mix(in_srgb,var(--color-ctp-red)_12%,transparent)]",
   },
 ];
 

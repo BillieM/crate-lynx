@@ -77,7 +77,7 @@ export function PlaylistTrackActions({ onReviewTrack, playlistId, track }: Playl
         <ActionButton onClick={() => setIsLinkInfoOpen((current) => !current)}>Linked</ActionButton>
         {isLinkInfoOpen ? (
           <div
-            className="absolute right-0 top-[calc(100%+0.5rem)] z-10 w-56 rounded-[14px] border border-ctp-green/30 bg-ctp-mantle p-3 text-left shadow-[0_20px_48px_rgba(17,17,27,0.38)]"
+            className="absolute right-0 top-[calc(100%+0.5rem)] z-10 w-56 rounded-[14px] border border-ctp-green/30 bg-ctp-mantle p-3 text-left shadow-[0_20px_48px_color-mix(in_srgb,var(--color-ctp-crust)_38%,transparent)]"
             role="dialog"
           >
             <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-ctp-green">Final link info</p>

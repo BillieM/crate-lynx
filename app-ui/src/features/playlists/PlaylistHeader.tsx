@@ -45,14 +45,14 @@ function CoverArt({ playlist }: { playlist: PlaylistDetail }) {
     return (
       <img
         alt={`${playlist.name} cover art`}
-        className="h-28 w-28 rounded-[24px] object-cover shadow-[0_18px_42px_rgba(17,17,27,0.32)] ring-1 ring-inset ring-ctp-surface1/80"
+        className="h-28 w-28 rounded-[24px] object-cover shadow-[0_18px_42px_color-mix(in_srgb,var(--color-ctp-crust)_32%,transparent)] ring-1 ring-inset ring-ctp-surface1/80"
         src={playlist.cover_art_url}
       />
     );
   }
 
   return (
-    <div className="flex h-28 w-28 items-center justify-center rounded-[24px] bg-ctp-surface0 text-ctp-blue shadow-[0_18px_42px_rgba(17,17,27,0.24)] ring-1 ring-inset ring-ctp-surface1/80">
+    <div className="flex h-28 w-28 items-center justify-center rounded-[24px] bg-ctp-surface0 text-ctp-blue shadow-[0_18px_42px_color-mix(in_srgb,var(--color-ctp-crust)_24%,transparent)] ring-1 ring-inset ring-ctp-surface1/80">
       <svg aria-hidden="true" className="h-10 w-10" fill="none" viewBox="0 0 24 24">
         <path
           d="M8 18a2 2 0 1 1-4 0 2 2 0 0 1 4 0Zm10-3a2 2 0 1 1-4 0 2 2 0 0 1 4 0Zm-4 0V6l6-1.5v9"
@@ -79,7 +79,7 @@ function ProgressRing({ playlist }: { playlist: PlaylistDetail }) {
             cy="60"
             fill="none"
             r={ringRadius}
-            stroke="rgba(69, 71, 90, 0.95)"
+            stroke="color-mix(in srgb, var(--color-ctp-surface1) 95%, transparent)"
             strokeWidth="10"
           />
           <circle
@@ -138,7 +138,7 @@ function StatCard({
 
 export function PlaylistHeader({ playlist }: PlaylistHeaderProps) {
   return (
-    <section className="rounded-[30px] border border-ctp-surface1/80 bg-[linear-gradient(135deg,rgba(30,30,46,0.96),rgba(49,50,68,0.92))] px-6 py-6 shadow-[0_24px_64px_rgba(17,17,27,0.24)]">
+    <section className="rounded-[30px] border border-ctp-surface1/80 bg-[linear-gradient(135deg,color-mix(in_srgb,var(--color-ctp-base)_96%,transparent),color-mix(in_srgb,var(--color-ctp-surface0)_92%,transparent))] px-6 py-6 shadow-[0_24px_64px_color-mix(in_srgb,var(--color-ctp-crust)_24%,transparent)]">
       <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
         <div className="flex min-w-0 flex-col gap-5 sm:flex-row">
           <CoverArt playlist={playlist} />

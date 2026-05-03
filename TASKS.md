@@ -10,4 +10,4 @@
 - [x] Wire the Sync button in the topbar action slot: call the YTM sync API endpoint for the active playlist, show loading state
 - [x] Wire the Export M3U button in the topbar action slot: hit the M3U export endpoint and trigger a file download
 - [x] Replace the five `playlist2`–`playlist5` stub shells with the same `PlaylistView` component, driven by different playlist IDs from sidebar nav state
-- [ ] Apply Catppuccin Mocha tokens throughout — no grays, no default Tailwind colours
+- [x] Apply Catppuccin Mocha tokens throughout — no grays, no default Tailwind colours

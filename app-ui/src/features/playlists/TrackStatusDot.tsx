@@ -13,15 +13,18 @@ const statusConfig: Record<
 > = {
   linked: {
     ariaLabel: "Linked track",
-    className: "bg-ctp-green shadow-[0_0_0_4px_rgba(166,227,161,0.14)]",
+    className:
+      "bg-ctp-green shadow-[0_0_0_4px_color-mix(in_srgb,var(--color-ctp-green)_14%,transparent)]",
   },
   pending: {
     ariaLabel: "Pending track",
-    className: "bg-ctp-yellow shadow-[0_0_0_4px_rgba(249,226,175,0.16)]",
+    className:
+      "bg-ctp-yellow shadow-[0_0_0_4px_color-mix(in_srgb,var(--color-ctp-yellow)_16%,transparent)]",
   },
   unlinked: {
     ariaLabel: "Unlinked track",
-    className: "bg-ctp-red shadow-[0_0_0_4px_rgba(243,139,168,0.16)]",
+    className:
+      "bg-ctp-red shadow-[0_0_0_4px_color-mix(in_srgb,var(--color-ctp-red)_16%,transparent)]",
   },
 };
 
