@@ -8,13 +8,13 @@ from app.matching.acoustic import (
     run_acoustic_match_job,
 )
 from app.matching.isrc import IsrcMatcher
+from app.matching.jobs import MatchingJobEnqueuer, run_matching_pipeline
 from app.matching.models import ConfidenceBand, MatchResult
 from app.matching.pipeline import (
     AcousticJobEnqueuer,
     MatchingPipeline,
     SuggestedLinkStore,
     fetch_suggested_links,
-    run_matching_pipeline,
     suggested_links_table,
 )
 from app.matching.tags import TagMatcher
@@ -30,6 +30,7 @@ __all__ = [
     "ConfidenceBand",
     "IsrcMatcher",
     "MatchResult",
+    "MatchingJobEnqueuer",
     "MatchingPipeline",
     "SuggestedLinkStore",
     "TagMatcher",

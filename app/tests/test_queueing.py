@@ -1,10 +1,7 @@
 from types import SimpleNamespace
 
-from app.core.queueing import (
-    MatchingJobEnqueuer,
-    QueueDepthReader,
-    StreamingSyncJobEnqueuer,
-)
+from app.core.queueing import QueueDepthReader, StreamingSyncJobEnqueuer
+from app.matching.jobs import MatchingJobEnqueuer
 
 
 def test_matching_job_enqueuer_uses_default_queue(monkeypatch) -> None:
@@ -29,8 +26,8 @@ def test_matching_job_enqueuer_uses_default_queue(monkeypatch) -> None:
             seen["job_timeout"] = job_timeout
             return SimpleNamespace(id="job-abc")
 
-    monkeypatch.setattr("app.core.queueing.Redis", FakeRedis)
-    monkeypatch.setattr("app.core.queueing.Queue", FakeQueue)
+    monkeypatch.setattr("app.matching.jobs.Redis", FakeRedis)
+    monkeypatch.setattr("app.matching.jobs.Queue", FakeQueue)
 
     job_id = MatchingJobEnqueuer(
         redis_url="redis://redis:6379/0", job_timeout="5m"
@@ -41,7 +38,7 @@ def test_matching_job_enqueuer_uses_default_queue(monkeypatch) -> None:
         "redis_url": "redis://redis:6379/0",
         "queue_name": "matching",
         "connection": seen["connection"],
-        "func": "app.matching.run_matching_pipeline",
+        "func": "app.matching.jobs.run_matching_pipeline",
         "local_track_id": 17,
         "job_timeout": "5m",
     }

@@ -6,6 +6,6 @@
 - [x] Implement acoustic fingerprint fallback in `matching/acoustic.py`: RQ job that runs fpcalc comparison, triggered only when tag score is below threshold
 - [x] Implement sequential pipeline orchestrator in `matching/pipeline.py`: ISRC → fuzzy tag → acoustic (enqueue RQ job if low), write result to `suggested_links`
 - [x] Ensure pipeline is re-runnable per track: clear any existing non-approved `suggested_links` row before writing new result
-- [ ] Wire matching pipeline as an RQ job in `matching/jobs.py`; enqueue from ingestion pipeline on track completion
+- [x] Wire matching pipeline as an RQ job in `matching/jobs.py`; enqueue from ingestion pipeline on track completion
 - [ ] Mount any needed status/trigger endpoints in `matching/router.py` and register in `main.py`
 - [ ] Write tests: ISRC hit returns high confidence, fuzzy match scoring bands, low score triggers acoustic job enqueue, re-run clears old suggestion

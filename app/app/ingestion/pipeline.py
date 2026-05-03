@@ -7,8 +7,8 @@ import shutil
 import sqlite3
 import subprocess
 
-from app.core.queueing import MatchingJobEnqueuer
 from app.local_tracks.store import LocalTrackStore
+from app.matching.jobs import MatchingJobEnqueuer
 
 
 SUPPORTED_AUDIO_EXTENSIONS = {".mp3", ".flac", ".wav", ".aiff", ".aif"}

@@ -6,7 +6,6 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException
 
 from app.core.queueing import (
-    MatchingJobEnqueuer,
     QueueDepthReader,
 )
 from app.core.worker import resolve_queue_names
@@ -14,6 +13,7 @@ from app.ingestion import BeetsImporter, IngestionProcessor, IngestionWatcher
 from app.ingestion.router import router as ingestion_router
 from app.ingestion.status import IngestionStatusStore
 from app.local_tracks.store import LocalTrackStore
+from app.matching.jobs import MatchingJobEnqueuer
 from app.streaming.router import create_router as create_streaming_router
 from app.system.router import router as system_router
 

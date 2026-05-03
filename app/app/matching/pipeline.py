@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 import logging
-import os
 from pathlib import Path
 
 from redis import Redis
@@ -163,23 +162,6 @@ class MatchingPipeline:
                 "fingerprint": "",
             }
         ]
-
-
-def run_matching_pipeline(local_track_id: int) -> MatchResult | None:
-    database_url = os.environ.get("DATABASE_URL")
-    if not database_url:
-        raise RuntimeError("DATABASE_URL must be configured for matching")
-
-    beets_library = os.environ.get("BEETS_LIBRARY")
-    if not beets_library:
-        raise RuntimeError("BEETS_LIBRARY must be configured for matching")
-
-    pipeline = MatchingPipeline(
-        database_url=database_url,
-        beets_library=beets_library,
-        redis_url=os.environ.get("REDIS_URL"),
-    )
-    return pipeline.run(local_track_id)
 
 
 def fetch_suggested_links(database_url: str) -> list[dict[str, object]]:

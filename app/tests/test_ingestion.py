@@ -5,7 +5,6 @@ from unittest.mock import Mock
 
 from watchdog.events import DirCreatedEvent, FileCreatedEvent
 
-from app.core.queueing import MatchingJobEnqueuer
 from app.ingestion.pipeline import (
     AudioPreparer,
     BeetsImporter,
@@ -14,6 +13,7 @@ from app.ingestion.pipeline import (
     PreparedTrack,
     UnsupportedAudioFormatError,
 )
+from app.matching.jobs import MatchingJobEnqueuer
 from app.ingestion.watcher import IngestionEventHandler, IngestionWatcher
 from app.ingestion.pipeline import IngestionProcessor
 from app.local_tracks.store import LocalTrackStore, local_tracks_table, metadata
