@@ -9,6 +9,6 @@
 - [x] Update `GET /api/streaming/playlists` to filter the sidebar payload to `selected_for_sync = true` playlists only
 - [x] Implement `GET /api/streaming/playlists/config` — returns all discovered playlists with `selected_for_sync` and metadata for the config UI
 - [x] Implement `PATCH /api/streaming/playlists/{id}` accepting body `{ "selected_for_sync": bool }`; ensure deselect preserves memberships and the M3U file on disk
-- [ ] Update the hardcoded account-sync test fixtures at `app-ui/src/App.test.tsx:181` and `:366` to match the new selected-only sync contract
+- [x] Update the hardcoded account-sync test fixtures at `app-ui/src/App.test.tsx:181` and `:366` to match the new selected-only sync contract
 - [ ] Add backend tests covering: migration backfill behavior, refresh-metadata endpoint, account sync respecting `selected_for_sync`, single-playlist sync ignoring the flag, sidebar vs config filtering, PATCH toggling, deselect preserving memberships
 - [ ] Run validation: backend `ruff check .`, `ruff format --check .`, `pytest`; frontend test suite for the updated fixtures
