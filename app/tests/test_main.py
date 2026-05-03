@@ -11,6 +11,7 @@ from app.local_tracks.store import (
     local_tracks_table,
     metadata as local_tracks_metadata,
 )
+from app.links.store import final_links_table, metadata as links_metadata
 from app.main import create_app
 from app.matching.pipeline import (
     metadata as suggested_links_metadata,
@@ -18,6 +19,11 @@ from app.matching.pipeline import (
 )
 from app.streaming.schemas import CreateStreamingAccountRequest
 from app.streaming.models import metadata, streaming_accounts_table
+from app.streaming.models import (
+    playlist_membership_table,
+    streaming_playlists_table,
+    streaming_tracks_table,
+)
 from app.streaming.store import StreamingAccountStore
 from app.streaming.adapters.youtube_music import (
     YouTubeMusicPlaylist,
@@ -36,6 +42,7 @@ def test_links_routes_are_mounted_under_api_prefix() -> None:
     assert "/api/proposals/{proposal_id}/approve" in route_paths
     assert "/api/proposals/{proposal_id}/reject" in route_paths
     assert "/api/final-links/{final_link_id}" in route_paths
+    assert "/playlists/{playlist_id}/m3u" in route_paths
 
 
 def test_ingest_status_endpoint_reports_queue_depths_and_recent_results() -> None:
@@ -283,6 +290,84 @@ def test_streaming_accounts_endpoint_creates_youtube_music_account(
         "Authorization": "Bearer token",
         "X-Goog-AuthUser": "0",
     }
+
+
+def test_playlist_m3u_export_endpoint_returns_attachment(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite:///{tmp_path / 'playlist-export.db'}"
+    engine = create_engine(database_url)
+    metadata.create_all(engine)
+    local_tracks_metadata.create_all(engine)
+    links_metadata.create_all(engine)
+    monkeypatch.setenv("DATABASE_URL", database_url)
+    monkeypatch.setenv("LIBRARY_ROOT", str(tmp_path / "library"))
+
+    with engine.begin() as connection:
+        connection.execute(
+            insert(streaming_playlists_table).values(
+                id=7,
+                account_id=1,
+                provider_playlist_id="PL7",
+                title="Road Trip Mix",
+                synced_at=datetime(2026, 5, 1, 9, 0, tzinfo=UTC),
+            )
+        )
+        connection.execute(
+            insert(local_tracks_table).values(
+                id=5,
+                file_path="Artist/song.mp3",
+                library_root_rel_path="Artist/song.mp3",
+                fingerprint="fp-5",
+                beets_id=5,
+            )
+        )
+        connection.execute(
+            insert(streaming_tracks_table).values(
+                id=9,
+                provider_track_id="ytm-9",
+                title="Song",
+                artist="Artist",
+                album=None,
+                year=None,
+                isrc=None,
+                duration_ms=181000,
+            )
+        )
+        connection.execute(
+            insert(playlist_membership_table).values(
+                playlist_id=7,
+                streaming_track_id=9,
+                position=1,
+            )
+        )
+        connection.execute(
+            insert(final_links_table).values(
+                local_track_id=5,
+                streaming_track_id=9,
+            )
+        )
+
+    app = create_app()
+    route = next(
+        route
+        for route in app.routes
+        if getattr(route, "path", None) == "/playlists/{playlist_id}/m3u"
+        and "GET" in getattr(route, "methods", set())
+    )
+
+    response = asyncio.run(route.endpoint(7))
+
+    assert response.media_type == "audio/x-mpegurl"
+    assert response.headers["content-disposition"] == (
+        'attachment; filename="Road-Trip-Mix.m3u"'
+    )
+    assert response.body.decode("utf-8").splitlines() == [
+        "#EXTM3U",
+        "#EXTINF:181,Artist - Song",
+        str((tmp_path / "library" / "Artist/song.mp3").resolve()),
+    ]
 
 
 def test_streaming_account_sync_endpoint_enqueues_job(

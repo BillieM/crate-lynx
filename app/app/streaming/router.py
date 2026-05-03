@@ -1,6 +1,9 @@
+import os
+import re
 from collections.abc import Callable
+from pathlib import Path
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Response
 
 from app.core.queueing import StreamingSyncJobEnqueuer
 from app.streaming.schemas import (
@@ -65,6 +68,31 @@ def create_router(
             ]
         }
 
+    @router.get("/playlists/{playlist_id}/m3u")
+    async def export_playlist_m3u(playlist_id: int) -> Response:
+        from app.m3u.generator import generate_m3u
+
+        store = StreamingAccountStore(require_database_url())
+        playlist = next(
+            (
+                playlist
+                for playlist in store.list_playlists()
+                if playlist.id == playlist_id
+            ),
+            None,
+        )
+        if playlist is None:
+            raise HTTPException(status_code=404, detail="Playlist not found")
+
+        library_root = Path(os.environ.get("LIBRARY_ROOT", "/library"))
+        content = generate_m3u(playlist_id, library_root)
+        filename = _build_m3u_filename(playlist.title)
+        return Response(
+            content=content,
+            media_type="audio/x-mpegurl",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+
     @router.post("/streaming/accounts", status_code=201)
     async def create_streaming_account(
         payload: CreateStreamingAccountRequest,
@@ -95,3 +123,10 @@ def create_router(
         return StreamingSyncResponse(account_id=account_id, job_id=job_id)
 
     return router
+
+
+def _build_m3u_filename(title: str) -> str:
+    sanitized = re.sub(r"[^A-Za-z0-9._-]+", "-", title).strip("-")
+    if not sanitized:
+        sanitized = "playlist"
+    return f"{sanitized}.m3u"
