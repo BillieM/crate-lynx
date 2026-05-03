@@ -5,6 +5,7 @@ from types import SimpleNamespace
 from app.streaming.adapters.youtube_music import (
     YouTubeMusicAdapter,
     YouTubeMusicPlaylist,
+    YouTubeMusicTrackMetadata,
     YouTubeMusicTrack,
     sync_library_playlists,
     sync_library_playlist_tracks,
@@ -282,6 +283,80 @@ def test_list_playlist_tracks_normalizes_valid_rows_only() -> None:
             duration_ms=None,
         ),
     ]
+
+
+def test_get_track_metadata_prefers_watch_playlist_fields_and_highest_res_art() -> None:
+    class FakeYTMusic:
+        def get_song(
+            self,
+            *,
+            videoId: str,
+            signatureTimestamp: int | None,
+        ) -> dict[str, object]:
+            assert videoId == "track-9"
+            assert signatureTimestamp is None
+            return {
+                "videoDetails": {
+                    "title": "Fallback Title",
+                    "author": "Fallback Artist",
+                    "thumbnails": [
+                        {
+                            "url": "https://img.example/320.jpg",
+                            "width": 320,
+                            "height": 320,
+                        },
+                    ],
+                },
+                "album": {"name": "Fallback Album"},
+                "year": 2018,
+            }
+
+        def get_watch_playlist(
+            self,
+            *,
+            videoId: str | None,
+            playlistId: str | None,
+            limit: int,
+            radio: bool,
+            shuffle: bool,
+        ) -> dict[str, object]:
+            assert videoId == "track-9"
+            assert playlistId is None
+            assert limit == 1
+            assert radio is False
+            assert shuffle is False
+            return {
+                "tracks": [
+                    {
+                        "title": "Rescue Title",
+                        "artists": [{"name": "Rescue Artist"}],
+                        "album": {"name": "Rescue Album"},
+                        "year": 2022,
+                        "thumbnails": [
+                            {
+                                "url": "https://img.example/640.jpg",
+                                "width": 640,
+                                "height": 640,
+                            },
+                            {
+                                "url": "https://img.example/1280.jpg",
+                                "width": 1280,
+                                "height": 1280,
+                            },
+                        ],
+                    }
+                ]
+            }
+
+    adapter = YouTubeMusicAdapter(FakeYTMusic())  # type: ignore[arg-type]
+
+    assert adapter.get_track_metadata("track-9") == YouTubeMusicTrackMetadata(
+        title="Rescue Title",
+        artist="Rescue Artist",
+        album="Rescue Album",
+        year=2022,
+        album_art_url="https://img.example/1280.jpg",
+    )
 
 
 def test_list_playlist_tracks_only_fetches_song_for_missing_isrc() -> None:

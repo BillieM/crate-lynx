@@ -29,6 +29,15 @@ class YouTubeMusicTrack:
     duration_ms: int | None
 
 
+@dataclass(frozen=True, slots=True)
+class YouTubeMusicTrackMetadata:
+    title: str | None
+    artist: str | None
+    album: str | None
+    year: int | None
+    album_art_url: str | None
+
+
 class YouTubeMusicAdapter(StreamingAdapter):
     def __init__(self, client: YTMusic) -> None:
         self._client = client
@@ -173,6 +182,33 @@ class YouTubeMusicAdapter(StreamingAdapter):
             shuffle=shuffle,
         )
 
+    def get_track_metadata(self, provider_track_id: str) -> YouTubeMusicTrackMetadata:
+        song = self.get_song(provider_track_id)
+        watch_playlist = self.get_watch_playlist(video_id=provider_track_id, limit=1)
+        watch_track = _extract_watch_track(watch_playlist)
+
+        return YouTubeMusicTrackMetadata(
+            title=_coalesce_str(
+                _mapping_str(watch_track, "title"),
+                _nested_str(song, "videoDetails", "title"),
+            ),
+            artist=_coalesce_str(
+                _normalize_artist(watch_track) if watch_track is not None else None,
+                _nested_str(song, "videoDetails", "author"),
+            ),
+            album=_coalesce_str(
+                _normalize_album(watch_track) if watch_track is not None else None,
+                _extract_album(song),
+            ),
+            year=_coalesce_int(
+                _mapping_int(watch_track, "year"),
+                _extract_year(song),
+            ),
+            album_art_url=_extract_best_thumbnail_url(watch_track)
+            or _extract_best_thumbnail_url(song)
+            or _extract_best_thumbnail_url(watch_playlist),
+        )
+
 
 def sync_library_playlists(
     *,
@@ -247,6 +283,155 @@ def _normalize_album(track: JsonMapping) -> str | None:
             return title
 
     return None
+
+
+def _extract_watch_track(value: JsonMapping) -> JsonMapping | None:
+    tracks = value.get("tracks")
+    if not isinstance(tracks, list):
+        return None
+
+    for track in tracks:
+        if isinstance(track, dict):
+            return track
+
+    return None
+
+
+def _mapping_str(value: JsonMapping | None, key: str) -> str | None:
+    if value is None:
+        return None
+
+    candidate = value.get(key)
+    if isinstance(candidate, str) and candidate:
+        return candidate
+
+    return None
+
+
+def _mapping_int(value: JsonMapping | None, key: str) -> int | None:
+    if value is None:
+        return None
+
+    candidate = value.get(key)
+    if isinstance(candidate, int):
+        return candidate
+
+    return None
+
+
+def _nested_str(value: object, *path: str) -> str | None:
+    current = value
+    for key in path:
+        if not isinstance(current, dict):
+            return None
+        current = current.get(key)
+
+    if isinstance(current, str) and current:
+        return current
+
+    return None
+
+
+def _coalesce_str(*values: str | None) -> str | None:
+    for value in values:
+        if value:
+            return value
+    return None
+
+
+def _coalesce_int(*values: int | None) -> int | None:
+    for value in values:
+        if value is not None:
+            return value
+    return None
+
+
+def _extract_album(value: object) -> str | None:
+    if isinstance(value, dict):
+        album = value.get("album")
+        if isinstance(album, str) and album:
+            return album
+        if isinstance(album, dict):
+            title = album.get("name") or album.get("title")
+            if isinstance(title, str) and title:
+                return title
+        for nested in value.values():
+            extracted = _extract_album(nested)
+            if extracted is not None:
+                return extracted
+
+    if isinstance(value, list):
+        for item in value:
+            extracted = _extract_album(item)
+            if extracted is not None:
+                return extracted
+
+    return None
+
+
+def _extract_year(value: object) -> int | None:
+    if isinstance(value, dict):
+        year = value.get("year")
+        if isinstance(year, int):
+            return year
+        for nested in value.values():
+            extracted = _extract_year(nested)
+            if extracted is not None:
+                return extracted
+
+    if isinstance(value, list):
+        for item in value:
+            extracted = _extract_year(item)
+            if extracted is not None:
+                return extracted
+
+    return None
+
+
+def _extract_best_thumbnail_url(value: object) -> str | None:
+    best_thumbnail = _extract_best_thumbnail(value)
+    if best_thumbnail is None:
+        return None
+    return best_thumbnail.get("url")
+
+
+def _extract_best_thumbnail(value: object) -> dict[str, object] | None:
+    candidates: list[dict[str, object]] = []
+
+    if isinstance(value, dict):
+        thumbnails = value.get("thumbnails")
+        if isinstance(thumbnails, list):
+            for thumbnail in thumbnails:
+                if (
+                    isinstance(thumbnail, dict)
+                    and isinstance(thumbnail.get("url"), str)
+                    and thumbnail["url"]
+                ):
+                    candidates.append(thumbnail)
+
+        for nested in value.values():
+            nested_best = _extract_best_thumbnail(nested)
+            if nested_best is not None:
+                candidates.append(nested_best)
+
+    if isinstance(value, list):
+        for item in value:
+            nested_best = _extract_best_thumbnail(item)
+            if nested_best is not None:
+                candidates.append(nested_best)
+
+    if not candidates:
+        return None
+
+    return max(candidates, key=_thumbnail_size)
+
+
+def _thumbnail_size(thumbnail: dict[str, object]) -> int:
+    width = thumbnail.get("width")
+    height = thumbnail.get("height")
+    if isinstance(width, int) and isinstance(height, int):
+        return width * height
+    return 0
 
 
 def _extract_isrc(value: object) -> str | None:
