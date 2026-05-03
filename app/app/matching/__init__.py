@@ -4,6 +4,7 @@ import logging
 
 from app.matching.isrc import IsrcMatcher
 from app.matching.models import ConfidenceBand, MatchResult
+from app.matching.tags import TagMatcher
 
 
 logger = logging.getLogger(__name__)
@@ -20,5 +21,6 @@ __all__ = [
     "ConfidenceBand",
     "IsrcMatcher",
     "MatchResult",
+    "TagMatcher",
     "run_matching_pipeline",
 ]

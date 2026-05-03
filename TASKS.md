@@ -2,7 +2,7 @@
 
 - [x] Add `matching/` package under `app/`: `__init__.py`, `models.py` (dataclasses for match result, confidence band enum: high/medium/low)
 - [x] Implement ISRC match step in `matching/isrc.py`: query `streaming_tracks` by ISRC, return high-confidence result when found
-- [ ] Implement fuzzy tag match step in `matching/tags.py`: compare title/artist/album with rapidfuzz, return score; band = high if > 0.85, medium if 0.5–0.85, low if < 0.5
+- [x] Implement fuzzy tag match step in `matching/tags.py`: compare title/artist/album with rapidfuzz, return score; band = high if > 0.85, medium if 0.5–0.85, low if < 0.5
 - [ ] Implement acoustic fingerprint fallback in `matching/acoustic.py`: RQ job that runs fpcalc comparison, triggered only when tag score is below threshold
 - [ ] Implement sequential pipeline orchestrator in `matching/pipeline.py`: ISRC → fuzzy tag → acoustic (enqueue RQ job if low), write result to `suggested_links`
 - [ ] Ensure pipeline is re-runnable per track: clear any existing non-approved `suggested_links` row before writing new result
