@@ -111,7 +111,7 @@ function SidebarSection({
               {item.label}
             </span>
             {item.progress ? (
-              <ProgressBubble complete={item.progress.complete} total={item.progress.total} />
+              <ProgressFraction complete={item.progress.complete} total={item.progress.total} />
             ) : null}
             {item.badge ? (
               <span
@@ -127,19 +127,16 @@ function SidebarSection({
   );
 }
 
-function ProgressBubble({ complete, total }: { complete: number; total: number }) {
+function ProgressFraction({ complete, total }: { complete: number; total: number }) {
   const color = getProgressColor((complete / total) * 100);
 
   return (
-    <span
-      className="rounded-full px-2.5 py-1 text-[11px] font-semibold tabular-nums ring-1 ring-inset"
-      style={{
-        backgroundColor: asRgb(color, 0.14),
-        color: asRgb(color, 1),
-        boxShadow: `inset 0 0 0 1px ${asRgb(color, 0.28)}`,
-      }}
-    >
-      {complete}/{total}
+    <span className="ml-auto flex shrink-0 items-baseline text-[11px] font-semibold tabular-nums">
+      <span className="min-w-[2ch] text-right" style={{ color: asRgb(color, 1) }}>
+        {complete}
+      </span>
+      <span className="px-0.5 text-ctp-overlay1">/</span>
+      <span className="min-w-[2ch] text-left text-ctp-subtext0">{total}</span>
     </span>
   );
 }

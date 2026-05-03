@@ -28,7 +28,8 @@ describe("App", () => {
     expect(screen.getByText("YouTube Music")).toBeInTheDocument();
     expect(screen.getByText("Local Library")).toBeInTheDocument();
     expect(screen.getByText("Link proposals")).toBeInTheDocument();
-    expect(screen.getByText("58/62")).toBeInTheDocument();
+    expect(screen.getByText("58")).toBeInTheDocument();
+    expect(screen.getByText("62")).toBeInTheDocument();
     expect(screen.getByText("312")).toBeInTheDocument();
   });
 

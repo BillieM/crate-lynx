@@ -8,7 +8,7 @@
   - Maintenance section with section label and three nav items: Link proposals (yellow badge 14), Unidentified (red badge 3), Missing locally (overlay badge 28)
   - YouTube Music section with section label and five per-playlist nav items, each with a progress bubble
   - Local Library section with section label and an All tracks nav item (mauve badge 312)
-- [ ] Redesign the progress bubble as a compact sidebar fraction (e.g. `5/62`), right-aligned in the nav item, coloured via the existing lerp helper — remove the large decorative bubble card entirely
+- [x] Redesign the progress bubble as a compact sidebar fraction (e.g. `5/62`), right-aligned in the nav item, coloured via the existing lerp helper — remove the large decorative bubble card entirely
 - [ ] Build the topbar (44px, `mantle` background, `border-bottom: surface0`, flex row, space-between):
   - Left: section icon + title text + context pill (pill-info / pill-pending / pill-lib)
   - Right: action buttons rendered from a per-view config (e.g. Sync + Export M3U for playlist views, empty for maintenance views)
