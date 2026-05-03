@@ -174,6 +174,59 @@ def test_streaming_account_store_upserts_playlists(
     assert stored_playlist_rows[1]["title"] == "Evening Mix"
 
 
+def test_streaming_account_store_updates_playlist_selected_for_sync(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite:///{tmp_path / 'streaming-playlist-selection.db'}"
+    engine = create_engine(database_url)
+    metadata.create_all(engine)
+    monkeypatch.setenv("TOKEN_ENCRYPTION_KEY", Fernet.generate_key().decode("utf-8"))
+
+    store = StreamingAccountStore(database_url)
+    account = store.create_youtube_music_account(
+        display_name="Listener",
+        browser_headers={"refresh_token": "refresh-token"},
+    )
+    playlist = store.upsert_playlists(
+        account_id=account.id,
+        playlists=[
+            YouTubeMusicPlaylist(
+                provider_playlist_id="PL1",
+                title="Morning Mix",
+            )
+        ],
+    )[0]
+
+    assert playlist.selected_for_sync is False
+
+    selected = store.set_playlist_selected_for_sync(
+        playlist_id=playlist.id,
+        selected_for_sync=True,
+    )
+    assert selected is not None
+    assert selected.selected_for_sync is True
+
+    updated = store.upsert_playlists(
+        account_id=account.id,
+        playlists=[
+            YouTubeMusicPlaylist(
+                provider_playlist_id="PL1",
+                title="Morning Mix Updated",
+            )
+        ],
+    )[0]
+
+    assert updated.selected_for_sync is True
+    assert (
+        store.set_playlist_selected_for_sync(
+            playlist_id=999,
+            selected_for_sync=True,
+        )
+        is None
+    )
+
+
 def test_streaming_account_store_syncs_youtube_music_playlists(
     monkeypatch,
     tmp_path: Path,

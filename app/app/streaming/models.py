@@ -3,7 +3,17 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 
-from sqlalchemy import Column, DateTime, Integer, MetaData, String, Table, func
+from sqlalchemy import (
+    Boolean,
+    Column,
+    DateTime,
+    Integer,
+    MetaData,
+    String,
+    Table,
+    false,
+    func,
+)
 
 
 YOUTUBE_MUSIC_PROVIDER = "youtube_music"
@@ -37,6 +47,7 @@ streaming_playlists_table = Table(
     Column("account_id", Integer, nullable=False),
     Column("provider_playlist_id", String, nullable=False),
     Column("title", String, nullable=False),
+    Column("selected_for_sync", Boolean, nullable=False, server_default=false()),
     Column("synced_at", DateTime(timezone=True), nullable=True),
     Column("last_sync_error", String, nullable=True),
     Column("last_sync_error_at", DateTime(timezone=True), nullable=True),
@@ -98,6 +109,7 @@ class StreamingPlaylistRecord:
     account_id: int
     provider_playlist_id: str
     title: str
+    selected_for_sync: bool
     synced_at: datetime | None
     last_sync_error: str | None
     last_sync_error_at: datetime | None
@@ -109,6 +121,7 @@ class StreamingPlaylistSummary:
     account_id: int
     provider_playlist_id: str
     title: str
+    selected_for_sync: bool
     track_count: int
     synced_at: datetime | None
     last_sync_error: str | None

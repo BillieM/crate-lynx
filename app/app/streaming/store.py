@@ -203,6 +203,7 @@ class StreamingAccountStore:
                             streaming_playlists_table.c.account_id,
                             streaming_playlists_table.c.provider_playlist_id,
                             streaming_playlists_table.c.title,
+                            streaming_playlists_table.c.selected_for_sync,
                             streaming_playlists_table.c.synced_at,
                             streaming_playlists_table.c.last_sync_error,
                             streaming_playlists_table.c.last_sync_error_at,
@@ -222,6 +223,7 @@ class StreamingAccountStore:
                             account_id=account_id,
                             provider_playlist_id=playlist.provider_playlist_id,
                             title=playlist.title,
+                            selected_for_sync=False,
                             synced_at=sync_timestamp,
                             last_sync_error=None,
                             last_sync_error_at=None,
@@ -236,6 +238,7 @@ class StreamingAccountStore:
                             account_id=account_id,
                             provider_playlist_id=playlist.provider_playlist_id,
                             title=playlist.title,
+                            selected_for_sync=False,
                             synced_at=sync_timestamp,
                             last_sync_error=None,
                             last_sync_error_at=None,
@@ -257,6 +260,7 @@ class StreamingAccountStore:
                         account_id=existing["account_id"],
                         provider_playlist_id=existing["provider_playlist_id"],
                         title=playlist.title,
+                        selected_for_sync=existing["selected_for_sync"],
                         synced_at=sync_timestamp,
                         last_sync_error=existing["last_sync_error"],
                         last_sync_error_at=existing["last_sync_error_at"],
@@ -273,6 +277,7 @@ class StreamingAccountStore:
                     streaming_playlists_table.c.account_id,
                     streaming_playlists_table.c.provider_playlist_id,
                     streaming_playlists_table.c.title,
+                    streaming_playlists_table.c.selected_for_sync,
                     streaming_playlists_table.c.synced_at,
                     streaming_playlists_table.c.last_sync_error,
                     streaming_playlists_table.c.last_sync_error_at,
@@ -290,6 +295,7 @@ class StreamingAccountStore:
                     streaming_playlists_table.c.account_id,
                     streaming_playlists_table.c.provider_playlist_id,
                     streaming_playlists_table.c.title,
+                    streaming_playlists_table.c.selected_for_sync,
                     streaming_playlists_table.c.synced_at,
                     streaming_playlists_table.c.last_sync_error,
                     streaming_playlists_table.c.last_sync_error_at,
@@ -303,6 +309,7 @@ class StreamingAccountStore:
                     account_id=row["account_id"],
                     provider_playlist_id=row["provider_playlist_id"],
                     title=row["title"],
+                    selected_for_sync=row["selected_for_sync"],
                     track_count=row["track_count"],
                     synced_at=row["synced_at"],
                     last_sync_error=row["last_sync_error"],
@@ -325,6 +332,7 @@ class StreamingAccountStore:
             account_id=playlist.account_id,
             provider_playlist_id=playlist.provider_playlist_id,
             title=playlist.title,
+            selected_for_sync=playlist.selected_for_sync,
             track_count=playlist.track_count,
             synced_at=playlist.synced_at,
             last_sync_error=playlist.last_sync_error,
@@ -334,6 +342,21 @@ class StreamingAccountStore:
             pending_count=counts["pending"],
             unlinked_count=counts["unlinked"],
         )
+
+    def set_playlist_selected_for_sync(
+        self, *, playlist_id: int, selected_for_sync: bool
+    ) -> StreamingPlaylistSummary | None:
+        with self._engine.begin() as connection:
+            result = connection.execute(
+                update(streaming_playlists_table)
+                .where(streaming_playlists_table.c.id == playlist_id)
+                .values(selected_for_sync=selected_for_sync)
+            )
+
+        if result.rowcount == 0:
+            return None
+
+        return self._get_playlist_summary(playlist_id)
 
     def list_playlist_tracks(self, playlist_id: int) -> list[StreamingPlaylistTrack]:
         pending_link_ids = (
@@ -401,6 +424,7 @@ class StreamingAccountStore:
                         streaming_playlists_table.c.account_id,
                         streaming_playlists_table.c.provider_playlist_id,
                         streaming_playlists_table.c.title,
+                        streaming_playlists_table.c.selected_for_sync,
                         streaming_playlists_table.c.synced_at,
                         streaming_playlists_table.c.last_sync_error,
                         streaming_playlists_table.c.last_sync_error_at,
@@ -419,6 +443,7 @@ class StreamingAccountStore:
                         streaming_playlists_table.c.account_id,
                         streaming_playlists_table.c.provider_playlist_id,
                         streaming_playlists_table.c.title,
+                        streaming_playlists_table.c.selected_for_sync,
                         streaming_playlists_table.c.synced_at,
                         streaming_playlists_table.c.last_sync_error,
                         streaming_playlists_table.c.last_sync_error_at,
@@ -436,6 +461,7 @@ class StreamingAccountStore:
             account_id=row["account_id"],
             provider_playlist_id=row["provider_playlist_id"],
             title=row["title"],
+            selected_for_sync=row["selected_for_sync"],
             track_count=row["track_count"],
             synced_at=row["synced_at"],
             last_sync_error=row["last_sync_error"],

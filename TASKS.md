@@ -1,7 +1,7 @@
 # E12 — Backend: configurable per-playlist sync
 
 - [x] Add `selected_for_sync BOOLEAN NOT NULL DEFAULT false` column to `streaming_playlists` via Alembic migration that backfills `true` for any playlist with at least one row in `playlist_membership`
-- [ ] Update the `StreamingPlaylist` SQLAlchemy model to include `selected_for_sync` and any related read/write helpers
+- [x] Update the `StreamingPlaylist` SQLAlchemy model to include `selected_for_sync` and any related read/write helpers
 - [x] Wire `sync_youtube_music_playlists()` (`store.py:577`) as the implementation backing the new metadata-only refresh endpoint instead of introducing a parallel discovery path
 - [ ] Implement `POST /api/streaming/accounts/{id}/refresh-metadata` — discovers playlists only, no track sync
 - [ ] Change `POST /api/streaming/accounts/{id}/sync` semantics to sync tracks only for playlists where `selected_for_sync = true`, updating the underlying job and any internal callers
