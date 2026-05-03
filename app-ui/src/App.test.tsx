@@ -2,11 +2,22 @@ import { render } from "@testing-library/react";
 import App, { asRgb, getProgressColor, lerp, mixColors } from "./App";
 
 describe("App", () => {
-  it("renders an empty placeholder root while the new shell is under construction", () => {
+  it("renders the fixed-height shell container", () => {
     const { container } = render(<App />);
 
     expect(container.firstChild).toHaveClass("text-ctp-text");
-    expect(container.firstChild).toBeEmptyDOMElement();
+
+    const shell = container.querySelector(".bg-ctp-base");
+
+    expect(shell).toHaveClass(
+      "flex",
+      "h-[640px]",
+      "flex-row",
+      "overflow-hidden",
+      "rounded-[12px]",
+      "border",
+      "border-ctp-surface0",
+    );
   });
 
   it("interpolates scalar values with rounding", () => {

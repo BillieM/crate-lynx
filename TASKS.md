@@ -1,7 +1,7 @@
 # E09 — Shell redesign to match mockup
 
 - [x] Delete `SectionView`, `AppShell`, `ShellNavLink`, `appRoutes`, and the full-screen grid layout from `App.tsx` — keep only `lerp`, `getProgressColor`, `asRgb`, `mixColors`, and the color/type helpers
-- [ ] Implement the fixed-height app container: `640px`, `border-radius: 12px`, `overflow: hidden`, flex row, `border: 1px solid surface0`, Catppuccin Mocha `base` background
+- [x] Implement the fixed-height app container: `640px`, `border-radius: 12px`, `overflow: hidden`, flex row, `border: 1px solid surface0`, Catppuccin Mocha `base` background
 - [ ] Build the sidebar (220px, `mantle` background, flex column, `border-right: surface0`):
   - Logo/brand header: icon + "MUSEBRIDGE" wordmark in `mauve`, with `surface0` bottom border
   - Inline search bar below logo (not in topbar): `surface0` background, `subtext0` placeholder text

@@ -45,7 +45,13 @@ export function asRgb(color: RgbColor, alpha = 1) {
 }
 
 function App() {
-  return <div className="text-ctp-text" />;
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-transparent px-6 py-10 text-ctp-text">
+      <div
+        className="flex h-[640px] w-full max-w-[1280px] flex-row overflow-hidden rounded-[12px] border border-ctp-surface0 bg-ctp-base shadow-[0_32px_120px_rgba(17,17,27,0.45)]"
+      />
+    </div>
+  );
 }
 
 export default App;
