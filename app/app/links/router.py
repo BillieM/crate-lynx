@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, HTTPException
 from sqlalchemy import and_, create_engine, insert, select, update
@@ -12,6 +13,7 @@ from app.local_tracks.store import local_tracks_table
 from app.matching.models import ConfidenceBand
 from app.matching.pipeline import (
     SUGGESTED_LINK_STATUS_APPROVED,
+    SUGGESTED_LINK_STATUS_REJECTED,
     suggested_links_table,
 )
 from app.streaming.models import streaming_tracks_table
@@ -120,6 +122,40 @@ def create_router(*, require_database_url: Callable[[], str]) -> APIRouter:
             "proposal_id": proposal_id,
             "final_link_id": final_link_id,
             "status": SUGGESTED_LINK_STATUS_APPROVED,
+        }
+
+    @router.post("/proposals/{proposal_id}/reject")
+    async def reject_proposal(proposal_id: int) -> dict[str, object]:
+        engine = create_engine(require_database_url())
+        rejected_at = datetime.now(UTC)
+
+        with engine.begin() as connection:
+            proposal = (
+                connection.execute(
+                    select(suggested_links_table.c.id).where(
+                        suggested_links_table.c.id == proposal_id
+                    )
+                )
+                .mappings()
+                .one_or_none()
+            )
+
+            if proposal is None:
+                raise HTTPException(status_code=404, detail="Proposal not found")
+
+            connection.execute(
+                update(suggested_links_table)
+                .where(suggested_links_table.c.id == proposal_id)
+                .values(
+                    status=SUGGESTED_LINK_STATUS_REJECTED,
+                    rejected_at=rejected_at,
+                )
+            )
+
+        return {
+            "proposal_id": proposal_id,
+            "status": SUGGESTED_LINK_STATUS_REJECTED,
+            "rejected_at": rejected_at.isoformat(),
         }
 
     return router

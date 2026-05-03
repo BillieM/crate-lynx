@@ -31,6 +31,7 @@ logger = logging.getLogger(__name__)
 
 SUGGESTED_LINK_STATUS_PENDING = "pending"
 SUGGESTED_LINK_STATUS_APPROVED = "approved"
+SUGGESTED_LINK_STATUS_REJECTED = "rejected"
 
 metadata = MetaData()
 
