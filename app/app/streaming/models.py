@@ -38,6 +38,8 @@ streaming_playlists_table = Table(
     Column("provider_playlist_id", String, nullable=False),
     Column("title", String, nullable=False),
     Column("synced_at", DateTime(timezone=True), nullable=True),
+    Column("last_sync_error", String, nullable=True),
+    Column("last_sync_error_at", DateTime(timezone=True), nullable=True),
 )
 
 streaming_tracks_table = Table(
@@ -97,6 +99,8 @@ class StreamingPlaylistRecord:
     provider_playlist_id: str
     title: str
     synced_at: datetime | None
+    last_sync_error: str | None
+    last_sync_error_at: datetime | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -107,6 +111,8 @@ class StreamingPlaylistSummary:
     title: str
     track_count: int
     synced_at: datetime | None
+    last_sync_error: str | None
+    last_sync_error_at: datetime | None
 
 
 @dataclass(frozen=True, slots=True)

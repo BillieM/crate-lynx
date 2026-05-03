@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from types import SimpleNamespace
 
 import pytest
@@ -759,6 +760,11 @@ def test_sync_library_playlist_tracks_skips_malformed_playlist_payload() -> None
             seen["replaced_playlist_ids"].append(playlist_id)
             return [f"membership-{playlist_id}"]
 
+        def mark_playlist_sync_failure(self, *, playlist_id, error, failed_at):
+            seen["failed_playlist_id"] = playlist_id
+            seen["failure_error"] = error
+            seen["failed_at"] = failed_at
+
     class FakeAdapter:
         def list_library_playlists(self):
             return [
@@ -789,6 +795,9 @@ def test_sync_library_playlist_tracks_skips_malformed_playlist_payload() -> None
 
     assert result == ["membership-12"]
     assert seen["replaced_playlist_ids"] == [12]
+    assert seen["failed_playlist_id"] == 11
+    assert seen["failure_error"] == "invalid tracks payload"
+    assert isinstance(seen["failed_at"], datetime)
 
 
 def test_sync_library_playlist_tracks_isolates_playlist_failures() -> None:
@@ -804,6 +813,11 @@ def test_sync_library_playlist_tracks_isolates_playlist_failures() -> None:
         def replace_playlist_membership(self, *, playlist_id, tracks):
             seen["replaced_playlist_ids"].append(playlist_id)
             return [f"membership-{playlist_id}"]
+
+        def mark_playlist_sync_failure(self, *, playlist_id, error, failed_at):
+            seen["failed_playlist_id"] = playlist_id
+            seen["failure_error"] = error
+            seen["failed_at"] = failed_at
 
     class FakeAdapter:
         def list_library_playlists(self):
@@ -834,4 +848,7 @@ def test_sync_library_playlist_tracks_isolates_playlist_failures() -> None:
     )
 
     assert result == ["membership-12"]
+    assert seen["failed_playlist_id"] == 11
+    assert seen["failure_error"] == "upstream request failed"
+    assert isinstance(seen["failed_at"], datetime)
     assert seen["replaced_playlist_ids"] == [12]

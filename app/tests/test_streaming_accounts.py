@@ -283,6 +283,48 @@ def test_streaming_account_store_lists_playlists_with_track_counts(
     assert listed[1].synced_at == synced_at.replace(tzinfo=None)
 
 
+def test_streaming_account_store_persists_playlist_sync_failures(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite:///{tmp_path / 'streaming-playlist-failures.db'}"
+    engine = create_engine(database_url)
+    metadata.create_all(engine)
+    monkeypatch.setenv("TOKEN_ENCRYPTION_KEY", Fernet.generate_key().decode("utf-8"))
+
+    store = StreamingAccountStore(database_url)
+    account = store.create_youtube_music_account(
+        display_name="Listener",
+        browser_headers={"refresh_token": "refresh-token"},
+    )
+    playlist = store.upsert_playlists(
+        account_id=account.id,
+        playlists=[
+            YouTubeMusicPlaylist(
+                provider_playlist_id="PL1",
+                title="Morning Mix",
+            )
+        ],
+    )[0]
+    failed_at = datetime(2026, 5, 2, 11, 45, tzinfo=UTC)
+
+    store.mark_playlist_sync_failure(
+        playlist_id=playlist.id,
+        error="invalid tracks payload",
+        failed_at=failed_at,
+    )
+
+    failed_playlist = store.list_playlists()[0]
+    assert failed_playlist.last_sync_error == "invalid tracks payload"
+    assert failed_playlist.last_sync_error_at == failed_at.replace(tzinfo=None)
+
+    store.clear_playlist_sync_failure(playlist_id=playlist.id)
+
+    recovered_playlist = store.list_playlists()[0]
+    assert recovered_playlist.last_sync_error is None
+    assert recovered_playlist.last_sync_error_at is None
+
+
 def test_streaming_account_store_upserts_tracks_and_playlist_membership(
     monkeypatch,
     tmp_path: Path,

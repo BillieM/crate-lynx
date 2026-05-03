@@ -53,6 +53,12 @@ def create_router(
                 if playlist.synced_at is not None
                 else None
             ),
+            last_sync_error=playlist.last_sync_error,
+            last_sync_error_at=(
+                playlist.last_sync_error_at.isoformat()
+                if playlist.last_sync_error_at is not None
+                else None
+            ),
         )
 
     def serialize_playlist_detail(playlist: object) -> PlaylistDetailResponse:
@@ -70,6 +76,12 @@ def create_router(
                 synced_at=(
                     playlist.synced_at.isoformat()
                     if playlist.synced_at is not None
+                    else None
+                ),
+                last_sync_error=playlist.last_sync_error,
+                last_sync_error_at=(
+                    playlist.last_sync_error_at.isoformat()
+                    if playlist.last_sync_error_at is not None
                     else None
                 ),
             )

@@ -299,14 +299,27 @@ def sync_library_playlist_tracks(
                     tracks=tracks,
                 )
             )
-        except MalformedPlaylistPayloadError:
+            _clear_playlist_sync_failure(playlist_store, playlist_id=playlist.id)
+        except MalformedPlaylistPayloadError as exc:
+            _mark_playlist_sync_failure(
+                playlist_store,
+                playlist_id=playlist.id,
+                error=str(exc),
+                failed_at=datetime.now(UTC),
+            )
             logger.warning(
                 "Skipping YouTube Music playlist %s because its track payload is malformed",
                 playlist.provider_playlist_id,
                 exc_info=True,
             )
             continue
-        except Exception:
+        except Exception as exc:
+            _mark_playlist_sync_failure(
+                playlist_store,
+                playlist_id=playlist.id,
+                error=_format_sync_failure(exc),
+                failed_at=datetime.now(UTC),
+            )
             logger.exception(
                 "Skipping YouTube Music playlist %s after sync failed",
                 playlist.provider_playlist_id,
@@ -314,6 +327,31 @@ def sync_library_playlist_tracks(
             continue
 
     return synced_memberships
+
+
+def _mark_playlist_sync_failure(
+    playlist_store: Any,
+    *,
+    playlist_id: int,
+    error: str,
+    failed_at: datetime,
+) -> None:
+    marker = getattr(playlist_store, "mark_playlist_sync_failure", None)
+    if marker is not None:
+        marker(playlist_id=playlist_id, error=error, failed_at=failed_at)
+
+
+def _clear_playlist_sync_failure(playlist_store: Any, *, playlist_id: int) -> None:
+    clearer = getattr(playlist_store, "clear_playlist_sync_failure", None)
+    if clearer is not None:
+        clearer(playlist_id=playlist_id)
+
+
+def _format_sync_failure(exc: Exception) -> str:
+    message = str(exc)
+    if message:
+        return message
+    return exc.__class__.__name__
 
 
 def _normalize_artist(track: JsonMapping) -> str | None:

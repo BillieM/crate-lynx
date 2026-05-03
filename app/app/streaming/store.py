@@ -204,6 +204,8 @@ class StreamingAccountStore:
                             streaming_playlists_table.c.provider_playlist_id,
                             streaming_playlists_table.c.title,
                             streaming_playlists_table.c.synced_at,
+                            streaming_playlists_table.c.last_sync_error,
+                            streaming_playlists_table.c.last_sync_error_at,
                         ).where(
                             streaming_playlists_table.c.account_id == account_id,
                             streaming_playlists_table.c.provider_playlist_id
@@ -221,6 +223,8 @@ class StreamingAccountStore:
                             provider_playlist_id=playlist.provider_playlist_id,
                             title=playlist.title,
                             synced_at=sync_timestamp,
+                            last_sync_error=None,
+                            last_sync_error_at=None,
                         )
                     )
                     playlist_id = result.inserted_primary_key[0]
@@ -233,6 +237,8 @@ class StreamingAccountStore:
                             provider_playlist_id=playlist.provider_playlist_id,
                             title=playlist.title,
                             synced_at=sync_timestamp,
+                            last_sync_error=None,
+                            last_sync_error_at=None,
                         )
                     )
                     continue
@@ -252,6 +258,8 @@ class StreamingAccountStore:
                         provider_playlist_id=existing["provider_playlist_id"],
                         title=playlist.title,
                         synced_at=sync_timestamp,
+                        last_sync_error=existing["last_sync_error"],
+                        last_sync_error_at=existing["last_sync_error_at"],
                     )
                 )
 
@@ -266,6 +274,8 @@ class StreamingAccountStore:
                     streaming_playlists_table.c.provider_playlist_id,
                     streaming_playlists_table.c.title,
                     streaming_playlists_table.c.synced_at,
+                    streaming_playlists_table.c.last_sync_error,
+                    streaming_playlists_table.c.last_sync_error_at,
                     func.count(playlist_membership_table.c.id).label("track_count"),
                 )
                 .select_from(
@@ -281,6 +291,8 @@ class StreamingAccountStore:
                     streaming_playlists_table.c.provider_playlist_id,
                     streaming_playlists_table.c.title,
                     streaming_playlists_table.c.synced_at,
+                    streaming_playlists_table.c.last_sync_error,
+                    streaming_playlists_table.c.last_sync_error_at,
                 )
                 .order_by(streaming_playlists_table.c.id.asc())
             ).mappings()
@@ -293,6 +305,8 @@ class StreamingAccountStore:
                     title=row["title"],
                     track_count=row["track_count"],
                     synced_at=row["synced_at"],
+                    last_sync_error=row["last_sync_error"],
+                    last_sync_error_at=row["last_sync_error_at"],
                 )
                 for row in rows
             ]
@@ -313,6 +327,8 @@ class StreamingAccountStore:
             title=playlist.title,
             track_count=playlist.track_count,
             synced_at=playlist.synced_at,
+            last_sync_error=playlist.last_sync_error,
+            last_sync_error_at=playlist.last_sync_error_at,
             cover_art_url=None,
             linked_count=counts["linked"],
             pending_count=counts["pending"],
@@ -386,6 +402,8 @@ class StreamingAccountStore:
                         streaming_playlists_table.c.provider_playlist_id,
                         streaming_playlists_table.c.title,
                         streaming_playlists_table.c.synced_at,
+                        streaming_playlists_table.c.last_sync_error,
+                        streaming_playlists_table.c.last_sync_error_at,
                         func.count(playlist_membership_table.c.id).label("track_count"),
                     )
                     .select_from(
@@ -402,6 +420,8 @@ class StreamingAccountStore:
                         streaming_playlists_table.c.provider_playlist_id,
                         streaming_playlists_table.c.title,
                         streaming_playlists_table.c.synced_at,
+                        streaming_playlists_table.c.last_sync_error,
+                        streaming_playlists_table.c.last_sync_error_at,
                     )
                 )
                 .mappings()
@@ -418,6 +438,8 @@ class StreamingAccountStore:
             title=row["title"],
             track_count=row["track_count"],
             synced_at=row["synced_at"],
+            last_sync_error=row["last_sync_error"],
+            last_sync_error_at=row["last_sync_error_at"],
         )
 
     def _playlist_track_from_row(
@@ -573,6 +595,34 @@ class StreamingAccountStore:
                 )
 
         return membership_rows
+
+    def mark_playlist_sync_failure(
+        self,
+        *,
+        playlist_id: int,
+        error: str,
+        failed_at: datetime | None = None,
+    ) -> None:
+        with self._engine.begin() as connection:
+            connection.execute(
+                update(streaming_playlists_table)
+                .where(streaming_playlists_table.c.id == playlist_id)
+                .values(
+                    last_sync_error=error,
+                    last_sync_error_at=failed_at or datetime.now(UTC),
+                )
+            )
+
+    def clear_playlist_sync_failure(self, *, playlist_id: int) -> None:
+        with self._engine.begin() as connection:
+            connection.execute(
+                update(streaming_playlists_table)
+                .where(streaming_playlists_table.c.id == playlist_id)
+                .values(
+                    last_sync_error=None,
+                    last_sync_error_at=None,
+                )
+            )
 
     def sync_youtube_music_playlists(
         self,

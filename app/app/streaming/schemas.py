@@ -19,6 +19,8 @@ class StreamingPlaylistResponse(BaseModel):
     title: str
     track_count: int
     synced_at: str | None
+    last_sync_error: str | None
+    last_sync_error_at: str | None
 
 
 class PlaylistDetail(BaseModel):
@@ -32,6 +34,8 @@ class PlaylistDetail(BaseModel):
     pending_count: int
     unlinked_count: int
     synced_at: str | None
+    last_sync_error: str | None
+    last_sync_error_at: str | None
 
 
 class PlaylistDetailResponse(BaseModel):
