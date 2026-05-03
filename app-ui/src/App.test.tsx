@@ -1,7 +1,11 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import App, { asRgb, getProgressColor, lerp, mixColors } from "./App";
-import type { PlaylistDetailResponse, PlaylistTracksResponse } from "./features/playlists/queries";
+import type {
+  PlaylistDetailResponse,
+  PlaylistTracksResponse,
+  StreamingPlaylistsResponse,
+} from "./features/playlists/queries";
 
 const playlistDetailResponse: PlaylistDetailResponse = {
   playlist: {
@@ -63,11 +67,32 @@ const playlistTracksResponse: PlaylistTracksResponse = {
 };
 
 const secondaryPlaylistFixtures = [
-  { id: 9, name: "Static Bloom", trackTitle: "Bloom Protocol", viewId: "playlist2" },
-  { id: 14, name: "Afterglow", trackTitle: "Afterimage Delay", viewId: "playlist3" },
-  { id: 18, name: "Signal Loss", trackTitle: "Packet Fade", viewId: "playlist4" },
-  { id: 27, name: "Chrome Hearts", trackTitle: "Mirror Finish", viewId: "playlist5" },
+  { id: 9, name: "Static Bloom", trackTitle: "Bloom Protocol", viewId: "playlist-9" },
+  { id: 14, name: "Afterglow", trackTitle: "Afterimage Delay", viewId: "playlist-14" },
+  { id: 18, name: "Signal Loss", trackTitle: "Packet Fade", viewId: "playlist-18" },
+  { id: 27, name: "Chrome Hearts", trackTitle: "Mirror Finish", viewId: "playlist-27" },
 ] as const;
+
+const streamingPlaylistsResponse: StreamingPlaylistsResponse = {
+  playlists: [
+    {
+      id: 12,
+      account_id: 4,
+      provider_playlist_id: "PL12",
+      title: "Late Night Drive",
+      track_count: 62,
+      synced_at: "2026-05-01T09:00:00Z",
+    },
+    ...secondaryPlaylistFixtures.map(({ id, name }) => ({
+      id,
+      account_id: id + 100,
+      provider_playlist_id: `PL${id}`,
+      title: name,
+      track_count: 1,
+      synced_at: "2026-05-01T09:00:00Z",
+    })),
+  ],
+};
 
 function buildPlaylistDetail(id: number, name: string): PlaylistDetailResponse {
   return {
@@ -113,6 +138,13 @@ function mockPlaylistFetch() {
   return vi.spyOn(globalThis, "fetch").mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     const playlistEndpointMatch = url.match(/^\/api\/playlists\/(\d+)(\/tracks|\/m3u)?$/);
+
+    if (url === "/api/streaming/playlists") {
+      return {
+        ok: true,
+        json: async () => streamingPlaylistsResponse,
+      } as Response;
+    }
 
     if (playlistEndpointMatch) {
       const [, playlistId, suffix] = playlistEndpointMatch;
@@ -178,7 +210,8 @@ describe("App", () => {
     vi.useRealTimers();
   });
 
-  it("renders the fixed-height shell container, sidebar scaffold, and topbar", () => {
+  it("renders the fixed-height shell container, sidebar scaffold, and topbar", async () => {
+    mockPlaylistFetch();
     const { container } = renderApp();
 
     expect(container.firstChild).toHaveClass("flex", "flex-1", "flex-row", "overflow-hidden", "bg-ctp-base", "text-ctp-text");
@@ -196,7 +229,7 @@ describe("App", () => {
     expect(screen.getByText("YouTube Music")).toBeInTheDocument();
     expect(screen.getByText("Local Library")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Link proposals/i })).toBeInTheDocument();
-    expect(screen.getByText("58")).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /Late Night Drive/i })).toBeInTheDocument();
     expect(screen.getByText("62")).toBeInTheDocument();
     expect(screen.getByText("312")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Link proposals" })).toBeInTheDocument();
@@ -207,24 +240,25 @@ describe("App", () => {
       "proposals",
       "unidentified",
       "missing",
-      "playlist",
-      "playlist2",
-      "playlist3",
-      "playlist4",
-      "playlist5",
+      "playlist-12",
+      "playlist-9",
+      "playlist-14",
+      "playlist-18",
+      "playlist-27",
       "library",
     ]) {
       expect(document.getElementById(viewId)).toBeInTheDocument();
     }
   });
 
-  it("updates the topbar config when a playlist nav item is selected", () => {
+  it("updates the topbar config when a playlist nav item is selected", async () => {
     mockPlaylistFetch();
 
     renderApp();
 
     expect(document.getElementById("proposals")).toHaveAttribute("data-view-active", "true");
-    expect(document.getElementById("playlist")).toHaveAttribute("data-view-active", "false");
+    expect(await screen.findByRole("button", { name: /Late Night Drive/i })).toBeInTheDocument();
+    expect(document.getElementById("playlist-12")).toHaveAttribute("data-view-active", "false");
 
     fireEvent.click(screen.getByRole("button", { name: /Late Night Drive/i }));
 
@@ -234,14 +268,14 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: "Sync" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Export M3U" })).toBeInTheDocument();
     expect(document.getElementById("proposals")).toHaveAttribute("data-view-active", "false");
-    expect(document.getElementById("playlist")).toHaveAttribute("data-view-active", "true");
+    expect(document.getElementById("playlist-12")).toHaveAttribute("data-view-active", "true");
   });
 
   it("renders the playlist view inside the active playlist shell", async () => {
     const fetchMock = mockPlaylistFetch();
 
     renderApp();
-    fireEvent.click(screen.getByRole("button", { name: /Late Night Drive/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /Late Night Drive/i }));
 
     expect(await screen.findByRole("img", { name: "Late Night Drive cover art" })).toBeInTheDocument();
     expect(screen.getByText("Playlist overview")).toBeInTheDocument();
@@ -260,7 +294,7 @@ describe("App", () => {
     renderApp();
 
     for (const playlist of secondaryPlaylistFixtures) {
-      fireEvent.click(screen.getByRole("button", { name: new RegExp(playlist.name, "i") }));
+      fireEvent.click(await screen.findByRole("button", { name: new RegExp(playlist.name, "i") }));
 
       expect(await screen.findByRole("img", { name: `${playlist.name} cover art` })).toBeInTheDocument();
       expect(screen.getByRole("heading", { level: 2, name: playlist.name })).toBeInTheDocument();
@@ -276,7 +310,7 @@ describe("App", () => {
     const fetchMock = mockPlaylistFetch();
 
     renderApp();
-    fireEvent.click(screen.getByRole("button", { name: /Late Night Drive/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /Late Night Drive/i }));
 
     const syncButton = await screen.findByRole("button", { name: "Sync" });
     await waitFor(() => {
@@ -307,7 +341,7 @@ describe("App", () => {
     });
 
     renderApp();
-    fireEvent.click(screen.getByRole("button", { name: /Late Night Drive/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /Late Night Drive/i }));
 
     const exportButton = await screen.findByRole("button", { name: "Export M3U" });
     fireEvent.click(exportButton);
@@ -326,7 +360,7 @@ describe("App", () => {
     mockPlaylistFetch();
 
     renderApp();
-    fireEvent.click(screen.getByRole("button", { name: /Late Night Drive/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /Late Night Drive/i }));
 
     expect(await screen.findByText("Night Runner")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /Pending/i }));
@@ -338,28 +372,39 @@ describe("App", () => {
   });
 
   it("debounces sidebar search requests and renders compact results", async () => {
-    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({
-      ok: true,
-      json: async () => ({
-        query: "mix",
-        results: [
-          {
-            id: 1,
-            kind: "playlist",
-            title: "Morning Mix",
-            subtitle: "Playlist • 12 tracks",
-            route_path: "/youtube-music",
-          },
-          {
-            id: 2,
-            kind: "local_track",
-            title: "Mixdown.mp3",
-            subtitle: "Local file • Artist/Mixdown.mp3",
-            route_path: "/local-library",
-          },
-        ],
-      }),
-    } as Response);
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async (input: RequestInfo | URL) => {
+      const url = String(input);
+
+      if (url === "/api/streaming/playlists") {
+        return {
+          ok: true,
+          json: async () => ({ playlists: [] }),
+        } as Response;
+      }
+
+      return {
+        ok: true,
+        json: async () => ({
+          query: "mix",
+          results: [
+            {
+              id: 1,
+              kind: "playlist",
+              title: "Morning Mix",
+              subtitle: "Playlist • 12 tracks",
+              route_path: "/youtube-music",
+            },
+            {
+              id: 2,
+              kind: "local_track",
+              title: "Mixdown.mp3",
+              subtitle: "Local file • Artist/Mixdown.mp3",
+              route_path: "/local-library",
+            },
+          ],
+        }),
+      } as Response;
+    });
 
     renderApp();
 
@@ -367,7 +412,7 @@ describe("App", () => {
       target: { value: "mix" },
     });
 
-    expect(fetchMock).not.toHaveBeenCalled();
+    expect(fetchMock).not.toHaveBeenCalledWith("/api/search?q=mix");
 
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith("/api/search?q=mix");

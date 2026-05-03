@@ -5,9 +5,11 @@ import type { PropsWithChildren } from "react";
 import {
   exportPlaylistM3u,
   fetchPlaylistDetail,
+  fetchStreamingPlaylists,
   fetchPlaylistTracks,
   playlistQueryKeys,
   usePlaylistDetailQuery,
+  useStreamingPlaylistsQuery,
   usePlaylistTracksQuery,
 } from "./queries";
 
@@ -33,6 +35,7 @@ describe("playlist queries", () => {
   it("builds stable query keys per playlist resource", () => {
     expect(playlistQueryKeys.all).toEqual(["playlists"]);
     expect(playlistQueryKeys.detail(12)).toEqual(["playlists", 12, "detail"]);
+    expect(playlistQueryKeys.list()).toEqual(["playlists", "list"]);
     expect(playlistQueryKeys.tracks(12)).toEqual(["playlists", 12, "tracks"]);
   });
 
@@ -114,6 +117,38 @@ describe("playlist queries", () => {
     expect(fetchMock).toHaveBeenCalledWith("/api/playlists/12/tracks");
   });
 
+  it("fetches synced streaming playlists for sidebar navigation", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        playlists: [
+          {
+            id: 12,
+            account_id: 4,
+            provider_playlist_id: "PL12",
+            title: "Late Night Drive",
+            track_count: 62,
+            synced_at: "2026-05-01T09:00:00",
+          },
+        ],
+      }),
+    } as Response);
+
+    await expect(fetchStreamingPlaylists()).resolves.toEqual({
+      playlists: [
+        {
+          id: 12,
+          account_id: 4,
+          provider_playlist_id: "PL12",
+          title: "Late Night Drive",
+          track_count: 62,
+          synced_at: "2026-05-01T09:00:00",
+        },
+      ],
+    });
+    expect(fetchMock).toHaveBeenCalledWith("/api/streaming/playlists");
+  });
+
   it("exports a playlist M3U blob and filename", async () => {
     const blob = new Blob(["#EXTM3U\n/library/open-road.flac\n"], { type: "audio/x-mpegurl" });
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({
@@ -170,6 +205,38 @@ describe("playlist queries", () => {
     });
 
     expect(result.current.data?.playlist.name).toBe("Static Bloom");
+  });
+
+  it("runs the streaming playlists hook and returns sidebar playlist rows", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        playlists: [
+          {
+            id: 9,
+            account_id: 1,
+            provider_playlist_id: "PL9",
+            title: "Static Bloom",
+            track_count: 41,
+            synced_at: null,
+          },
+        ],
+      }),
+    } as Response);
+
+    const { result } = renderHook(() => useStreamingPlaylistsQuery(), {
+      wrapper: createWrapper(),
+    });
+
+    await waitFor(() => {
+      expect(result.current.isSuccess).toBe(true);
+    });
+
+    expect(result.current.data?.playlists[0]).toMatchObject({
+      id: 9,
+      title: "Static Bloom",
+      track_count: 41,
+    });
   });
 
   it("runs the tracks hook and returns playlist rows", async () => {

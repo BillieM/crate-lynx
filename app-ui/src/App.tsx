@@ -8,7 +8,9 @@ import { PlaylistTrackActions } from "./features/playlists/PlaylistTrackActions"
 import { PlaylistTrackRow } from "./features/playlists/PlaylistTrackRow";
 import {
   exportPlaylistM3u,
+  type StreamingPlaylist,
   usePlaylistDetailQuery,
+  useStreamingPlaylistsQuery,
   usePlaylistTracksQuery,
 } from "./features/playlists/queries";
 import {
@@ -108,19 +110,11 @@ const maintenanceItems: NavItem[] = [
   { id: "missing", label: "Missing locally", badge: 28, tone: "accent" },
 ];
 
-const playlistItems: NavItem[] = [
-  { id: "playlist", label: "Late Night Drive", progress: { complete: 58, total: 62 }, tone: "linked" },
-  { id: "playlist2", label: "Static Bloom", progress: { complete: 24, total: 41 }, tone: "pending" },
-  { id: "playlist3", label: "Afterglow", progress: { complete: 19, total: 36 }, tone: "pending" },
-  { id: "playlist4", label: "Signal Loss", progress: { complete: 11, total: 29 }, tone: "unlinked" },
-  { id: "playlist5", label: "Chrome Hearts", progress: { complete: 33, total: 54 }, tone: "linked" },
-];
-
 const libraryItems: NavItem[] = [
   { id: "library", label: "All tracks", badge: 312, tone: "accent" },
 ];
 
-const viewConfigs = [
+const baseViewConfigs = [
   {
     id: "proposals",
     title: "Link proposals",
@@ -146,51 +140,6 @@ const viewConfigs = [
     icon: "spark",
   },
   {
-    id: "playlist",
-    title: "Late Night Drive",
-    pillLabel: "YouTube Music",
-    pillTone: "pill-info",
-    playlistResourceId: 12,
-    actionLabels: ["Sync", "Export M3U"],
-    icon: "playlist",
-  },
-  {
-    id: "playlist2",
-    title: "Static Bloom",
-    pillLabel: "YouTube Music",
-    pillTone: "pill-info",
-    playlistResourceId: 9,
-    actionLabels: ["Sync", "Export M3U"],
-    icon: "playlist",
-  },
-  {
-    id: "playlist3",
-    title: "Afterglow",
-    pillLabel: "YouTube Music",
-    pillTone: "pill-info",
-    playlistResourceId: 14,
-    actionLabels: ["Sync", "Export M3U"],
-    icon: "playlist",
-  },
-  {
-    id: "playlist4",
-    title: "Signal Loss",
-    pillLabel: "YouTube Music",
-    pillTone: "pill-info",
-    playlistResourceId: 18,
-    actionLabels: ["Sync", "Export M3U"],
-    icon: "playlist",
-  },
-  {
-    id: "playlist5",
-    title: "Chrome Hearts",
-    pillLabel: "YouTube Music",
-    pillTone: "pill-info",
-    playlistResourceId: 27,
-    actionLabels: ["Sync", "Export M3U"],
-    icon: "playlist",
-  },
-  {
     id: "library",
     title: "All tracks",
     pillLabel: "Local library",
@@ -200,28 +149,42 @@ const viewConfigs = [
   },
 ] satisfies ViewConfig[];
 
-const viewConfigById = Object.fromEntries(viewConfigs.map((view) => [view.id, view])) as Record<
-  ViewConfig["id"],
-  ViewConfig
->;
-
-const viewShellIds = [
-  "proposals",
-  "unidentified",
-  "missing",
-  "playlist",
-  "playlist2",
-  "playlist3",
-  "playlist4",
-  "playlist5",
-  "library",
-] satisfies ViewConfig["id"][];
+const emptyStreamingPlaylists: StreamingPlaylist[] = [];
 
 const searchKindLabels: Record<SearchResult["kind"], string> = {
   playlist: "Playlist",
   streaming_track: "Streaming",
   local_track: "Local",
 };
+
+function getPlaylistViewId(playlistId: number) {
+  return `playlist-${playlistId}`;
+}
+
+function getPlaylistTone(playlist: StreamingPlaylist): NavItem["tone"] {
+  return playlist.track_count > 0 ? "accent" : "unlinked";
+}
+
+function buildPlaylistNavItems(playlists: StreamingPlaylist[]): NavItem[] {
+  return playlists.map((playlist) => ({
+    id: getPlaylistViewId(playlist.id),
+    label: playlist.title,
+    badge: playlist.track_count,
+    tone: getPlaylistTone(playlist),
+  }));
+}
+
+function buildPlaylistViewConfigs(playlists: StreamingPlaylist[]): ViewConfig[] {
+  return playlists.map((playlist) => ({
+    id: getPlaylistViewId(playlist.id),
+    title: playlist.title,
+    pillLabel: "YouTube Music",
+    pillTone: "pill-info",
+    playlistResourceId: playlist.id,
+    actionLabels: ["Sync", "Export M3U"],
+    icon: "playlist",
+  }));
+}
 
 function useDebouncedValue(value: string, delayMs: number) {
   const [debouncedValue, setDebouncedValue] = useState(value);
@@ -344,11 +307,13 @@ function TopbarIcon({ icon }: { icon: ViewConfig["icon"] }) {
 
 function SidebarSection({
   activeItemId,
+  emptyMessage,
   items,
   onSelect,
   title,
 }: {
   activeItemId: string;
+  emptyMessage?: string;
   items: NavItem[];
   onSelect: (itemId: string) => void;
   title: string;
@@ -359,6 +324,9 @@ function SidebarSection({
         {title}
       </h2>
       <div className="space-y-1.5">
+        {items.length === 0 && emptyMessage ? (
+          <p className="px-4 py-2.5 text-[12px] text-ctp-subtext0">{emptyMessage}</p>
+        ) : null}
         {items.map((item) => (
           <button
             key={item.id}
@@ -652,9 +620,9 @@ function ViewShell({
   playlistResourceId,
   viewId,
 }: {
-  activeViewId: ViewConfig["id"];
+  activeViewId: string;
   playlistResourceId?: number;
-  viewId: ViewConfig["id"];
+  viewId: string;
 }) {
   const isActive = activeViewId === viewId;
 
@@ -677,8 +645,25 @@ function ViewShell({
 }
 
 function App() {
-  const [activeViewId, setActiveViewId] = useState<ViewConfig["id"]>("proposals");
-  const activeView = viewConfigById[activeViewId];
+  const [activeViewId, setActiveViewId] = useState("proposals");
+  const playlistsQuery = useStreamingPlaylistsQuery();
+  const streamingPlaylists = playlistsQuery.data?.playlists ?? emptyStreamingPlaylists;
+  const playlistItems = useMemo(() => buildPlaylistNavItems(streamingPlaylists), [streamingPlaylists]);
+  const viewConfigs = useMemo(
+    () => [...baseViewConfigs, ...buildPlaylistViewConfigs(streamingPlaylists)],
+    [streamingPlaylists],
+  );
+  const viewConfigById = useMemo(
+    () => Object.fromEntries(viewConfigs.map((view) => [view.id, view])) as Record<string, ViewConfig>,
+    [viewConfigs],
+  );
+  const activeView = viewConfigById[activeViewId] ?? viewConfigById.proposals;
+  const viewShellIds = useMemo(() => viewConfigs.map((view) => view.id), [viewConfigs]);
+  const playlistEmptyMessage = playlistsQuery.isPending
+    ? "Loading playlists..."
+    : playlistsQuery.isError
+      ? "Playlists unavailable."
+    : "No synced playlists found.";
 
   return (
     <div className="flex flex-1 flex-row overflow-hidden bg-ctp-base text-ctp-text">
@@ -730,6 +715,7 @@ function App() {
             />
             <SidebarSection
               activeItemId={activeViewId}
+              emptyMessage={playlistEmptyMessage}
               items={playlistItems}
               onSelect={setActiveViewId}
               title="YouTube Music"

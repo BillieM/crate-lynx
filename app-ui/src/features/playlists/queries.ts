@@ -15,6 +15,15 @@ export type PlaylistDetail = {
   unlinked_count: number;
 };
 
+export type StreamingPlaylist = {
+  account_id: number;
+  id: number;
+  provider_playlist_id: string;
+  synced_at: string | null;
+  title: string;
+  track_count: number;
+};
+
 export type PlaylistTrack = {
   album: string | null;
   artist: string;
@@ -33,6 +42,10 @@ export type PlaylistDetailResponse = {
   playlist: PlaylistDetail;
 };
 
+export type StreamingPlaylistsResponse = {
+  playlists: StreamingPlaylist[];
+};
+
 export type PlaylistTracksResponse = {
   tracks: PlaylistTrack[];
 };
@@ -45,6 +58,7 @@ export type PlaylistM3uExport = {
 export const playlistQueryKeys = {
   all: ["playlists"] as const,
   detail: (playlistId: number | string) => ["playlists", playlistId, "detail"] as const,
+  list: () => ["playlists", "list"] as const,
   tracks: (playlistId: number | string) => ["playlists", playlistId, "tracks"] as const,
 };
 
@@ -81,6 +95,10 @@ export async function fetchPlaylistDetail(playlistId: number | string): Promise<
   return fetchJson<PlaylistDetailResponse>(`/api/playlists/${encodeURIComponent(String(playlistId))}`);
 }
 
+export async function fetchStreamingPlaylists(): Promise<StreamingPlaylistsResponse> {
+  return fetchJson<StreamingPlaylistsResponse>("/api/streaming/playlists");
+}
+
 export async function fetchPlaylistTracks(playlistId: number | string): Promise<PlaylistTracksResponse> {
   return fetchJson<PlaylistTracksResponse>(`/api/playlists/${encodeURIComponent(String(playlistId))}/tracks`);
 }
@@ -103,6 +121,13 @@ export function usePlaylistDetailQuery(playlistId: number | string | null | unde
     queryKey: hasPlaylistId(playlistId) ? playlistQueryKeys.detail(playlistId) : playlistQueryKeys.detail("idle"),
     queryFn: () => fetchPlaylistDetail(playlistId as number | string),
     enabled: hasPlaylistId(playlistId),
+  });
+}
+
+export function useStreamingPlaylistsQuery() {
+  return useQuery({
+    queryKey: playlistQueryKeys.list(),
+    queryFn: fetchStreamingPlaylists,
   });
 }
 
