@@ -2,14 +2,18 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from fastapi import APIRouter
-from sqlalchemy import and_, create_engine, select
+from fastapi import APIRouter, HTTPException
+from sqlalchemy import and_, create_engine, insert, select, update
 from sqlalchemy.sql.elements import ColumnElement
 
 from app.links.models import ProposalListResponse, ProposalResponse
+from app.links.store import final_links_table
 from app.local_tracks.store import local_tracks_table
 from app.matching.models import ConfidenceBand
-from app.matching.pipeline import suggested_links_table
+from app.matching.pipeline import (
+    SUGGESTED_LINK_STATUS_APPROVED,
+    suggested_links_table,
+)
 from app.streaming.models import streaming_tracks_table
 
 
@@ -75,6 +79,48 @@ def create_router(*, require_database_url: Callable[[], str]) -> APIRouter:
             ]
 
         return ProposalListResponse(proposals=proposals)
+
+    @router.post("/proposals/{proposal_id}/approve", status_code=201)
+    async def approve_proposal(proposal_id: int) -> dict[str, object]:
+        engine = create_engine(require_database_url())
+
+        with engine.begin() as connection:
+            proposal = (
+                connection.execute(
+                    select(
+                        suggested_links_table.c.id,
+                        suggested_links_table.c.local_track_id,
+                        suggested_links_table.c.streaming_track_id,
+                    ).where(suggested_links_table.c.id == proposal_id)
+                )
+                .mappings()
+                .one_or_none()
+            )
+
+            if proposal is None:
+                raise HTTPException(status_code=404, detail="Proposal not found")
+
+            result = connection.execute(
+                insert(final_links_table).values(
+                    local_track_id=proposal["local_track_id"],
+                    streaming_track_id=proposal["streaming_track_id"],
+                )
+            )
+            connection.execute(
+                update(suggested_links_table)
+                .where(suggested_links_table.c.id == proposal_id)
+                .values(status=SUGGESTED_LINK_STATUS_APPROVED)
+            )
+
+        final_link_id = result.inserted_primary_key[0]
+        if not isinstance(final_link_id, int):
+            raise ValueError("Failed to persist final link")
+
+        return {
+            "proposal_id": proposal_id,
+            "final_link_id": final_link_id,
+            "status": SUGGESTED_LINK_STATUS_APPROVED,
+        }
 
     return router
 
