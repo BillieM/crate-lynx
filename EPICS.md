@@ -76,7 +76,7 @@ Per-playlist view: playlist header with progress ring, track list with status do
 
 ---
 
-### E11 — YouTube Music sync reliability `in progress`
+### E11 — YouTube Music sync reliability `done`
 **Subdir:** `app/`
 Make per-account playlist track sync resilient so one bad playlist cannot corrupt or abort the rest.
 
@@ -89,7 +89,7 @@ Out of scope: the discovery-call `get_library_playlists()` HTTP 400 (tracked sep
 
 ---
 
-### E12 — Backend: configurable per-playlist sync
+### E12 — Backend: configurable per-playlist sync `in progress`
 **Subdir:** `app/`
 Add per-playlist sync selection and split discovery from track-sync.
 
