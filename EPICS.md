@@ -52,13 +52,13 @@ REST endpoints for the full approval lifecycle: list proposals (with confidence 
 
 ---
 
-### E07 — M3U generation `in progress`
+### E07 — M3U generation `done`
 **Subdir:** `app/`
 Generate one M3U per streaming playlist based on `playlist_membership` joined through `final_links` to `local_tracks`. Paths resolved relative to consuming tool (not container path). Auto-regenerated whenever a link is approved, rejected, or broken. Export endpoint for on-demand download.
 
 ---
 
-### E08 — Metadata rescue
+### E08 — Metadata rescue `in progress`
 **Subdir:** `app/`
 Endpoint to overwrite a local MP3's ID3 tags with metadata from its linked streaming track (title, artist, album, year, high-res album art) using mutagen. Only available when a final link exists.
 
