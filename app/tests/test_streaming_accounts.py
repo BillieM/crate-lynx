@@ -19,7 +19,10 @@ from app.streaming_accounts import (
     streaming_playlists_table,
     streaming_tracks_table,
 )
-from app.youtube_music import YouTubeMusicPlaylist, YouTubeMusicTrack
+from app.streaming.adapters.youtube_music import (
+    YouTubeMusicPlaylist,
+    YouTubeMusicTrack,
+)
 
 
 def test_streaming_account_store_encrypts_and_persists_browser_headers(

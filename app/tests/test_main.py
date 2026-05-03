@@ -16,7 +16,10 @@ from app.streaming_accounts import (
     metadata,
     streaming_accounts_table,
 )
-from app.youtube_music import YouTubeMusicPlaylist, YouTubeMusicTrack
+from app.streaming.adapters.youtube_music import (
+    YouTubeMusicPlaylist,
+    YouTubeMusicTrack,
+)
 from sqlalchemy import create_engine, insert
 from starlette.requests import Request
 

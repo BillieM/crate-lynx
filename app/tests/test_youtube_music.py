@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from app.youtube_music import (
+from app.streaming.adapters.youtube_music import (
     YouTubeMusicAdapter,
     YouTubeMusicPlaylist,
     YouTubeMusicTrack,
@@ -28,7 +28,7 @@ def test_from_browser_auth_builds_client(monkeypatch) -> None:
             seen["language"] = language
             seen["location"] = location
 
-    monkeypatch.setattr("app.youtube_music.YTMusic", FakeYTMusic)
+    monkeypatch.setattr("app.streaming.adapters.youtube_music.YTMusic", FakeYTMusic)
 
     adapter = YouTubeMusicAdapter.from_browser_auth(
         "browser-auth.json",
@@ -63,7 +63,7 @@ def test_from_browser_auth_accepts_raw_header_mapping(monkeypatch) -> None:
             seen["language"] = language
             seen["location"] = location
 
-    monkeypatch.setattr("app.youtube_music.YTMusic", FakeYTMusic)
+    monkeypatch.setattr("app.streaming.adapters.youtube_music.YTMusic", FakeYTMusic)
 
     adapter = YouTubeMusicAdapter.from_browser_auth(
         {

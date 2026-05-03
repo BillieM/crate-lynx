@@ -23,7 +23,7 @@ from sqlalchemy import (
 )
 from ytmusicapi.exceptions import YTMusicError
 
-from app.youtube_music import (
+from app.streaming.adapters.youtube_music import (
     YouTubeMusicAdapter,
     YouTubeMusicPlaylist,
     YouTubeMusicTrack,

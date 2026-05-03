@@ -6,6 +6,8 @@ from typing import Any
 
 from ytmusicapi import YTMusic
 
+from app.streaming.adapters.base import StreamingAdapter
+
 
 JsonMapping = dict[str, Any]
 
@@ -27,7 +29,7 @@ class YouTubeMusicTrack:
     duration_ms: int | None
 
 
-class YouTubeMusicAdapter:
+class YouTubeMusicAdapter(StreamingAdapter):
     def __init__(self, client: YTMusic) -> None:
         self._client = client
 
@@ -175,7 +177,7 @@ class YouTubeMusicAdapter:
 def sync_library_playlists(
     *,
     account_id: int,
-    adapter: YouTubeMusicAdapter,
+    adapter: StreamingAdapter,
     playlist_store: Any,
     synced_at: datetime | None = None,
 ) -> list[Any]:
@@ -190,7 +192,7 @@ def sync_library_playlists(
 def sync_library_playlist_tracks(
     *,
     account_id: int,
-    adapter: YouTubeMusicAdapter,
+    adapter: StreamingAdapter,
     playlist_store: Any,
     synced_at: datetime | None = None,
 ) -> list[Any]:
