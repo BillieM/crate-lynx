@@ -14,6 +14,7 @@ from app.matching.models import ConfidenceBand
 from app.matching.pipeline import (
     SUGGESTED_LINK_STATUS_APPROVED,
     SUGGESTED_LINK_STATUS_REJECTED,
+    SuggestedLinkStore,
     suggested_links_table,
 )
 from app.streaming.models import streaming_tracks_table
@@ -84,7 +85,9 @@ def create_router(*, require_database_url: Callable[[], str]) -> APIRouter:
 
     @router.post("/proposals/{proposal_id}/approve", status_code=201)
     async def approve_proposal(proposal_id: int) -> dict[str, object]:
-        engine = create_engine(require_database_url())
+        database_url = require_database_url()
+        engine = create_engine(database_url)
+        suggestion_store = SuggestedLinkStore(database_url)
 
         with engine.begin() as connection:
             proposal = (
@@ -101,6 +104,15 @@ def create_router(*, require_database_url: Callable[[], str]) -> APIRouter:
 
             if proposal is None:
                 raise HTTPException(status_code=404, detail="Proposal not found")
+
+            if suggestion_store.has_rejected_pair(
+                proposal["local_track_id"],
+                proposal["streaming_track_id"],
+            ):
+                raise HTTPException(
+                    status_code=409,
+                    detail="Rejected pair cannot be approved",
+                )
 
             result = connection.execute(
                 insert(final_links_table).values(

@@ -236,6 +236,13 @@ def test_matching_pipeline_rerun_clears_existing_non_approved_suggestion(
     assert fetch_suggested_links(database_url) == [
         {
             "local_track_id": 33,
+            "streaming_track_id": 71,
+            "match_method": "tags",
+            "score": 0.3,
+            "status": "rejected",
+        },
+        {
+            "local_track_id": 33,
             "streaming_track_id": 72,
             "match_method": "isrc",
             "score": 1.0,
@@ -246,6 +253,187 @@ def test_matching_pipeline_rerun_clears_existing_non_approved_suggestion(
             "streaming_track_id": 99,
             "match_method": "tags",
             "score": 0.82,
+            "status": "pending",
+        },
+    ]
+
+
+def test_matching_pipeline_skips_rejected_isrc_pair_and_persists_tag_match(
+    tmp_path,
+) -> None:
+    database_url = f"sqlite:///{tmp_path / 'skip-rejected-isrc.db'}"
+    engine = create_engine(database_url)
+    suggested_links_metadata.create_all(engine)
+
+    with engine.begin() as connection:
+        connection.execute(
+            insert(suggested_links_table).values(
+                local_track_id=52,
+                streaming_track_id=91,
+                match_method="manual_break",
+                score=0.0,
+                status="rejected",
+            )
+        )
+
+    isrc_matcher = FakeMatcher(
+        result=MatchResult(
+            local_track_id=52,
+            streaming_track_id=91,
+            match_method="isrc",
+            score=1.0,
+            confidence_band=ConfidenceBand.HIGH,
+        ),
+        calls=[],
+    )
+    tag_matcher = FakeMatcher(
+        result=MatchResult(
+            local_track_id=52,
+            streaming_track_id=92,
+            match_method="tags",
+            score=0.8,
+            confidence_band=ConfidenceBand.MEDIUM,
+        ),
+        calls=[],
+    )
+
+    result = MatchingPipeline(
+        database_url=database_url,
+        beets_library=tmp_path / "library.db",
+        isrc_matcher=isrc_matcher,
+        tag_matcher=tag_matcher,
+    ).run(52)
+
+    assert result is not None
+    assert result.streaming_track_id == 92
+    assert isrc_matcher.calls == [52]
+    assert tag_matcher.calls == [52]
+    assert fetch_suggested_links(database_url) == [
+        {
+            "local_track_id": 52,
+            "streaming_track_id": 91,
+            "match_method": "manual_break",
+            "score": 0.0,
+            "status": "rejected",
+        },
+        {
+            "local_track_id": 52,
+            "streaming_track_id": 92,
+            "match_method": "tags",
+            "score": 0.8,
+            "status": "pending",
+        },
+    ]
+
+
+def test_matching_pipeline_does_not_recreate_rejected_tag_pair(tmp_path) -> None:
+    database_url = f"sqlite:///{tmp_path / 'skip-rejected-tag.db'}"
+    engine = create_engine(database_url)
+    suggested_links_metadata.create_all(engine)
+
+    with engine.begin() as connection:
+        connection.execute(
+            insert(suggested_links_table).values(
+                local_track_id=61,
+                streaming_track_id=101,
+                match_method="manual_break",
+                score=0.0,
+                status="rejected",
+            )
+        )
+
+    result = MatchingPipeline(
+        database_url=database_url,
+        beets_library=tmp_path / "library.db",
+        isrc_matcher=FakeMatcher(result=None, calls=[]),
+        tag_matcher=FakeMatcher(
+            result=MatchResult(
+                local_track_id=61,
+                streaming_track_id=101,
+                match_method="tags",
+                score=0.45,
+                confidence_band=ConfidenceBand.LOW,
+            ),
+            calls=[],
+        ),
+    ).run(61)
+
+    assert result is None
+    assert fetch_suggested_links(database_url) == [
+        {
+            "local_track_id": 61,
+            "streaming_track_id": 101,
+            "match_method": "manual_break",
+            "score": 0.0,
+            "status": "rejected",
+        }
+    ]
+
+
+def test_suggested_link_store_clear_non_approved_for_track(tmp_path) -> None:
+    database_url = f"sqlite:///{tmp_path / 'clear-suggestions.db'}"
+    engine = create_engine(database_url)
+    suggested_links_metadata.create_all(engine)
+
+    with engine.begin() as connection:
+        connection.execute(
+            insert(suggested_links_table),
+            [
+                {
+                    "local_track_id": 44,
+                    "streaming_track_id": 80,
+                    "match_method": "tags",
+                    "score": 0.4,
+                    "status": "pending",
+                },
+                {
+                    "local_track_id": 44,
+                    "streaming_track_id": 81,
+                    "match_method": "tags",
+                    "score": 0.3,
+                    "status": "rejected",
+                },
+                {
+                    "local_track_id": 44,
+                    "streaming_track_id": 82,
+                    "match_method": "isrc",
+                    "score": 1.0,
+                    "status": "approved",
+                },
+                {
+                    "local_track_id": 45,
+                    "streaming_track_id": 83,
+                    "match_method": "tags",
+                    "score": 0.9,
+                    "status": "pending",
+                },
+            ],
+        )
+
+    from app.matching.pipeline import SuggestedLinkStore
+
+    SuggestedLinkStore(database_url).clear_non_approved_for_track(44)
+
+    assert fetch_suggested_links(database_url) == [
+        {
+            "local_track_id": 44,
+            "streaming_track_id": 81,
+            "match_method": "tags",
+            "score": 0.3,
+            "status": "rejected",
+        },
+        {
+            "local_track_id": 44,
+            "streaming_track_id": 82,
+            "match_method": "isrc",
+            "score": 1.0,
+            "status": "approved",
+        },
+        {
+            "local_track_id": 45,
+            "streaming_track_id": 83,
+            "match_method": "tags",
+            "score": 0.9,
             "status": "pending",
         },
     ]

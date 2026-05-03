@@ -7,6 +7,7 @@ from pathlib import Path
 from redis import Redis
 from rq import Queue
 from sqlalchemy import (
+    and_,
     Column,
     DateTime,
     Float,
@@ -77,14 +78,40 @@ class SuggestedLinkStore:
     def __post_init__(self) -> None:
         self._engine = create_engine(self.database_url)
 
-    def persist(self, result: MatchResult) -> None:
+    def clear_non_approved_for_track(self, local_track_id: int) -> None:
         with self._engine.begin() as connection:
             connection.execute(
                 delete(suggested_links_table).where(
-                    suggested_links_table.c.local_track_id == result.local_track_id,
-                    suggested_links_table.c.status != SUGGESTED_LINK_STATUS_APPROVED,
+                    suggested_links_table.c.local_track_id == local_track_id,
+                    suggested_links_table.c.status == SUGGESTED_LINK_STATUS_PENDING,
                 )
             )
+
+    def has_rejected_pair(self, local_track_id: int, streaming_track_id: int) -> bool:
+        with self._engine.connect() as connection:
+            rejected_pair = connection.execute(
+                select(suggested_links_table.c.id)
+                .where(
+                    and_(
+                        suggested_links_table.c.local_track_id == local_track_id,
+                        suggested_links_table.c.streaming_track_id
+                        == streaming_track_id,
+                        suggested_links_table.c.status
+                        == SUGGESTED_LINK_STATUS_REJECTED,
+                    )
+                )
+                .limit(1)
+            ).scalar_one_or_none()
+
+        return rejected_pair is not None
+
+    def persist(self, result: MatchResult) -> bool:
+        if self.has_rejected_pair(result.local_track_id, result.streaming_track_id):
+            return False
+
+        self.clear_non_approved_for_track(result.local_track_id)
+
+        with self._engine.begin() as connection:
             connection.execute(
                 insert(suggested_links_table).values(
                     local_track_id=result.local_track_id,
@@ -94,6 +121,8 @@ class SuggestedLinkStore:
                     status=SUGGESTED_LINK_STATUS_PENDING,
                 )
             )
+
+        return True
 
 
 @dataclass(slots=True)
@@ -125,14 +154,15 @@ class MatchingPipeline:
     def run(self, local_track_id: int) -> MatchResult | None:
         result = self.isrc_matcher.match(local_track_id)
         if result is not None:
-            self.suggestion_store.persist(result)
-            return result
+            if self.suggestion_store.persist(result):
+                return result
 
         result = self.tag_matcher.match(local_track_id)
         if result is None:
             return None
 
-        self.suggestion_store.persist(result)
+        if not self.suggestion_store.persist(result):
+            return None
 
         if result.confidence_band is ConfidenceBand.LOW:
             self._enqueue_acoustic_fallback(local_track_id, result)
