@@ -1,9 +1,20 @@
 /* eslint-disable react-refresh/only-export-components */
 
-import { useEffect, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useEffect, useMemo, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { FilterChips } from "./features/playlists/FilterChips";
 import { PlaylistHeader } from "./features/playlists/PlaylistHeader";
-import { usePlaylistDetailQuery } from "./features/playlists/queries";
+import { PlaylistTrackActions } from "./features/playlists/PlaylistTrackActions";
+import { PlaylistTrackRow } from "./features/playlists/PlaylistTrackRow";
+import {
+  usePlaylistDetailQuery,
+  usePlaylistTracksQuery,
+} from "./features/playlists/queries";
+import {
+  filterPlaylistTracks,
+  getPlaylistTrackFilterCounts,
+  type PlaylistTrackFilter,
+} from "./features/playlists/filterTracks";
 
 export type ProgressStatus = "unlinked" | "pending" | "linked";
 
@@ -73,6 +84,11 @@ type SearchResult = {
 type SearchResponse = {
   query: string;
   results: SearchResult[];
+};
+
+type StreamingSyncResponse = {
+  account_id: number;
+  job_id: string;
 };
 
 type ViewConfig = {
@@ -232,6 +248,18 @@ async function fetchSearchResults(query: string) {
   return (await response.json()) as SearchResponse;
 }
 
+async function syncStreamingAccount(accountId: number): Promise<StreamingSyncResponse> {
+  const response = await fetch(`/api/streaming/accounts/${encodeURIComponent(String(accountId))}/sync`, {
+    method: "POST",
+  });
+
+  if (!response.ok) {
+    throw new Error(`Sync request failed with status ${response.status}`);
+  }
+
+  return (await response.json()) as StreamingSyncResponse;
+}
+
 function getBadgeClasses(tone: NavItem["tone"]) {
   switch (tone) {
     case "pending":
@@ -362,6 +390,52 @@ function ProgressFraction({ complete, total }: { complete: number; total: number
 }
 
 function Topbar({ view }: { view: ViewConfig }) {
+  const queryClient = useQueryClient();
+  const playlistDetailQuery = usePlaylistDetailQuery(view.playlistResourceId ?? null);
+  const playlist = playlistDetailQuery.data?.playlist;
+  const syncMutation = useMutation({
+    mutationFn: syncStreamingAccount,
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["playlists"] });
+      if (view.playlistResourceId !== undefined) {
+        await queryClient.invalidateQueries({ queryKey: ["playlists", view.playlistResourceId] });
+      }
+    },
+  });
+
+  function renderActionButton(actionLabel: string) {
+    if (actionLabel === "Sync") {
+      const canSync = playlist !== undefined && !syncMutation.isPending;
+
+      return (
+        <button
+          aria-live="polite"
+          className="rounded-[10px] border border-ctp-surface1 bg-ctp-surface0 px-3 py-1.5 text-[12px] font-semibold text-ctp-text transition-colors hover:border-ctp-overlay0 hover:bg-ctp-surface1 disabled:cursor-not-allowed disabled:border-ctp-surface0 disabled:text-ctp-overlay1 disabled:hover:bg-ctp-surface0"
+          disabled={!canSync}
+          key={actionLabel}
+          onClick={() => {
+            if (playlist) {
+              syncMutation.mutate(playlist.account_id);
+            }
+          }}
+          type="button"
+        >
+          {syncMutation.isPending ? "Syncing..." : actionLabel}
+        </button>
+      );
+    }
+
+    return (
+      <button
+        key={actionLabel}
+        className="rounded-[10px] border border-ctp-surface1 bg-ctp-surface0 px-3 py-1.5 text-[12px] font-semibold text-ctp-text transition-colors hover:border-ctp-overlay0 hover:bg-ctp-surface1"
+        type="button"
+      >
+        {actionLabel}
+      </button>
+    );
+  }
+
   return (
     <header className="flex h-11 items-center justify-between border-b border-ctp-surface0 bg-ctp-mantle px-5">
       <div className="flex min-w-0 items-center gap-3">
@@ -379,15 +453,9 @@ function Topbar({ view }: { view: ViewConfig }) {
       </div>
 
       <div className="flex items-center gap-2">
-        {view.actionLabels.map((actionLabel) => (
-          <button
-            key={actionLabel}
-            className="rounded-[10px] border border-ctp-surface1 bg-ctp-surface0 px-3 py-1.5 text-[12px] font-semibold text-ctp-text transition-colors hover:border-ctp-overlay0 hover:bg-ctp-surface1"
-            type="button"
-          >
-            {actionLabel}
-          </button>
-        ))}
+        {syncMutation.isSuccess ? <span className="text-[11px] font-medium text-ctp-green">Sync queued.</span> : null}
+        {syncMutation.isError ? <span className="text-[11px] font-medium text-ctp-red">Sync failed.</span> : null}
+        {view.actionLabels.map((actionLabel) => renderActionButton(actionLabel))}
       </div>
     </header>
   );
@@ -475,6 +543,68 @@ function SearchPanel() {
   );
 }
 
+function PlaylistView({ isActive, playlistResourceId }: { isActive: boolean; playlistResourceId: number }) {
+  const [activeFilter, setActiveFilter] = useState<PlaylistTrackFilter>("all");
+  const playlistDetailQuery = usePlaylistDetailQuery(isActive ? playlistResourceId : null);
+  const playlistTracksQuery = usePlaylistTracksQuery(isActive ? playlistResourceId : null);
+  const tracks = useMemo(() => playlistTracksQuery.data?.tracks ?? [], [playlistTracksQuery.data?.tracks]);
+  const filterCounts = useMemo(() => getPlaylistTrackFilterCounts(tracks), [tracks]);
+  const filteredTracks = useMemo(() => filterPlaylistTracks(tracks, activeFilter), [activeFilter, tracks]);
+
+  useEffect(() => {
+    setActiveFilter("all");
+  }, [playlistResourceId]);
+
+  if (playlistDetailQuery.isPending || playlistTracksQuery.isPending) {
+    return (
+      <section className="rounded-[30px] border border-ctp-surface1/80 bg-ctp-mantle px-6 py-6 text-[13px] text-ctp-subtext0">
+        Loading playlist overview…
+      </section>
+    );
+  }
+
+  if (playlistDetailQuery.isError || playlistTracksQuery.isError) {
+    return (
+      <section className="rounded-[30px] border border-ctp-red/30 bg-ctp-surface0/60 px-6 py-6 text-[13px] text-ctp-red">
+        Playlist overview is unavailable right now.
+      </section>
+    );
+  }
+
+  if (!playlistDetailQuery.data) {
+    return null;
+  }
+
+  return (
+    <section className="flex min-h-0 flex-1 flex-col gap-5">
+      <PlaylistHeader playlist={playlistDetailQuery.data.playlist} />
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <FilterChips activeFilter={activeFilter} counts={filterCounts} onFilterChange={setActiveFilter} />
+        <p className="text-[12px] font-medium text-ctp-subtext0">
+          Showing {filteredTracks.length} of {tracks.length} tracks
+        </p>
+      </div>
+      <div className="min-h-0 flex-1 overflow-y-auto pr-1">
+        {filteredTracks.length > 0 ? (
+          <div className="space-y-3">
+            {filteredTracks.map((track) => (
+              <PlaylistTrackRow
+                actionSlot={<PlaylistTrackActions playlistId={playlistResourceId} track={track} />}
+                key={track.id}
+                track={track}
+              />
+            ))}
+          </div>
+        ) : (
+          <div className="rounded-[24px] border border-ctp-surface1/80 bg-ctp-mantle px-5 py-6 text-[13px] text-ctp-subtext0">
+            No tracks match this filter.
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
 function ViewShell({
   activeViewId,
   playlistResourceId,
@@ -485,27 +615,6 @@ function ViewShell({
   viewId: ViewConfig["id"];
 }) {
   const isActive = activeViewId === viewId;
-  const playlistDetailQuery = usePlaylistDetailQuery(isActive ? playlistResourceId : null);
-
-  let content = null;
-
-  if (playlistResourceId !== undefined) {
-    if (playlistDetailQuery.isPending) {
-      content = (
-        <section className="rounded-[30px] border border-ctp-surface1/80 bg-ctp-mantle px-6 py-6 text-[13px] text-ctp-subtext0">
-          Loading playlist overview…
-        </section>
-      );
-    } else if (playlistDetailQuery.isError) {
-      content = (
-        <section className="rounded-[30px] border border-ctp-red/30 bg-ctp-surface0/60 px-6 py-6 text-[13px] text-ctp-red">
-          Playlist overview is unavailable right now.
-        </section>
-      );
-    } else if (playlistDetailQuery.data) {
-      content = <PlaylistHeader playlist={playlistDetailQuery.data.playlist} />;
-    }
-  }
 
   return (
     <div
@@ -514,7 +623,13 @@ function ViewShell({
       data-view-active={isActive ? "true" : "false"}
       id={viewId}
     >
-      {isActive ? <div className="flex flex-1 flex-col p-6">{content}</div> : null}
+      {isActive ? (
+        <div className="flex min-h-0 flex-1 flex-col p-6">
+          {playlistResourceId !== undefined ? (
+            <PlaylistView isActive={isActive} playlistResourceId={playlistResourceId} />
+          ) : null}
+        </div>
+      ) : null}
     </div>
   );
 }

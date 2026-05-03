@@ -2,6 +2,90 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import App, { asRgb, getProgressColor, lerp, mixColors } from "./App";
 
+const playlistDetailResponse = {
+  playlist: {
+    id: 12,
+    account_id: 4,
+    provider_playlist_id: "PL12",
+    name: "Late Night Drive",
+    cover_art_url: "https://cdn.example.test/late-night-drive.jpg",
+    track_count: 62,
+    linked_count: 58,
+    pending_count: 3,
+    unlinked_count: 1,
+    synced_at: "2026-05-01T09:00:00Z",
+  },
+};
+
+const playlistTracksResponse = {
+  tracks: [
+    {
+      id: 101,
+      provider_track_id: "ytm-101",
+      position: 1,
+      title: "Night Runner",
+      artist: "Frame Delay",
+      album: "Late Night Drive",
+      duration_ms: 214000,
+      status: "linked",
+      local_track_id: 501,
+      proposal_id: null,
+      final_link_id: 9001,
+    },
+    {
+      id: 102,
+      provider_track_id: "ytm-102",
+      position: 2,
+      title: "Pending Signal",
+      artist: "Static Gate",
+      album: null,
+      duration_ms: 188000,
+      status: "pending",
+      local_track_id: null,
+      proposal_id: 44,
+      final_link_id: null,
+    },
+    {
+      id: 103,
+      provider_track_id: "ytm-103",
+      position: 3,
+      title: "Loose Cable",
+      artist: "Patch Bay",
+      album: "Maintenance Window",
+      duration_ms: null,
+      status: "unlinked",
+      local_track_id: 503,
+      proposal_id: null,
+      final_link_id: null,
+    },
+  ],
+};
+
+function mockPlaylistFetch() {
+  return vi.spyOn(globalThis, "fetch").mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+
+    if (url === "/api/streaming/accounts/4/sync" && init?.method === "POST") {
+      return {
+        ok: true,
+        json: async () => ({ account_id: 4, job_id: "sync-job-4" }),
+      } as Response;
+    }
+
+    if (url === "/api/playlists/12/tracks") {
+      return {
+        ok: true,
+        json: async () => playlistTracksResponse,
+      } as Response;
+    }
+
+    return {
+      ok: true,
+      json: async () => playlistDetailResponse,
+    } as Response;
+  });
+}
+
 function renderApp() {
   const queryClient = new QueryClient({
     defaultOptions: {
@@ -65,23 +149,7 @@ describe("App", () => {
   });
 
   it("updates the topbar config when a playlist nav item is selected", () => {
-    vi.spyOn(globalThis, "fetch").mockResolvedValue({
-      ok: true,
-      json: async () => ({
-        playlist: {
-          id: 12,
-          account_id: 4,
-          provider_playlist_id: "PL12",
-          name: "Late Night Drive",
-          cover_art_url: "https://cdn.example.test/late-night-drive.jpg",
-          track_count: 62,
-          linked_count: 58,
-          pending_count: 3,
-          unlinked_count: 1,
-          synced_at: "2026-05-01T09:00:00Z",
-        },
-      }),
-    } as Response);
+    mockPlaylistFetch();
 
     renderApp();
 
@@ -99,24 +167,8 @@ describe("App", () => {
     expect(document.getElementById("playlist")).toHaveAttribute("data-view-active", "true");
   });
 
-  it("renders the playlist header inside the active playlist shell", async () => {
-    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({
-      ok: true,
-      json: async () => ({
-        playlist: {
-          id: 12,
-          account_id: 4,
-          provider_playlist_id: "PL12",
-          name: "Late Night Drive",
-          cover_art_url: "https://cdn.example.test/late-night-drive.jpg",
-          track_count: 62,
-          linked_count: 58,
-          pending_count: 3,
-          unlinked_count: 1,
-          synced_at: "2026-05-01T09:00:00Z",
-        },
-      }),
-    } as Response);
+  it("renders the playlist view inside the active playlist shell", async () => {
+    const fetchMock = mockPlaylistFetch();
 
     renderApp();
     fireEvent.click(screen.getByRole("button", { name: /Late Night Drive/i }));
@@ -124,7 +176,46 @@ describe("App", () => {
     expect(await screen.findByRole("img", { name: "Late Night Drive cover art" })).toBeInTheDocument();
     expect(screen.getByText("Playlist overview")).toBeInTheDocument();
     expect(screen.getByText("58 / 62")).toBeInTheDocument();
+    expect(screen.getByText("Night Runner")).toBeInTheDocument();
+    expect(screen.getByText("Pending Signal")).toBeInTheDocument();
+    expect(screen.getByText("Loose Cable")).toBeInTheDocument();
+    expect(screen.getByText("Showing 3 of 3 tracks")).toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledWith("/api/playlists/12");
+    expect(fetchMock).toHaveBeenCalledWith("/api/playlists/12/tracks");
+  });
+
+  it("queues a YouTube Music sync from the active playlist topbar", async () => {
+    const fetchMock = mockPlaylistFetch();
+
+    renderApp();
+    fireEvent.click(screen.getByRole("button", { name: /Late Night Drive/i }));
+
+    const syncButton = await screen.findByRole("button", { name: "Sync" });
+    await waitFor(() => {
+      expect(syncButton).toBeEnabled();
+    });
+
+    fireEvent.click(syncButton);
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith("/api/streaming/accounts/4/sync", { method: "POST" });
+    });
+    expect(await screen.findByText("Sync queued.")).toBeInTheDocument();
+  });
+
+  it("filters playlist tracks by status", async () => {
+    mockPlaylistFetch();
+
+    renderApp();
+    fireEvent.click(screen.getByRole("button", { name: /Late Night Drive/i }));
+
+    expect(await screen.findByText("Night Runner")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /Pending/i }));
+
+    expect(screen.getByText("Pending Signal")).toBeInTheDocument();
+    expect(screen.queryByText("Night Runner")).not.toBeInTheDocument();
+    expect(screen.queryByText("Loose Cable")).not.toBeInTheDocument();
+    expect(screen.getByText("Showing 1 of 3 tracks")).toBeInTheDocument();
   });
 
   it("debounces sidebar search requests and renders compact results", async () => {
