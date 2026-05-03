@@ -1,14 +1,11 @@
-# Refactor — domain-based package structure
+# E05 — Matching pipeline
 
-- [x] Create `core/` package: move `queueing.py` and `worker.py` into `app/core/`, update all imports
-- [x] Create `local_tracks/` package: move `local_tracks.py` → `local_tracks/store.py`, update all imports
-- [x] Create `ingestion/` package: split `ingestion.py` into `pipeline.py` (AudioPreparer, BeetsImporter, FingerprintGenerator, IngestionProcessor) and `watcher.py` (IngestionWatcher, IngestionEventHandler); move `ingest_status.py` → `ingestion/status.py`; update all imports
-- [x] Create `streaming/adapters/` subpackage: define `StreamingAdapter` protocol in `base.py`; move `youtube_music.py` → `adapters/youtube_music.py` implementing the protocol
-- [x] Split `streaming_accounts.py` into `streaming/models.py` (dataclasses/DB row types), `streaming/store.py` (StreamingAccountStore), `streaming/crypto.py` (encrypt/decrypt), `streaming/jobs.py` (RQ job functions)
-- [x] Extract Pydantic schemas from `main.py` → `streaming/schemas.py` and route handlers → `streaming/router.py`
-- [x] Slim `main.py` to app factory only: remove all route definitions, mount routers from each domain package
-- [x] Update all tests for new import paths; confirm test suite passes
-
----
-
-*E05 — Matching pipeline tasks to follow once refactor is complete*
+- [x] Add `matching/` package under `app/`: `__init__.py`, `models.py` (dataclasses for match result, confidence band enum: high/medium/low)
+- [ ] Implement ISRC match step in `matching/isrc.py`: query `streaming_tracks` by ISRC, return high-confidence result when found
+- [ ] Implement fuzzy tag match step in `matching/tags.py`: compare title/artist/album with rapidfuzz, return score; band = high if > 0.85, medium if 0.5–0.85, low if < 0.5
+- [ ] Implement acoustic fingerprint fallback in `matching/acoustic.py`: RQ job that runs fpcalc comparison, triggered only when tag score is below threshold
+- [ ] Implement sequential pipeline orchestrator in `matching/pipeline.py`: ISRC → fuzzy tag → acoustic (enqueue RQ job if low), write result to `suggested_links`
+- [ ] Ensure pipeline is re-runnable per track: clear any existing non-approved `suggested_links` row before writing new result
+- [ ] Wire matching pipeline as an RQ job in `matching/jobs.py`; enqueue from ingestion pipeline on track completion
+- [ ] Mount any needed status/trigger endpoints in `matching/router.py` and register in `main.py`
+- [ ] Write tests: ISRC hit returns high confidence, fuzzy match scoring bands, low score triggers acoustic job enqueue, re-run clears old suggestion
