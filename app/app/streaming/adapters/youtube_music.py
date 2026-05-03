@@ -284,6 +284,12 @@ def sync_library_playlist_tracks(
     for playlist in stored_playlists:
         try:
             tracks = adapter.list_playlist_tracks(playlist.provider_playlist_id)
+            synced_memberships.extend(
+                playlist_store.replace_playlist_membership(
+                    playlist_id=playlist.id,
+                    tracks=tracks,
+                )
+            )
         except MalformedPlaylistPayloadError:
             logger.warning(
                 "Skipping YouTube Music playlist %s because its track payload is malformed",
@@ -291,13 +297,12 @@ def sync_library_playlist_tracks(
                 exc_info=True,
             )
             continue
-
-        synced_memberships.extend(
-            playlist_store.replace_playlist_membership(
-                playlist_id=playlist.id,
-                tracks=tracks,
+        except Exception:
+            logger.exception(
+                "Skipping YouTube Music playlist %s after sync failed",
+                playlist.provider_playlist_id,
             )
-        )
+            continue
 
     return synced_memberships
 
