@@ -6,17 +6,16 @@ from unittest.mock import Mock
 from watchdog.events import DirCreatedEvent, FileCreatedEvent
 
 from app.core.queueing import MatchingJobEnqueuer
-from app.ingestion import (
+from app.ingestion.pipeline import (
     AudioPreparer,
     BeetsImporter,
     FingerprintGenerator,
     ImportedTrack,
-    IngestionEventHandler,
-    IngestionProcessor,
-    IngestionWatcher,
     PreparedTrack,
     UnsupportedAudioFormatError,
 )
+from app.ingestion.watcher import IngestionEventHandler, IngestionWatcher
+from app.ingestion.pipeline import IngestionProcessor
 from app.local_tracks.store import LocalTrackStore, local_tracks_table, metadata
 from sqlalchemy import create_engine, select
 
