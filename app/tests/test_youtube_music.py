@@ -2,7 +2,10 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+import pytest
+
 from app.streaming.adapters.youtube_music import (
+    MalformedPlaylistPayloadError,
     YouTubeMusicAdapter,
     YouTubeMusicPlaylist,
     YouTubeMusicTrackMetadata,
@@ -516,7 +519,7 @@ def test_list_playlist_tracks_fetches_missing_isrc_once_per_unique_track_id() ->
     assert sorted(seen["song_ids"]) == ["track-2", "track-3"]
 
 
-def test_list_playlist_tracks_returns_empty_for_non_list_tracks_payload() -> None:
+def test_list_playlist_tracks_raises_for_non_list_tracks_payload() -> None:
     class FakeYTMusic:
         def get_playlist(
             self,
@@ -528,6 +531,25 @@ def test_list_playlist_tracks_returns_empty_for_non_list_tracks_payload() -> Non
         ) -> dict[str, object]:
             assert playlistId == "PL1"
             return {"tracks": None}
+
+    adapter = YouTubeMusicAdapter(FakeYTMusic())  # type: ignore[arg-type]
+
+    with pytest.raises(MalformedPlaylistPayloadError):
+        adapter.list_playlist_tracks("PL1")
+
+
+def test_list_playlist_tracks_returns_empty_for_empty_playlist() -> None:
+    class FakeYTMusic:
+        def get_playlist(
+            self,
+            *,
+            playlistId: str,
+            limit: int | None,
+            related: bool,
+            suggestions_limit: int,
+        ) -> dict[str, object]:
+            assert playlistId == "PL1"
+            return {"tracks": []}
 
     adapter = YouTubeMusicAdapter(FakeYTMusic())  # type: ignore[arg-type]
 

@@ -12,6 +12,10 @@ from app.streaming.adapters.base import StreamingAdapter
 JsonMapping = dict[str, Any]
 
 
+class MalformedPlaylistPayloadError(RuntimeError):
+    """Raised when YouTube Music returns an unparseable playlist payload."""
+
+
 @dataclass(frozen=True, slots=True)
 class YouTubeMusicPlaylist:
     provider_playlist_id: str
@@ -94,9 +98,16 @@ class YouTubeMusicAdapter(StreamingAdapter):
         limit: int | None = 100,
     ) -> list[YouTubeMusicTrack]:
         playlist = self.get_playlist(playlist_id, limit=limit)
+        if not isinstance(playlist, dict):
+            raise MalformedPlaylistPayloadError(
+                f"YouTube Music playlist {playlist_id} payload is not an object"
+            )
+
         raw_tracks = playlist.get("tracks")
         if not isinstance(raw_tracks, list):
-            return []
+            raise MalformedPlaylistPayloadError(
+                f"YouTube Music playlist {playlist_id} payload has invalid tracks"
+            )
 
         tracks: list[YouTubeMusicTrack] = []
         missing_isrc_track_ids: set[str] = set()
