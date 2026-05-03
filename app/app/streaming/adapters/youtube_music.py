@@ -244,10 +244,19 @@ class YouTubeMusicAdapter(StreamingAdapter):
         self,
         provider_track_ids: set[str],
     ) -> dict[str, str | None]:
-        return {
-            provider_track_id: _extract_isrc(self.get_song(provider_track_id))
-            for provider_track_id in provider_track_ids
-        }
+        isrc_by_track_id: dict[str, str | None] = {}
+        for provider_track_id in provider_track_ids:
+            try:
+                isrc_by_track_id[provider_track_id] = _extract_isrc(
+                    self.get_song(provider_track_id)
+                )
+            except Exception:
+                logger.exception(
+                    "Skipping YouTube Music ISRC backfill for track %s after lookup failed",
+                    provider_track_id,
+                )
+
+        return isrc_by_track_id
 
 
 def sync_library_playlists(

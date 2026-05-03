@@ -519,6 +519,79 @@ def test_list_playlist_tracks_fetches_missing_isrc_once_per_unique_track_id() ->
     assert sorted(seen["song_ids"]) == ["track-2", "track-3"]
 
 
+def test_list_playlist_tracks_isolates_missing_isrc_lookup_failures() -> None:
+    seen: dict[str, object] = {"song_ids": []}
+
+    class FakeYTMusic:
+        def get_playlist(
+            self,
+            *,
+            playlistId: str,
+            limit: int | None,
+            related: bool,
+            suggestions_limit: int,
+        ) -> dict[str, object]:
+            assert playlistId == "PL1"
+            return {
+                "tracks": [
+                    {
+                        "videoId": "track-2",
+                        "title": "Bad Lookup",
+                        "artist": "Artist 2",
+                    },
+                    {
+                        "videoId": "track-3",
+                        "title": "Good Lookup",
+                        "artist": "Artist 3",
+                    },
+                ]
+            }
+
+        def get_song(
+            self,
+            *,
+            videoId: str,
+            signatureTimestamp: int | None,
+        ) -> dict[str, object]:
+            assert signatureTimestamp is None
+            cast_song_ids = seen["song_ids"]
+            assert isinstance(cast_song_ids, list)
+            cast_song_ids.append(videoId)
+            if videoId == "track-2":
+                raise RuntimeError("upstream lookup failed")
+            return {
+                "playabilityStatus": {
+                    "musicDetail": {
+                        "internationalStandardRecordingCode": "ISRC-track-3"
+                    }
+                }
+            }
+
+    adapter = YouTubeMusicAdapter(FakeYTMusic())  # type: ignore[arg-type]
+
+    assert adapter.list_playlist_tracks("PL1") == [
+        YouTubeMusicTrack(
+            provider_track_id="track-2",
+            title="Bad Lookup",
+            artist="Artist 2",
+            album=None,
+            year=None,
+            isrc=None,
+            duration_ms=None,
+        ),
+        YouTubeMusicTrack(
+            provider_track_id="track-3",
+            title="Good Lookup",
+            artist="Artist 3",
+            album=None,
+            year=None,
+            isrc="ISRC-track-3",
+            duration_ms=None,
+        ),
+    ]
+    assert sorted(seen["song_ids"]) == ["track-2", "track-3"]
+
+
 def test_list_playlist_tracks_raises_for_non_list_tracks_payload() -> None:
     class FakeYTMusic:
         def get_playlist(
