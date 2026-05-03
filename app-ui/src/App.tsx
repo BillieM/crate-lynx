@@ -20,12 +20,31 @@ type AppRoute = {
   heading: string;
   kicker: string;
   path: string;
+  progressExamples: Array<{
+    label: string;
+    matchPercentage: number;
+    status: ProgressStatus;
+  }>;
   section: string;
   stats: Array<{
     label: string;
     value: string;
   }>;
 };
+
+type ProgressStatus = "unlinked" | "pending" | "linked";
+
+type RgbColor = {
+  blue: number;
+  green: number;
+  red: number;
+};
+
+const progressPalette = {
+  linked: { red: 166, green: 227, blue: 161 },
+  pending: { red: 249, green: 226, blue: 175 },
+  unlinked: { red: 108, green: 112, blue: 134 },
+} satisfies Record<ProgressStatus, RgbColor>;
 
 const appRoutes: AppRoute[] = [
   {
@@ -35,6 +54,11 @@ const appRoutes: AppRoute[] = [
     heading: "Keep ingestion and recovery moving.",
     description:
       "Track importer health, re-run background jobs, and clear operational issues before they turn into stale playlists.",
+    progressExamples: [
+      { label: "Rescue queue", matchPercentage: 18, status: "unlinked" },
+      { label: "Import recovery", matchPercentage: 54, status: "pending" },
+      { label: "Retry sweep", matchPercentage: 92, status: "linked" },
+    ],
     stats: [
       { label: "Queue health", value: "Stable" },
       { label: "Failed imports", value: "03" },
@@ -48,6 +72,11 @@ const appRoutes: AppRoute[] = [
     heading: "Review sync status and playlist linkage.",
     description:
       "Follow playlist coverage, inspect match confidence, and keep the catalog aligned with the upstream YouTube Music library.",
+    progressExamples: [
+      { label: "Roadtrip mix", matchPercentage: 24, status: "unlinked" },
+      { label: "Deep cuts sync", matchPercentage: 63, status: "pending" },
+      { label: "Daily rotation", matchPercentage: 88, status: "linked" },
+    ],
     stats: [
       { label: "Playlists synced", value: "18" },
       { label: "Pending links", value: "42" },
@@ -61,6 +90,11 @@ const appRoutes: AppRoute[] = [
     heading: "Manage your source-of-truth music archive.",
     description:
       "Inspect the local catalog, surface unmatched tracks, and prep metadata rescue work before generating exports.",
+    progressExamples: [
+      { label: "New arrivals", matchPercentage: 12, status: "unlinked" },
+      { label: "Metadata rescue", matchPercentage: 57, status: "pending" },
+      { label: "Archive export", matchPercentage: 95, status: "linked" },
+    ],
     stats: [
       { label: "Tracks indexed", value: "6,482" },
       { label: "Linked cleanly", value: "5,973" },
@@ -104,7 +138,96 @@ function ShellNavLink({ path, section }: Pick<AppRoute, "path" | "section">) {
   );
 }
 
-function SectionView({ description, heading, kicker, stats, section }: AppRoute) {
+function clampPercentage(matchPercentage: number) {
+  return Math.max(0, Math.min(100, matchPercentage));
+}
+
+function lerp(start: number, end: number, amount: number) {
+  return Math.round(start + (end - start) * amount);
+}
+
+function mixColors(start: RgbColor, end: RgbColor, amount: number): RgbColor {
+  return {
+    red: lerp(start.red, end.red, amount),
+    green: lerp(start.green, end.green, amount),
+    blue: lerp(start.blue, end.blue, amount),
+  };
+}
+
+function getProgressColor(matchPercentage: number): RgbColor {
+  const normalized = clampPercentage(matchPercentage) / 100;
+
+  if (normalized <= 0.5) {
+    return mixColors(progressPalette.unlinked, progressPalette.pending, normalized / 0.5);
+  }
+
+  return mixColors(progressPalette.pending, progressPalette.linked, (normalized - 0.5) / 0.5);
+}
+
+function asRgb(color: RgbColor, alpha = 1) {
+  return `rgba(${color.red}, ${color.green}, ${color.blue}, ${alpha})`;
+}
+
+function ProgressBubble({
+  label,
+  matchPercentage,
+  status,
+}: {
+  label: string;
+  matchPercentage: number;
+  status: ProgressStatus;
+}) {
+  const percentage = clampPercentage(matchPercentage);
+  const color = getProgressColor(percentage);
+
+  return (
+    <article
+      aria-label={`${label}: ${status} at ${percentage}% match`}
+      className="rounded-[1.5rem] border border-ctp-surface0/80 bg-ctp-mantle/70 p-5"
+    >
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <p className="text-sm font-semibold tracking-[0.24em] uppercase text-ctp-subtext0">
+            {label}
+          </p>
+          <p className="mt-3 text-sm leading-7 text-ctp-subtext1">
+            Match confidence is currently {status}, with colour blended directly
+            from the percentage score.
+          </p>
+        </div>
+
+        <div
+          aria-hidden="true"
+          className="flex h-17 w-17 shrink-0 items-center justify-center rounded-full border text-center shadow-lg"
+          style={{
+            background: `radial-gradient(circle at 30% 30%, ${asRgb(color, 0.38)}, ${asRgb(color, 0.12)} 62%, rgba(24, 24, 37, 0.92) 100%)`,
+            borderColor: asRgb(color, 0.55),
+            boxShadow: `0 18px 40px ${asRgb(color, 0.2)}`,
+          }}
+        >
+          <div>
+            <p className="font-display text-xl font-semibold text-ctp-text">{percentage}%</p>
+            <p
+              className="text-[0.6rem] font-semibold tracking-[0.22em] uppercase"
+              style={{ color: asRgb(color, 0.92) }}
+            >
+              {status}
+            </p>
+          </div>
+        </div>
+      </div>
+    </article>
+  );
+}
+
+function SectionView({
+  description,
+  heading,
+  kicker,
+  progressExamples,
+  stats,
+  section,
+}: AppRoute) {
   return (
     <section className="space-y-8">
       <div className="relative overflow-hidden rounded-[2rem] border border-ctp-surface0/80 bg-[linear-gradient(135deg,rgba(137,180,250,0.14),rgba(30,30,46,0.9)_40%,rgba(17,17,27,0.96))] p-8 shadow-2xl shadow-ctp-crust/35 sm:p-10">
@@ -152,15 +275,26 @@ function SectionView({ description, heading, kicker, stats, section }: AppRoute)
                 while route-specific panels swap into place underneath.
               </p>
             </article>
-            <article className="rounded-[1.5rem] border border-ctp-surface0/80 bg-ctp-mantle/70 p-5">
+            <div className="rounded-[1.5rem] border border-ctp-surface0/80 bg-ctp-mantle/70 p-5">
               <h3 className="text-sm font-semibold tracking-[0.28em] uppercase text-ctp-yellow">
-                Next frontend tasks
+                Link confidence
               </h3>
               <p className="mt-3 text-sm leading-7 text-ctp-subtext1">
-                The global search input and progress bubble component can plug
-                into this frame without restructuring routes again.
+                Bubble colour now lerps from unlinked to pending to linked as
+                each match score improves.
               </p>
-            </article>
+            </div>
+          </div>
+
+          <div className="mt-4 grid gap-4 xl:grid-cols-3">
+            {progressExamples.map((example) => (
+              <ProgressBubble
+                key={example.label}
+                label={example.label}
+                matchPercentage={example.matchPercentage}
+                status={example.status}
+              />
+            ))}
           </div>
         </div>
 

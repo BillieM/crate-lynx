@@ -6,6 +6,6 @@
 - [x] Install React Router and define top-level routes (Maintenance, YouTube Music, Local Library)
 - [x] Build the app shell: persistent sidebar with the three navigation sections, topbar, and main content area
 - [x] Wire the global search bar in the topbar to the appropriate API search endpoint
-- [ ] Implement the progress bubble component with lerp colour logic (unlinked → pending → linked colour gradient based on match percentage)
+- [x] Implement the progress bubble component with lerp colour logic (unlinked → pending → linked colour gradient based on match percentage)
 - [ ] Configure Nginx in `app-ui/` to serve the built assets and proxy `/api` requests to the `app` container
 - [ ] Confirm the `app-ui` Docker container builds and serves the shell correctly end-to-end

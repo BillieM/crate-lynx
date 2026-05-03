@@ -77,6 +77,20 @@ describe("App", () => {
     expect(screen.getByText(/main content area/i)).toBeInTheDocument();
   });
 
+  it("renders progress bubbles with interpolated match states in the workspace", () => {
+    renderApp(["/youtube-music"]);
+
+    expect(
+      screen.getByLabelText(/roadtrip mix: unlinked at 24% match/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByLabelText(/deep cuts sync: pending at 63% match/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByLabelText(/daily rotation: linked at 88% match/i),
+    ).toBeInTheDocument();
+  });
+
   it("shows API-backed search results in the shared topbar", async () => {
     window.fetch = vi.fn().mockResolvedValue({
       ok: true,
