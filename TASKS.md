@@ -10,5 +10,5 @@
 - [x] Keep inline styles only for genuinely dynamic values such as progress width or computed SVG stroke offset
 - [x] Review arbitrary Tailwind values and convert repeated radii, shadows, and typography patterns into shared component styles
 - [x] Replace hand-written generic SVG icons with a consistent icon approach, preferably `lucide-react`
-- [ ] Add or update frontend tests for shared UI primitives, reusable filter chips, and extracted proposal/config components
+- [x] Add or update frontend tests for shared UI primitives, reusable filter chips, and extracted proposal/config components
 - [ ] Run relevant frontend validation: `npm run lint`, `npm test`, and `npm run build`
