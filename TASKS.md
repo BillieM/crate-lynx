@@ -3,7 +3,7 @@
 - [x] Build the Local Library view shell in `app-ui/` with routes/navigation that preserve existing app workflows
 - [x] Add library stats cards for total, linked, pending, and unlinked track counts
 - [x] Add the library faceted filter bar for link status, match method, and file status
-- [ ] Build the flat library track list with compact, scannable rows for track metadata and link state
+- [x] Build the flat library track list with compact, scannable rows for track metadata and link state
 - [ ] Build the Unidentified maintenance view listing Beets-failed tracks with filename and fingerprint hash
 - [ ] Wire the Unidentified Rescue action to the existing metadata rescue endpoint from E08
 - [ ] Build the Missing Locally maintenance view listing streaming tracks with no local match

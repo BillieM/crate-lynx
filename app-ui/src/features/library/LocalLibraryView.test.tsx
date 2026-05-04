@@ -40,4 +40,37 @@ describe("LocalLibraryView", () => {
     expect(within(filters).getByLabelText("File status")).toHaveValue("all");
     expect(resetButton).toBeDisabled();
   });
+
+  it("renders compact local library track rows with metadata and link state", () => {
+    render(<LocalLibraryView />);
+
+    const trackList = screen.getByRole("region", { name: "Local library tracks" });
+
+    expect(within(trackList).getByRole("heading", { name: "Local library track list" })).toBeInTheDocument();
+    expect(within(trackList).getByText("Showing 5 of 5 rows")).toBeInTheDocument();
+    expect(within(trackList).getAllByRole("status", { name: "Linked track" })).toHaveLength(2);
+    expect(within(trackList).getByText("Night Shift")).toBeInTheDocument();
+    expect(within(trackList).getByText("The Midnight")).toBeInTheDocument();
+    expect(within(trackList).getByText("Nocturnal")).toBeInTheDocument();
+    expect(within(trackList).getByText("Synthwave/The Midnight/Nocturnal/Night Shift.mp3")).toBeInTheDocument();
+    expect(within(trackList).getAllByText("4:05")).toHaveLength(2);
+    expect(within(trackList).getAllByText("ISRC")).toHaveLength(1);
+    expect(within(trackList).getAllByText("Available")).toHaveLength(3);
+  });
+
+  it("filters the rendered library track rows by selected facets", () => {
+    render(<LocalLibraryView />);
+
+    const filters = screen.getByRole("region", { name: "Library filters" });
+
+    fireEvent.click(within(filters).getByRole("button", { name: "Pending 43" }));
+    fireEvent.change(within(filters).getByLabelText("Match method"), { target: { value: "manual" } });
+    fireEvent.change(within(filters).getByLabelText("File status"), { target: { value: "missing" } });
+
+    const trackList = screen.getByRole("region", { name: "Local library tracks" });
+    expect(within(trackList).getByText("Showing 1 of 5 rows")).toBeInTheDocument();
+    expect(within(trackList).getByText("Open Eye Signal")).toBeInTheDocument();
+    expect(within(trackList).getByText("Jon Hopkins")).toBeInTheDocument();
+    expect(within(trackList).queryByText("Night Shift")).not.toBeInTheDocument();
+  });
 });
