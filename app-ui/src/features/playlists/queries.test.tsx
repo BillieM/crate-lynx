@@ -9,6 +9,7 @@ import {
   fetchStreamingPlaylists,
   fetchPlaylistTracks,
   playlistQueryKeys,
+  updateStreamingPlaylistConfig,
   usePlaylistDetailQuery,
   useStreamingPlaylistConfigQuery,
   useStreamingPlaylistsQuery,
@@ -29,8 +30,8 @@ function createWrapper() {
   };
 }
 
-function failUnexpectedFetch(url: string): never {
-  throw new Error(`Unexpected fetch request: GET ${url}`);
+function failUnexpectedFetch(url: string, init?: RequestInit): never {
+  throw new Error(`Unexpected fetch request: ${init?.method ?? "GET"} ${url}`);
 }
 
 describe("playlist queries", () => {
@@ -232,6 +233,48 @@ describe("playlist queries", () => {
     });
     expect(fetchMock).toHaveBeenCalledWith("/api/streaming/playlists/config");
     expect(fetchMock).not.toHaveBeenCalledWith("/api/streaming/playlists");
+  });
+
+  it("updates a streaming playlist sync selection", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+
+      if (url === "/api/streaming/playlists/13" && init?.method === "PATCH") {
+        return {
+          ok: true,
+          json: async () => ({
+            id: 13,
+            account_id: 4,
+            provider_playlist_id: "PL13",
+            title: "Fresh Discoveries",
+            selected_for_sync: true,
+            track_count: 0,
+            synced_at: null,
+            last_sync_error: null,
+            last_sync_error_at: null,
+          }),
+        } as Response;
+      }
+
+      failUnexpectedFetch(url, init);
+    });
+
+    await expect(
+      updateStreamingPlaylistConfig({
+        playlistId: 13,
+        selected_for_sync: true,
+      }),
+    ).resolves.toMatchObject({
+      id: 13,
+      selected_for_sync: true,
+    });
+    expect(fetchMock).toHaveBeenCalledWith("/api/streaming/playlists/13", {
+      body: JSON.stringify({ selected_for_sync: true }),
+      headers: {
+        "Content-Type": "application/json",
+      },
+      method: "PATCH",
+    });
   });
 
   it("exports a playlist M3U blob and filename", async () => {

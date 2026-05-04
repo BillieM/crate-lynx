@@ -181,6 +181,16 @@ function mockPlaylistFetch() {
       } as Response;
     }
 
+    if (url === "/api/streaming/playlists/31" && init?.method === "PATCH") {
+      return {
+        ok: true,
+        json: async () => ({
+          ...streamingPlaylistConfigResponse.playlists[1],
+          selected_for_sync: true,
+        }),
+      } as Response;
+    }
+
     if (playlistEndpointMatch) {
       const [, playlistId, suffix] = playlistEndpointMatch;
 
@@ -334,6 +344,42 @@ describe("App", () => {
     expect(document.getElementById("playlists")).toHaveAttribute("data-view-active", "true");
     expect(document.getElementById("playlist-12")).toHaveAttribute("data-view-active", "false");
     expect(screen.queryByRole("button", { name: "Configure sync" })).not.toBeInTheDocument();
+  });
+
+  it("updates playlist sync selection and refreshes sidebar and config queries", async () => {
+    const fetchMock = mockPlaylistFetch();
+
+    renderApp();
+
+    expect(await screen.findByRole("heading", { level: 1, name: "Late Night Drive" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Configure sync" }));
+
+    const playlistListFetchesBeforeToggle = fetchMock.mock.calls.filter(
+      ([input]) => String(input) === "/api/streaming/playlists",
+    ).length;
+    const configFetchesBeforeToggle = fetchMock.mock.calls.filter(
+      ([input]) => String(input) === "/api/streaming/playlists/config",
+    ).length;
+
+    fireEvent.click(await screen.findByRole("checkbox", { name: "Select Fresh Discoveries for sync" }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith("/api/streaming/playlists/31", {
+        body: JSON.stringify({ selected_for_sync: true }),
+        headers: {
+          "Content-Type": "application/json",
+        },
+        method: "PATCH",
+      });
+    });
+    await waitFor(() => {
+      expect(
+        fetchMock.mock.calls.filter(([input]) => String(input) === "/api/streaming/playlists").length,
+      ).toBeGreaterThan(playlistListFetchesBeforeToggle);
+      expect(
+        fetchMock.mock.calls.filter(([input]) => String(input) === "/api/streaming/playlists/config").length,
+      ).toBeGreaterThan(configFetchesBeforeToggle);
+    });
   });
 
   it("opens the first synced playlist by default", async () => {

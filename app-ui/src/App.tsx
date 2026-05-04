@@ -8,8 +8,10 @@ import { PlaylistTrackActions } from "./features/playlists/PlaylistTrackActions"
 import { PlaylistTrackRow } from "./features/playlists/PlaylistTrackRow";
 import {
   exportPlaylistM3u,
+  playlistQueryKeys,
   type StreamingPlaylist,
   type StreamingPlaylistConfig,
+  updateStreamingPlaylistConfig,
   usePlaylistDetailQuery,
   useStreamingPlaylistConfigQuery,
   useStreamingPlaylistsQuery,
@@ -679,22 +681,39 @@ function PlaylistCollectionState({ status }: { status: PlaylistCollectionStatus 
   );
 }
 
-function PlaylistSyncToggle({ playlist }: { playlist: StreamingPlaylistConfig }) {
+function PlaylistSyncToggle({
+  isPending,
+  onToggle,
+  playlist,
+}: {
+  isPending: boolean;
+  onToggle: (selectedForSync: boolean) => void;
+  playlist: StreamingPlaylistConfig;
+}) {
   return (
     <label className="inline-flex shrink-0 items-center gap-2 text-[12px] font-semibold text-ctp-subtext0">
       <input
         aria-label={`Select ${playlist.title} for sync`}
         checked={playlist.selected_for_sync}
         className="h-4 w-4 rounded border-ctp-surface1 bg-ctp-surface0 text-ctp-mauve accent-ctp-mauve"
-        readOnly
+        disabled={isPending}
+        onChange={(event) => onToggle(event.target.checked)}
         type="checkbox"
       />
-      {playlist.selected_for_sync ? "Selected" : "Not selected"}
+      {isPending ? "Updating..." : playlist.selected_for_sync ? "Selected" : "Not selected"}
     </label>
   );
 }
 
-function PlaylistConfigRow({ playlist }: { playlist: StreamingPlaylistConfig }) {
+function PlaylistConfigRow({
+  isTogglePending,
+  onTogglePlaylist,
+  playlist,
+}: {
+  isTogglePending: boolean;
+  onTogglePlaylist: (playlist: StreamingPlaylistConfig, selectedForSync: boolean) => void;
+  playlist: StreamingPlaylistConfig;
+}) {
   return (
     <article className="rounded-[18px] border border-ctp-surface1/80 bg-ctp-mantle px-5 py-4">
       <div className="flex items-start justify-between gap-4">
@@ -704,7 +723,11 @@ function PlaylistConfigRow({ playlist }: { playlist: StreamingPlaylistConfig }) 
             Provider ID {playlist.provider_playlist_id} / Account {playlist.account_id}
           </p>
         </div>
-        <PlaylistSyncToggle playlist={playlist} />
+        <PlaylistSyncToggle
+          isPending={isTogglePending}
+          onToggle={(selectedForSync) => onTogglePlaylist(playlist, selectedForSync)}
+          playlist={playlist}
+        />
       </div>
 
       <dl className="mt-4 grid gap-3 text-[12px] sm:grid-cols-3">
@@ -728,7 +751,17 @@ function PlaylistConfigRow({ playlist }: { playlist: StreamingPlaylistConfig }) 
 }
 
 function PlaylistSyncConfiguration() {
+  const queryClient = useQueryClient();
   const configQuery = useStreamingPlaylistConfigQuery();
+  const toggleMutation = useMutation({
+    mutationFn: updateStreamingPlaylistConfig,
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: playlistQueryKeys.list() }),
+        queryClient.invalidateQueries({ queryKey: playlistQueryKeys.config() }),
+      ]);
+    },
+  });
   const playlists = configQuery.data?.playlists ?? [];
   const selectedCount = getSelectedPlaylistCount(playlists);
 
@@ -758,7 +791,17 @@ function PlaylistSyncConfiguration() {
       <div className="min-h-0 flex-1 overflow-y-auto pr-1">
         <div className="space-y-3">
           {playlists.map((playlist) => (
-            <PlaylistConfigRow key={playlist.id} playlist={playlist} />
+            <PlaylistConfigRow
+              isTogglePending={toggleMutation.isPending && toggleMutation.variables?.playlistId === playlist.id}
+              key={playlist.id}
+              onTogglePlaylist={(playlistToUpdate, selectedForSync) =>
+                toggleMutation.mutate({
+                  playlistId: playlistToUpdate.id,
+                  selected_for_sync: selectedForSync,
+                })
+              }
+              playlist={playlist}
+            />
           ))}
         </div>
       </div>

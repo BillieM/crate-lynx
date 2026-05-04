@@ -56,6 +56,11 @@ export type StreamingPlaylistConfigResponse = {
   playlists: StreamingPlaylistConfig[];
 };
 
+export type UpdateStreamingPlaylistConfigInput = {
+  playlistId: number | string;
+  selected_for_sync: boolean;
+};
+
 export type PlaylistTracksResponse = {
   tracks: PlaylistTrack[];
 };
@@ -112,6 +117,25 @@ export async function fetchStreamingPlaylists(): Promise<StreamingPlaylistsRespo
 
 export async function fetchStreamingPlaylistConfig(): Promise<StreamingPlaylistConfigResponse> {
   return fetchJson<StreamingPlaylistConfigResponse>("/api/streaming/playlists/config");
+}
+
+export async function updateStreamingPlaylistConfig({
+  playlistId,
+  selected_for_sync,
+}: UpdateStreamingPlaylistConfigInput): Promise<StreamingPlaylistConfig> {
+  const response = await fetch(`/api/streaming/playlists/${encodeURIComponent(String(playlistId))}`, {
+    body: JSON.stringify({ selected_for_sync }),
+    headers: {
+      "Content-Type": "application/json",
+    },
+    method: "PATCH",
+  });
+
+  if (!response.ok) {
+    throw new Error(`Playlist update request failed with status ${response.status}`);
+  }
+
+  return (await response.json()) as StreamingPlaylistConfig;
 }
 
 export async function fetchPlaylistTracks(playlistId: number | string): Promise<PlaylistTracksResponse> {
