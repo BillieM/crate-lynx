@@ -11,6 +11,7 @@ export type FilterChipOption<TValue extends string> = {
 type FilterChipGroupProps<TValue extends string> = {
   activeValue: TValue;
   ariaLabel: string;
+  density?: "default" | "compact";
   onValueChange: (value: TValue) => void;
   options: FilterChipOption<TValue>[];
 };
@@ -18,25 +19,30 @@ type FilterChipGroupProps<TValue extends string> = {
 export function FilterChipGroup<TValue extends string>({
   activeValue,
   ariaLabel,
+  density = "default",
   onValueChange,
   options,
 }: FilterChipGroupProps<TValue>) {
+  const chipClasses = density === "compact" ? controlClasses.filterChipCompact : controlClasses.filterChip;
+  const countBadgeClasses = density === "compact" ? controlClasses.countBadgeCompact : controlClasses.countBadge;
+  const groupClasses = density === "compact" ? controlClasses.filterChipGroupCompact : controlClasses.filterChipGroup;
+
   return (
-    <div aria-label={ariaLabel} className="flex flex-wrap items-center gap-2" role="group">
+    <div aria-label={ariaLabel} className={groupClasses} role="group">
       {options.map((option) => {
         const isSelected = activeValue === option.value;
 
         return (
           <button
             aria-pressed={isSelected}
-            className={`${controlClasses.filterChip} ${isSelected ? selectedFilterChipClasses[option.tone] : controlClasses.filterChipInactive}`}
+            className={`${chipClasses} ${isSelected ? selectedFilterChipClasses[option.tone] : controlClasses.filterChipInactive}`}
             key={option.value}
             onClick={() => onValueChange(option.value)}
             type="button"
           >
             <span>{option.label}</span>
             {option.count !== undefined ? (
-              <span className={controlClasses.countBadge}>{option.count}</span>
+              <span className={countBadgeClasses}>{option.count}</span>
             ) : null}
           </button>
         );

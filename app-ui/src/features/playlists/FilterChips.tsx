@@ -40,6 +40,7 @@ export function FilterChips({ activeFilter, counts, onFilterChange }: FilterChip
     <FilterChipGroup
       activeValue={activeFilter}
       ariaLabel="Track status filters"
+      density="compact"
       onValueChange={onFilterChange}
       options={options}
     />

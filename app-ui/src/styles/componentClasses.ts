@@ -59,8 +59,14 @@ export const controlClasses = {
   controlRadius: radiusClasses.control,
   countBadge:
     `${radiusClasses.pill} min-w-6 bg-ctp-mantle px-2 py-0.5 text-center text-[11px] font-semibold tabular-nums text-ctp-subtext0 ring-1 ring-inset ring-ctp-surface1`,
+  countBadgeCompact:
+    `${radiusClasses.pill} min-w-5 bg-ctp-mantle px-1.5 py-0 text-center text-[10px] font-semibold tabular-nums text-ctp-subtext0 ring-1 ring-inset ring-ctp-surface1`,
   filterChip:
     `${radiusClasses.pill} inline-flex min-h-8 items-center gap-2 border px-3 text-[12px] font-semibold transition-colors`,
+  filterChipCompact:
+    `${radiusClasses.pill} inline-flex min-h-7 items-center gap-1.5 border px-2.5 text-[11px] font-semibold transition-colors`,
+  filterChipGroup: "flex flex-wrap items-center gap-2",
+  filterChipGroupCompact: "flex flex-wrap items-center gap-1.5",
   filterChipInactive:
     "border-ctp-surface1 bg-ctp-surface0 text-ctp-subtext0 hover:border-ctp-overlay0 hover:bg-ctp-surface1 hover:text-ctp-text",
   iconFrame: `flex items-center justify-center ${radiusClasses.control} bg-ctp-surface0 text-ctp-mauve`,
