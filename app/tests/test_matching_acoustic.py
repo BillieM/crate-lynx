@@ -1,15 +1,19 @@
+from datetime import UTC, datetime
 from pathlib import Path
 import subprocess
 from typing import Any
 
-from sqlalchemy import create_engine, insert
+from sqlalchemy import create_engine, insert, select
 
 from app.local_tracks.store import local_tracks_table, metadata as local_metadata
 from app.matching import (
     AcousticCandidate,
     AcousticMatcher,
     ConfidenceBand,
+    StreamingAudioFingerprint,
+    StreamingAudioFingerprintExtractor,
     StreamingTrackAudioDownloader,
+    StreamingTrackFingerprinter,
     YtDlpAudioDownloader,
     run_acoustic_match_job,
 )
@@ -201,3 +205,114 @@ def test_streaming_track_audio_downloader_uses_candidate_provider_track_id(
 
     assert downloaded is not None
     assert yt_dlp_downloader.provider_track_ids == ["video-456"]
+
+
+def test_streaming_audio_fingerprint_extractor_runs_fpcalc_and_parses_json(
+    tmp_path: Path,
+) -> None:
+    seen_commands: list[list[str]] = []
+    audio_path = tmp_path / "stream.m4a"
+    audio_path.write_bytes(b"audio")
+
+    def fake_run(command: list[str]) -> subprocess.CompletedProcess[str]:
+        seen_commands.append(command)
+        return subprocess.CompletedProcess(
+            command,
+            0,
+            stdout='{"fingerprint":"stream-fp","duration":201.25}',
+        )
+
+    fingerprint = StreamingAudioFingerprintExtractor(
+        fpcalc_binary="fpcalc-test",
+        command_runner=fake_run,
+    ).extract(audio_path)
+
+    assert fingerprint == StreamingAudioFingerprint(
+        fingerprint="stream-fp",
+        duration_seconds=201.25,
+    )
+    assert seen_commands == [["fpcalc-test", "-json", str(audio_path)]]
+
+
+def test_streaming_track_fingerprinter_persists_extracted_fingerprint(
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite:///{tmp_path / 'streaming.db'}"
+    engine = create_engine(database_url)
+    streaming_metadata.create_all(engine)
+    audio_path = tmp_path / "downloaded.m4a"
+    audio_path.write_bytes(b"audio")
+    fingerprinted_at = datetime(2026, 5, 4, 12, 30, tzinfo=UTC)
+
+    with engine.begin() as connection:
+        connection.execute(
+            insert(streaming_tracks_table).values(
+                provider_track_id="video-789",
+                title="Track",
+                artist="Artist",
+                album="Album",
+                year=2026,
+                isrc=None,
+                duration_ms=123000,
+                fingerprint=None,
+                fingerprint_duration_seconds=None,
+                fingerprinted_at=None,
+            )
+        )
+
+    class FakeDownloadedAudio:
+        def __init__(self) -> None:
+            self.path = audio_path
+            self.cleaned_up = False
+
+        def __enter__(self) -> Any:
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            self.cleaned_up = True
+
+    class FakeAudioDownloader:
+        def __init__(self) -> None:
+            self.streaming_track_ids: list[int] = []
+            self.downloaded = FakeDownloadedAudio()
+
+        def download(self, streaming_track_id: int) -> FakeDownloadedAudio:
+            self.streaming_track_ids.append(streaming_track_id)
+            return self.downloaded
+
+    class FakeFingerprintExtractor:
+        def __init__(self) -> None:
+            self.audio_paths: list[Path] = []
+
+        def extract(self, path: Path) -> StreamingAudioFingerprint:
+            self.audio_paths.append(path)
+            return StreamingAudioFingerprint(
+                fingerprint="stream-fp-789",
+                duration_seconds=198.5,
+            )
+
+    audio_downloader = FakeAudioDownloader()
+    fingerprint_extractor = FakeFingerprintExtractor()
+
+    candidate = StreamingTrackFingerprinter(
+        database_url=database_url,
+        audio_downloader=audio_downloader,
+        fingerprint_extractor=fingerprint_extractor,
+        clock=lambda: fingerprinted_at,
+    ).fingerprint(1)
+
+    with engine.connect() as connection:
+        stored_track = (
+            connection.execute(select(streaming_tracks_table)).mappings().one()
+        )
+
+    assert candidate == AcousticCandidate(
+        streaming_track_id=1,
+        fingerprint="stream-fp-789",
+    )
+    assert audio_downloader.streaming_track_ids == [1]
+    assert fingerprint_extractor.audio_paths == [audio_path]
+    assert audio_downloader.downloaded.cleaned_up is True
+    assert stored_track["fingerprint"] == "stream-fp-789"
+    assert stored_track["fingerprint_duration_seconds"] == 198.5
+    assert stored_track["fingerprinted_at"] == fingerprinted_at.replace(tzinfo=None)

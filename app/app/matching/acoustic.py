@@ -2,15 +2,17 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from dataclasses import dataclass
+from datetime import UTC, datetime
+import json
 import os
 from pathlib import Path
 import subprocess
 import tempfile
 from types import TracebackType
-from typing import Protocol
+from typing import Callable, Protocol
 
 from rapidfuzz.distance import Levenshtein
-from sqlalchemy import create_engine, select
+from sqlalchemy import create_engine, select, update
 
 from app.local_tracks.store import local_tracks_table
 from app.matching.models import ConfidenceBand, MatchResult
@@ -29,6 +31,12 @@ class CommandRunner(Protocol):
 class AcousticCandidate:
     streaming_track_id: int
     fingerprint: str
+
+
+@dataclass(frozen=True, slots=True)
+class StreamingAudioFingerprint:
+    fingerprint: str
+    duration_seconds: float | None
 
 
 @dataclass(slots=True)
@@ -133,6 +141,90 @@ class StreamingTrackAudioDownloader:
             return None
 
         return _normalize_string(row["provider_track_id"])
+
+
+@dataclass(slots=True)
+class StreamingAudioFingerprintExtractor:
+    fpcalc_binary: str = "fpcalc"
+    command_runner: CommandRunner | None = None
+
+    def extract(self, audio_path: Path | str) -> StreamingAudioFingerprint:
+        command = [
+            self.fpcalc_binary,
+            "-json",
+            str(audio_path),
+        ]
+
+        if self.command_runner is not None:
+            completed = self.command_runner(command)
+            completed.check_returncode()
+        else:
+            completed = subprocess.run(
+                command,
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+
+        return self._parse_fingerprint(completed.stdout)
+
+    def _parse_fingerprint(self, output: str) -> StreamingAudioFingerprint:
+        payload = json.loads(output)
+        fingerprint = payload.get("fingerprint")
+        duration = payload.get("duration")
+
+        if not isinstance(fingerprint, str) or not fingerprint:
+            raise ValueError("fpcalc output did not include a fingerprint")
+
+        return StreamingAudioFingerprint(
+            fingerprint=fingerprint,
+            duration_seconds=float(duration)
+            if isinstance(duration, int | float)
+            else None,
+        )
+
+
+class StreamingTrackFingerprinter:
+    def __init__(
+        self,
+        *,
+        database_url: str,
+        audio_downloader: StreamingTrackAudioDownloader | None = None,
+        fingerprint_extractor: StreamingAudioFingerprintExtractor | None = None,
+        clock: Callable[[], datetime] | None = None,
+    ) -> None:
+        self._engine = create_engine(database_url)
+        self._audio_downloader = audio_downloader or StreamingTrackAudioDownloader(
+            database_url=database_url
+        )
+        self._fingerprint_extractor = (
+            fingerprint_extractor or StreamingAudioFingerprintExtractor()
+        )
+        self._clock = clock or (lambda: datetime.now(UTC))
+
+    def fingerprint(self, streaming_track_id: int) -> AcousticCandidate:
+        with self._audio_downloader.download(streaming_track_id) as downloaded:
+            fingerprint = self._fingerprint_extractor.extract(downloaded.path)
+
+        fingerprinted_at = self._clock()
+        with self._engine.begin() as connection:
+            result = connection.execute(
+                update(streaming_tracks_table)
+                .where(streaming_tracks_table.c.id == streaming_track_id)
+                .values(
+                    fingerprint=fingerprint.fingerprint,
+                    fingerprint_duration_seconds=fingerprint.duration_seconds,
+                    fingerprinted_at=fingerprinted_at,
+                )
+            )
+
+        if result.rowcount != 1:
+            raise ValueError(f"Streaming track {streaming_track_id} does not exist")
+
+        return AcousticCandidate(
+            streaming_track_id=streaming_track_id,
+            fingerprint=fingerprint.fingerprint,
+        )
 
 
 class AcousticMatcher:
