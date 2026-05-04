@@ -11,7 +11,7 @@ type StatusMessageProps = {
 
 export function StatusMessage({ body, status, title }: StatusMessageProps) {
   return (
-    <section className={`${surfaceClasses.panelRadius} border px-5 py-4 ${statusMessageClasses[status]}`}>
+    <section className={`${surfaceClasses.statusPanel} ${statusMessageClasses[status]}`}>
       <h3 className="text-[13px] font-semibold text-ctp-text">{title}</h3>
       <p className={`mt-1 ${textClasses.bodyRelaxed}`}>{body}</p>
     </section>

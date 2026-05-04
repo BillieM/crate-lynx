@@ -1,16 +1,44 @@
+const borderClasses = {
+  default: "border border-ctp-surface1/80",
+  muted: "border border-ctp-surface0",
+};
+
+const radiusClasses = {
+  card: "rounded-[8px]",
+  control: "rounded-[8px]",
+  panel: "rounded-[8px]",
+  popover: "rounded-[10px]",
+  artwork: "rounded-[12px]",
+  pill: "rounded-full",
+};
+
+const shadowClasses = {
+  compact: "shadow-sm shadow-ctp-crust/20",
+  elevated: "shadow-[0_12px_32px_color-mix(in_srgb,var(--color-ctp-crust)_18%,transparent)]",
+  popover: "shadow-[0_14px_34px_color-mix(in_srgb,var(--color-ctp-crust)_34%,transparent)]",
+};
+
+const surfaceFillClasses = {
+  card: "bg-ctp-mantle/80",
+  elevated:
+    "bg-[linear-gradient(135deg,color-mix(in_srgb,var(--color-ctp-base)_96%,transparent),color-mix(in_srgb,var(--color-ctp-surface0)_92%,transparent))]",
+  inset: "bg-ctp-surface0/72",
+  row: "bg-[linear-gradient(180deg,color-mix(in_srgb,var(--color-ctp-surface0)_92%,transparent),color-mix(in_srgb,var(--color-ctp-base)_96%,transparent))]",
+};
+
 export const surfaceClasses = {
-  cardRadius: "rounded-[24px]",
-  compactCard: "rounded-[8px] border border-ctp-surface0 bg-ctp-mantle/80 p-4 shadow-sm shadow-ctp-crust/20",
+  cardRadius: radiusClasses.card,
+  compactCard: `${radiusClasses.card} ${borderClasses.muted} ${surfaceFillClasses.card} p-4 ${shadowClasses.compact}`,
+  emptyState: `${radiusClasses.card} border px-5 py-5 text-center`,
   elevatedPanel:
-    "rounded-[30px] border border-ctp-surface1/80 bg-[linear-gradient(135deg,color-mix(in_srgb,var(--color-ctp-base)_96%,transparent),color-mix(in_srgb,var(--color-ctp-surface0)_92%,transparent))] px-6 py-6 shadow-[0_24px_64px_color-mix(in_srgb,var(--color-ctp-crust)_24%,transparent)]",
-  insetPanel: "rounded-[18px] bg-ctp-surface0/72 ring-1 ring-inset ring-ctp-surface1/80",
-  panelRadius: "rounded-[18px]",
-  popover:
-    "rounded-[12px] border border-ctp-surface1 bg-ctp-mantle shadow-[0_20px_48px_color-mix(in_srgb,var(--color-ctp-crust)_38%,transparent)]",
-  raisedArtwork:
-    "rounded-[24px] shadow-[0_18px_42px_color-mix(in_srgb,var(--color-ctp-crust)_28%,transparent)] ring-1 ring-inset ring-ctp-surface1/80",
-  trackCard:
-    "rounded-[24px] border border-ctp-surface1/80 bg-[linear-gradient(180deg,color-mix(in_srgb,var(--color-ctp-surface0)_92%,transparent),color-mix(in_srgb,var(--color-ctp-base)_96%,transparent))] shadow-[0_16px_36px_color-mix(in_srgb,var(--color-ctp-crust)_18%,transparent)]",
+    `${radiusClasses.panel} ${borderClasses.default} ${surfaceFillClasses.elevated} px-5 py-5 ${shadowClasses.elevated}`,
+  insetPanel: `${radiusClasses.panel} ${surfaceFillClasses.inset} ring-1 ring-inset ring-ctp-surface1/80`,
+  panelRadius: radiusClasses.panel,
+  popover: `${radiusClasses.popover} border border-ctp-surface1 bg-ctp-mantle ${shadowClasses.popover}`,
+  raisedArtwork: `${radiusClasses.artwork} ${shadowClasses.elevated} ring-1 ring-inset ring-ctp-surface1/80`,
+  statusPanel: `${radiusClasses.panel} border px-4 py-3`,
+  trackCard: `${radiusClasses.card} ${borderClasses.default} ${surfaceFillClasses.row} ${shadowClasses.compact}`,
+  rowCard: `grid gap-3 px-4 py-3 ${radiusClasses.card} ${borderClasses.default} ${surfaceFillClasses.row} ${shadowClasses.compact}`,
 };
 
 export const textClasses = {
@@ -25,9 +53,17 @@ export const textClasses = {
 };
 
 export const controlClasses = {
-  controlRadius: "rounded-[10px]",
-  iconFrame: "flex items-center justify-center rounded-[10px] bg-ctp-surface0 text-ctp-mauve",
-  pill: "rounded-full px-2.5 py-1 text-[11px] font-semibold",
+  actionButton:
+    `${radiusClasses.control} border px-3 py-1.5 text-[12px] font-semibold transition-colors disabled:cursor-not-allowed disabled:border-ctp-surface0 disabled:bg-ctp-surface0 disabled:text-ctp-overlay1 disabled:hover:bg-ctp-surface0`,
+  controlRadius: radiusClasses.control,
+  countBadge:
+    `${radiusClasses.pill} min-w-6 bg-ctp-mantle px-2 py-0.5 text-center text-[11px] font-semibold tabular-nums text-ctp-subtext0 ring-1 ring-inset ring-ctp-surface1`,
+  filterChip:
+    `${radiusClasses.pill} inline-flex min-h-8 items-center gap-2 border px-3 text-[12px] font-semibold transition-colors`,
+  filterChipInactive:
+    "border-ctp-surface1 bg-ctp-surface0 text-ctp-subtext0 hover:border-ctp-overlay0 hover:bg-ctp-surface1 hover:text-ctp-text",
+  iconFrame: `flex items-center justify-center ${radiusClasses.control} bg-ctp-surface0 text-ctp-mauve`,
+  pill: `${radiusClasses.pill} px-2 py-0.5 text-[11px] font-semibold`,
   searchFrame:
-    "rounded-[10px] bg-ctp-surface0 ring-1 ring-inset ring-ctp-surface1/70 focus-within:text-ctp-text focus-within:ring-ctp-overlay0",
+    `${radiusClasses.control} bg-ctp-surface0 ring-1 ring-inset ring-ctp-surface1/70 focus-within:text-ctp-text focus-within:ring-ctp-overlay0`,
 };

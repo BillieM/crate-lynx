@@ -31,7 +31,9 @@ function getAlbumLabel(album: string | null) {
 
 export function PlaylistTrackRow({ actionSlot, track }: PlaylistTrackRowProps) {
   return (
-    <article className={`grid gap-4 px-5 py-4 lg:grid-cols-[minmax(0,1.8fr)_minmax(0,1.1fr)_minmax(0,1fr)_auto_auto] lg:items-center ${surfaceClasses.trackCard}`}>
+    <article
+      className={`${surfaceClasses.rowCard} lg:grid-cols-[minmax(0,1.8fr)_minmax(0,1.1fr)_minmax(0,1fr)_auto_auto] lg:items-center`}
+    >
       <div className="flex min-w-0 items-start gap-3">
         <div className="flex items-center gap-3 pt-1">
           <TrackStatusDot status={track.status} />

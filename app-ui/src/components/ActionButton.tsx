@@ -7,8 +7,7 @@ type ActionButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
   tone?: ActionButtonTone;
 };
 
-const baseClasses =
-  `${controlClasses.controlRadius} border px-3 py-1.5 text-[12px] font-semibold transition-colors disabled:cursor-not-allowed disabled:border-ctp-surface0 disabled:bg-ctp-surface0 disabled:text-ctp-overlay1 disabled:hover:bg-ctp-surface0`;
+const baseClasses = controlClasses.actionButton;
 
 export function ActionButton({ children, className = "", tone = "neutral", type = "button", ...props }: ActionButtonProps) {
   return (
