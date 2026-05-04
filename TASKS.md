@@ -52,7 +52,7 @@
   - Update frontend tests to mock backend payloads rather than asserting static fixture data.
   - Run the relevant frontend validation for the changed frontend files: targeted `npm test`, `npm run lint`, and `npm run build`.
 
-- [ ] Wire the Missing Locally view to backend data
+- [x] Wire the Missing Locally view to backend data
   - Replace hardcoded missing-track fixtures with the new Missing Locally query data.
   - Render aggregated playlist usage per row as playlist names and/or `N playlists`, not as a single misleading playlist field.
   - Keep row labels focused on useful metadata: title, artist, album, duration, streaming ID, affected playlists, and last checked/synced timestamp if available.

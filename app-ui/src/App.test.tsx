@@ -3,6 +3,7 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import { MemoryRouter } from "react-router-dom";
 import App, { getProgressColor } from "./App";
 import type { LibraryTracksResponse } from "./features/library/queries";
+import type { MissingLocallyResponse } from "./features/maintenance/queries";
 import type {
   LinkProposalsResponse,
   PlaylistDetailResponse,
@@ -194,6 +195,20 @@ const libraryTracksResponse: LibraryTracksResponse = {
     },
   ],
 };
+const missingLocallyResponse: MissingLocallyResponse = {
+  tracks: [
+    {
+      album: "Immunity",
+      artist: "Jon Hopkins",
+      duration_ms: 270000,
+      id: 5001,
+      playlist_count: 2,
+      playlist_titles: ["Late Night Drive", "Focus Queue"],
+      provider_track_id: "ytm:VLPL_missing_018",
+      title: "Open Eye Signal",
+    },
+  ],
+};
 
 type MockPlaylistFetchOptions = {
   activeSyncHandler?: () => Promise<Response> | Response;
@@ -289,6 +304,13 @@ function mockPlaylistFetch({
       return {
         ok: true,
         json: async () => libraryTracksResponse,
+      } as Response;
+    }
+
+    if (url === "/api/maintenance/missing-locally") {
+      return {
+        ok: true,
+        json: async () => missingLocallyResponse,
       } as Response;
     }
 
@@ -629,7 +651,7 @@ describe("App", () => {
     expect(screen.getByText("Gap report")).toBeInTheDocument();
     expect(screen.getByLabelText("Missing locally summary")).toBeInTheDocument();
     expect(screen.getByRole("region", { name: "Missing local tracks" })).toBeInTheDocument();
-    expect(screen.getByText("Open Eye Signal")).toBeInTheDocument();
+    expect(await screen.findByText("Open Eye Signal")).toBeInTheDocument();
     expect(screen.getByText("ytm:VLPL_missing_018")).toBeInTheDocument();
     expect(document.getElementById("missing")).toHaveAttribute("data-view-active", "true");
     expect(document.getElementById("playlists")).toHaveAttribute("data-view-active", "false");

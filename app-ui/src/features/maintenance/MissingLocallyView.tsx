@@ -2,52 +2,11 @@ import { ListMusic, Music2, RadioTower, SearchX } from "lucide-react";
 import { EmptyStateCard } from "../../components/EmptyStateCard";
 import { StatusMessage } from "../../components/StatusMessage";
 import { surfaceClasses, textClasses } from "../../styles/componentClasses";
+import { type MissingLocallyResponse, type MissingLocallyTrack, useMissingLocallyTracksQuery } from "./queries";
 
 type MaintenanceViewState = "ready" | "loading" | "error";
 
-type MissingStreamingTrack = {
-  album: string | null;
-  artist: string;
-  durationMs: number | null;
-  id: number;
-  lastCheckedAt: string;
-  playlistTitle: string;
-  serviceTrackId: string;
-  title: string;
-};
-
-const missingStreamingTracks = [
-  {
-    album: "Immunity",
-    artist: "Jon Hopkins",
-    durationMs: 270000,
-    id: 5001,
-    lastCheckedAt: "2026-05-03 19:42",
-    playlistTitle: "Late Night Drive",
-    serviceTrackId: "ytm:VLPL_missing_018",
-    title: "Open Eye Signal",
-  },
-  {
-    album: "Migration",
-    artist: "Bonobo feat. Nick Murphy",
-    durationMs: 360000,
-    id: 5002,
-    lastCheckedAt: "2026-05-03 19:40",
-    playlistTitle: "Focus Queue",
-    serviceTrackId: "ytm:VLPL_missing_024",
-    title: "No Reason",
-  },
-  {
-    album: null,
-    artist: "Kelly Lee Owens",
-    durationMs: 221000,
-    id: 5003,
-    lastCheckedAt: "2026-05-03 19:37",
-    playlistTitle: "New Imports",
-    serviceTrackId: "ytm:VLPL_missing_031",
-    title: "Melt!",
-  },
-] satisfies MissingStreamingTrack[];
+const emptyMissingLocallyTracks: MissingLocallyTrack[] = [];
 
 function formatDuration(durationMs: number | null) {
   if (durationMs === null || durationMs < 0) {
@@ -59,6 +18,16 @@ function formatDuration(durationMs: number | null) {
   const seconds = totalSeconds % 60;
 
   return `${minutes}:${String(seconds).padStart(2, "0")}`;
+}
+
+function formatPlaylistUsage(track: MissingLocallyTrack) {
+  const playlistNames = track.playlist_titles.join(", ");
+
+  if (track.playlist_count <= 1) {
+    return playlistNames || "Playlist unavailable";
+  }
+
+  return `${track.playlist_count} playlists: ${playlistNames || "titles unavailable"}`;
 }
 
 function MissingSummaryCard({
@@ -87,7 +56,7 @@ function MissingSummaryCard({
   );
 }
 
-function MissingTrackRow({ track }: { track: MissingStreamingTrack }) {
+function MissingTrackRow({ track }: { track: MissingLocallyTrack }) {
   return (
     <article className={surfaceClasses.rowCardCompact}>
       <div className="grid min-w-0 gap-1.5">
@@ -99,7 +68,7 @@ function MissingTrackRow({ track }: { track: MissingStreamingTrack }) {
           />
           <SearchX aria-hidden="true" className="h-4 w-4 shrink-0 text-ctp-yellow" strokeWidth={1.8} />
           <p className={`min-w-0 flex-1 truncate ${textClasses.title}`}>{track.title}</p>
-          <span className={`${textClasses.metric} hidden shrink-0 sm:inline`}>{formatDuration(track.durationMs)}</span>
+          <span className={`${textClasses.metric} hidden shrink-0 sm:inline`}>{formatDuration(track.duration_ms)}</span>
         </div>
 
         <dl
@@ -114,20 +83,16 @@ function MissingTrackRow({ track }: { track: MissingStreamingTrack }) {
             <dd className="truncate text-ctp-text">{track.album ?? "Album unavailable"}</dd>
           </div>
           <div className="flex min-w-0 items-baseline gap-1.5 lg:justify-end">
-            <dt className="shrink-0 font-medium text-ctp-overlay1">Playlist</dt>
-            <dd className="truncate font-medium text-ctp-text lg:max-w-[14rem]">{track.playlistTitle}</dd>
+            <dt className="shrink-0 font-medium text-ctp-overlay1">Affected playlists</dt>
+            <dd className="truncate font-medium text-ctp-text lg:max-w-[18rem]">{formatPlaylistUsage(track)}</dd>
           </div>
           <div className="flex min-w-0 items-baseline gap-1.5">
             <dt className="shrink-0 font-medium text-ctp-overlay1">Streaming ID</dt>
-            <dd className="truncate font-mono text-[11px] font-semibold text-ctp-text">{track.serviceTrackId}</dd>
-          </div>
-          <div className="flex min-w-0 items-baseline gap-1.5">
-            <dt className="shrink-0 font-medium text-ctp-overlay1">Checked</dt>
-            <dd className="font-medium tabular-nums text-ctp-text">{track.lastCheckedAt}</dd>
+            <dd className="truncate font-mono text-[11px] font-semibold text-ctp-text">{track.provider_track_id}</dd>
           </div>
           <div className="flex items-baseline gap-1.5 sm:hidden">
             <dt className="shrink-0 font-medium text-ctp-overlay1">Duration</dt>
-            <dd className="font-medium tabular-nums text-ctp-text">{formatDuration(track.durationMs)}</dd>
+            <dd className="font-medium tabular-nums text-ctp-text">{formatDuration(track.duration_ms)}</dd>
           </div>
         </dl>
       </div>
@@ -138,11 +103,15 @@ function MissingTrackRow({ track }: { track: MissingStreamingTrack }) {
 type MissingLocallyViewProps = {
   isPending?: boolean;
   state?: MaintenanceViewState;
-  tracks?: readonly MissingStreamingTrack[];
+  tracksResponse?: MissingLocallyResponse;
 };
 
-export function MissingLocallyView({ isPending = false, state = "ready", tracks = missingStreamingTracks }: MissingLocallyViewProps = {}) {
-  const playlistCount = new Set(tracks.map((track) => track.playlistTitle)).size;
+export function MissingLocallyView({ isPending = false, state, tracksResponse }: MissingLocallyViewProps = {}) {
+  const missingLocallyQuery = useMissingLocallyTracksQuery();
+  const resolvedState =
+    state ?? (missingLocallyQuery.isPending ? "loading" : missingLocallyQuery.isError ? "error" : "ready");
+  const tracks = tracksResponse?.tracks ?? missingLocallyQuery.data?.tracks ?? emptyMissingLocallyTracks;
+  const playlistCount = new Set(tracks.flatMap((track) => track.playlist_titles)).size;
 
   return (
     <section className="flex min-h-0 flex-1 flex-col gap-4">
@@ -170,14 +139,14 @@ export function MissingLocallyView({ isPending = false, state = "ready", tracks 
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto pb-1 pr-1" aria-label="Missing local tracks" role="region">
-        {state === "loading" ? (
+        {resolvedState === "loading" ? (
           <EmptyStateCard
             body="Checking synced streaming tracks against the local library."
             className="text-left"
             role="status"
             title="Loading missing tracks"
           />
-        ) : state === "error" ? (
+        ) : resolvedState === "error" ? (
           <EmptyStateCard
             body="The missing locally report could not be loaded."
             className="text-left"
