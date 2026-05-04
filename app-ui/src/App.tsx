@@ -107,6 +107,11 @@ type ViewConfig = {
 };
 
 type PlaylistCollectionStatus = "empty" | "error" | "loading" | "ready";
+type OperationStatus = "error" | "pending" | "success";
+type PlaylistSyncViewState = {
+  playlistId: number;
+  status: OperationStatus;
+};
 
 const maintenanceItems: NavItem[] = [
   { id: "proposals", label: "Link proposals", badge: 14, tone: "pending" },
@@ -410,7 +415,15 @@ function ProgressFraction({ complete, total }: { complete: number; total: number
   );
 }
 
-function Topbar({ onConfigureSync, view }: { onConfigureSync: () => void; view: ViewConfig }) {
+function Topbar({
+  onConfigureSync,
+  onPlaylistSyncStateChange,
+  view,
+}: {
+  onConfigureSync: () => void;
+  onPlaylistSyncStateChange: (state: PlaylistSyncViewState) => void;
+  view: ViewConfig;
+}) {
   const queryClient = useQueryClient();
   const playlistDetailQuery = usePlaylistDetailQuery(view.playlistResourceId ?? null);
   const playlist = playlistDetailQuery.data?.playlist;
@@ -422,7 +435,14 @@ function Topbar({ onConfigureSync, view }: { onConfigureSync: () => void; view: 
   });
   const syncMutation = useMutation({
     mutationFn: syncStreamingPlaylist,
-    onSuccess: async () => {
+    onMutate: (playlistId) => {
+      onPlaylistSyncStateChange({ playlistId: Number(playlistId), status: "pending" });
+    },
+    onError: (_error, playlistId) => {
+      onPlaylistSyncStateChange({ playlistId: Number(playlistId), status: "error" });
+    },
+    onSuccess: async (_data, playlistId) => {
+      onPlaylistSyncStateChange({ playlistId: Number(playlistId), status: "success" });
       await queryClient.invalidateQueries({ queryKey: ["playlists"] });
       if (view.playlistResourceId !== undefined) {
         await queryClient.invalidateQueries({ queryKey: ["playlists", view.playlistResourceId] });
@@ -612,7 +632,15 @@ function SearchPanel() {
   );
 }
 
-function PlaylistView({ isActive, playlistResourceId }: { isActive: boolean; playlistResourceId: number }) {
+function PlaylistView({
+  isActive,
+  playlistResourceId,
+  syncState,
+}: {
+  isActive: boolean;
+  playlistResourceId: number;
+  syncState?: PlaylistSyncViewState;
+}) {
   const [activeFilter, setActiveFilter] = useState<PlaylistTrackFilter>("all");
   const playlistDetailQuery = usePlaylistDetailQuery(isActive ? playlistResourceId : null);
   const playlistTracksQuery = usePlaylistTracksQuery(isActive ? playlistResourceId : null);
@@ -646,6 +674,20 @@ function PlaylistView({ isActive, playlistResourceId }: { isActive: boolean; pla
 
   return (
     <section className="flex min-h-0 flex-1 flex-col gap-5">
+      {syncState?.status === "pending" ? (
+        <StatusMessage
+          body="This playlist is being synced. Track counts and link status may update when the job finishes."
+          status="pending"
+          title="Playlist sync in progress"
+        />
+      ) : null}
+      {syncState?.status === "error" ? (
+        <StatusMessage
+          body={playlistDetailQuery.data.playlist.last_sync_error ?? "The playlist sync request failed before the job could be queued."}
+          status="error"
+          title="Playlist sync failed"
+        />
+      ) : null}
       <PlaylistHeader playlist={playlistDetailQuery.data.playlist} />
       <div className="flex flex-wrap items-center justify-between gap-3">
         <FilterChips activeFilter={activeFilter} counts={filterCounts} onFilterChange={setActiveFilter} />
@@ -700,6 +742,29 @@ function PlaylistCollectionState({ status }: { status: PlaylistCollectionStatus 
         <h2 className="text-[18px] font-semibold text-ctp-text">{copy[status].title}</h2>
         <p className="mt-2 text-[13px] leading-6 text-ctp-subtext0">{copy[status].body}</p>
       </div>
+    </section>
+  );
+}
+
+function StatusMessage({
+  body,
+  status,
+  title,
+}: {
+  body: string;
+  status: OperationStatus;
+  title: string;
+}) {
+  const classes = {
+    error: "border-ctp-red/30 bg-ctp-red/10 text-ctp-red",
+    pending: "border-ctp-yellow/30 bg-ctp-yellow/10 text-ctp-yellow",
+    success: "border-ctp-green/30 bg-ctp-green/10 text-ctp-green",
+  } satisfies Record<OperationStatus, string>;
+
+  return (
+    <section className={`rounded-[18px] border px-5 py-4 ${classes[status]}`}>
+      <h3 className="text-[13px] font-semibold text-ctp-text">{title}</h3>
+      <p className="mt-1 text-[12px] leading-5">{body}</p>
     </section>
   );
 }
@@ -848,6 +913,31 @@ function PlaylistSyncConfiguration() {
   const playlists = configQuery.data?.playlists ?? [];
   const selectedCount = getSelectedPlaylistCount(playlists);
   const accountId = playlists[0]?.account_id;
+  const operationMessage = selectedSyncMutation.isPending
+    ? {
+        body: "Selected playlists are being synced. Sidebar counts and playlist views may update when the job finishes.",
+        status: "pending",
+        title: "Selected playlist sync in progress",
+      }
+    : selectedSyncMutation.isError
+      ? {
+          body: "The selected playlist sync request failed before a job could be queued.",
+          status: "error",
+          title: "Selected playlist sync failed",
+        }
+      : metadataRefreshMutation.isPending
+        ? {
+            body: "Playlist metadata is being refreshed. Newly discovered playlists may appear here after the job finishes.",
+            status: "pending",
+            title: "Metadata refresh in progress",
+          }
+        : metadataRefreshMutation.isError
+          ? {
+              body: "The playlist metadata refresh request failed before a job could be queued.",
+              status: "error",
+              title: "Metadata refresh failed",
+            }
+          : null;
 
   if (configQuery.isPending) {
     return <PlaylistCollectionState status="loading" />;
@@ -918,6 +1008,13 @@ function PlaylistSyncConfiguration() {
 
       <div className="min-h-0 flex-1 overflow-y-auto pr-1">
         <div className="space-y-3">
+          {operationMessage ? (
+            <StatusMessage
+              body={operationMessage.body}
+              status={operationMessage.status as OperationStatus}
+              title={operationMessage.title}
+            />
+          ) : null}
           {playlists.map((playlist) => (
             <PlaylistConfigRow
               isTogglePending={toggleMutation.isPending && toggleMutation.variables?.playlistId === playlist.id}
@@ -940,10 +1037,12 @@ function PlaylistSyncConfiguration() {
 function ViewShell({
   activeViewId,
   playlistResourceId,
+  playlistSyncState,
   viewId,
 }: {
   activeViewId: string;
   playlistResourceId?: number;
+  playlistSyncState?: PlaylistSyncViewState;
   viewId: string;
 }) {
   const isActive = activeViewId === viewId;
@@ -958,7 +1057,11 @@ function ViewShell({
       {isActive ? (
         <div className="flex min-h-0 flex-1 flex-col p-6">
           {playlistResourceId !== undefined ? (
-            <PlaylistView isActive={isActive} playlistResourceId={playlistResourceId} />
+            <PlaylistView
+              isActive={isActive}
+              playlistResourceId={playlistResourceId}
+              syncState={playlistSyncState?.playlistId === playlistResourceId ? playlistSyncState : undefined}
+            />
           ) : viewId === playlistCollectionViewId ? (
             <PlaylistSyncConfiguration />
           ) : null}
@@ -971,6 +1074,7 @@ function ViewShell({
 function App() {
   const [activeViewId, setActiveViewId] = useState(playlistCollectionViewId);
   const [hasUserSelectedView, setHasUserSelectedView] = useState(false);
+  const [playlistSyncState, setPlaylistSyncState] = useState<PlaylistSyncViewState>();
   const playlistsQuery = useStreamingPlaylistsQuery();
   const streamingPlaylists = playlistsQuery.data?.playlists ?? emptyStreamingPlaylists;
   const defaultPlaylistViewId = streamingPlaylists[0] ? getPlaylistViewId(streamingPlaylists[0].id) : playlistCollectionViewId;
@@ -1073,12 +1177,17 @@ function App() {
         </aside>
 
         <main className="flex flex-1 flex-col bg-ctp-base">
-          <Topbar onConfigureSync={() => handleViewSelect(playlistCollectionViewId)} view={activeView} />
+          <Topbar
+            onConfigureSync={() => handleViewSelect(playlistCollectionViewId)}
+            onPlaylistSyncStateChange={setPlaylistSyncState}
+            view={activeView}
+          />
           <div className="flex flex-1 flex-col">
             {viewShellIds.map((viewId) => (
               <ViewShell
                 key={viewId}
                 activeViewId={activeViewId}
+                playlistSyncState={playlistSyncState}
                 playlistResourceId={viewConfigById[viewId].playlistResourceId}
                 viewId={viewId}
               />
