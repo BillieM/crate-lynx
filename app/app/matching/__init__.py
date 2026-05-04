@@ -4,6 +4,7 @@ import logging
 
 from app.matching.acoustic import (
     AcousticCandidate,
+    AcousticMatchJobHandler,
     AcousticMatcher,
     DownloadedStreamingAudio,
     StreamingAudioFingerprint,
@@ -32,6 +33,7 @@ logger = logging.getLogger(__name__)
 __all__ = [
     "AcousticCandidate",
     "AcousticJobEnqueuer",
+    "AcousticMatchJobHandler",
     "AcousticMatcher",
     "ConfidenceBand",
     "DownloadedStreamingAudio",

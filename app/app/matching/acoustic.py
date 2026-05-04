@@ -16,6 +16,7 @@ from sqlalchemy import create_engine, select, update
 
 from app.local_tracks.store import local_tracks_table
 from app.matching.models import ConfidenceBand, MatchResult
+from app.matching.pipeline import SuggestedLinkStore
 from app.streaming.models import streaming_tracks_table
 
 
@@ -23,6 +24,7 @@ YOUTUBE_MUSIC_WATCH_URL = "https://music.youtube.com/watch?v={provider_track_id}
 PARTIAL_DOWNLOAD_SUFFIXES = frozenset({".part", ".temp", ".tmp", ".ytdl"})
 CHROMAPRINT_FRAME_BITS = 32
 CHROMAPRINT_MAX_ALIGNMENT_SHIFT = 12
+ACOUSTIC_PROMOTION_MIN_SCORE = 0.5
 
 
 class CommandRunner(Protocol):
@@ -283,6 +285,53 @@ class AcousticMatcher:
         return _normalize_fingerprint(row["fingerprint"])
 
 
+class AcousticMatchJobHandler:
+    def __init__(
+        self,
+        *,
+        database_url: str,
+        matcher: AcousticMatcher | None = None,
+        streaming_track_fingerprinter: StreamingTrackFingerprinter | None = None,
+        suggestion_store: SuggestedLinkStore | None = None,
+    ) -> None:
+        self._matcher = matcher or AcousticMatcher(database_url=database_url)
+        self._streaming_track_fingerprinter = (
+            streaming_track_fingerprinter
+            or StreamingTrackFingerprinter(database_url=database_url)
+        )
+        self._suggestion_store = suggestion_store or SuggestedLinkStore(database_url)
+
+    def run(
+        self,
+        local_track_id: int,
+        candidates: list[dict[str, object]],
+    ) -> MatchResult | None:
+        acoustic_candidates = [
+            self._candidate_from_payload(candidate) for candidate in candidates
+        ]
+        result = self._matcher.match(local_track_id, acoustic_candidates)
+        if result is None or result.score < ACOUSTIC_PROMOTION_MIN_SCORE:
+            self._suggestion_store.clear_non_approved_for_track(local_track_id)
+            return None
+
+        if self._suggestion_store.persist(result):
+            return result
+
+        self._suggestion_store.clear_non_approved_for_track(local_track_id)
+        return None
+
+    def _candidate_from_payload(self, payload: dict[str, object]) -> AcousticCandidate:
+        streaming_track_id = _streaming_track_id_from_payload(payload)
+        fingerprint = _normalize_fingerprint(payload.get("fingerprint"))
+        if fingerprint is None:
+            return self._streaming_track_fingerprinter.fingerprint(streaming_track_id)
+
+        return AcousticCandidate(
+            streaming_track_id=streaming_track_id,
+            fingerprint=fingerprint,
+        )
+
+
 def run_acoustic_match_job(
     local_track_id: int,
     candidates: list[dict[str, object]],
@@ -293,18 +342,16 @@ def run_acoustic_match_job(
     if not resolved_database_url:
         raise RuntimeError("DATABASE_URL must be configured for acoustic matching")
 
-    return AcousticMatcher(database_url=resolved_database_url).match(
+    return AcousticMatchJobHandler(database_url=resolved_database_url).run(
         local_track_id,
-        [_candidate_from_payload(candidate) for candidate in candidates],
+        candidates,
     )
 
 
 def _candidate_from_payload(payload: dict[str, object]) -> AcousticCandidate:
-    streaming_track_id = payload.get("streaming_track_id")
+    streaming_track_id = _streaming_track_id_from_payload(payload)
     fingerprint = payload.get("fingerprint")
 
-    if not isinstance(streaming_track_id, int):
-        raise ValueError("Acoustic candidate payload is missing streaming_track_id")
     if not isinstance(fingerprint, str):
         raise ValueError("Acoustic candidate payload is missing fingerprint")
 
@@ -312,6 +359,15 @@ def _candidate_from_payload(payload: dict[str, object]) -> AcousticCandidate:
         streaming_track_id=streaming_track_id,
         fingerprint=fingerprint,
     )
+
+
+def _streaming_track_id_from_payload(payload: dict[str, object]) -> int:
+    streaming_track_id = payload.get("streaming_track_id")
+
+    if not isinstance(streaming_track_id, int):
+        raise ValueError("Acoustic candidate payload is missing streaming_track_id")
+
+    return streaming_track_id
 
 
 def _score_fingerprints(left: str, right: str) -> float:

@@ -8,6 +8,7 @@ from sqlalchemy import create_engine, insert, select
 from app.local_tracks.store import local_tracks_table, metadata as local_metadata
 from app.matching import (
     AcousticCandidate,
+    AcousticMatchJobHandler,
     AcousticMatcher,
     ConfidenceBand,
     StreamingAudioFingerprint,
@@ -16,6 +17,11 @@ from app.matching import (
     StreamingTrackFingerprinter,
     YtDlpAudioDownloader,
     run_acoustic_match_job,
+)
+from app.matching.pipeline import (
+    fetch_suggested_links,
+    metadata as suggested_links_metadata,
+    suggested_links_table,
 )
 from app.streaming.models import metadata as streaming_metadata
 from app.streaming.models import streaming_tracks_table
@@ -144,6 +150,7 @@ def test_run_acoustic_match_job_uses_database_url_and_payload_candidates(
     database_url = f"sqlite:///{tmp_path / 'app.db'}"
     engine = create_engine(database_url)
     local_metadata.create_all(engine)
+    suggested_links_metadata.create_all(engine)
 
     with engine.begin() as connection:
         connection.execute(
@@ -167,6 +174,149 @@ def test_run_acoustic_match_job_uses_database_url_and_payload_candidates(
     assert result is not None
     assert result.streaming_track_id == 5
     assert result.match_method == "acoustic"
+
+
+def test_run_acoustic_match_job_promotes_medium_or_better_acoustic_match(
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite:///{tmp_path / 'promote.db'}"
+    engine = create_engine(database_url)
+    local_metadata.create_all(engine)
+    suggested_links_metadata.create_all(engine)
+
+    with engine.begin() as connection:
+        connection.execute(
+            insert(local_tracks_table).values(
+                file_path="Artist/Track.mp3",
+                library_root_rel_path="Artist/Track.mp3",
+                fingerprint="10 20 30 40",
+                beets_id=42,
+            )
+        )
+        connection.execute(
+            insert(suggested_links_table).values(
+                local_track_id=1,
+                streaming_track_id=7,
+                match_method="tags",
+                score=0.2,
+                status="pending",
+            )
+        )
+
+    result = run_acoustic_match_job(
+        1,
+        [{"streaming_track_id": 7, "fingerprint": "999 10 20 30 40"}],
+        database_url=database_url,
+    )
+
+    assert result is not None
+    assert result.streaming_track_id == 7
+    assert result.match_method == "acoustic"
+    assert result.confidence_band is ConfidenceBand.MEDIUM
+    assert fetch_suggested_links(database_url) == [
+        {
+            "local_track_id": 1,
+            "streaming_track_id": 7,
+            "match_method": "acoustic",
+            "score": 0.8,
+            "status": "pending",
+        }
+    ]
+
+
+def test_run_acoustic_match_job_discards_low_acoustic_match(
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite:///{tmp_path / 'discard.db'}"
+    engine = create_engine(database_url)
+    local_metadata.create_all(engine)
+    suggested_links_metadata.create_all(engine)
+
+    with engine.begin() as connection:
+        connection.execute(
+            insert(local_tracks_table).values(
+                file_path="Artist/Track.mp3",
+                library_root_rel_path="Artist/Track.mp3",
+                fingerprint="0 0 0 0",
+                beets_id=42,
+            )
+        )
+        connection.execute(
+            insert(suggested_links_table).values(
+                local_track_id=1,
+                streaming_track_id=7,
+                match_method="tags",
+                score=0.2,
+                status="pending",
+            )
+        )
+
+    result = run_acoustic_match_job(
+        1,
+        [{"streaming_track_id": 7, "fingerprint": "4294967295 4294967295"}],
+        database_url=database_url,
+    )
+
+    assert result is None
+    assert fetch_suggested_links(database_url) == []
+
+
+def test_acoustic_match_job_handler_fingerprints_candidates_missing_payload_fingerprint(
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite:///{tmp_path / 'fingerprint-missing.db'}"
+    engine = create_engine(database_url)
+    local_metadata.create_all(engine)
+    suggested_links_metadata.create_all(engine)
+
+    with engine.begin() as connection:
+        connection.execute(
+            insert(local_tracks_table).values(
+                file_path="Artist/Track.mp3",
+                library_root_rel_path="Artist/Track.mp3",
+                fingerprint="123 456 789",
+                beets_id=42,
+            )
+        )
+        connection.execute(
+            insert(suggested_links_table).values(
+                local_track_id=1,
+                streaming_track_id=9,
+                match_method="tags",
+                score=0.2,
+                status="pending",
+            )
+        )
+
+    class FakeStreamingTrackFingerprinter:
+        def __init__(self) -> None:
+            self.streaming_track_ids: list[int] = []
+
+        def fingerprint(self, streaming_track_id: int) -> AcousticCandidate:
+            self.streaming_track_ids.append(streaming_track_id)
+            return AcousticCandidate(
+                streaming_track_id=streaming_track_id,
+                fingerprint="123 456 789",
+            )
+
+    fingerprinter = FakeStreamingTrackFingerprinter()
+    result = AcousticMatchJobHandler(
+        database_url=database_url,
+        streaming_track_fingerprinter=fingerprinter,
+    ).run(1, [{"streaming_track_id": 9, "fingerprint": ""}])
+
+    assert result is not None
+    assert result.match_method == "acoustic"
+    assert fingerprinter.streaming_track_ids == [9]
+    assert fetch_suggested_links(database_url) == [
+        {
+            "local_track_id": 1,
+            "streaming_track_id": 9,
+            "match_method": "acoustic",
+            "score": 1.0,
+            "status": "pending",
+        }
+    ]
 
 
 def test_ytdlp_audio_downloader_downloads_track_to_temporary_file() -> None:
