@@ -1,8 +1,10 @@
 import { FileQuestion, Fingerprint, HardDrive, WandSparkles } from "lucide-react";
+import { useMutation } from "@tanstack/react-query";
 import { ActionButton } from "../../components/ActionButton";
 import { EmptyStateCard } from "../../components/EmptyStateCard";
 import { Pill } from "../../components/Pill";
 import { controlClasses, surfaceClasses, textClasses } from "../../styles/componentClasses";
+import { rescueLocalTrackMetadata } from "./queries";
 
 type UnidentifiedTrack = {
   failedAt: string;
@@ -41,6 +43,17 @@ const unidentifiedTracks = [
 ] satisfies UnidentifiedTrack[];
 
 function UnidentifiedTrackRow({ track }: { track: UnidentifiedTrack }) {
+  const rescueMutation = useMutation({
+    mutationFn: rescueLocalTrackMetadata,
+  });
+  const rescueStatus = rescueMutation.isPending
+    ? "Rescuing metadata..."
+    : rescueMutation.isError
+      ? "Rescue failed"
+      : rescueMutation.isSuccess
+        ? "Rescue complete"
+        : null;
+
   return (
     <article className={`${surfaceClasses.rowCardCompact} sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center`}>
       <div className="grid min-w-0 gap-1.5">
@@ -84,11 +97,21 @@ function UnidentifiedTrackRow({ track }: { track: UnidentifiedTrack }) {
         <ActionButton
           aria-label={`Rescue ${track.filename}`}
           className={`${controlClasses.actionButtonCompact} inline-flex items-center gap-1.5`}
-          disabled
+          disabled={rescueMutation.isPending}
+          onClick={() => rescueMutation.mutate(track.id)}
         >
           <WandSparkles aria-hidden="true" className="h-3.5 w-3.5" strokeWidth={1.9} />
-          Rescue
+          {rescueMutation.isPending ? "Rescuing..." : "Rescue"}
         </ActionButton>
+        {rescueStatus ? (
+          <span
+            aria-live="polite"
+            className={`${textClasses.caption} ${rescueMutation.isError ? "text-ctp-red" : "text-ctp-subtext0"}`}
+            role="status"
+          >
+            {rescueStatus}
+          </span>
+        ) : null}
       </div>
     </article>
   );

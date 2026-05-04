@@ -1,10 +1,35 @@
-import { render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import type { ReactNode } from "react";
 
 import { UnidentifiedView } from "./UnidentifiedView";
 
+function renderUnidentifiedView() {
+  const queryClient = new QueryClient({
+    defaultOptions: {
+      mutations: {
+        retry: false,
+      },
+      queries: {
+        retry: false,
+      },
+    },
+  });
+
+  return render(<UnidentifiedView />, {
+    wrapper: ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    ),
+  });
+}
+
 describe("UnidentifiedView", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it("renders Beets-failed tracks with filenames and fingerprint hashes", () => {
-    render(<UnidentifiedView />);
+    renderUnidentifiedView();
 
     const summary = screen.getByLabelText("Unidentified summary");
     expect(within(summary).getByLabelText("Failed imports")).toHaveTextContent("3");
@@ -13,7 +38,7 @@ describe("UnidentifiedView", () => {
     const trackList = screen.getByRole("region", { name: "Unidentified tracks" });
     expect(within(trackList).getByRole("heading", { name: "Beets failed track list" })).toBeInTheDocument();
     expect(within(trackList).getByText("3 rows")).toBeInTheDocument();
-    expect(within(trackList).getAllByRole("status", { name: "Beets failed track" })).toHaveLength(3);
+    expect(within(trackList).getAllByLabelText("Beets failed track")).toHaveLength(3);
     expect(within(trackList).getByText("unknown-import-9a4f.mp3")).toBeInTheDocument();
     expect(within(trackList).getByText("fp_7d91c2a8e4b0")).toBeInTheDocument();
     expect(within(trackList).getByText("ingestion/failed/unknown-import-9a4f.mp3")).toBeInTheDocument();
@@ -23,11 +48,41 @@ describe("UnidentifiedView", () => {
     expect(within(trackList).getByText("fp_b62e14d973c5")).toBeInTheDocument();
   });
 
-  it("renders rescue actions disabled until endpoint wiring is implemented", () => {
-    render(<UnidentifiedView />);
+  it("posts to the metadata rescue endpoint when a rescue action is clicked", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      json: async () => ({
+        beets_id: 91,
+        file_path: "Artist/rescue.mp3",
+        fingerprint: "fp_7d91c2a8e4b0",
+        id: 4001,
+        library_root_rel_path: "Artist/rescue.mp3",
+      }),
+      ok: true,
+    } as Response);
 
-    expect(screen.getByRole("button", { name: "Rescue unknown-import-9a4f.mp3" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Rescue side-b-live-rip.flac" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Rescue cassette-transfer-03.wav" })).toBeDisabled();
+    renderUnidentifiedView();
+
+    fireEvent.click(screen.getByRole("button", { name: "Rescue unknown-import-9a4f.mp3" }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith("/local-tracks/4001/rescue", {
+        method: "POST",
+      });
+    });
+    expect(await screen.findByText("Rescue complete")).toBeInTheDocument();
+  });
+
+  it("shows a failed rescue status when the endpoint rejects the request", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: false,
+      status: 409,
+    } as Response);
+
+    renderUnidentifiedView();
+
+    fireEvent.click(screen.getByRole("button", { name: "Rescue unknown-import-9a4f.mp3" }));
+
+    expect(await screen.findByText("Rescue failed")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Rescue unknown-import-9a4f.mp3" })).toBeEnabled();
   });
 });
