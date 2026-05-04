@@ -382,6 +382,7 @@ describe("App", () => {
     expect(screen.getByRole("checkbox", { name: "Select Late Night Drive for sync" })).toBeChecked();
     expect(screen.getByRole("checkbox", { name: "Select Fresh Discoveries for sync" })).not.toBeChecked();
     expect(screen.getByRole("button", { name: "Refresh playlist metadata" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Sync" })).not.toBeInTheDocument();
     expect(screen.getByText("Provider ID PL31 / Account 4")).toBeInTheDocument();
     expect(screen.getByText("Malformed playlist payload")).toBeInTheDocument();
     expect(document.getElementById("playlists")).toHaveAttribute("data-view-active", "true");

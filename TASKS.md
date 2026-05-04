@@ -2,7 +2,7 @@
 
 - [x] Ensure the sidebar relies on `GET /api/streaming/playlists` returning selected playlists only, with no extra client-side selected filter
 - [x] Replace the playlist-view topbar sync action with `POST /api/streaming/playlists/{id}/sync`
-- [ ] Hide or reroute the topbar sync action when no playlist is selected
+- [x] Hide or reroute the topbar sync action when no playlist is selected
 - [ ] Add pending, success, and error states for per-playlist sync
 - [ ] Surface each playlist's last sync error string and timestamp in the playlist view when present
 - [ ] Add an empty state for no selected playlists that routes users to configure YouTube Music sync

@@ -417,6 +417,10 @@ function Topbar({ onConfigureSync, view }: { onConfigureSync: () => void; view: 
 
   function renderActionButton(actionLabel: string) {
     if (actionLabel === "Sync") {
+      if (view.playlistResourceId === undefined) {
+        return null;
+      }
+
       const canSync = playlist !== undefined && !syncMutation.isPending;
 
       return (
