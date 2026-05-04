@@ -73,4 +73,32 @@ describe("LocalLibraryView", () => {
     expect(within(trackList).getByText("Jon Hopkins")).toBeInTheDocument();
     expect(within(trackList).queryByText("Night Shift")).not.toBeInTheDocument();
   });
+
+  it("disables library filters while a refresh is pending", () => {
+    render(<LocalLibraryView isPending />);
+
+    expect(screen.getByText("Library refresh in progress")).toBeInTheDocument();
+
+    const filters = screen.getByRole("region", { name: "Library filters" });
+    expect(within(filters).getByRole("button", { name: "All 312" })).toBeDisabled();
+    expect(within(filters).getByLabelText("Match method")).toBeDisabled();
+    expect(within(filters).getByLabelText("File status")).toBeDisabled();
+    expect(within(filters).getByRole("button", { name: "Reset library filters" })).toBeDisabled();
+  });
+
+  it("renders the library loading, error, and empty states", () => {
+    const { rerender } = render(<LocalLibraryView state="loading" />);
+
+    expect(screen.getByRole("status")).toHaveTextContent("Loading library tracks");
+    expect(screen.getByRole("region", { name: "Library filters" })).toBeInTheDocument();
+
+    rerender(<LocalLibraryView state="error" />);
+
+    expect(screen.getByRole("alert")).toHaveTextContent("Library unavailable");
+    expect(screen.getByRole("region", { name: "Library filters" })).toBeInTheDocument();
+
+    rerender(<LocalLibraryView tracks={[]} />);
+
+    expect(screen.getByRole("heading", { name: "No matching library tracks" })).toBeInTheDocument();
+  });
 });

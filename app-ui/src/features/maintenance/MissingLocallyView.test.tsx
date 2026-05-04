@@ -33,4 +33,29 @@ describe("MissingLocallyView", () => {
     expect(within(trackList).getByText("Melt!")).toBeInTheDocument();
     expect(within(trackList).getByText("Album unavailable")).toBeInTheDocument();
   });
+
+  it("renders a pending status while missing-local matching is running", () => {
+    render(<MissingLocallyView isPending />);
+
+    expect(screen.getByText("Missing locally scan in progress")).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Missing local tracks" })).toBeInTheDocument();
+  });
+
+  it("renders missing-locally loading, error, and empty states", () => {
+    const { rerender } = render(<MissingLocallyView state="loading" />);
+
+    expect(screen.getByRole("status")).toHaveTextContent("Loading missing tracks");
+    expect(screen.queryByText("Open Eye Signal")).not.toBeInTheDocument();
+
+    rerender(<MissingLocallyView state="error" />);
+
+    expect(screen.getByRole("alert")).toHaveTextContent("Missing locally unavailable");
+
+    rerender(<MissingLocallyView tracks={[]} />);
+
+    expect(screen.getByRole("heading", { name: "No missing tracks" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Missing tracks")).toHaveTextContent("0");
+    expect(screen.getByLabelText("Affected playlists")).toHaveTextContent("0");
+    expect(screen.getByLabelText("High priority")).toHaveTextContent("0");
+  });
 });

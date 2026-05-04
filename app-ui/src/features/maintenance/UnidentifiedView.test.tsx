@@ -1,10 +1,10 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { ReactNode } from "react";
+import type { ComponentProps, ReactNode } from "react";
 
 import { UnidentifiedView } from "./UnidentifiedView";
 
-function renderUnidentifiedView() {
+function renderUnidentifiedView(props: ComponentProps<typeof UnidentifiedView> = {}) {
   const queryClient = new QueryClient({
     defaultOptions: {
       mutations: {
@@ -16,7 +16,7 @@ function renderUnidentifiedView() {
     },
   });
 
-  return render(<UnidentifiedView />, {
+  return render(<UnidentifiedView {...props} />, {
     wrapper: ({ children }: { children: ReactNode }) => (
       <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
     ),
@@ -84,5 +84,29 @@ describe("UnidentifiedView", () => {
 
     expect(await screen.findByText("Rescue failed")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Rescue unknown-import-9a4f.mp3" })).toBeEnabled();
+  });
+
+  it("disables rescue actions while unidentified review is pending", () => {
+    renderUnidentifiedView({ isPending: true });
+
+    expect(screen.getByText("Unidentified review in progress")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Rescue unknown-import-9a4f.mp3" })).toBeDisabled();
+  });
+
+  it("renders unidentified loading, error, and empty states", () => {
+    const { rerender } = renderUnidentifiedView({ state: "loading" });
+
+    expect(screen.getByRole("status")).toHaveTextContent("Loading unidentified tracks");
+    expect(screen.queryByText("unknown-import-9a4f.mp3")).not.toBeInTheDocument();
+
+    rerender(<UnidentifiedView state="error" />);
+
+    expect(screen.getByRole("alert")).toHaveTextContent("Unidentified queue unavailable");
+
+    rerender(<UnidentifiedView tracks={[]} />);
+
+    expect(screen.getByRole("heading", { name: "No unidentified tracks" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Failed imports")).toHaveTextContent("0");
+    expect(screen.getByLabelText("Fingerprinted")).toHaveTextContent("0");
   });
 });
