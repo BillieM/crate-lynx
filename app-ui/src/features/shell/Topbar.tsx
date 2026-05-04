@@ -177,19 +177,19 @@ export function Topbar({
 
   return (
     <header className={shellClasses.topbar}>
-      <div className="flex min-w-0 items-center gap-2.5">
+      <div className="flex min-w-0 flex-1 items-center gap-2.5 max-md:w-full">
         <span className={`${shellClasses.topbarIcon} shrink-0 ${controlClasses.iconFrame}`}>
           <TopbarIcon icon={view.icon} />
         </span>
-        <div className="flex min-w-0 items-center gap-2.5">
-          <h1 className={`truncate ${textClasses.title}`}>{view.title}</h1>
+        <div className="flex min-w-0 flex-1 items-center gap-2.5">
+          <h1 className={`min-w-0 flex-1 truncate ${textClasses.title}`}>{view.title}</h1>
           <span className={`${textClasses.pillEyebrow} ${controlClasses.pill} ${getTopbarPillClasses(view.pillTone)}`}>
             {view.pillLabel}
           </span>
         </div>
       </div>
 
-      <div className="flex items-center gap-2">
+      <div className="flex min-w-0 flex-wrap items-center justify-end gap-2 max-md:w-full max-md:justify-start">
         <PlaylistActionStatus
           errorText="Playlist sync failed."
           isError={syncMutation.isError}

@@ -255,7 +255,7 @@ function ViewShell({
       id={viewId}
     >
       {isActive ? (
-        <div className="flex min-h-0 flex-1 flex-col overflow-hidden p-6">
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden p-4 sm:p-6">
           {playlistResourceId !== undefined ? (
             <PlaylistView
               isActive={isActive}
@@ -331,7 +331,7 @@ function App() {
   }
 
   return (
-    <div className="flex min-h-0 flex-1 flex-row overflow-hidden bg-ctp-base text-ctp-text">
+    <div className="flex min-h-0 flex-1 flex-row overflow-hidden bg-ctp-base text-ctp-text max-md:flex-col">
       <Sidebar
         activeItemId={activeViewId}
         libraryItems={libraryItems}
@@ -343,7 +343,7 @@ function App() {
         playlistItems={playlistItems}
       />
 
-      <main className="flex min-h-0 flex-1 flex-col bg-ctp-base">
+      <main className="flex min-h-0 min-w-0 flex-1 flex-col bg-ctp-base">
         <Topbar
           onConfigureSync={() => handleViewSelect(playlistCollectionViewId)}
           onPlaylistSyncStateChange={setPlaylistSyncState}
