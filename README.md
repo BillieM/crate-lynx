@@ -103,6 +103,14 @@ Runs three stages in sequence, stopping at the first high-confidence result:
 
 Results land in the **Link Proposals** queue, grouped by confidence band (High / Medium / Low).
 
+Current acoustic fallback behavior is intentionally stubbed. The pipeline persists the
+low-confidence tag suggestion as a pending proposal before enqueueing the acoustic
+job. The queued acoustic payload contains only the candidate streaming track ID and
+an empty fingerprint string because streaming tracks do not yet store durable
+fingerprint data. As a result, the acoustic job can compare supplied fingerprints in
+tests, but the production fallback currently skips empty streaming fingerprints and
+does not promote, discard, or update the pending tag suggestion.
+
 ### Approval
 
 - **Approve** — writes to `final_links`, triggers M3U regeneration
