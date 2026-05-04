@@ -8,4 +8,4 @@
 - [x] Update the acoustic RQ job handler to promote or discard low-confidence suggestions based on fingerprint similarity
 - [x] Ensure temporary audio files are always cleaned up after success, failure, or cancellation
 - [x] Add backend tests for download, fingerprint extraction, similarity scoring, suggestion promotion, suggestion discard, and cleanup behavior
-- [ ] Run relevant backend validation: `ruff check .`, `ruff format --check .`, and targeted `pytest`
+- [x] Run relevant backend validation: `ruff check .`, `ruff format --check .`, and targeted `pytest`
