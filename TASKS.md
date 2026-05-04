@@ -73,3 +73,39 @@
   - Preserve existing playlist navigation and playlist badge behavior.
   - Update app shell tests to assert badges come from mocked backend data.
   - Run the relevant frontend validation for the changed frontend files: targeted `npm test`, `npm run lint`, and `npm run build`.
+
+- [x] Clean up stale shell scripts and keep only supported manual workflows
+  - Keep `scripts/ingest-track.sh`; ingestion is still file-drop based, and this script remains a useful wrapper for copying a local track into the Docker ingestion volume.
+  - Keep `scripts/ytm-setup.sh`, but update it to call the current API path: `POST /api/streaming/accounts`.
+  - Delete stale/manual test scripts that duplicate backend/UI coverage or call old non-`/api` paths: `scripts/ytm-test.sh`, `scripts/matching-test.sh`, `scripts/links-test.sh`, and `scripts/m3u-test.sh`.
+  - Before deleting scripts, search `README.md`, `app/README.md`, `EPICS.md`, `TASKS.md`, and any command docs for references to those scripts or their old paths, then remove or update those references.
+  - Preserve the actual tested behavior in unit/integration tests where it is still product, setup, or operational behavior; do not keep shell scripts just to exercise endpoints manually.
+  - Run targeted validation for changed files. If only scripts/docs change, use shell syntax checks where practical and any relevant existing backend tests for touched API setup paths.
+
+- [ ] Remove unused matching debug endpoints if no active workflow depends on them
+  - Candidate endpoints: `GET /api/matching/status` and `POST /api/matching/tracks/{local_track_id}/run`.
+  - Current UI does not call either endpoint. First-run matching is enqueued directly after ingestion, and the product rerun action uses `POST /api/local-tracks/{local_track_id}/rematch`.
+  - `GET /api/matching/status` exposes raw `suggested_links` rows across statuses; it overlaps with `GET /api/proposals`, which is the product queue and should return pending proposals only.
+  - `POST /api/matching/tracks/{local_track_id}/run` enqueues matching without clearing pending suggestions; this is a lower-level debug/admin primitive, not the desired user-facing flow.
+  - Remove the route handlers and route-mount assertions if the decision is to delete them.
+  - Remove only tests that exist solely to prove those HTTP endpoints are exposed. Keep lower-level matching coverage for `MatchingPipeline`, `MatchingJobEnqueuer`, ingestion-triggered matching enqueue, rejected-pair blocking, and rematch behavior.
+  - If an explicit admin/debug workflow is still needed, keep the endpoints but document them as operational/admin-only and update naming/routes consistently instead of leaving them as product-looking APIs.
+  - Run relevant backend validation: `ruff check .`, `ruff format --check .`, and targeted `pytest` for matching, main route registration, and any deleted endpoint tests.
+
+- [ ] Remove unused ingest status endpoint and in-memory status plumbing if it has no consumer
+  - Candidate endpoint: `GET /ingest/status`.
+  - Current UI does not call it, scripts do not call it, and Docker healthcheck uses `GET /health` instead.
+  - The endpoint currently exposes recent in-memory ingestion status and queue depths. This is not durable state, and the Unidentified maintenance view now uses persistent failed-ingestion records rather than recent `/ingest/status` failures.
+  - Remove `app/app/ingestion/router.py` and the `include_router(ingestion_router)` mount if no remaining route is needed there.
+  - Audit `IngestionStatusStore` and `app.state.ingestion_status`: if their only remaining consumer is the removed endpoint, remove the store wiring from `app/app/main.py` and keep ingestion failure persistence/tests focused on durable failed-ingestion records.
+  - Keep ingestion processor tests that verify real behavior: prepare/transcode, fingerprint, Beets import, `local_tracks` persistence, matching job enqueue, cleanup, and durable failed-attempt persistence.
+  - Keep `GET /health`; it is used by `docker-compose.yml` as the backend service healthcheck.
+  - Run relevant backend validation: `ruff check .`, `ruff format --check .`, and targeted `pytest` for ingestion, main route registration, worker/queue depth only if still touched, and maintenance unidentified behavior.
+
+- [ ] Normalize local-track action API paths
+  - Move metadata rescue from `POST /local-tracks/{local_track_id}/rescue` to `POST /api/local-tracks/{local_track_id}/rescue`.
+  - Rationale: rescue is a user-facing action used by the Unidentified view, and `rematch` already lives at `POST /api/local-tracks/{local_track_id}/rematch`; keeping one local-track action outside `/api` is inconsistent.
+  - Update frontend rescue calls in `app-ui/src/features/maintenance/queries.ts` and related tests.
+  - Update backend route registration and route path tests.
+  - Decide whether to keep a temporary compatibility route at the old path. Prefer removing the old path unless there is an external caller.
+  - Run relevant validation for changed files: backend route tests, frontend maintenance query/view tests, `ruff check .`, `ruff format --check .`, targeted `npm test`, and frontend lint/build if frontend code changes.

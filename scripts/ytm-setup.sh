@@ -49,7 +49,7 @@ TMPFILE=$(mktemp)
 PAYLOAD=$(jq -n --arg name "$DISPLAY_NAME" --argjson headers "$HEADERS" \
   '{display_name: $name, browser_headers: $headers}')
 
-HTTP_CODE=$(curl -s -o "$TMPFILE" -w "%{http_code}" -X POST "$HOST/streaming/accounts" \
+HTTP_CODE=$(curl -s -o "$TMPFILE" -w "%{http_code}" -X POST "$HOST/api/streaming/accounts" \
   -H "Content-Type: application/json" \
   -d "$PAYLOAD")
 BODY=$(cat "$TMPFILE")
