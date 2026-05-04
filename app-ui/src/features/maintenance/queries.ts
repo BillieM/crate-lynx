@@ -80,8 +80,9 @@ export function useMissingLocallyTracksQuery() {
   });
 }
 
-export function useUnidentifiedTracksQuery() {
+export function useUnidentifiedTracksQuery({ enabled = true }: { enabled?: boolean } = {}) {
   return useQuery({
+    enabled,
     queryKey: maintenanceQueryKeys.unidentified(),
     queryFn: fetchUnidentifiedTracks,
   });

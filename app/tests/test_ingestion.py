@@ -16,6 +16,11 @@ from app.ingestion.pipeline import (
 from app.matching.jobs import MatchingJobEnqueuer
 from app.ingestion.watcher import IngestionEventHandler, IngestionWatcher
 from app.ingestion.pipeline import IngestionProcessor
+from app.ingestion.failures import (
+    FailedIngestionAttemptStore,
+    failed_ingestion_attempts_table,
+    metadata as failed_ingestion_attempts_metadata,
+)
 from app.local_tracks.store import LocalTrackStore, local_tracks_table, metadata
 from sqlalchemy import create_engine, select
 
@@ -431,6 +436,53 @@ def test_ingestion_processor_enqueues_matching_job_after_persisting(
     assert result.local_track_id is not None
     assert result.matching_job_id == "job-123"
     enqueuer.enqueue.assert_called_once_with(result.local_track_id)
+
+
+def test_ingestion_processor_persists_failed_attempt_with_fingerprint(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "ingestion" / "unknown.mp3"
+    source.parent.mkdir()
+    source.write_bytes(b"mp3")
+    prepared = PreparedTrack(
+        source_path=source,
+        prepared_path=tmp_path / "staging" / "unknown.mp3",
+        transcoded=False,
+    )
+    preparer = Mock(spec=AudioPreparer)
+    preparer.prepare.return_value = prepared
+    importer = Mock(spec=BeetsImporter)
+    importer.import_file.side_effect = RuntimeError("Beets could not identify metadata")
+    fingerprint_generator = Mock(spec=FingerprintGenerator)
+    fingerprint_generator.generate.return_value = "fp_failed"
+
+    database_url = f"sqlite:///{tmp_path / 'app.db'}"
+    engine = create_engine(database_url)
+    failed_ingestion_attempts_metadata.create_all(engine)
+
+    try:
+        IngestionProcessor(
+            staging_root=tmp_path / "staging",
+            audio_preparer=preparer,
+            beets_importer=importer,
+            fingerprint_generator=fingerprint_generator,
+            failed_attempt_store=FailedIngestionAttemptStore(database_url),
+        ).process(source)
+    except RuntimeError:
+        pass
+    else:
+        raise AssertionError("Expected failed Beets import")
+
+    with engine.connect() as connection:
+        row = (
+            connection.execute(select(failed_ingestion_attempts_table)).mappings().one()
+        )
+
+    assert row["source_path"] == str(source)
+    assert row["filename"] == "unknown.mp3"
+    assert row["fingerprint"] == "fp_failed"
+    assert row["failure_reason"] == "Beets could not identify metadata"
+    assert row["local_track_id"] is None
 
 
 def test_ingestion_processor_smoke_ingests_flac_and_mp3_with_fingerprints(

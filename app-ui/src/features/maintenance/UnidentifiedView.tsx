@@ -5,56 +5,34 @@ import { EmptyStateCard } from "../../components/EmptyStateCard";
 import { Pill } from "../../components/Pill";
 import { StatusMessage } from "../../components/StatusMessage";
 import { controlClasses, surfaceClasses, textClasses } from "../../styles/componentClasses";
-import { rescueLocalTrackMetadata } from "./queries";
+import {
+  rescueLocalTrackMetadata,
+  type UnidentifiedResponse,
+  type UnidentifiedTrack,
+  useUnidentifiedTracksQuery,
+} from "./queries";
 
 type MaintenanceViewState = "ready" | "loading" | "error";
 
-type UnidentifiedTrack = {
-  failedAt: string;
-  filename: string;
-  fingerprintHash: string;
-  id: number;
-  reason: string;
-  sourcePath: string;
-};
+const emptyUnidentifiedTracks: UnidentifiedTrack[] = [];
 
-const unidentifiedTracks = [
-  {
-    failedAt: "2026-05-02 21:44",
-    filename: "unknown-import-9a4f.mp3",
-    fingerprintHash: "fp_7d91c2a8e4b0",
-    id: 4001,
-    reason: "Beets could not identify metadata",
-    sourcePath: "ingestion/failed/unknown-import-9a4f.mp3",
-  },
-  {
-    failedAt: "2026-05-02 22:03",
-    filename: "side-b-live-rip.flac",
-    fingerprintHash: "fp_2c0f88b4aa17",
-    id: 4002,
-    reason: "Multiple low-confidence candidates",
-    sourcePath: "ingestion/failed/side-b-live-rip.flac",
-  },
-  {
-    failedAt: "2026-05-03 09:18",
-    filename: "cassette-transfer-03.wav",
-    fingerprintHash: "fp_b62e14d973c5",
-    id: 4003,
-    reason: "No Beets match returned",
-    sourcePath: "ingestion/failed/cassette-transfer-03.wav",
-  },
-] satisfies UnidentifiedTrack[];
+function formatFailedAt(failedAt: string) {
+  return failedAt.replace("T", " ").replace("Z", "").slice(0, 16);
+}
 
 function UnidentifiedTrackRow({ rescueDisabled = false, track }: { rescueDisabled?: boolean; track: UnidentifiedTrack }) {
   const rescueMutation = useMutation({
     mutationFn: rescueLocalTrackMetadata,
   });
+  const canRescue = track.local_track_id !== null;
   const rescueStatus = rescueMutation.isPending
     ? "Rescuing metadata..."
     : rescueMutation.isError
       ? "Rescue failed"
       : rescueMutation.isSuccess
         ? "Rescue complete"
+        : !canRescue
+          ? "No persisted local track available for rescue"
         : null;
 
   return (
@@ -76,19 +54,19 @@ function UnidentifiedTrackRow({ rescueDisabled = false, track }: { rescueDisable
         <dl className={`grid min-w-0 gap-x-3 gap-y-1 pl-9 text-ctp-subtext0 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)_auto] ${textClasses.bodyRelaxed}`}>
           <div className="flex min-w-0 items-baseline gap-1.5">
             <dt className="shrink-0 font-medium text-ctp-overlay1">File</dt>
-            <dd className="truncate text-ctp-text">{track.sourcePath}</dd>
+            <dd className="truncate text-ctp-text">{track.source_path}</dd>
           </div>
           <div className="flex min-w-0 items-baseline gap-1.5">
             <dt className="shrink-0 font-medium text-ctp-overlay1">Fingerprint</dt>
-            <dd className="truncate font-mono text-[11px] font-semibold text-ctp-text">{track.fingerprintHash}</dd>
+            <dd className="truncate font-mono text-[11px] font-semibold text-ctp-text">{track.fingerprint ?? "Not captured"}</dd>
           </div>
           <div className="flex min-w-0 items-baseline gap-1.5 lg:justify-end">
             <dt className="shrink-0 font-medium text-ctp-overlay1">Failed</dt>
-            <dd className="font-medium tabular-nums text-ctp-text">{track.failedAt}</dd>
+            <dd className="font-medium tabular-nums text-ctp-text">{formatFailedAt(track.failed_at)}</dd>
           </div>
           <div className="flex min-w-0 items-baseline gap-1.5 lg:col-span-3">
             <dt className="shrink-0 font-medium text-ctp-overlay1">Reason</dt>
-            <dd className="truncate text-ctp-text">{track.reason}</dd>
+            <dd className="truncate text-ctp-text">{track.failure_reason}</dd>
           </div>
         </dl>
       </div>
@@ -100,11 +78,15 @@ function UnidentifiedTrackRow({ rescueDisabled = false, track }: { rescueDisable
         <ActionButton
           aria-label={`Rescue ${track.filename}`}
           className={`${controlClasses.actionButtonCompact} inline-flex items-center gap-1.5`}
-          disabled={rescueDisabled || rescueMutation.isPending}
-          onClick={() => rescueMutation.mutate(track.id)}
+          disabled={!canRescue || rescueDisabled || rescueMutation.isPending}
+          onClick={() => {
+            if (track.local_track_id !== null) {
+              rescueMutation.mutate(track.local_track_id);
+            }
+          }}
         >
           <WandSparkles aria-hidden="true" className="h-3.5 w-3.5" strokeWidth={1.9} />
-          {rescueMutation.isPending ? "Rescuing..." : "Rescue"}
+          {!canRescue ? "Unavailable" : rescueMutation.isPending ? "Rescuing..." : "Rescue"}
         </ActionButton>
         {rescueStatus ? (
           <span
@@ -147,11 +129,23 @@ function UnidentifiedSummaryCard({
 type UnidentifiedViewProps = {
   isPending?: boolean;
   state?: MaintenanceViewState;
-  tracks?: readonly UnidentifiedTrack[];
+  tracksResponse?: UnidentifiedResponse;
 };
 
-export function UnidentifiedView({ isPending = false, state = "ready", tracks = unidentifiedTracks }: UnidentifiedViewProps = {}) {
-  const actionsDisabled = state !== "ready" || isPending;
+export function UnidentifiedView({ isPending = false, state, tracksResponse }: UnidentifiedViewProps = {}) {
+  const unidentifiedQuery = useUnidentifiedTracksQuery({ enabled: tracksResponse === undefined });
+  const resolvedState =
+    state ??
+    (tracksResponse
+      ? "ready"
+      : unidentifiedQuery.isPending
+        ? "loading"
+        : unidentifiedQuery.isError
+          ? "error"
+          : "ready");
+  const tracks = tracksResponse?.tracks ?? unidentifiedQuery.data?.tracks ?? emptyUnidentifiedTracks;
+  const fingerprintedCount = tracks.filter((track) => track.fingerprint !== null).length;
+  const actionsDisabled = resolvedState !== "ready" || isPending;
 
   return (
     <section className="flex min-h-0 flex-1 flex-col gap-4">
@@ -165,19 +159,19 @@ export function UnidentifiedView({ isPending = false, state = "ready", tracks = 
 
       <div className="grid gap-3 sm:grid-cols-3" aria-label="Unidentified summary">
         <UnidentifiedSummaryCard icon={FileQuestion} label="Failed imports" value={tracks.length.toString()} />
-        <UnidentifiedSummaryCard icon={Fingerprint} label="Fingerprinted" value={tracks.length.toString()} />
-        <UnidentifiedSummaryCard icon={HardDrive} label="Source" value="Beets" />
+        <UnidentifiedSummaryCard icon={Fingerprint} label="Fingerprinted" value={fingerprintedCount.toString()} />
+        <UnidentifiedSummaryCard icon={HardDrive} label="Source" value="Ingest" />
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto pb-1 pr-1" aria-label="Unidentified tracks" role="region">
-        {state === "loading" ? (
+        {resolvedState === "loading" ? (
           <EmptyStateCard
             body="Checking Beets-failed imports and fingerprint hashes."
             className="text-left"
             role="status"
             title="Loading unidentified tracks"
           />
-        ) : state === "error" ? (
+        ) : resolvedState === "error" ? (
           <EmptyStateCard
             body="The unidentified import queue could not be loaded."
             className="text-left"

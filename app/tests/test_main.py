@@ -6,6 +6,10 @@ from pathlib import Path
 
 from cryptography.fernet import Fernet
 from app.ingestion.pipeline import PreparedTrack
+from app.ingestion.failures import (
+    failed_ingestion_attempts_table,
+    metadata as failed_ingestion_attempts_metadata,
+)
 from app.ingestion.status import IngestionStatusStore
 from app.local_tracks.store import (
     local_tracks_table,
@@ -54,6 +58,7 @@ def test_links_routes_are_mounted_under_api_prefix() -> None:
     assert "/api/playlists/{playlist_id}/m3u" in route_paths
     assert "/api/library/tracks" in route_paths
     assert "/api/maintenance/missing-locally" in route_paths
+    assert "/api/maintenance/unidentified" in route_paths
     assert "/api/streaming/accounts/{account_id}/sync" in route_paths
     assert "/api/streaming/accounts/{account_id}/refresh-metadata" in route_paths
     assert "/api/streaming/playlists/config" in route_paths
@@ -1097,6 +1102,84 @@ def test_missing_locally_endpoint_aggregates_playlist_usage_and_excludes_links(
                 "duration_ms": None,
                 "playlist_count": 2,
                 "playlist_titles": ["Morning Mix", "Road Trip"],
+            },
+        ]
+    }
+
+
+def test_unidentified_endpoint_lists_durable_failed_ingestion_attempts(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite:///{tmp_path / 'unidentified.db'}"
+    engine = create_engine(database_url)
+    local_tracks_metadata.create_all(engine)
+    failed_ingestion_attempts_metadata.create_all(engine)
+    monkeypatch.setenv("DATABASE_URL", database_url)
+
+    with engine.begin() as connection:
+        connection.execute(
+            insert(local_tracks_table).values(
+                id=91,
+                file_path="Imported/rescue.mp3",
+                library_root_rel_path="Imported/rescue.mp3",
+                fingerprint="fp-linked",
+                beets_id=91,
+            )
+        )
+        connection.execute(
+            insert(failed_ingestion_attempts_table),
+            [
+                {
+                    "id": 1,
+                    "source_path": "/ingestion/old.flac",
+                    "filename": "old.flac",
+                    "fingerprint": None,
+                    "failure_reason": "Unsupported audio format",
+                    "failed_at": datetime(2026, 5, 1, 10, 0, tzinfo=UTC),
+                    "local_track_id": None,
+                },
+                {
+                    "id": 2,
+                    "source_path": "/ingestion/unknown-import-9a4f.mp3",
+                    "filename": "unknown-import-9a4f.mp3",
+                    "fingerprint": "fp_7d91c2a8e4b0",
+                    "failure_reason": "Beets could not identify metadata",
+                    "failed_at": datetime(2026, 5, 2, 21, 44, tzinfo=UTC),
+                    "local_track_id": 91,
+                },
+            ],
+        )
+
+    app = create_app()
+    route = next(
+        route
+        for route in app.routes
+        if getattr(route, "path", None) == "/api/maintenance/unidentified"
+        and "GET" in getattr(route, "methods", set())
+    )
+
+    response = asyncio.run(route.endpoint())
+
+    assert response.model_dump(mode="json") == {
+        "tracks": [
+            {
+                "id": 2,
+                "failed_at": "2026-05-02T21:44:00",
+                "failure_reason": "Beets could not identify metadata",
+                "filename": "unknown-import-9a4f.mp3",
+                "fingerprint": "fp_7d91c2a8e4b0",
+                "local_track_id": 91,
+                "source_path": "/ingestion/unknown-import-9a4f.mp3",
+            },
+            {
+                "id": 1,
+                "failed_at": "2026-05-01T10:00:00",
+                "failure_reason": "Unsupported audio format",
+                "filename": "old.flac",
+                "fingerprint": None,
+                "local_track_id": None,
+                "source_path": "/ingestion/old.flac",
             },
         ]
     }

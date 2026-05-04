@@ -40,6 +40,25 @@ class LocalTrack(Base):
     )
 
 
+class FailedIngestionAttempt(Base):
+    __tablename__ = "failed_ingestion_attempts"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    source_path: Mapped[str] = mapped_column(String, nullable=False)
+    filename: Mapped[str] = mapped_column(String, nullable=False)
+    fingerprint: Mapped[str | None] = mapped_column(String, nullable=True)
+    failure_reason: Mapped[str] = mapped_column(String, nullable=False)
+    failed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
+    local_track_id: Mapped[int | None] = mapped_column(
+        ForeignKey("local_tracks.id"),
+        nullable=True,
+    )
+
+
 class StreamingAccount(Base):
     __tablename__ = "streaming_accounts"
 

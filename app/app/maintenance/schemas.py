@@ -14,3 +14,17 @@ class MissingLocallyTrackResponse(BaseModel):
 
 class MissingLocallyResponse(BaseModel):
     tracks: list[MissingLocallyTrackResponse]
+
+
+class UnidentifiedTrackResponse(BaseModel):
+    id: int
+    failed_at: str
+    failure_reason: str
+    filename: str
+    fingerprint: str | None
+    local_track_id: int | None
+    source_path: str
+
+
+class UnidentifiedResponse(BaseModel):
+    tracks: list[UnidentifiedTrackResponse]

@@ -5,6 +5,8 @@ from fastapi import APIRouter
 from app.maintenance.schemas import (
     MissingLocallyResponse,
     MissingLocallyTrackResponse,
+    UnidentifiedResponse,
+    UnidentifiedTrackResponse,
 )
 from app.maintenance.store import MaintenanceStore
 
@@ -26,6 +28,24 @@ def create_router(*, require_database_url: Callable[[], str]) -> APIRouter:
                     duration_ms=track.duration_ms,
                     playlist_count=track.playlist_count,
                     playlist_titles=track.playlist_titles,
+                )
+                for track in tracks
+            ]
+        )
+
+    @router.get("/maintenance/unidentified", response_model=UnidentifiedResponse)
+    async def list_unidentified() -> UnidentifiedResponse:
+        tracks = MaintenanceStore(require_database_url()).list_unidentified()
+        return UnidentifiedResponse(
+            tracks=[
+                UnidentifiedTrackResponse(
+                    id=track.id,
+                    failed_at=track.failed_at,
+                    failure_reason=track.failure_reason,
+                    filename=track.filename,
+                    fingerprint=track.fingerprint,
+                    local_track_id=track.local_track_id,
+                    source_path=track.source_path,
                 )
                 for track in tracks
             ]

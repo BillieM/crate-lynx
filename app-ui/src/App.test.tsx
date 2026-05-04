@@ -3,7 +3,7 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import { MemoryRouter } from "react-router-dom";
 import App, { getProgressColor } from "./App";
 import type { LibraryTracksResponse } from "./features/library/queries";
-import type { MissingLocallyResponse } from "./features/maintenance/queries";
+import type { MissingLocallyResponse, UnidentifiedResponse } from "./features/maintenance/queries";
 import type {
   LinkProposalsResponse,
   PlaylistDetailResponse,
@@ -209,6 +209,19 @@ const missingLocallyResponse: MissingLocallyResponse = {
     },
   ],
 };
+const unidentifiedResponse: UnidentifiedResponse = {
+  tracks: [
+    {
+      failed_at: "2026-05-02T21:44:00Z",
+      failure_reason: "Beets could not identify metadata",
+      filename: "unknown-import-9a4f.mp3",
+      fingerprint: "fp_7d91c2a8e4b0",
+      id: 4001,
+      local_track_id: null,
+      source_path: "ingestion/failed/unknown-import-9a4f.mp3",
+    },
+  ],
+};
 
 type MockPlaylistFetchOptions = {
   activeSyncHandler?: () => Promise<Response> | Response;
@@ -311,6 +324,13 @@ function mockPlaylistFetch({
       return {
         ok: true,
         json: async () => missingLocallyResponse,
+      } as Response;
+    }
+
+    if (url === "/api/maintenance/unidentified") {
+      return {
+        ok: true,
+        json: async () => unidentifiedResponse,
       } as Response;
     }
 
@@ -636,7 +656,7 @@ describe("App", () => {
     expect(screen.getByRole("heading", { level: 1, name: "Unidentified" })).toBeInTheDocument();
     expect(screen.getByText("Rescue queue")).toBeInTheDocument();
     expect(screen.getByRole("region", { name: "Unidentified tracks" })).toBeInTheDocument();
-    expect(screen.getByText("unknown-import-9a4f.mp3")).toBeInTheDocument();
+    expect(await screen.findByText("unknown-import-9a4f.mp3")).toBeInTheDocument();
     expect(screen.getByText("fp_7d91c2a8e4b0")).toBeInTheDocument();
     expect(document.getElementById("unidentified")).toHaveAttribute("data-view-active", "true");
     expect(document.getElementById("playlists")).toHaveAttribute("data-view-active", "false");

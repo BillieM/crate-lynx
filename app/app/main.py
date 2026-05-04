@@ -10,6 +10,7 @@ from app.core.queueing import (
 )
 from app.core.worker import resolve_queue_names
 from app.ingestion import BeetsImporter, IngestionProcessor, IngestionWatcher
+from app.ingestion.failures import FailedIngestionAttemptStore
 from app.ingestion.router import router as ingestion_router
 from app.ingestion.status import IngestionStatusStore
 from app.library.router import create_router as create_library_router
@@ -54,6 +55,9 @@ def create_app() -> FastAPI:
                 library_database=os.environ.get("BEETS_LIBRARY"),
             ),
             track_store=LocalTrackStore(database_url) if database_url else None,
+            failed_attempt_store=(
+                FailedIngestionAttemptStore(database_url) if database_url else None
+            ),
             matching_job_enqueuer=MatchingJobEnqueuer(redis_url) if redis_url else None,
         )
 

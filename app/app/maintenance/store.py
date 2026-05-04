@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 
 from sqlalchemy import create_engine, select
 
+from app.ingestion.failures import failed_ingestion_attempts_table
 from app.links.store import final_links_table
 from app.streaming.models import (
     playlist_membership_table,
@@ -22,6 +23,17 @@ class MissingLocallyTrackRecord:
     duration_ms: int | None
     playlist_count: int
     playlist_titles: list[str]
+
+
+@dataclass(frozen=True, slots=True)
+class UnidentifiedTrackRecord:
+    id: int
+    failed_at: str
+    failure_reason: str
+    filename: str
+    fingerprint: str | None
+    local_track_id: int | None
+    source_path: str
 
 
 @dataclass(slots=True)
@@ -108,3 +120,37 @@ class MaintenanceStore:
                     ]
 
         return [track.to_record() for track in tracks_by_id.values()]
+
+    def list_unidentified(self) -> list[UnidentifiedTrackRecord]:
+        query = (
+            select(
+                failed_ingestion_attempts_table.c.id,
+                failed_ingestion_attempts_table.c.failed_at,
+                failed_ingestion_attempts_table.c.failure_reason,
+                failed_ingestion_attempts_table.c.filename,
+                failed_ingestion_attempts_table.c.fingerprint,
+                failed_ingestion_attempts_table.c.local_track_id,
+                failed_ingestion_attempts_table.c.source_path,
+            )
+            .select_from(failed_ingestion_attempts_table)
+            .order_by(
+                failed_ingestion_attempts_table.c.failed_at.desc(),
+                failed_ingestion_attempts_table.c.id.desc(),
+            )
+        )
+
+        with self._engine.connect() as connection:
+            rows = connection.execute(query).mappings().all()
+
+        return [
+            UnidentifiedTrackRecord(
+                id=row["id"],
+                failed_at=row["failed_at"].isoformat(),
+                failure_reason=row["failure_reason"],
+                filename=row["filename"],
+                fingerprint=row["fingerprint"],
+                local_track_id=row["local_track_id"],
+                source_path=row["source_path"],
+            )
+            for row in rows
+        ]

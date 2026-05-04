@@ -60,7 +60,7 @@
   - Update frontend tests to cover one-playlist and multi-playlist rows from mocked backend payloads.
   - Run the relevant frontend validation for the changed frontend files: targeted `npm test`, `npm run lint`, and `npm run build`.
 
-- [ ] Wire the Unidentified view after the data-source decision is complete
+- [x] Wire the Unidentified view after the data-source decision is complete
   - Replace hardcoded unidentified fixtures with the chosen backend or ingest-status data source.
   - Ensure every Rescue button uses a real backend-compatible local track ID; if the chosen data source cannot support rescue, hide or disable rescue with a truthful state.
   - Preserve loading, error, empty, disabled, pending, success, and failure states.

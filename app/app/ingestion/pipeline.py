@@ -10,6 +10,7 @@ import uuid
 
 from app.local_tracks.store import LocalTrackStore
 from app.matching.jobs import MatchingJobEnqueuer
+from app.ingestion.failures import FailedIngestionAttemptStore
 
 
 SUPPORTED_AUDIO_EXTENSIONS = {".mp3", ".flac", ".wav", ".aiff", ".aif"}
@@ -198,33 +199,47 @@ class IngestionProcessor:
         default_factory=FingerprintGenerator
     )
     track_store: LocalTrackStore | None = None
+    failed_attempt_store: FailedIngestionAttemptStore | None = None
     matching_job_enqueuer: MatchingJobEnqueuer | None = None
 
     def process(self, source_path: Path | str) -> PreparedTrack:
-        prepared = self.audio_preparer.prepare(source_path, self.staging_root)
-        prepared.fingerprint = self.fingerprint_generator.generate(
-            prepared.prepared_path
-        )
-        imported_track = self.beets_importer.import_file(prepared.prepared_path)
-        prepared.library_path = imported_track.library_path
-        prepared.beets_id = imported_track.beets_id
-        if self.track_store is not None:
-            persisted = self.track_store.persist(
-                library_root=self.beets_importer.library_root,
-                library_path=imported_track.library_path,
-                fingerprint=prepared.fingerprint,
-                beets_id=imported_track.beets_id,
+        prepared: PreparedTrack | None = None
+        try:
+            prepared = self.audio_preparer.prepare(source_path, self.staging_root)
+            prepared.fingerprint = self.fingerprint_generator.generate(
+                prepared.prepared_path
             )
-            prepared.local_track_id = persisted.id
-        if (
-            self.matching_job_enqueuer is not None
-            and prepared.local_track_id is not None
-        ):
-            prepared.matching_job_id = self.matching_job_enqueuer.enqueue(
-                prepared.local_track_id
-            )
-        self._cleanup_source(prepared.source_path)
-        return prepared
+            imported_track = self.beets_importer.import_file(prepared.prepared_path)
+            prepared.library_path = imported_track.library_path
+            prepared.beets_id = imported_track.beets_id
+            if self.track_store is not None:
+                persisted = self.track_store.persist(
+                    library_root=self.beets_importer.library_root,
+                    library_path=imported_track.library_path,
+                    fingerprint=prepared.fingerprint,
+                    beets_id=imported_track.beets_id,
+                )
+                prepared.local_track_id = persisted.id
+            if (
+                self.matching_job_enqueuer is not None
+                and prepared.local_track_id is not None
+            ):
+                prepared.matching_job_id = self.matching_job_enqueuer.enqueue(
+                    prepared.local_track_id
+                )
+            self._cleanup_source(prepared.source_path)
+            return prepared
+        except Exception as exc:
+            if self.failed_attempt_store is not None:
+                self.failed_attempt_store.persist(
+                    source_path=source_path,
+                    fingerprint=prepared.fingerprint if prepared is not None else None,
+                    failure_reason=str(exc),
+                    local_track_id=(
+                        prepared.local_track_id if prepared is not None else None
+                    ),
+                )
+            raise
 
     def _cleanup_source(self, source_path: Path) -> None:
         if source_path.exists():

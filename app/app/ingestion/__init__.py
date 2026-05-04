@@ -9,6 +9,12 @@ from app.ingestion.pipeline import (
     PreparedTrack,
     UnsupportedAudioFormatError,
 )
+from app.ingestion.failures import (
+    FailedIngestionAttempt,
+    FailedIngestionAttemptStore,
+    failed_ingestion_attempts_table,
+    metadata as failed_ingestion_attempts_metadata,
+)
 from app.ingestion.router import router
 from app.ingestion.status import IngestionStatusEntry, IngestionStatusStore
 from app.ingestion.watcher import (
@@ -21,6 +27,8 @@ __all__ = [
     "AudioPreparer",
     "BeetsImporter",
     "FileCallback",
+    "FailedIngestionAttempt",
+    "FailedIngestionAttemptStore",
     "FingerprintGenerator",
     "ImportedTrack",
     "IngestionEventHandler",
@@ -31,4 +39,6 @@ __all__ = [
     "PreparedTrack",
     "router",
     "UnsupportedAudioFormatError",
+    "failed_ingestion_attempts_metadata",
+    "failed_ingestion_attempts_table",
 ]
