@@ -15,7 +15,15 @@ from app.settings.store import (
 )
 
 
-def create_router(*, require_database_url: Callable[[], str]) -> APIRouter:
+IngestFolderMutationCallback = Callable[[str], None]
+
+
+def create_router(
+    *,
+    require_database_url: Callable[[], str],
+    on_ingest_folder_created: IngestFolderMutationCallback | None = None,
+    on_ingest_folder_deleted: IngestFolderMutationCallback | None = None,
+) -> APIRouter:
     router = APIRouter()
 
     @router.get("/settings/general", response_model=GeneralSettingsResponse)
@@ -45,16 +53,24 @@ def create_router(*, require_database_url: Callable[[], str]) -> APIRouter:
                 detail="Ingest folder path already exists",
             ) from exc
 
+        if on_ingest_folder_created is not None:
+            on_ingest_folder_created(folder.path)
+
         return _serialize_ingest_folder(folder)
 
     @router.delete("/settings/ingest-folders/{folder_id}", status_code=204)
     async def delete_ingest_folder(folder_id: int) -> Response:
         try:
-            GeneralSettingsStore(require_database_url()).delete_ingest_folder(folder_id)
+            folder = GeneralSettingsStore(require_database_url()).delete_ingest_folder(
+                folder_id
+            )
         except IngestFolderNotFoundError as exc:
             raise HTTPException(
                 status_code=404, detail="Ingest folder not found"
             ) from exc
+
+        if on_ingest_folder_deleted is not None:
+            on_ingest_folder_deleted(folder.path)
 
         return Response(status_code=204)
 

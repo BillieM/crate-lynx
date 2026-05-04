@@ -44,6 +44,25 @@ def test_create_ingest_folder_returns_created_folder(tmp_path: Path) -> None:
     assert response.model_dump() == {"id": 1, "path": "/incoming"}
 
 
+def test_create_ingest_folder_calls_created_callback(tmp_path: Path) -> None:
+    database_url = f"sqlite:///{tmp_path / 'settings.db'}"
+    engine = create_engine(database_url)
+    metadata.create_all(engine)
+    created_paths: list[str] = []
+    router = create_router(
+        require_database_url=lambda: database_url,
+        on_ingest_folder_created=created_paths.append,
+    )
+    route = _route_from_router("POST", "/settings/ingest-folders", router)
+
+    response = asyncio.run(
+        route.endpoint(CreateIngestFolderRequest(path="/music-in/../incoming"))
+    )
+
+    assert response.model_dump() == {"id": 1, "path": "/incoming"}
+    assert created_paths == ["/incoming"]
+
+
 def test_create_ingest_folder_rejects_duplicate_path(tmp_path: Path) -> None:
     database_url = f"sqlite:///{tmp_path / 'settings.db'}"
     engine = create_engine(database_url)
@@ -86,6 +105,25 @@ def test_delete_ingest_folder_removes_folder(tmp_path: Path) -> None:
     assert GeneralSettingsStore(database_url).list_ingest_folders() == []
 
 
+def test_delete_ingest_folder_calls_deleted_callback(tmp_path: Path) -> None:
+    database_url = f"sqlite:///{tmp_path / 'settings.db'}"
+    engine = create_engine(database_url)
+    metadata.create_all(engine)
+    folder = GeneralSettingsStore(database_url).create_ingest_folder("/incoming")
+    deleted_paths: list[str] = []
+    router = create_router(
+        require_database_url=lambda: database_url,
+        on_ingest_folder_deleted=deleted_paths.append,
+    )
+    route = _route_from_router("DELETE", "/settings/ingest-folders/{folder_id}", router)
+
+    response = asyncio.run(route.endpoint(folder.id))
+
+    assert response.status_code == 204
+    assert deleted_paths == ["/incoming"]
+    assert GeneralSettingsStore(database_url).list_ingest_folders() == []
+
+
 def test_delete_ingest_folder_returns_404_for_missing_folder(tmp_path: Path) -> None:
     database_url = f"sqlite:///{tmp_path / 'settings.db'}"
     engine = create_engine(database_url)
@@ -123,6 +161,10 @@ def test_settings_routes_return_503_without_database_url() -> None:
 
 def _route(method: str, path: str, database_url: str):
     router = create_router(require_database_url=lambda: database_url)
+    return _route_from_router(method, path, router)
+
+
+def _route_from_router(method: str, path: str, router):
     return next(
         route
         for route in router.routes

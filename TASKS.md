@@ -43,7 +43,7 @@ Application-owned data, including the Beets SQLite database, must be stored unde
 - [x] Add a backend settings store that lists, creates, deletes, normalizes, deduplicates, and validates ingest folders using absolute container paths
 - [x] Add settings schemas and API routes for `GET /api/settings/general`, `POST /api/settings/ingest-folders`, and `DELETE /api/settings/ingest-folders/{folder_id}`
 - [x] Refactor `IngestionWatcher` to manage multiple watched roots, schedule/unschedule roots live, create missing directories on watch start/add, and keep existing event handling behavior
-- [ ] Wire app startup so ingestion loads persisted folders, seeds defaults when needed, uses `/music` for Beets imports, and keeps the active watcher synchronized after settings API mutations
+- [x] Wire app startup so ingestion loads persisted folders, seeds defaults when needed, uses `/music` for Beets imports, and keeps the active watcher synchronized after settings API mutations
 - [ ] Add backend tests for route mounting, default folder seeding, `/music` library configuration, path validation, duplicate rejection, delete behavior, multi-root watcher scheduling, live add/remove synchronization, and fallback behavior without `DATABASE_URL`
 - [ ] Add frontend settings query/mutation helpers and stable query keys for general settings and ingest folder mutations
 - [ ] Add a `GeneralSettingsView` with a folder list, icon-only remove buttons, an add-folder text field, loading/error/empty states, and mutation status feedback

@@ -93,8 +93,20 @@ class GeneralSettingsStore:
 
         return _record_from_row(row)
 
-    def delete_ingest_folder(self, folder_id: int) -> None:
+    def delete_ingest_folder(self, folder_id: int) -> IngestFolderRecord:
         with self._engine.begin() as connection:
+            row = (
+                connection.execute(
+                    select(ingest_folders_table).where(
+                        ingest_folders_table.c.id == folder_id
+                    )
+                )
+                .mappings()
+                .one_or_none()
+            )
+            if row is None:
+                raise IngestFolderNotFoundError(str(folder_id))
+
             result = connection.execute(
                 delete(ingest_folders_table).where(
                     ingest_folders_table.c.id == folder_id
@@ -102,6 +114,8 @@ class GeneralSettingsStore:
             )
             if result.rowcount == 0:
                 raise IngestFolderNotFoundError(str(folder_id))
+
+        return _record_from_row(row)
 
 
 def normalize_ingest_folder_path(path: str) -> str:

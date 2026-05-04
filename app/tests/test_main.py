@@ -21,6 +21,9 @@ from app.matching.pipeline import (
     metadata as suggested_links_metadata,
     suggested_links_table,
 )
+from app.settings.models import metadata as settings_metadata
+from app.settings.schemas import CreateIngestFolderRequest
+from app.settings.store import GeneralSettingsStore
 from app.streaming.schemas import (
     CreateStreamingAccountRequest,
     UpdateStreamingPlaylistRequest,
@@ -38,6 +41,31 @@ from app.streaming.adapters.youtube_music import (
 )
 from sqlalchemy import create_engine, insert, select
 from starlette.exceptions import HTTPException as StarletteHTTPException
+
+
+class StubIngestionWatcher:
+    instances: list["StubIngestionWatcher"] = []
+
+    def __init__(self, root, on_new_file) -> None:
+        self.root = root
+        self.on_new_file = on_new_file
+        self.added_roots: list[str] = []
+        self.removed_roots: list[str] = []
+        self.started = False
+        self.stopped = False
+        self.__class__.instances.append(self)
+
+    def start(self) -> None:
+        self.started = True
+
+    def stop(self) -> None:
+        self.stopped = True
+
+    def add_root(self, path: str) -> None:
+        self.added_roots.append(path)
+
+    def remove_root(self, path: str) -> None:
+        self.removed_roots.append(path)
 
 
 def test_links_routes_are_mounted_under_api_prefix() -> None:
@@ -67,6 +95,89 @@ def test_links_routes_are_mounted_under_api_prefix() -> None:
     assert "/api/settings/ingest-folders" in route_paths
     assert "/api/settings/ingest-folders/{folder_id}" in route_paths
     assert "/ingest/status" not in route_paths
+
+
+def test_startup_seeds_persisted_ingest_folders_and_watches_them(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite:///{tmp_path / 'settings.db'}"
+    engine = create_engine(database_url)
+    settings_metadata.create_all(engine)
+    monkeypatch.setenv("DATABASE_URL", database_url)
+    monkeypatch.setattr("app.main.IngestionWatcher", StubIngestionWatcher)
+    StubIngestionWatcher.instances = []
+    app = create_app()
+
+    async def run_lifespan() -> None:
+        async with app.router.lifespan_context(app):
+            watcher = StubIngestionWatcher.instances[-1]
+            assert watcher.started is True
+            assert watcher.root == [Path("/ingestion"), Path("/soulseek")]
+
+    asyncio.run(run_lifespan())
+
+    watcher = StubIngestionWatcher.instances[-1]
+    assert watcher.stopped is True
+    assert [
+        folder.path
+        for folder in GeneralSettingsStore(database_url).list_ingest_folders()
+    ] == ["/ingestion", "/soulseek"]
+
+
+def test_startup_falls_back_to_env_ingestion_root_without_database_url(
+    monkeypatch,
+) -> None:
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.setenv("INGESTION_ROOT", "/tmp/local-ingestion")
+    monkeypatch.setattr("app.main.IngestionWatcher", StubIngestionWatcher)
+    StubIngestionWatcher.instances = []
+    app = create_app()
+
+    async def run_lifespan() -> None:
+        async with app.router.lifespan_context(app):
+            watcher = StubIngestionWatcher.instances[-1]
+            assert watcher.root == [Path("/tmp/local-ingestion")]
+
+    asyncio.run(run_lifespan())
+
+
+def test_settings_ingest_folder_mutations_synchronize_active_watcher(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite:///{tmp_path / 'settings.db'}"
+    engine = create_engine(database_url)
+    settings_metadata.create_all(engine)
+    monkeypatch.setenv("DATABASE_URL", database_url)
+    monkeypatch.setattr("app.main.IngestionWatcher", StubIngestionWatcher)
+    StubIngestionWatcher.instances = []
+    app = create_app()
+    create_route = _route("POST", "/api/settings/ingest-folders", app)
+    delete_route = _route("DELETE", "/api/settings/ingest-folders/{folder_id}", app)
+
+    async def run_lifespan() -> None:
+        async with app.router.lifespan_context(app):
+            watcher = StubIngestionWatcher.instances[-1]
+            created = await create_route.endpoint(
+                CreateIngestFolderRequest(path="/incoming")
+            )
+            response = await delete_route.endpoint(created.id)
+
+            assert response.status_code == 204
+            assert watcher.added_roots == ["/incoming"]
+            assert watcher.removed_roots == ["/incoming"]
+
+    asyncio.run(run_lifespan())
+
+
+def _route(method: str, path: str, app):
+    return next(
+        route
+        for route in app.routes
+        if getattr(route, "path", None) == path
+        and method in getattr(route, "methods", set())
+    )
 
 
 def test_streaming_accounts_endpoint_lists_persisted_accounts(

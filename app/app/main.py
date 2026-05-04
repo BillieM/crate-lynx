@@ -16,6 +16,7 @@ from app.matching.router import create_router as create_matching_router
 from app.rescue.router import create_router as create_rescue_router
 from app.search.router import create_router as create_search_router
 from app.settings.router import create_router as create_settings_router
+from app.settings.store import GeneralSettingsStore
 from app.streaming.router import create_router as create_streaming_router
 from app.system.router import router as system_router
 
@@ -26,15 +27,15 @@ logger = logging.getLogger(__name__)
 def create_app() -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        ingestion_root = Path(os.environ.get("INGESTION_ROOT", "/ingestion"))
         staging_root = Path(
             os.environ.get(
                 "INGESTION_STAGING_ROOT", "/tmp/crate-lynx-ingestion-staging"
             )
         )
-        library_root = Path(os.environ.get("LIBRARY_ROOT", "/library"))
+        library_root = Path(os.environ.get("LIBRARY_ROOT", "/music"))
         database_url = os.environ.get("DATABASE_URL")
         redis_url = os.environ.get("REDIS_URL")
+        ingest_roots = _resolve_ingest_roots(database_url)
         processor = IngestionProcessor(
             staging_root=staging_root,
             beets_importer=BeetsImporter(
@@ -56,15 +57,17 @@ def create_app() -> FastAPI:
             logger.info("Ingested track candidate: %s", prepared.library_path)
 
         watcher = IngestionWatcher(
-            root=ingestion_root,
+            root=ingest_roots,
             on_new_file=process_new_file,
         )
+        app.state.ingestion_watcher = watcher
         watcher.start()
 
         try:
             yield
         finally:
             watcher.stop()
+            app.state.ingestion_watcher = None
 
     app = FastAPI(title="crate-lynx", lifespan=lifespan)
 
@@ -119,11 +122,35 @@ def create_app() -> FastAPI:
         prefix="/api",
     )
     app.include_router(
-        create_settings_router(require_database_url=require_database_url),
+        create_settings_router(
+            require_database_url=require_database_url,
+            on_ingest_folder_created=lambda path: _add_active_ingest_root(app, path),
+            on_ingest_folder_deleted=lambda path: _remove_active_ingest_root(app, path),
+        ),
         prefix="/api",
     )
 
     return app
+
+
+def _resolve_ingest_roots(database_url: str | None) -> list[Path]:
+    if database_url is None:
+        return [Path(os.environ.get("INGESTION_ROOT", "/ingestion"))]
+
+    folders = GeneralSettingsStore(database_url).seed_default_ingest_folders()
+    return [Path(folder.path) for folder in folders]
+
+
+def _add_active_ingest_root(app: FastAPI, path: str) -> None:
+    watcher = getattr(app.state, "ingestion_watcher", None)
+    if watcher is not None:
+        watcher.add_root(path)
+
+
+def _remove_active_ingest_root(app: FastAPI, path: str) -> None:
+    watcher = getattr(app.state, "ingestion_watcher", None)
+    if watcher is not None:
+        watcher.remove_root(path)
 
 
 app = create_app()
