@@ -40,32 +40,24 @@ const baseViewConfigs = [
   {
     id: "proposals",
     title: "Link proposals",
-    pillLabel: "Needs approval",
-    pillTone: "pill-pending",
     actionLabels: [],
     icon: "spark",
   },
   {
     id: "unidentified",
     title: "Unidentified",
-    pillLabel: "Rescue queue",
-    pillTone: "pill-info",
     actionLabels: [],
     icon: "spark",
   },
   {
     id: "missing",
     title: "Missing locally",
-    pillLabel: "Gap report",
-    pillTone: "pill-info",
     actionLabels: [],
     icon: "spark",
   },
   {
     id: "library",
     title: "All tracks",
-    pillLabel: "Local library",
-    pillTone: "pill-lib",
     actionLabels: [],
     icon: "library",
   },
@@ -76,17 +68,24 @@ const playlistCollectionViewId = "playlists";
 const playlistCollectionViewConfig = {
   id: playlistCollectionViewId,
   title: "YouTube Music",
-  pillLabel: "Playlist sync",
-  pillTone: "pill-info",
   actionLabels: [],
   icon: "playlist",
 } satisfies ViewConfig;
+const settingsSyncYoutubeMusicViewId = "settings-sync-youtube-music";
+const settingsViewConfigs = [
+  {
+    id: settingsSyncYoutubeMusicViewId,
+    title: "Settings",
+    actionLabels: [],
+    icon: "settings",
+  },
+] satisfies ViewConfig[];
 
 const staticViewRoutes: Record<string, string> = {
   library: "/library",
   missing: "/missing",
-  playlists: "/playlists",
   proposals: "/proposals",
+  [settingsSyncYoutubeMusicViewId]: "/settings/sync/youtube-music",
   unidentified: "/unidentified",
 };
 
@@ -115,6 +114,10 @@ function getViewIdFromPath(pathname: string) {
     return null;
   }
 
+  if (normalizedPathname === "/settings" || normalizedPathname === "/settings/sync") {
+    return settingsSyncYoutubeMusicViewId;
+  }
+
   return Object.entries(staticViewRoutes).find(([, path]) => path === normalizedPathname)?.[0] ?? null;
 }
 
@@ -135,8 +138,6 @@ function buildPlaylistViewConfigs(playlists: StreamingPlaylist[]): ViewConfig[] 
   return playlists.map((playlist) => ({
     id: getPlaylistViewId(playlist.id),
     title: playlist.title,
-    pillLabel: "YouTube Music",
-    pillTone: "pill-info",
     playlistResourceId: playlist.id,
     actionLabels: ["Sync", "Export M3U"],
     icon: "playlist",
@@ -161,6 +162,10 @@ function buildMaintenanceNavItems({
 
 function buildLibraryNavItems(totalTrackCount?: number): NavItem[] {
   return [{ id: "library", label: "All tracks", badge: totalTrackCount, tone: "accent" }];
+}
+
+function buildSettingsNavItems(): NavItem[] {
+  return [{ id: settingsSyncYoutubeMusicViewId, label: "YouTube Music sync", tone: "accent" }];
 }
 
 function PlaylistView({
@@ -280,6 +285,8 @@ function ViewShell({
             />
           ) : viewId === playlistCollectionViewId ? (
             <PlaylistSyncConfiguration />
+          ) : viewId === settingsSyncYoutubeMusicViewId ? (
+            <PlaylistSyncConfiguration />
           ) : viewId === "proposals" ? (
             <LinkProposalsView />
           ) : viewId === "library" ? (
@@ -307,7 +314,7 @@ function App() {
   const playlistsQuery = useStreamingPlaylistsQuery();
   const unidentifiedQuery = useUnidentifiedTracksQuery();
   const streamingPlaylists = playlistsQuery.data?.playlists ?? emptyStreamingPlaylists;
-  const defaultPlaylistViewId = streamingPlaylists[0] ? getPlaylistViewId(streamingPlaylists[0].id) : playlistCollectionViewId;
+  const defaultPlaylistViewId = streamingPlaylists[0] ? getPlaylistViewId(streamingPlaylists[0].id) : settingsSyncYoutubeMusicViewId;
   const libraryItems = useMemo(
     () => buildLibraryNavItems(libraryTracksQuery.data?.stats.total),
     [libraryTracksQuery.data?.stats.total],
@@ -326,8 +333,9 @@ function App() {
     ],
   );
   const playlistItems = useMemo(() => buildPlaylistNavItems(streamingPlaylists), [streamingPlaylists]);
+  const settingsItems = useMemo(() => buildSettingsNavItems(), []);
   const viewConfigs = useMemo(
-    () => [...baseViewConfigs, playlistCollectionViewConfig, ...buildPlaylistViewConfigs(streamingPlaylists)],
+    () => [...baseViewConfigs, playlistCollectionViewConfig, ...settingsViewConfigs, ...buildPlaylistViewConfigs(streamingPlaylists)],
     [streamingPlaylists],
   );
   const viewConfigById = useMemo(
@@ -341,8 +349,20 @@ function App() {
     : playlistsQuery.isError
       ? "Playlists unavailable."
       : "No selected playlists. Configure YouTube Music sync to choose playlists.";
-  const playlistEmptyActionLabel = !playlistsQuery.isPending && !playlistsQuery.isError ? "Configure sync" : undefined;
+  const playlistEmptyActionLabel = !playlistsQuery.isPending && !playlistsQuery.isError ? "Sync settings" : undefined;
   const routedViewId = useMemo(() => getViewIdFromPath(location.pathname), [location.pathname]);
+
+  useEffect(() => {
+    const normalizedPathname = location.pathname.replace(/\/$/, "") || "/";
+
+    if (normalizedPathname === "/settings" || normalizedPathname === "/settings/sync") {
+      navigate(staticViewRoutes[settingsSyncYoutubeMusicViewId], { replace: true });
+    }
+
+    if (normalizedPathname === "/playlists") {
+      navigate(staticViewRoutes[settingsSyncYoutubeMusicViewId], { replace: true });
+    }
+  }, [location.pathname, navigate]);
 
   useEffect(() => {
     if (!routedViewId || viewConfigById[routedViewId] === undefined) {
@@ -373,24 +393,30 @@ function App() {
     navigate(getViewPath(viewId));
   }
 
+  const isSettingsView = activeViewId === settingsSyncYoutubeMusicViewId;
+
   return (
     <div className="flex min-h-0 flex-1 flex-row overflow-hidden bg-ctp-base text-ctp-text max-md:flex-col">
       <Sidebar
         activeItemId={activeViewId}
+        isSettingsMode={isSettingsView}
         libraryItems={libraryItems}
         maintenanceItems={maintenanceItems}
-        onConfigureSync={() => handleViewSelect(playlistCollectionViewId)}
+        onConfigureSync={() => handleViewSelect(settingsSyncYoutubeMusicViewId)}
+        onHome={() => handleViewSelect("proposals")}
         onSelect={handleViewSelect}
         playlistEmptyActionLabel={playlistEmptyActionLabel}
         playlistEmptyMessage={playlistEmptyMessage}
         playlistItems={playlistItems}
+        settingsItems={settingsItems}
       />
 
       <main className="flex min-h-0 min-w-0 flex-1 flex-col bg-ctp-base">
         <Topbar
-          onConfigureSync={() => handleViewSelect(playlistCollectionViewId)}
+          isSettingsView={isSettingsView}
+          onNavigateHome={() => handleViewSelect("proposals")}
+          onOpenAppSettings={() => handleViewSelect(settingsSyncYoutubeMusicViewId)}
           onPlaylistSyncStateChange={setPlaylistSyncState}
-          playlistCollectionViewId={playlistCollectionViewId}
           view={activeView}
         />
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden">

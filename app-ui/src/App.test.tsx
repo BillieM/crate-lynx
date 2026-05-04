@@ -471,6 +471,12 @@ function renderApp(initialEntries = ["/"]) {
   );
 }
 
+async function openYoutubeMusicSettings() {
+  fireEvent.click(screen.getByRole("button", { name: "Open app settings" }));
+  expect(await screen.findByRole("heading", { level: 1, name: "Settings" })).toBeInTheDocument();
+  expect(await screen.findByRole("heading", { level: 2, name: "Playlist sync configuration" })).toBeInTheDocument();
+}
+
 describe("App", () => {
   afterEach(() => {
     vi.restoreAllMocks();
@@ -534,8 +540,9 @@ describe("App", () => {
     expect(screen.getByText("62")).toBeInTheDocument();
     expect(await screen.findByText("321")).toBeInTheDocument();
     expect(await screen.findByRole("heading", { level: 1, name: "Late Night Drive" })).toBeInTheDocument();
-    expect(screen.getAllByText("YouTube Music")).toHaveLength(2);
-    expect(screen.getByRole("button", { name: "Configure sync" })).toBeInTheDocument();
+    expect(screen.getByText("YouTube Music")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Open app settings" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Configure sync" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Sync" })).toBeInTheDocument();
 
     for (const viewId of [
@@ -543,6 +550,7 @@ describe("App", () => {
       "unidentified",
       "missing",
       "playlists",
+      "settings-sync-youtube-music",
       "playlist-12",
       "playlist-9",
       "playlist-14",
@@ -557,7 +565,7 @@ describe("App", () => {
   it("renders Library and Maintenance sidebar badges from backend query data", async () => {
     mockPlaylistFetch();
 
-    renderApp();
+    renderApp(["/proposals"]);
 
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "Link proposals 3" })).toBeInTheDocument();
@@ -580,7 +588,6 @@ describe("App", () => {
     fireEvent.click(screen.getByRole("button", { name: /Link proposals/i }));
 
     expect(screen.getByRole("heading", { name: "Link proposals" })).toBeInTheDocument();
-    expect(screen.getByText("Needs approval")).toBeInTheDocument();
     expect(document.getElementById("proposals")).toHaveAttribute("data-view-active", "true");
     expect(document.getElementById("playlist-12")).toHaveAttribute("data-view-active", "false");
 
@@ -588,8 +595,9 @@ describe("App", () => {
 
     expect(screen.getByRole("heading", { level: 1, name: "Late Night Drive" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Late Night Drive/i })).toBeInTheDocument();
-    expect(screen.getAllByText("YouTube Music")).toHaveLength(2);
-    expect(screen.getByRole("button", { name: "Configure sync" })).toBeInTheDocument();
+    expect(screen.getByText("YouTube Music")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Open app settings" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Configure sync" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Sync" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Export M3U" })).toBeInTheDocument();
     expect(document.getElementById("proposals")).toHaveAttribute("data-view-active", "false");
@@ -602,7 +610,6 @@ describe("App", () => {
     renderApp(["/proposals?proposal_id=44"]);
 
     expect(screen.getByRole("heading", { level: 1, name: "Link proposals" })).toBeInTheDocument();
-    expect(screen.getByText("Needs approval")).toBeInTheDocument();
     expect(await screen.findByRole("heading", { level: 2, name: "Proposal queue" })).toBeInTheDocument();
     expect(await screen.findByRole("heading", { level: 3, name: "High" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { level: 3, name: "Medium" })).toBeInTheDocument();
@@ -623,7 +630,6 @@ describe("App", () => {
     fireEvent.click(screen.getByRole("button", { name: /All tracks/i }));
 
     expect(screen.getByRole("heading", { level: 1, name: "All tracks" })).toBeInTheDocument();
-    expect(screen.getByText("Local library")).toBeInTheDocument();
     expect(screen.getByRole("region", { name: "Local library tracks" })).toBeInTheDocument();
     const stats = screen.getByLabelText("Library stats");
     await waitFor(() => {
@@ -636,16 +642,17 @@ describe("App", () => {
     expect(screen.getByRole("group", { name: "Library link status filters" })).toBeInTheDocument();
     expect(screen.getByLabelText("Match method")).toBeInTheDocument();
     expect(screen.getByLabelText("File status")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Configure sync" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Open app settings" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Configure sync" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Sync" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Export M3U" })).not.toBeInTheDocument();
     expect(document.getElementById("library")).toHaveAttribute("data-view-active", "true");
     expect(document.getElementById("playlist-12")).toHaveAttribute("data-view-active", "false");
 
-    fireEvent.click(screen.getByRole("button", { name: "Configure sync" }));
+    await openYoutubeMusicSettings();
 
     expect(await screen.findByRole("heading", { level: 2, name: "Playlist sync configuration" })).toBeInTheDocument();
-    expect(document.getElementById("playlists")).toHaveAttribute("data-view-active", "true");
+    expect(document.getElementById("settings-sync-youtube-music")).toHaveAttribute("data-view-active", "true");
   });
 
   it("opens the local library routed view from the URL", async () => {
@@ -654,7 +661,6 @@ describe("App", () => {
     renderApp(["/library"]);
 
     expect(screen.getByRole("heading", { level: 1, name: "All tracks" })).toBeInTheDocument();
-    expect(screen.getByText("Local library")).toBeInTheDocument();
     expect(screen.getByLabelText("Library stats")).toBeInTheDocument();
     expect(screen.getByRole("region", { name: "Local library tracks" })).toBeInTheDocument();
     expect(document.getElementById("library")).toHaveAttribute("data-view-active", "true");
@@ -667,7 +673,6 @@ describe("App", () => {
     renderApp(["/unidentified"]);
 
     expect(screen.getByRole("heading", { level: 1, name: "Unidentified" })).toBeInTheDocument();
-    expect(screen.getByText("Rescue queue")).toBeInTheDocument();
     expect(screen.getByRole("region", { name: "Unidentified tracks" })).toBeInTheDocument();
     expect(await screen.findByText("unknown-import-9a4f.mp3")).toBeInTheDocument();
     expect(screen.getByText("fp_7d91c2a8e4b0")).toBeInTheDocument();
@@ -681,7 +686,6 @@ describe("App", () => {
     renderApp(["/missing"]);
 
     expect(screen.getByRole("heading", { level: 1, name: "Missing locally" })).toBeInTheDocument();
-    expect(screen.getByText("Gap report")).toBeInTheDocument();
     expect(screen.getByLabelText("Missing locally summary")).toBeInTheDocument();
     expect(screen.getByRole("region", { name: "Missing local tracks" })).toBeInTheDocument();
     expect(await screen.findByText("Open Eye Signal")).toBeInTheDocument();
@@ -837,16 +841,22 @@ describe("App", () => {
     });
   });
 
-  it("opens the YouTube Music sync configuration shell from the topbar", async () => {
+  it("opens settings from the topbar and selects YouTube Music sync configuration", async () => {
     mockPlaylistFetch();
 
     renderApp();
 
     expect(await screen.findByRole("heading", { level: 1, name: "Late Night Drive" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Fresh Discoveries/i })).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Configure sync" }));
+    const openSettingsButton = screen.getByRole("button", { name: "Open app settings" });
+    expect(openSettingsButton.querySelector("svg")).toBeInTheDocument();
+    expect(openSettingsButton).toHaveTextContent("");
+    fireEvent.click(openSettingsButton);
 
-    expect(screen.getByRole("heading", { level: 1, name: "YouTube Music" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 1, name: "Settings" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "YouTube Music sync" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Sync Settings" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("group", { name: "Sync platforms" })).not.toBeInTheDocument();
     expect(screen.getByRole("heading", { level: 2, name: "Playlist sync configuration" })).toBeInTheDocument();
     expect(await screen.findByText("1 of 2 discovered playlists selected for sync.")).toBeInTheDocument();
     expect(screen.getByRole("heading", { level: 3, name: "Late Night Drive" })).toBeInTheDocument();
@@ -857,10 +867,64 @@ describe("App", () => {
     expect(screen.queryByRole("button", { name: "Sync" })).not.toBeInTheDocument();
     expect(screen.getByText("Provider ID PL31 / Account 4")).toBeInTheDocument();
     expect(screen.getByText("Malformed playlist payload")).toBeInTheDocument();
-    expect(document.getElementById("playlists")).toHaveAttribute("data-view-active", "true");
+    expect(document.getElementById("settings-sync-youtube-music")).toHaveAttribute("data-view-active", "true");
     expect(document.getElementById("playlist-12")).toHaveAttribute("data-view-active", "false");
     expect(screen.queryByRole("button", { name: "Configure sync" })).not.toBeInTheDocument();
+    const returnButton = screen.getByRole("button", { name: "Return to Link proposals" });
+    expect(returnButton.querySelector("svg")).toBeInTheDocument();
+    expect(returnButton).toHaveTextContent("");
   });
+
+  it("switches the main sidebar into settings navigation on settings routes", async () => {
+    mockPlaylistFetch();
+
+    renderApp(["/settings/sync/youtube-music"]);
+
+    expect(screen.getByRole("heading", { level: 1, name: "Settings" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { level: 2, name: "Playlist sync configuration" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /MUSEBRIDGE/i })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 2, name: "Settings" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "YouTube Music sync" })).toBeInTheDocument();
+    expect(screen.queryByPlaceholderText("Search tracks, artists, playlists")).not.toBeInTheDocument();
+    expect(screen.queryByText("Maintenance")).not.toBeInTheDocument();
+    expect(screen.queryByText("Local Library")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^Late Night Drive/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "YouTube Music" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("group", { name: "Sync platforms" })).not.toBeInTheDocument();
+  });
+
+  it("returns from settings to Link proposals through the brand and topbar home button", async () => {
+    mockPlaylistFetch();
+
+    renderApp(["/settings/sync/youtube-music"]);
+
+    expect(await screen.findByRole("heading", { level: 2, name: "Playlist sync configuration" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /MUSEBRIDGE/i }));
+
+    expect(await screen.findByRole("heading", { level: 1, name: "Link proposals" })).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("Search tracks, artists, playlists")).toBeInTheDocument();
+    expect(screen.getByText("Maintenance")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Open app settings" }));
+    expect(await screen.findByRole("heading", { level: 1, name: "Settings" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Return to Link proposals" }));
+
+    expect(await screen.findByRole("heading", { level: 1, name: "Link proposals" })).toBeInTheDocument();
+    expect(document.getElementById("proposals")).toHaveAttribute("data-view-active", "true");
+  });
+
+  it.each(["/settings", "/settings/sync", "/settings/sync/youtube-music"])(
+    "lands on YouTube Music sync configuration for %s",
+    async (route) => {
+      mockPlaylistFetch();
+
+      renderApp([route]);
+
+      expect(screen.getByRole("heading", { level: 1, name: "Settings" })).toBeInTheDocument();
+      expect(await screen.findByRole("heading", { level: 2, name: "Playlist sync configuration" })).toBeInTheDocument();
+      expect(document.getElementById("settings-sync-youtube-music")).toHaveAttribute("data-view-active", "true");
+    },
+  );
 
   it("updates playlist sync selections and refreshes sidebar and config queries", async () => {
     const fetchMock = mockPlaylistFetch();
@@ -868,7 +932,7 @@ describe("App", () => {
     renderApp();
 
     expect(await screen.findByRole("heading", { level: 1, name: "Late Night Drive" })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Configure sync" }));
+    await openYoutubeMusicSettings();
 
     const playlistListFetchesBeforeToggle = fetchMock.mock.calls.filter(
       ([input]) => String(input) === "/api/streaming/playlists",
@@ -916,7 +980,7 @@ describe("App", () => {
     renderApp();
 
     expect(await screen.findByRole("heading", { level: 1, name: "Late Night Drive" })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Configure sync" }));
+    await openYoutubeMusicSettings();
 
     const playlistListFetchesBeforeRefresh = fetchMock.mock.calls.filter(
       ([input]) => String(input) === "/api/streaming/playlists",
@@ -949,7 +1013,7 @@ describe("App", () => {
     renderApp();
 
     expect(await screen.findByRole("heading", { level: 1, name: "Late Night Drive" })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Configure sync" }));
+    await openYoutubeMusicSettings();
     fireEvent.click(await screen.findByRole("button", { name: "Sync selected" }));
 
     await waitFor(() => {
@@ -972,7 +1036,7 @@ describe("App", () => {
     renderApp();
 
     expect(await screen.findByRole("heading", { level: 1, name: "Late Night Drive" })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Configure sync" }));
+    await openYoutubeMusicSettings();
     fireEvent.click(await screen.findByRole("button", { name: "Sync selected" }));
 
     expect(await screen.findByRole("button", { name: "Syncing selected..." })).toBeDisabled();
@@ -998,7 +1062,7 @@ describe("App", () => {
     renderApp();
 
     expect(await screen.findByRole("heading", { level: 1, name: "Late Night Drive" })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Configure sync" }));
+    await openYoutubeMusicSettings();
     fireEvent.click(await screen.findByRole("button", { name: "Sync selected" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent("Selected playlist sync failed.");
@@ -1017,7 +1081,7 @@ describe("App", () => {
     renderApp();
 
     expect(await screen.findByRole("heading", { level: 1, name: "Late Night Drive" })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Configure sync" }));
+    await openYoutubeMusicSettings();
     fireEvent.click(await screen.findByRole("button", { name: "Refresh playlist metadata" }));
 
     expect(await screen.findByRole("button", { name: "Refreshing..." })).toBeDisabled();
@@ -1043,7 +1107,7 @@ describe("App", () => {
     renderApp();
 
     expect(await screen.findByRole("heading", { level: 1, name: "Late Night Drive" })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Configure sync" }));
+    await openYoutubeMusicSettings();
     fireEvent.click(await screen.findByRole("button", { name: "Refresh playlist metadata" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent("Metadata refresh failed.");
@@ -1091,10 +1155,10 @@ describe("App", () => {
     renderApp();
 
     expect(await screen.findByRole("heading", { level: 1, name: "Late Night Drive" })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Configure sync" }));
+    await openYoutubeMusicSettings();
 
     expect(await screen.findByRole("heading", { level: 2, name: "Playlist sync configuration" })).toBeInTheDocument();
-    expect(document.getElementById("playlists")).toHaveClass("min-h-0", "overflow-hidden");
+    expect(document.getElementById("settings-sync-youtube-music")).toHaveClass("min-h-0", "overflow-hidden");
     expect(screen.getByRole("region", { name: "Playlist sync configuration list" })).toHaveClass(
       "min-h-0",
       "flex-1",
@@ -1147,15 +1211,13 @@ describe("App", () => {
 
     renderApp();
 
-    expect(await screen.findByText("No selected playlists. Configure YouTube Music sync to choose playlists.")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Configure sync" }));
-
+    expect(await screen.findByRole("heading", { level: 1, name: "Settings" })).toBeInTheDocument();
     expect(await screen.findByRole("heading", { level: 2, name: "Playlist sync configuration" })).toBeInTheDocument();
     expect(screen.getByText("1 of 2 discovered playlists selected for sync.")).toBeInTheDocument();
     expect(screen.getByRole("checkbox", { name: "Select Late Night Drive for sync" })).toBeChecked();
     expect(screen.getByRole("checkbox", { name: "Select Fresh Discoveries for sync" })).not.toBeChecked();
     expect(screen.queryByRole("button", { name: "Sync" })).not.toBeInTheDocument();
-    expect(document.getElementById("playlists")).toHaveAttribute("data-view-active", "true");
+    expect(document.getElementById("settings-sync-youtube-music")).toHaveAttribute("data-view-active", "true");
   });
 
   it("queues a YouTube Music sync for the active playlist from the topbar", async () => {
@@ -1326,7 +1388,7 @@ describe("App", () => {
       failUnexpectedFetch(url);
     });
 
-    renderApp();
+    renderApp(["/proposals"]);
 
     fireEvent.change(screen.getByPlaceholderText("Search tracks, artists, playlists"), {
       target: { value: "mix" },

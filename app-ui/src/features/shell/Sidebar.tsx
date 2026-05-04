@@ -208,27 +208,37 @@ function SearchPanel() {
 
 export function Sidebar({
   activeItemId,
+  isSettingsMode,
   libraryItems,
   maintenanceItems,
   onConfigureSync,
+  onHome,
   onSelect,
   playlistEmptyActionLabel,
   playlistEmptyMessage,
   playlistItems,
+  settingsItems,
 }: {
   activeItemId: string;
+  isSettingsMode: boolean;
   libraryItems: NavItem[];
   maintenanceItems: NavItem[];
   onConfigureSync: () => void;
+  onHome: () => void;
   onSelect: (itemId: string) => void;
   playlistEmptyActionLabel?: string;
   playlistEmptyMessage: string;
   playlistItems: NavItem[];
+  settingsItems: NavItem[];
 }) {
   return (
     <aside className={shellClasses.sidebar}>
       <div className={shellClasses.sidebarHeader}>
-        <div className="flex items-center gap-2.5">
+        <button
+          className="flex w-full items-center gap-2.5 text-left transition-opacity hover:opacity-90"
+          onClick={onHome}
+          type="button"
+        >
           <div className={shellClasses.sidebarLogo}>
             <Package aria-hidden="true" className="h-4 w-4" strokeWidth={1.7} />
           </div>
@@ -238,25 +248,33 @@ export function Sidebar({
             </p>
             <p className={`mt-0.5 text-ctp-subtext0 ${textClasses.finePrint}`}>Playlist linking control room</p>
           </div>
-        </div>
+        </button>
       </div>
 
-      <div className={shellClasses.sidebarSearch}>
-        <SearchPanel />
-      </div>
+      {isSettingsMode ? null : (
+        <div className={shellClasses.sidebarSearch}>
+          <SearchPanel />
+        </div>
+      )}
 
       <div className={shellClasses.sidebarBody}>
-        <SidebarSection activeItemId={activeItemId} items={maintenanceItems} onSelect={onSelect} title="Maintenance" />
-        <SidebarSection
-          activeItemId={activeItemId}
-          emptyActionLabel={playlistEmptyActionLabel}
-          emptyMessage={playlistEmptyMessage}
-          items={playlistItems}
-          onEmptyAction={onConfigureSync}
-          onSelect={onSelect}
-          title="YouTube Music"
-        />
-        <SidebarSection activeItemId={activeItemId} items={libraryItems} onSelect={onSelect} title="Local Library" />
+        {isSettingsMode ? (
+          <SidebarSection activeItemId={activeItemId} items={settingsItems} onSelect={onSelect} title="Settings" />
+        ) : (
+          <>
+            <SidebarSection activeItemId={activeItemId} items={maintenanceItems} onSelect={onSelect} title="Maintenance" />
+            <SidebarSection
+              activeItemId={activeItemId}
+              emptyActionLabel={playlistEmptyActionLabel}
+              emptyMessage={playlistEmptyMessage}
+              items={playlistItems}
+              onEmptyAction={onConfigureSync}
+              onSelect={onSelect}
+              title="YouTube Music"
+            />
+            <SidebarSection activeItemId={activeItemId} items={libraryItems} onSelect={onSelect} title="Local Library" />
+          </>
+        )}
       </div>
     </aside>
   );

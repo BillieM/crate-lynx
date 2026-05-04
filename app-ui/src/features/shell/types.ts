@@ -12,8 +12,6 @@ export type NavItem = {
   tone: ProgressStatus | "alert" | "accent";
 };
 
-export type TopbarPillTone = "pill-info" | "pill-pending" | "pill-lib";
-
 export type SearchResult = {
   id: number;
   kind: "playlist" | "streaming_track" | "local_track";
@@ -29,11 +27,9 @@ export type SearchResponse = {
 
 export type ViewConfig = {
   actionLabels: string[];
-  icon: "spark" | "playlist" | "library";
+  icon: "spark" | "playlist" | "library" | "settings";
   id: string;
   playlistResourceId?: number;
-  pillLabel: string;
-  pillTone: TopbarPillTone;
   title: string;
 };
 

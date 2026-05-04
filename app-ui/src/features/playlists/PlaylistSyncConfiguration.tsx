@@ -3,6 +3,7 @@ import { ActionButton } from "../../components/ActionButton";
 import { EmptyStateCard } from "../../components/EmptyStateCard";
 import { StatusMessage, type OperationStatus } from "../../components/StatusMessage";
 import { layoutClasses, surfaceClasses, textClasses } from "../../styles/componentClasses";
+import { maintenanceQueryKeys } from "../maintenance/queries";
 import { PlaylistActionStatus } from "../shell/Topbar";
 import {
   playlistQueryKeys,
@@ -150,6 +151,7 @@ export function PlaylistSyncConfiguration() {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: playlistQueryKeys.list() }),
         queryClient.invalidateQueries({ queryKey: playlistQueryKeys.config() }),
+        queryClient.invalidateQueries({ queryKey: maintenanceQueryKeys.missingLocally() }),
       ]);
     },
   });

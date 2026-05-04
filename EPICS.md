@@ -135,7 +135,7 @@ Proposals list grouped by confidence band (High / Medium / Low). Per-card: confi
 
 ---
 
-### E16 — Frontend: library & maintenance views `in progress`
+### E16 — Frontend: library & maintenance views `done`
 **Subdir:** `app-ui/`
 **Library:** stats cards (total / linked / pending / unlinked), faceted filter bar (link status / match method / file status), flat track list.
 **Unidentified:** list of Beets-failed tracks with filename, fingerprint hash, Rescue button (triggers E08).
@@ -143,6 +143,6 @@ Proposals list grouped by confidence band (High / Medium / Low). Per-card: confi
 
 ---
 
-### E17 — Acoustic fingerprint matching via yt-dlp
+### E17 — Acoustic fingerprint matching via yt-dlp `in progress`
 **Subdir:** `app/`
 Implement the acoustic fallback stage that is currently a stub (`pipeline.py` enqueues acoustic jobs with empty fingerprints). For each low-confidence tag match, download the linked streaming track audio via yt-dlp to a temp file, run `fpcalc` (Chromaprint) on it, compare the resulting fingerprint against the local track's stored fingerprint, then delete the temp file. Promote or discard the suggestion based on the acoustic similarity score. Requires wiring fingerprint population into the streaming track model and updating the acoustic RQ job handler.

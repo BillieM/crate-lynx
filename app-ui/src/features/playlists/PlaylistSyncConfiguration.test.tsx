@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 
+import { maintenanceQueryKeys } from "../maintenance/queries";
 import { PlaylistSyncConfiguration } from "./PlaylistSyncConfiguration";
 import { playlistQueryKeys, type StreamingPlaylistConfigResponse } from "./queries";
 
@@ -42,6 +43,7 @@ function renderPlaylistSyncConfiguration() {
   queryClient.setQueryData(playlistQueryKeys.list(), {
     playlists: playlistConfigResponse.playlists.filter((playlist) => playlist.selected_for_sync),
   });
+  queryClient.setQueryData(maintenanceQueryKeys.missingLocally(), { tracks: [] });
 
   const result = render(
     <QueryClientProvider client={queryClient}>
@@ -115,7 +117,7 @@ describe("PlaylistSyncConfiguration", () => {
     expect(screen.getByText("Malformed playlist payload")).toBeInTheDocument();
   });
 
-  it("patches playlist selection and invalidates config and sidebar queries", async () => {
+  it("patches playlist selection and invalidates config, sidebar, and missing-locally queries", async () => {
     const fetchMock = mockConfigFetch();
 
     const { queryClient } = renderPlaylistSyncConfiguration();
@@ -141,6 +143,7 @@ describe("PlaylistSyncConfiguration", () => {
         fetchMock.mock.calls.filter(([input]) => String(input) === "/api/streaming/playlists/config").length,
       ).toBeGreaterThan(configFetchCountBeforeToggle);
       expect(queryClient.getQueryState(playlistQueryKeys.list())?.isInvalidated).toBe(true);
+      expect(queryClient.getQueryState(maintenanceQueryKeys.missingLocally())?.isInvalidated).toBe(true);
     });
   });
 

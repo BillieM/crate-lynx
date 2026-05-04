@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { BookOpenText, ListMusic, Sparkles, type LucideIcon } from "lucide-react";
+import { ArrowLeft, BookOpenText, Cog, ListMusic, Sparkles, type LucideIcon } from "lucide-react";
 import { ActionButton } from "../../components/ActionButton";
 import { controlClasses, shellClasses, textClasses } from "../../styles/componentClasses";
 import {
@@ -7,8 +7,7 @@ import {
   syncStreamingPlaylist,
   usePlaylistDetailQuery,
 } from "../playlists/queries";
-import { pillToneClasses, type PillTone } from "../../styles/toneClasses";
-import type { PlaylistSyncViewState, TopbarPillTone, ViewConfig } from "./types";
+import type { PlaylistSyncViewState, ViewConfig } from "./types";
 
 function downloadBlob(blob: Blob, filename: string) {
   const url = window.URL.createObjectURL(blob);
@@ -22,16 +21,6 @@ function downloadBlob(blob: Blob, filename: string) {
   window.URL.revokeObjectURL(url);
 }
 
-function getTopbarPillClasses(tone: TopbarPillTone) {
-  const toneMap = {
-    "pill-info": "neutral",
-    "pill-lib": "accent",
-    "pill-pending": "pending",
-  } satisfies Record<TopbarPillTone, PillTone>;
-
-  return pillToneClasses[toneMap[tone]];
-}
-
 function TopbarIcon({ icon }: { icon: ViewConfig["icon"] }) {
   const Icon = topbarIconMap[icon];
 
@@ -41,6 +30,7 @@ function TopbarIcon({ icon }: { icon: ViewConfig["icon"] }) {
 const topbarIconMap = {
   library: BookOpenText,
   playlist: ListMusic,
+  settings: Cog,
   spark: Sparkles,
 } satisfies Record<ViewConfig["icon"], LucideIcon>;
 
@@ -87,14 +77,16 @@ export function PlaylistActionStatus({
 }
 
 export function Topbar({
-  onConfigureSync,
+  isSettingsView,
+  onNavigateHome,
   onPlaylistSyncStateChange,
-  playlistCollectionViewId,
+  onOpenAppSettings,
   view,
 }: {
-  onConfigureSync: () => void;
+  isSettingsView: boolean;
+  onNavigateHome: () => void;
+  onOpenAppSettings: () => void;
   onPlaylistSyncStateChange: (state: PlaylistSyncViewState) => void;
-  playlistCollectionViewId: string;
   view: ViewConfig;
 }) {
   const queryClient = useQueryClient();
@@ -181,12 +173,7 @@ export function Topbar({
         <span className={`${shellClasses.topbarIcon} shrink-0 ${controlClasses.iconFrame}`}>
           <TopbarIcon icon={view.icon} />
         </span>
-        <div className="flex min-w-0 flex-1 items-center gap-2.5">
-          <h1 className={`min-w-0 flex-1 truncate ${textClasses.title}`}>{view.title}</h1>
-          <span className={`${textClasses.pillEyebrow} ${controlClasses.pill} ${getTopbarPillClasses(view.pillTone)}`}>
-            {view.pillLabel}
-          </span>
-        </div>
+        <h1 className={`min-w-0 flex-1 truncate ${textClasses.title}`}>{view.title}</h1>
       </div>
 
       <div className="flex min-w-0 flex-wrap items-center justify-end gap-2 max-md:w-full max-md:justify-start">
@@ -200,11 +187,17 @@ export function Topbar({
         />
         {exportMutation.isSuccess ? <span className={`${textClasses.finePrint} font-medium text-ctp-green`}>M3U ready.</span> : null}
         {exportMutation.isError ? <span className={`${textClasses.finePrint} font-medium text-ctp-red`}>Export failed.</span> : null}
-        {view.id !== playlistCollectionViewId ? (
-          <ActionButton className={controlClasses.actionButtonCompact} onClick={onConfigureSync}>
-            Configure sync
-          </ActionButton>
-        ) : null}
+        <ActionButton
+          aria-label={isSettingsView ? "Return to Link proposals" : "Open app settings"}
+          className="inline-flex h-7 w-7 shrink-0 items-center justify-center p-0 text-ctp-text [&_svg]:block [&_svg]:h-4 [&_svg]:w-4"
+          onClick={isSettingsView ? onNavigateHome : onOpenAppSettings}
+        >
+          {isSettingsView ? (
+            <ArrowLeft aria-hidden="true" focusable="false" strokeWidth={1.8} />
+          ) : (
+            <Cog aria-hidden="true" focusable="false" strokeWidth={1.8} />
+          )}
+        </ActionButton>
         {view.actionLabels.map((actionLabel) => renderActionButton(actionLabel))}
       </div>
     </header>

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from sqlalchemy import create_engine, select
+from sqlalchemy import create_engine, select, true
 
 from app.ingestion.failures import failed_ingestion_attempts_table
 from app.links.store import final_links_table
@@ -76,23 +76,26 @@ class MaintenanceStore:
                 streaming_playlists_table.c.title.label("playlist_title"),
             )
             .select_from(
-                streaming_tracks_table.outerjoin(
-                    final_links_table,
-                    final_links_table.c.streaming_track_id
-                    == streaming_tracks_table.c.id,
-                )
-                .outerjoin(
+                streaming_tracks_table.join(
                     playlist_membership_table,
                     playlist_membership_table.c.streaming_track_id
                     == streaming_tracks_table.c.id,
                 )
-                .outerjoin(
+                .join(
                     streaming_playlists_table,
                     streaming_playlists_table.c.id
                     == playlist_membership_table.c.playlist_id,
                 )
+                .outerjoin(
+                    final_links_table,
+                    final_links_table.c.streaming_track_id
+                    == streaming_tracks_table.c.id,
+                )
             )
-            .where(final_links_table.c.id.is_(None))
+            .where(
+                final_links_table.c.id.is_(None),
+                streaming_playlists_table.c.selected_for_sync.is_(true()),
+            )
             .order_by(
                 streaming_tracks_table.c.id.asc(),
                 streaming_playlists_table.c.title.asc(),

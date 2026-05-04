@@ -921,12 +921,14 @@ def test_missing_locally_endpoint_aggregates_playlist_usage_and_excludes_links(
                     "account_id": 1,
                     "provider_playlist_id": "PL1",
                     "title": "Morning Mix",
+                    "selected_for_sync": True,
                 },
                 {
                     "id": 2,
                     "account_id": 1,
                     "provider_playlist_id": "PL2",
                     "title": "Road Trip",
+                    "selected_for_sync": False,
                 },
             ],
         )
@@ -952,10 +954,18 @@ def test_missing_locally_endpoint_aggregates_playlist_usage_and_excludes_links(
                 {
                     "id": 12,
                     "provider_track_id": "ytm-12",
-                    "title": "Linked Song",
+                    "title": "Deselected Playlist Song",
                     "artist": "Artist C",
                     "album": "Album C",
                     "duration_ms": 200000,
+                },
+                {
+                    "id": 13,
+                    "provider_track_id": "ytm-13",
+                    "title": "Linked Song",
+                    "artist": "Artist D",
+                    "album": "Album D",
+                    "duration_ms": 220000,
                 },
             ],
         )
@@ -966,6 +976,7 @@ def test_missing_locally_endpoint_aggregates_playlist_usage_and_excludes_links(
                 {"playlist_id": 1, "streaming_track_id": 11, "position": 2},
                 {"playlist_id": 2, "streaming_track_id": 11, "position": 1},
                 {"playlist_id": 2, "streaming_track_id": 12, "position": 2},
+                {"playlist_id": 1, "streaming_track_id": 13, "position": 3},
             ],
         )
         connection.execute(
@@ -981,7 +992,7 @@ def test_missing_locally_endpoint_aggregates_playlist_usage_and_excludes_links(
             insert(final_links_table).values(
                 id=3,
                 local_track_id=5,
-                streaming_track_id=12,
+                streaming_track_id=13,
             )
         )
 
@@ -1014,8 +1025,8 @@ def test_missing_locally_endpoint_aggregates_playlist_usage_and_excludes_links(
                 "artist": "Artist B",
                 "album": None,
                 "duration_ms": None,
-                "playlist_count": 2,
-                "playlist_titles": ["Morning Mix", "Road Trip"],
+                "playlist_count": 1,
+                "playlist_titles": ["Morning Mix"],
             },
         ]
     }
