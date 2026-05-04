@@ -1,8 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ActionButton } from "../../components/ActionButton";
 import { pillToneClasses } from "../../styles/toneClasses";
-import { asRgb, getProgressColor } from "./progress";
+import { getProgressColor } from "./progress";
 import type { NavItem, SearchResponse, SearchResult } from "./types";
 
 async function fetchSearchResults(query: string) {
@@ -48,10 +48,13 @@ function getBadgeClasses(tone: NavItem["tone"]) {
 
 function ProgressFraction({ complete, total }: { complete: number; total: number }) {
   const color = getProgressColor((complete / total) * 100);
+  const progressColorStyle: CSSProperties & Record<"--progress-color", string> = {
+    "--progress-color": color,
+  };
 
   return (
     <span className="ml-auto flex shrink-0 items-baseline text-[11px] font-semibold tabular-nums">
-      <span className="min-w-[2ch] text-right" style={{ color: asRgb(color, 1) }}>
+      <span className="min-w-[2ch] text-right text-[var(--progress-color)]" style={progressColorStyle}>
         {complete}
       </span>
       <span className="px-0.5 text-ctp-overlay1">/</span>

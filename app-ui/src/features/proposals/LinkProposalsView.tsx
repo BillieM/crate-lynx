@@ -1,4 +1,4 @@
-import { useMemo, type ReactNode } from "react";
+import { useMemo, type CSSProperties, type ReactNode } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useLocation, useNavigate } from "react-router-dom";
 import { ActionButton } from "../../components/ActionButton";
@@ -324,6 +324,9 @@ function ProposalCard({
 }) {
   const scorePercentage = getProposalScorePercentage(proposal.score);
   const isActionPending = isApproving || isRejecting;
+  const scoreMeterStyle: CSSProperties & Record<"--proposal-score-width", string> = {
+    "--proposal-score-width": `${scorePercentage}%`,
+  };
 
   return (
     <li className="rounded-[8px] border border-ctp-surface0 bg-ctp-mantle/80 p-4 shadow-sm shadow-ctp-crust/20">
@@ -352,10 +355,8 @@ function ProposalCard({
           <div>
             <div className="h-2 overflow-hidden rounded-full bg-ctp-surface0" aria-hidden="true">
               <div
-                className={`h-full rounded-full ${getProposalScoreColorClass(scorePercentage)}`}
-                style={{
-                  width: `${scorePercentage}%`,
-                }}
+                className={`h-full rounded-full [width:var(--proposal-score-width)] ${getProposalScoreColorClass(scorePercentage)}`}
+                style={scoreMeterStyle}
               />
             </div>
             <p className="mt-2 text-[12px] font-medium text-ctp-subtext0">Confidence score</p>
