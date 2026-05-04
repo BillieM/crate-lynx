@@ -792,6 +792,15 @@ function PlaylistConfigRow({
 function PlaylistSyncConfiguration() {
   const queryClient = useQueryClient();
   const configQuery = useStreamingPlaylistConfigQuery();
+  const selectedSyncMutation = useMutation({
+    mutationFn: syncStreamingAccount,
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: playlistQueryKeys.list() }),
+        queryClient.invalidateQueries({ queryKey: playlistQueryKeys.config() }),
+      ]);
+    },
+  });
   const metadataRefreshMutation = useMutation({
     mutationFn: refreshStreamingAccountMetadata,
     onSuccess: async () => {
@@ -836,18 +845,32 @@ function PlaylistSyncConfiguration() {
           </p>
         </div>
         <div className="flex flex-col items-start gap-2 sm:items-end">
-          <button
-            className="rounded-[10px] border border-ctp-surface1 bg-ctp-surface0 px-3 py-1.5 text-[12px] font-semibold text-ctp-text transition-colors hover:border-ctp-overlay0 hover:bg-ctp-surface1 disabled:cursor-not-allowed disabled:border-ctp-surface0 disabled:text-ctp-overlay1 disabled:hover:bg-ctp-surface0"
-            disabled={accountId === undefined || metadataRefreshMutation.isPending}
-            onClick={() => {
-              if (accountId !== undefined) {
-                metadataRefreshMutation.mutate(accountId);
-              }
-            }}
-            type="button"
-          >
-            {metadataRefreshMutation.isPending ? "Refreshing..." : "Refresh playlist metadata"}
-          </button>
+          <div className="flex flex-wrap justify-start gap-2 sm:justify-end">
+            <button
+              className="rounded-[10px] border border-ctp-surface1 bg-ctp-surface0 px-3 py-1.5 text-[12px] font-semibold text-ctp-text transition-colors hover:border-ctp-overlay0 hover:bg-ctp-surface1 disabled:cursor-not-allowed disabled:border-ctp-surface0 disabled:text-ctp-overlay1 disabled:hover:bg-ctp-surface0"
+              disabled={accountId === undefined || selectedCount === 0 || selectedSyncMutation.isPending}
+              onClick={() => {
+                if (accountId !== undefined) {
+                  selectedSyncMutation.mutate(accountId);
+                }
+              }}
+              type="button"
+            >
+              Sync selected
+            </button>
+            <button
+              className="rounded-[10px] border border-ctp-surface1 bg-ctp-surface0 px-3 py-1.5 text-[12px] font-semibold text-ctp-text transition-colors hover:border-ctp-overlay0 hover:bg-ctp-surface1 disabled:cursor-not-allowed disabled:border-ctp-surface0 disabled:text-ctp-overlay1 disabled:hover:bg-ctp-surface0"
+              disabled={accountId === undefined || metadataRefreshMutation.isPending}
+              onClick={() => {
+                if (accountId !== undefined) {
+                  metadataRefreshMutation.mutate(accountId);
+                }
+              }}
+              type="button"
+            >
+              {metadataRefreshMutation.isPending ? "Refreshing..." : "Refresh playlist metadata"}
+            </button>
+          </div>
           <PlaylistActionStatus
             errorText="Metadata refresh failed."
             isError={metadataRefreshMutation.isError}

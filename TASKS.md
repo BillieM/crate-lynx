@@ -6,7 +6,7 @@
 - [x] Wire playlist toggles to `PATCH /api/streaming/playlists/{id}` and invalidate both sidebar and config queries on success
 - [x] Add a "Refresh playlist metadata" action wired to `POST /api/streaming/accounts/{id}/refresh-metadata`
 - [x] Add pending, success, and error states for the metadata refresh action
-- [ ] Add a "Sync selected" action wired to `POST /api/streaming/accounts/{id}/sync`
+- [x] Add a "Sync selected" action wired to `POST /api/streaming/accounts/{id}/sync`
 - [ ] Add pending, success, and error states for the selected-playlist sync action
 - [ ] Cover newly discovered unselected playlists and toggle behavior in frontend tests
 - [ ] Run relevant frontend validation: `npm run lint`, `npm test`, and `npm run build`
