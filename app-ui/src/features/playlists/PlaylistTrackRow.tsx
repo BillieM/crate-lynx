@@ -31,38 +31,33 @@ function getAlbumLabel(album: string | null) {
 
 export function PlaylistTrackRow({ actionSlot, track }: PlaylistTrackRowProps) {
   return (
-    <article
-      className={`${surfaceClasses.rowCard} lg:grid-cols-[minmax(0,1.8fr)_minmax(0,1.1fr)_minmax(0,1fr)_auto_auto] lg:items-center`}
-    >
-      <div className="flex min-w-0 items-start gap-3">
-        <div className="flex items-center gap-3 pt-1">
+    <article className={`${surfaceClasses.rowCardCompact} sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center`}>
+      <div className="grid min-w-0 gap-1.5">
+        <div className="flex min-w-0 items-center gap-3">
           <TrackStatusDot status={track.status} />
-          <span className={`${textClasses.eyebrow} text-ctp-subtext0`}>
+          <span className={`${textClasses.eyebrow} w-7 shrink-0 text-right tabular-nums text-ctp-subtext0`}>
             {track.position}
           </span>
+          <p className={`min-w-0 flex-1 truncate ${textClasses.title}`}>{track.title}</p>
         </div>
-        <div className="min-w-0">
-          <p className={`truncate ${textClasses.title}`}>{track.title}</p>
-          <p className={`mt-1 truncate ${textClasses.bodyMuted}`}>{track.artist}</p>
-        </div>
+
+        <dl className="grid min-w-0 gap-x-3 gap-y-1 pl-12 text-[12px] leading-5 text-ctp-subtext0 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
+          <div className="flex min-w-0 items-baseline gap-1.5">
+            <dt className="shrink-0 font-medium text-ctp-overlay1">Artist</dt>
+            <dd className="truncate text-ctp-text">{track.artist}</dd>
+          </div>
+          <div className="flex min-w-0 items-baseline gap-1.5">
+            <dt className="shrink-0 font-medium text-ctp-overlay1">Album</dt>
+            <dd className="truncate text-ctp-text">{getAlbumLabel(track.album)}</dd>
+          </div>
+          <div className="flex min-w-0 items-baseline gap-1.5 sm:justify-end">
+            <dt className="shrink-0 font-medium text-ctp-overlay1">Duration</dt>
+            <dd className="font-medium tabular-nums text-ctp-text">{formatDuration(track.duration_ms)}</dd>
+          </div>
+        </dl>
       </div>
 
-      <div className="min-w-0">
-        <p className={`${textClasses.eyebrow} text-ctp-subtext0`}>Artist</p>
-        <p className="mt-1 truncate text-[13px] text-ctp-text">{track.artist}</p>
-      </div>
-
-      <div className="min-w-0">
-        <p className={`${textClasses.eyebrow} text-ctp-subtext0`}>Album</p>
-        <p className="mt-1 truncate text-[13px] text-ctp-text">{getAlbumLabel(track.album)}</p>
-      </div>
-
-      <div>
-        <p className={`${textClasses.eyebrow} text-ctp-subtext0`}>Duration</p>
-        <p className="mt-1 text-[13px] font-medium tabular-nums text-ctp-text">{formatDuration(track.duration_ms)}</p>
-      </div>
-
-      <div className="flex items-center justify-start lg:justify-end">{actionSlot ?? null}</div>
+      <div className="flex items-center justify-start pl-12 sm:justify-end sm:pl-0">{actionSlot ?? null}</div>
     </article>
   );
 }

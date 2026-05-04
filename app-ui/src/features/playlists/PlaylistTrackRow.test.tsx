@@ -27,7 +27,7 @@ describe("PlaylistTrackRow", () => {
     expect(screen.getByRole("status", { name: "Pending track" })).toBeInTheDocument();
     expect(screen.getByText("7")).toBeInTheDocument();
     expect(screen.getByText("Night Shift")).toBeInTheDocument();
-    expect(screen.getAllByText("The Midnight")).toHaveLength(2);
+    expect(screen.getByText("The Midnight")).toBeInTheDocument();
     expect(screen.getByText("Nocturnal")).toBeInTheDocument();
     expect(screen.getByText("4:05")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Review" })).toBeInTheDocument();

@@ -39,6 +39,7 @@ export const surfaceClasses = {
   statusPanel: `${radiusClasses.panel} border px-4 py-3`,
   trackCard: `${radiusClasses.card} ${borderClasses.default} ${surfaceFillClasses.row} ${shadowClasses.compact}`,
   rowCard: `grid gap-3 px-4 py-3 ${radiusClasses.card} ${borderClasses.default} ${surfaceFillClasses.row} ${shadowClasses.compact}`,
+  rowCardCompact: `grid gap-2.5 px-3.5 py-2.5 ${radiusClasses.card} ${borderClasses.default} ${surfaceFillClasses.row} ${shadowClasses.compact}`,
 };
 
 export const textClasses = {
