@@ -75,6 +75,11 @@ export type StreamingSyncResponse = {
   job_id: string;
 };
 
+export type PlaylistSyncResponse = {
+  playlist_id: number;
+  job_id: string;
+};
+
 export const playlistQueryKeys = {
   all: ["playlists"] as const,
   config: () => ["playlists", "config"] as const,
@@ -153,6 +158,18 @@ export async function refreshStreamingAccountMetadata(accountId: number | string
   }
 
   return (await response.json()) as StreamingSyncResponse;
+}
+
+export async function syncStreamingPlaylist(playlistId: number | string): Promise<PlaylistSyncResponse> {
+  const response = await fetch(`/api/streaming/playlists/${encodeURIComponent(String(playlistId))}/sync`, {
+    method: "POST",
+  });
+
+  if (!response.ok) {
+    throw new Error(`Playlist sync request failed with status ${response.status}`);
+  }
+
+  return (await response.json()) as PlaylistSyncResponse;
 }
 
 export async function fetchPlaylistTracks(playlistId: number | string): Promise<PlaylistTracksResponse> {

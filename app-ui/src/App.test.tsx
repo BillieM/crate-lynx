@@ -117,6 +117,8 @@ const streamingPlaylistConfigResponse: StreamingPlaylistConfigResponse = {
 };
 const selectedPlaylistSyncEndpoint = "/api/streaming/accounts/4/sync";
 const selectedPlaylistSyncResponse = { account_id: 4, job_id: "selected-playlists-sync-job-4" };
+const activePlaylistSyncEndpoint = "/api/streaming/playlists/12/sync";
+const activePlaylistSyncResponse = { playlist_id: 12, job_id: "playlist-sync-job-12" };
 const metadataRefreshEndpoint = "/api/streaming/accounts/4/refresh-metadata";
 const metadataRefreshResponse = { account_id: 4, job_id: "metadata-refresh-job-4" };
 
@@ -244,6 +246,13 @@ function mockPlaylistFetch({ metadataRefreshHandler, selectedSyncHandler }: Mock
       return {
         ok: true,
         json: async () => selectedPlaylistSyncResponse,
+      } as Response;
+    }
+
+    if (url === activePlaylistSyncEndpoint && init?.method === "POST") {
+      return {
+        ok: true,
+        json: async () => activePlaylistSyncResponse,
       } as Response;
     }
 
@@ -643,7 +652,7 @@ describe("App", () => {
     expect(document.getElementById("playlists")).toHaveAttribute("data-view-active", "true");
   });
 
-  it("queues a selected-playlists YouTube Music sync from the active playlist topbar", async () => {
+  it("queues a YouTube Music sync for the active playlist from the topbar", async () => {
     const fetchMock = mockPlaylistFetch();
 
     renderApp();
@@ -657,7 +666,7 @@ describe("App", () => {
     fireEvent.click(syncButton);
 
     await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledWith(selectedPlaylistSyncEndpoint, { method: "POST" });
+      expect(fetchMock).toHaveBeenCalledWith(activePlaylistSyncEndpoint, { method: "POST" });
     });
     expect(await screen.findByText("Sync queued.")).toBeInTheDocument();
   });

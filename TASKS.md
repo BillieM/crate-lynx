@@ -1,7 +1,7 @@
 # E14 — Frontend: sidebar, topbar, and per-playlist UX
 
 - [x] Ensure the sidebar relies on `GET /api/streaming/playlists` returning selected playlists only, with no extra client-side selected filter
-- [ ] Replace the playlist-view topbar sync action with `POST /api/streaming/playlists/{id}/sync`
+- [x] Replace the playlist-view topbar sync action with `POST /api/streaming/playlists/{id}/sync`
 - [ ] Hide or reroute the topbar sync action when no playlist is selected
 - [ ] Add pending, success, and error states for per-playlist sync
 - [ ] Surface each playlist's last sync error string and timestamp in the playlist view when present

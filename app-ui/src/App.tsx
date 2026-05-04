@@ -10,6 +10,7 @@ import {
   exportPlaylistM3u,
   playlistQueryKeys,
   refreshStreamingAccountMetadata,
+  syncStreamingPlaylist,
   type StreamingPlaylist,
   type StreamingPlaylistConfig,
   type StreamingSyncResponse,
@@ -405,7 +406,7 @@ function Topbar({ onConfigureSync, view }: { onConfigureSync: () => void; view: 
     },
   });
   const syncMutation = useMutation({
-    mutationFn: syncStreamingAccount,
+    mutationFn: syncStreamingPlaylist,
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["playlists"] });
       if (view.playlistResourceId !== undefined) {
@@ -425,8 +426,8 @@ function Topbar({ onConfigureSync, view }: { onConfigureSync: () => void; view: 
           disabled={!canSync}
           key={actionLabel}
           onClick={() => {
-            if (playlist) {
-              syncMutation.mutate(playlist.account_id);
+            if (view.playlistResourceId !== undefined) {
+              syncMutation.mutate(view.playlistResourceId);
             }
           }}
           type="button"
