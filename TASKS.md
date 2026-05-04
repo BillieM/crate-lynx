@@ -1,7 +1,7 @@
 # E13 — Frontend: playlist sync configuration UI
 
 - [x] Add a YouTube Music configuration view entry point from the existing topbar or sidebar
-- [ ] Fetch all discovered playlists from `GET /api/streaming/playlists/config` with a dedicated TanStack Query
+- [x] Fetch all discovered playlists from `GET /api/streaming/playlists/config` with a dedicated TanStack Query
 - [ ] Render the configuration list with playlist metadata and a `selected_for_sync` toggle for each playlist
 - [ ] Wire playlist toggles to `PATCH /api/streaming/playlists/{id}` and invalidate both sidebar and config queries on success
 - [ ] Add a "Refresh playlist metadata" action wired to `POST /api/streaming/accounts/{id}/refresh-metadata`

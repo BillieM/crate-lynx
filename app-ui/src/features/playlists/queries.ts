@@ -24,6 +24,12 @@ export type StreamingPlaylist = {
   track_count: number;
 };
 
+export type StreamingPlaylistConfig = StreamingPlaylist & {
+  last_sync_error: string | null;
+  last_sync_error_at: string | null;
+  selected_for_sync: boolean;
+};
+
 export type PlaylistTrack = {
   album: string | null;
   artist: string;
@@ -46,6 +52,10 @@ export type StreamingPlaylistsResponse = {
   playlists: StreamingPlaylist[];
 };
 
+export type StreamingPlaylistConfigResponse = {
+  playlists: StreamingPlaylistConfig[];
+};
+
 export type PlaylistTracksResponse = {
   tracks: PlaylistTrack[];
 };
@@ -57,6 +67,7 @@ export type PlaylistM3uExport = {
 
 export const playlistQueryKeys = {
   all: ["playlists"] as const,
+  config: () => ["playlists", "config"] as const,
   detail: (playlistId: number | string) => ["playlists", playlistId, "detail"] as const,
   list: () => ["playlists", "list"] as const,
   tracks: (playlistId: number | string) => ["playlists", playlistId, "tracks"] as const,
@@ -99,6 +110,10 @@ export async function fetchStreamingPlaylists(): Promise<StreamingPlaylistsRespo
   return fetchJson<StreamingPlaylistsResponse>("/api/streaming/playlists");
 }
 
+export async function fetchStreamingPlaylistConfig(): Promise<StreamingPlaylistConfigResponse> {
+  return fetchJson<StreamingPlaylistConfigResponse>("/api/streaming/playlists/config");
+}
+
 export async function fetchPlaylistTracks(playlistId: number | string): Promise<PlaylistTracksResponse> {
   return fetchJson<PlaylistTracksResponse>(`/api/playlists/${encodeURIComponent(String(playlistId))}/tracks`);
 }
@@ -128,6 +143,13 @@ export function useStreamingPlaylistsQuery() {
   return useQuery({
     queryKey: playlistQueryKeys.list(),
     queryFn: fetchStreamingPlaylists,
+  });
+}
+
+export function useStreamingPlaylistConfigQuery() {
+  return useQuery({
+    queryKey: playlistQueryKeys.config(),
+    queryFn: fetchStreamingPlaylistConfig,
   });
 }
 
