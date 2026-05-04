@@ -4,7 +4,7 @@
 - [x] Add frontend API client methods for approving and rejecting link proposals
 - [x] Create the link proposals routed view and wire it into the app navigation
 - [x] Render proposals grouped by confidence band: High, Medium, and Low
-- [ ] Build proposal cards with confidence bar, local track column, streaming track column, match method badge, and score
+- [x] Build proposal cards with confidence bar, local track column, streaming track column, match method badge, and score
 - [ ] Add confidence-band filter chips that update the proposals query
 - [ ] Implement optimistic approve and reject mutations with TanStack Query cache updates
 - [ ] Add loading, empty, and error states for the proposals view

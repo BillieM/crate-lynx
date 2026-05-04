@@ -267,8 +267,30 @@ function getLocalTrackLabel(proposal: LinkProposal) {
   return proposal.local_file_path.split("/").pop() || proposal.local_file_path;
 }
 
+function getMatchMethodLabel(matchMethod: string) {
+  const normalizedMethod = matchMethod.toLowerCase();
+
+  if (normalizedMethod === "isrc") {
+    return "ISRC";
+  }
+
+  if (normalizedMethod === "tag") {
+    return "Tag";
+  }
+
+  if (normalizedMethod === "acoustic") {
+    return "Acoustic";
+  }
+
+  return matchMethod;
+}
+
 function formatProposalScore(score: number) {
   return `${Math.round(score * 100)}%`;
+}
+
+function getProposalScorePercentage(score: number) {
+  return clampPercentage(score * 100);
 }
 
 function formatPlaylistTimestamp(timestamp: string | null) {
@@ -860,18 +882,14 @@ function LinkProposalsView() {
         </div>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto pr-1">
-        <div className="grid gap-4">
+        <div className="grid gap-6">
           {proposalBandOrder.map((band) => {
             const bandProposals = groupedProposals[band];
             const label = proposalBandLabels[band];
 
             return (
-              <section
-                aria-labelledby={`proposal-band-${band}`}
-                className="rounded-[18px] border border-ctp-surface0 bg-ctp-mantle/80"
-                key={band}
-              >
-                <header className="flex items-center justify-between gap-3 border-b border-ctp-surface0 px-5 py-4">
+              <section aria-labelledby={`proposal-band-${band}`} className="grid gap-3" key={band}>
+                <header className="flex items-center justify-between gap-3">
                   <h3 className="text-[14px] font-semibold text-ctp-text" id={`proposal-band-${band}`}>
                     {label}
                   </h3>
@@ -880,29 +898,15 @@ function LinkProposalsView() {
                   </span>
                 </header>
                 {bandProposals.length > 0 ? (
-                  <ul className="divide-y divide-ctp-surface0">
+                  <ul className="grid gap-3">
                     {bandProposals.map((proposal) => (
-                      <li className="grid gap-3 px-5 py-4 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]" key={proposal.id}>
-                        <div className="min-w-0">
-                          <p className="truncate text-[13px] font-semibold text-ctp-text">{getLocalTrackLabel(proposal)}</p>
-                          <p className="mt-1 text-[12px] text-ctp-subtext0">Local track #{proposal.local_track_id}</p>
-                        </div>
-                        <div className="min-w-0">
-                          <p className="truncate text-[13px] font-semibold text-ctp-text">{proposal.streaming_title}</p>
-                          <p className="mt-1 truncate text-[12px] text-ctp-subtext0">
-                            {proposal.streaming_artist}
-                            {proposal.streaming_album ? ` / ${proposal.streaming_album}` : ""}
-                          </p>
-                        </div>
-                        <div className="flex items-center gap-2 text-[12px] font-semibold text-ctp-subtext0">
-                          <span className="rounded-full bg-ctp-surface0 px-2.5 py-1 uppercase">{proposal.match_method}</span>
-                          <span>{formatProposalScore(proposal.score)}</span>
-                        </div>
-                      </li>
+                      <ProposalCard key={proposal.id} proposal={proposal} />
                     ))}
                   </ul>
                 ) : (
-                  <p className="px-5 py-4 text-[13px] text-ctp-subtext0">No {label.toLowerCase()} confidence proposals.</p>
+                  <p className="rounded-[8px] border border-dashed border-ctp-surface0 px-5 py-4 text-[13px] text-ctp-subtext0">
+                    No {label.toLowerCase()} confidence proposals.
+                  </p>
                 )}
               </section>
             );
@@ -910,6 +914,52 @@ function LinkProposalsView() {
         </div>
       </div>
     </section>
+  );
+}
+
+function ProposalCard({ proposal }: { proposal: LinkProposal }) {
+  const scorePercentage = getProposalScorePercentage(proposal.score);
+  const scoreColor = asRgb(getProgressColor(scorePercentage));
+
+  return (
+    <li className="rounded-[8px] border border-ctp-surface0 bg-ctp-mantle/80 p-4 shadow-sm shadow-ctp-crust/20">
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_170px]">
+        <div className="min-w-0">
+          <p className="text-[11px] font-semibold uppercase text-ctp-subtext0">Local track</p>
+          <p className="mt-1 truncate text-[14px] font-semibold text-ctp-text">{getLocalTrackLabel(proposal)}</p>
+          <p className="mt-1 truncate text-[12px] text-ctp-subtext0">{proposal.local_file_path}</p>
+          <p className="mt-2 text-[12px] font-medium text-ctp-overlay1">Track #{proposal.local_track_id}</p>
+        </div>
+        <div className="min-w-0">
+          <p className="text-[11px] font-semibold uppercase text-ctp-subtext0">Streaming track</p>
+          <p className="mt-1 truncate text-[14px] font-semibold text-ctp-text">{proposal.streaming_title}</p>
+          <p className="mt-1 truncate text-[12px] text-ctp-subtext0">{proposal.streaming_artist}</p>
+          <p className="mt-2 truncate text-[12px] font-medium text-ctp-overlay1">
+            {proposal.streaming_album ?? "Album unavailable"}
+          </p>
+        </div>
+        <div className="grid content-between gap-3">
+          <div className="flex flex-wrap items-center gap-2 xl:justify-end">
+            <span className="rounded-full bg-ctp-surface0 px-2.5 py-1 text-[11px] font-semibold text-ctp-subtext0 ring-1 ring-inset ring-ctp-surface1">
+              {getMatchMethodLabel(proposal.match_method)}
+            </span>
+            <span className="text-[15px] font-semibold text-ctp-text">{formatProposalScore(proposal.score)}</span>
+          </div>
+          <div>
+            <div className="h-2 overflow-hidden rounded-full bg-ctp-surface0" aria-hidden="true">
+              <div
+                className="h-full rounded-full"
+                style={{
+                  backgroundColor: scoreColor,
+                  width: `${scorePercentage}%`,
+                }}
+              />
+            </div>
+            <p className="mt-2 text-[12px] font-medium text-ctp-subtext0">Confidence score</p>
+          </div>
+        </div>
+      </div>
+    </li>
   );
 }
 
