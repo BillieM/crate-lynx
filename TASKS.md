@@ -26,12 +26,15 @@
   - Add backend tests covering tracks in one playlist, tracks in multiple playlists, and tracks with final links that should be excluded.
   - Run the relevant backend validation for the changed backend files: `ruff check .`, `ruff format --check .`, and targeted `pytest`.
 
-- [ ] Decide and document the Unidentified data source before wiring the view
+- [x] Decide and document the Unidentified data source before wiring the view
   - Inspect whether existing persisted data can support "Beets-failed tracks with filename and fingerprint hash"; do not rely on static frontend fixtures.
   - Account for the current ingestion behavior: failures are currently exposed through recent in-memory `/ingest/status` entries and may not have durable `local_tracks` rows.
   - Choose one concrete path before implementation: persistent failed-ingestion records, a narrowed existing-data definition of unidentified tracks, or a recent-only view based on ingest status.
   - Document the chosen behavior in `TASKS.md` or the relevant code/tests before implementing follow-up wiring.
   - If this task changes backend behavior or documentation, run the relevant backend validation for the files touched.
+  - Decision: implement Unidentified as persistent failed-ingestion records in a follow-up backend task before wiring the frontend view.
+  - Rationale: current `local_tracks` rows are only created after fingerprinting and a successful Beets import, so they cannot represent Beets-failed imports. Current `/ingest/status` failure entries are recent-only in-memory records and only include `source_path` plus `error`; they are not durable and do not reliably expose a fingerprint or backend-compatible local track ID for rescue.
+  - Expected backend contract: persist failed ingestion attempts with filename/source path, failure reason, failed-at timestamp, and fingerprint when fingerprinting succeeded before the failure. Rescue must remain hidden or disabled for rows without a real persisted local track ID/final link compatible with the existing rescue endpoint.
 
 - [ ] Add frontend query helpers for library and maintenance reports
   - Follow the existing `app-ui/src/features/playlists/queries.ts` pattern for typed responses, fetch helpers, query keys, and `useQuery` hooks.
