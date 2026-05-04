@@ -56,7 +56,7 @@ def rescue_metadata(
         raise MetadataRescueError("DATABASE_URL must be configured for metadata rescue")
 
     resolved_library_root = Path(
-        library_root or os.environ.get("LIBRARY_ROOT", "/library")
+        library_root or os.environ.get("LIBRARY_ROOT", "/music")
     )
     engine = create_engine(resolved_database_url)
 

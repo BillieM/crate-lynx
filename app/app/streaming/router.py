@@ -212,7 +212,7 @@ def create_router(
         if playlist is None:
             raise HTTPException(status_code=404, detail="Playlist not found")
 
-        library_root = Path(os.environ.get("LIBRARY_ROOT", "/library"))
+        library_root = Path(os.environ.get("LIBRARY_ROOT", "/music"))
         content = generate_m3u(playlist_id, library_root)
         filename = build_m3u_filename(playlist.title)
         return Response(

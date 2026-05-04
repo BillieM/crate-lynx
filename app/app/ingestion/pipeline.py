@@ -94,18 +94,14 @@ class AudioPreparer:
 @dataclass(slots=True)
 class BeetsImporter:
     beet_binary: str = "beet"
-    library_root: Path | str = "/library"
-    library_database: Path | str | None = None
+    library_root: Path | str = "/music"
+    library_database: Path | str = "/data/beets/library.db"
 
     def import_file(self, prepared_path: Path | str) -> ImportedTrack:
         library_root = Path(self.library_root)
         library_root.mkdir(parents=True, exist_ok=True)
 
-        library_database = (
-            Path(self.library_database)
-            if self.library_database is not None
-            else library_root / "library.db"
-        )
+        library_database = Path(self.library_database)
         library_database.parent.mkdir(parents=True, exist_ok=True)
         previous_item_id = self._latest_item_id(library_database)
 

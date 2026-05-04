@@ -55,7 +55,7 @@ def create_router(*, require_database_url: Callable[[], str]) -> APIRouter:
             rescue_metadata(
                 local_track_id,
                 database_url=database_url,
-                library_root=Path(os.environ.get("LIBRARY_ROOT", "/library")),
+                library_root=Path(os.environ.get("LIBRARY_ROOT", "/music")),
             )
         except MetadataRescueError as exc:
             raise HTTPException(status_code=500, detail=str(exc)) from exc

@@ -34,7 +34,7 @@ def create_router(*, require_database_url: Callable[[], str]) -> APIRouter:
         regenerate_m3us_for_streaming_track(
             streaming_track_id,
             database_url=require_database_url(),
-            base_path=Path(os.environ.get("LIBRARY_ROOT", "/library")),
+            base_path=Path(os.environ.get("LIBRARY_ROOT", "/music")),
             output_dir=get_m3u_output_dir(),
         )
 
