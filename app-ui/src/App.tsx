@@ -104,7 +104,7 @@ type ViewConfig = {
   title: string;
 };
 
-type PlaylistCollectionStatus = "empty" | "error" | "loading";
+type PlaylistCollectionStatus = "empty" | "error" | "loading" | "ready";
 
 const maintenanceItems: NavItem[] = [
   { id: "proposals", label: "Link proposals", badge: 14, tone: "pending" },
@@ -381,7 +381,7 @@ function ProgressFraction({ complete, total }: { complete: number; total: number
   );
 }
 
-function Topbar({ view }: { view: ViewConfig }) {
+function Topbar({ onConfigureSync, view }: { onConfigureSync: () => void; view: ViewConfig }) {
   const queryClient = useQueryClient();
   const playlistDetailQuery = usePlaylistDetailQuery(view.playlistResourceId ?? null);
   const playlist = playlistDetailQuery.data?.playlist;
@@ -476,6 +476,15 @@ function Topbar({ view }: { view: ViewConfig }) {
         {syncMutation.isError ? <span className="text-[11px] font-medium text-ctp-red">Sync failed.</span> : null}
         {exportMutation.isSuccess ? <span className="text-[11px] font-medium text-ctp-green">M3U ready.</span> : null}
         {exportMutation.isError ? <span className="text-[11px] font-medium text-ctp-red">Export failed.</span> : null}
+        {view.id !== playlistCollectionViewId ? (
+          <button
+            className="rounded-[10px] border border-ctp-surface1 bg-ctp-surface0 px-3 py-1.5 text-[12px] font-semibold text-ctp-text transition-colors hover:border-ctp-overlay0 hover:bg-ctp-surface1"
+            onClick={onConfigureSync}
+            type="button"
+          >
+            Configure sync
+          </button>
+        ) : null}
         {view.actionLabels.map((actionLabel) => renderActionButton(actionLabel))}
       </div>
     </header>
@@ -640,6 +649,10 @@ function PlaylistCollectionState({ status }: { status: PlaylistCollectionStatus 
       title: "Loading playlists",
       body: "Checking for synced YouTube Music playlists.",
     },
+    ready: {
+      title: "Playlist sync configuration",
+      body: "Review discovered YouTube Music playlists and choose which ones appear in the sync queue.",
+    },
   } satisfies Record<PlaylistCollectionStatus, { body: string; title: string }>;
 
   return (
@@ -702,7 +715,13 @@ function App() {
   );
   const activeView = viewConfigById[activeViewId] ?? viewConfigById.proposals;
   const viewShellIds = useMemo(() => viewConfigs.map((view) => view.id), [viewConfigs]);
-  const playlistCollectionStatus = playlistsQuery.isPending ? "loading" : playlistsQuery.isError ? "error" : "empty";
+  const playlistCollectionStatus = playlistsQuery.isPending
+    ? "loading"
+    : playlistsQuery.isError
+      ? "error"
+      : streamingPlaylists.length > 0
+        ? "ready"
+        : "empty";
   const playlistEmptyMessage = playlistsQuery.isPending
     ? "Loading playlists..."
     : playlistsQuery.isError
@@ -789,7 +808,7 @@ function App() {
         </aside>
 
         <main className="flex flex-1 flex-col bg-ctp-base">
-          <Topbar view={activeView} />
+          <Topbar onConfigureSync={() => handleViewSelect(playlistCollectionViewId)} view={activeView} />
           <div className="flex flex-1 flex-col">
             {viewShellIds.map((viewId) => (
               <ViewShell

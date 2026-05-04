@@ -237,6 +237,7 @@ describe("App", () => {
     expect(screen.getByText("312")).toBeInTheDocument();
     expect(await screen.findByRole("heading", { level: 1, name: "Late Night Drive" })).toBeInTheDocument();
     expect(screen.getAllByText("YouTube Music")).toHaveLength(2);
+    expect(screen.getByRole("button", { name: "Configure sync" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Sync" })).toBeInTheDocument();
 
     for (const viewId of [
@@ -277,10 +278,26 @@ describe("App", () => {
     expect(screen.getByRole("heading", { level: 1, name: "Late Night Drive" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Late Night Drive/i })).toBeInTheDocument();
     expect(screen.getAllByText("YouTube Music")).toHaveLength(2);
+    expect(screen.getByRole("button", { name: "Configure sync" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Sync" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Export M3U" })).toBeInTheDocument();
     expect(document.getElementById("proposals")).toHaveAttribute("data-view-active", "false");
     expect(document.getElementById("playlist-12")).toHaveAttribute("data-view-active", "true");
+  });
+
+  it("opens the YouTube Music sync configuration shell from the topbar", async () => {
+    mockPlaylistFetch();
+
+    renderApp();
+
+    expect(await screen.findByRole("heading", { level: 1, name: "Late Night Drive" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Configure sync" }));
+
+    expect(screen.getByRole("heading", { level: 1, name: "YouTube Music" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 2, name: "Playlist sync configuration" })).toBeInTheDocument();
+    expect(document.getElementById("playlists")).toHaveAttribute("data-view-active", "true");
+    expect(document.getElementById("playlist-12")).toHaveAttribute("data-view-active", "false");
+    expect(screen.queryByRole("button", { name: "Configure sync" })).not.toBeInTheDocument();
   });
 
   it("opens the first synced playlist by default", async () => {
