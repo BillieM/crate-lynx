@@ -3,6 +3,7 @@ import { renderHook, waitFor } from "@testing-library/react";
 import type { PropsWithChildren } from "react";
 
 import {
+  approveLinkProposal,
   exportPlaylistM3u,
   fetchLinkProposals,
   fetchPlaylistDetail,
@@ -10,6 +11,7 @@ import {
   fetchStreamingPlaylists,
   fetchPlaylistTracks,
   playlistQueryKeys,
+  rejectLinkProposal,
   refreshStreamingAccountMetadata,
   updateStreamingPlaylistConfig,
   useLinkProposalsQuery,
@@ -190,6 +192,46 @@ describe("playlist queries", () => {
 
     await expect(fetchLinkProposals({ confidenceBand: "high" })).resolves.toEqual({ proposals: [] });
     expect(fetchMock).toHaveBeenCalledWith("/api/proposals?band=high");
+  });
+
+  it("approves a link proposal", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        proposal_id: 44,
+        final_link_id: 21,
+        status: "approved",
+      }),
+    } as Response);
+
+    await expect(approveLinkProposal(44)).resolves.toEqual({
+      proposal_id: 44,
+      final_link_id: 21,
+      status: "approved",
+    });
+    expect(fetchMock).toHaveBeenCalledWith("/api/proposals/44/approve", {
+      method: "POST",
+    });
+  });
+
+  it("rejects a link proposal", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        proposal_id: 44,
+        status: "rejected",
+        rejected_at: "2026-05-03T12:00:00+00:00",
+      }),
+    } as Response);
+
+    await expect(rejectLinkProposal(44)).resolves.toEqual({
+      proposal_id: 44,
+      status: "rejected",
+      rejected_at: "2026-05-03T12:00:00+00:00",
+    });
+    expect(fetchMock).toHaveBeenCalledWith("/api/proposals/44/reject", {
+      method: "POST",
+    });
   });
 
   it("fetches synced streaming playlists from the backend sidebar endpoint", async () => {

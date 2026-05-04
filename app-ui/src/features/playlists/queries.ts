@@ -92,6 +92,18 @@ export type LinkProposalsResponse = {
   proposals: LinkProposal[];
 };
 
+export type ApproveLinkProposalResponse = {
+  final_link_id: number;
+  proposal_id: number;
+  status: "approved";
+};
+
+export type RejectLinkProposalResponse = {
+  proposal_id: number;
+  rejected_at: string;
+  status: "rejected";
+};
+
 export type LinkProposalListFilters = {
   confidenceBand?: LinkProposalConfidenceBand | null;
 };
@@ -213,6 +225,30 @@ export async function fetchLinkProposals(filters: LinkProposalListFilters = {}):
 
   const queryString = params.toString();
   return fetchJson<LinkProposalsResponse>(`/api/proposals${queryString ? `?${queryString}` : ""}`);
+}
+
+export async function approveLinkProposal(proposalId: number | string): Promise<ApproveLinkProposalResponse> {
+  const response = await fetch(`/api/proposals/${encodeURIComponent(String(proposalId))}/approve`, {
+    method: "POST",
+  });
+
+  if (!response.ok) {
+    throw new Error(`Proposal approve request failed with status ${response.status}`);
+  }
+
+  return (await response.json()) as ApproveLinkProposalResponse;
+}
+
+export async function rejectLinkProposal(proposalId: number | string): Promise<RejectLinkProposalResponse> {
+  const response = await fetch(`/api/proposals/${encodeURIComponent(String(proposalId))}/reject`, {
+    method: "POST",
+  });
+
+  if (!response.ok) {
+    throw new Error(`Proposal reject request failed with status ${response.status}`);
+  }
+
+  return (await response.json()) as RejectLinkProposalResponse;
 }
 
 export async function exportPlaylistM3u(playlistId: number | string): Promise<PlaylistM3uExport> {
