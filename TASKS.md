@@ -102,7 +102,7 @@
   - Keep `GET /health`; it is used by `docker-compose.yml` as the backend service healthcheck.
   - Run relevant backend validation: `ruff check .`, `ruff format --check .`, and targeted `pytest` for ingestion, main route registration, worker/queue depth only if still touched, and maintenance unidentified behavior.
 
-- [ ] Normalize local-track action API paths
+- [x] Normalize local-track action API paths
   - Move metadata rescue from `POST /local-tracks/{local_track_id}/rescue` to `POST /api/local-tracks/{local_track_id}/rescue`.
   - Rationale: rescue is a user-facing action used by the Unidentified view, and `rematch` already lives at `POST /api/local-tracks/{local_track_id}/rematch`; keeping one local-track action outside `/api` is inconsistent.
   - Update frontend rescue calls in `app-ui/src/features/maintenance/queries.ts` and related tests.

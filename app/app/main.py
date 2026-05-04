@@ -98,7 +98,10 @@ def create_app() -> FastAPI:
         ),
         prefix="/api",
     )
-    app.include_router(create_rescue_router(require_database_url=require_database_url))
+    app.include_router(
+        create_rescue_router(require_database_url=require_database_url),
+        prefix="/api",
+    )
     app.include_router(create_search_router(require_database_url=require_database_url))
     app.include_router(
         create_library_router(require_database_url=require_database_url),

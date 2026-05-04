@@ -106,7 +106,7 @@ describe("maintenance queries", () => {
     expect(fetchMock).toHaveBeenCalledWith("/api/maintenance/unidentified");
   });
 
-  it("keeps metadata rescue pointed at the existing rescue endpoint", async () => {
+  it("posts metadata rescue to the API-prefixed rescue endpoint", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({
       ok: true,
       json: async () => ({
@@ -122,7 +122,7 @@ describe("maintenance queries", () => {
       id: 4001,
       library_root_rel_path: "Artist/rescue.mp3",
     });
-    expect(fetchMock).toHaveBeenCalledWith("/local-tracks/4001/rescue", {
+    expect(fetchMock).toHaveBeenCalledWith("/api/local-tracks/4001/rescue", {
       method: "POST",
     });
   });

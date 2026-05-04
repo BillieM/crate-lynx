@@ -62,7 +62,7 @@ export async function fetchUnidentifiedTracks(): Promise<UnidentifiedResponse> {
 }
 
 export async function rescueLocalTrackMetadata(localTrackId: number | string): Promise<RescuedLocalTrack> {
-  const response = await fetch(`/local-tracks/${encodeURIComponent(String(localTrackId))}/rescue`, {
+  const response = await fetch(`/api/local-tracks/${encodeURIComponent(String(localTrackId))}/rescue`, {
     method: "POST",
   });
 

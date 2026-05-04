@@ -49,7 +49,8 @@ def test_links_routes_are_mounted_under_api_prefix() -> None:
     assert "/api/proposals/{proposal_id}/approve" in route_paths
     assert "/api/proposals/{proposal_id}/reject" in route_paths
     assert "/api/final-links/{final_link_id}" in route_paths
-    assert "/local-tracks/{local_track_id}/rescue" in route_paths
+    assert "/api/local-tracks/{local_track_id}/rescue" in route_paths
+    assert "/local-tracks/{local_track_id}/rescue" not in route_paths
     assert "/api/playlists/{playlist_id}" in route_paths
     assert "/api/playlists/{playlist_id}/tracks" in route_paths
     assert "/api/playlists/{playlist_id}/m3u" in route_paths
@@ -1672,7 +1673,7 @@ def test_local_track_rescue_endpoint_returns_updated_track_record(
     route = next(
         route
         for route in app.routes
-        if getattr(route, "path", None) == "/local-tracks/{local_track_id}/rescue"
+        if getattr(route, "path", None) == "/api/local-tracks/{local_track_id}/rescue"
         and "POST" in getattr(route, "methods", set())
     )
     response = asyncio.run(route.endpoint(21))
@@ -1716,7 +1717,7 @@ def test_local_track_rescue_endpoint_returns_409_without_final_link(
     route = next(
         route
         for route in app.routes
-        if getattr(route, "path", None) == "/local-tracks/{local_track_id}/rescue"
+        if getattr(route, "path", None) == "/api/local-tracks/{local_track_id}/rescue"
         and "POST" in getattr(route, "methods", set())
     )
 

@@ -98,7 +98,7 @@ describe("UnidentifiedView", () => {
     fireEvent.click(screen.getByRole("button", { name: "Rescue side-b-live-rip.flac" }));
 
     await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledWith("/local-tracks/1004/rescue", {
+      expect(fetchMock).toHaveBeenCalledWith("/api/local-tracks/1004/rescue", {
         method: "POST",
       });
     });
