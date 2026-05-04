@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import App, { getProgressColor } from "./App";
+import type { LibraryTracksResponse } from "./features/library/queries";
 import type {
   LinkProposalsResponse,
   PlaylistDetailResponse,
@@ -171,6 +172,29 @@ const linkProposalsResponse: LinkProposalsResponse = {
   ],
 };
 
+const libraryTracksResponse: LibraryTracksResponse = {
+  stats: {
+    linked: 244,
+    pending: 43,
+    total: 312,
+    unlinked: 25,
+  },
+  tracks: [
+    {
+      album: "Nocturnal",
+      artist: "The Midnight",
+      duration_ms: 245000,
+      file_path: "/library/Synthwave/The Midnight/Nocturnal/Night Shift.mp3",
+      file_status: "available",
+      id: 1001,
+      library_root_rel_path: "Synthwave/The Midnight/Nocturnal/Night Shift.mp3",
+      link_status: "linked",
+      match_method: "isrc",
+      title: "Night Shift",
+    },
+  ],
+};
+
 type MockPlaylistFetchOptions = {
   activeSyncHandler?: () => Promise<Response> | Response;
   approveProposalHandler?: (proposalId: string) => Promise<Response> | Response;
@@ -258,6 +282,13 @@ function mockPlaylistFetch({
       return {
         ok: true,
         json: async () => linkProposalsResponse,
+      } as Response;
+    }
+
+    if (url === "/api/library/tracks") {
+      return {
+        ok: true,
+        json: async () => libraryTracksResponse,
       } as Response;
     }
 
@@ -540,7 +571,9 @@ describe("App", () => {
     expect(screen.getByText("Local library")).toBeInTheDocument();
     expect(screen.getByRole("region", { name: "Local library tracks" })).toBeInTheDocument();
     const stats = screen.getByLabelText("Library stats");
-    expect(within(stats).getByLabelText("Total tracks")).toHaveTextContent("312");
+    await waitFor(() => {
+      expect(within(stats).getByLabelText("Total tracks")).toHaveTextContent("312");
+    });
     expect(within(stats).getByLabelText("Linked tracks")).toHaveTextContent("244");
     expect(within(stats).getByLabelText("Pending tracks")).toHaveTextContent("43");
     expect(within(stats).getByLabelText("Unlinked tracks")).toHaveTextContent("25");

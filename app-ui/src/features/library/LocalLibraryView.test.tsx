@@ -1,33 +1,141 @@
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, within } from "@testing-library/react";
+import type { PropsWithChildren, ReactElement } from "react";
 
 import { LocalLibraryView } from "./LocalLibraryView";
+import type { LibraryTracksResponse } from "./queries";
+
+const libraryTracksResponse: LibraryTracksResponse = {
+  stats: {
+    linked: 2,
+    pending: 2,
+    total: 5,
+    unlinked: 1,
+  },
+  tracks: [
+    {
+      album: "Nocturnal",
+      artist: "The Midnight",
+      duration_ms: 245000,
+      file_path: "/library/Synthwave/The Midnight/Nocturnal/Night Shift.mp3",
+      file_status: "available",
+      id: 1001,
+      library_root_rel_path: "Synthwave/The Midnight/Nocturnal/Night Shift.mp3",
+      link_status: "linked",
+      match_method: "isrc",
+      title: "Night Shift",
+    },
+    {
+      album: "Electric Youth",
+      artist: "College",
+      duration_ms: 250000,
+      file_path: "/library/Electronic/College/Electric Youth/A Real Hero.mp3",
+      file_status: "available",
+      id: 1002,
+      library_root_rel_path: "Electronic/College/Electric Youth/A Real Hero.mp3",
+      link_status: "pending",
+      match_method: "tag",
+      title: "A Real Hero",
+    },
+    {
+      album: "Migration",
+      artist: "Bonobo",
+      duration_ms: 360000,
+      file_path: "/library/Downtempo/Bonobo/Migration/No Reason.flac",
+      file_status: "available",
+      id: 1003,
+      library_root_rel_path: "Downtempo/Bonobo/Migration/No Reason.flac",
+      link_status: "linked",
+      match_method: "acoustic",
+      title: "No Reason",
+    },
+    {
+      album: null,
+      artist: null,
+      duration_ms: null,
+      file_path: "/library/Piano/Nils Frahm/unknown/import-9a4f.mp3",
+      file_status: "beets_failed",
+      id: 1004,
+      library_root_rel_path: "Piano/Nils Frahm/unknown/import-9a4f.mp3",
+      link_status: "unlinked",
+      match_method: null,
+      title: "Ambre",
+    },
+    {
+      album: "Immunity",
+      artist: "Jon Hopkins",
+      duration_ms: 270000,
+      file_path: "/library/Electronic/Jon Hopkins/Immunity/Open Eye Signal.mp3",
+      file_status: "missing",
+      id: 1005,
+      library_root_rel_path: "Electronic/Jon Hopkins/Immunity/Open Eye Signal.mp3",
+      link_status: "pending",
+      match_method: "manual",
+      title: "Open Eye Signal",
+    },
+  ],
+};
+
+function mockLibraryFetch(response: LibraryTracksResponse = libraryTracksResponse) {
+  return vi.spyOn(globalThis, "fetch").mockResolvedValue({
+    ok: true,
+    json: async () => response,
+  } as Response);
+}
+
+function renderWithQueryClient(ui: ReactElement) {
+  const queryClient = new QueryClient({
+    defaultOptions: {
+      queries: {
+        retry: false,
+      },
+    },
+  });
+
+  function Wrapper({ children }: PropsWithChildren) {
+    return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
+  }
+
+  return render(ui, { wrapper: Wrapper });
+}
 
 describe("LocalLibraryView", () => {
-  it("renders the library filter facets with current counts", () => {
-    render(<LocalLibraryView />);
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
 
-    const filters = screen.getByRole("region", { name: "Library filters" });
+  it("renders the library filter facets with backend counts", async () => {
+    const fetchMock = mockLibraryFetch();
+
+    renderWithQueryClient(<LocalLibraryView />);
+
+    const filters = await screen.findByRole("region", { name: "Library filters" });
+    const allButton = await within(filters).findByRole("button", { name: "All 5" });
 
     expect(within(filters).getByRole("group", { name: "Library link status filters" })).toBeInTheDocument();
-    expect(within(filters).getByRole("button", { name: "All 312" })).toHaveAttribute("aria-pressed", "true");
-    expect(within(filters).getByRole("button", { name: "Linked 244" })).toHaveAttribute("aria-pressed", "false");
-    expect(within(filters).getByRole("button", { name: "Pending 43" })).toHaveAttribute("aria-pressed", "false");
-    expect(within(filters).getByRole("button", { name: "Unlinked 25" })).toHaveAttribute("aria-pressed", "false");
+    expect(allButton).toHaveAttribute("aria-pressed", "true");
+    expect(within(filters).getByRole("button", { name: "Linked 2" })).toHaveAttribute("aria-pressed", "false");
+    expect(within(filters).getByRole("button", { name: "Pending 2" })).toHaveAttribute("aria-pressed", "false");
+    expect(within(filters).getByRole("button", { name: "Unlinked 1" })).toHaveAttribute("aria-pressed", "false");
     expect(within(filters).getByLabelText("Match method")).toHaveValue("all");
     expect(within(filters).getByLabelText("File status")).toHaveValue("all");
     expect(within(filters).getByRole("button", { name: "Reset library filters" })).toBeDisabled();
+    expect(fetchMock).toHaveBeenCalledWith("/api/library/tracks");
   });
 
-  it("updates and resets library filter selections", () => {
-    render(<LocalLibraryView />);
+  it("updates and resets library filter selections", async () => {
+    mockLibraryFetch();
 
-    const filters = screen.getByRole("region", { name: "Library filters" });
+    renderWithQueryClient(<LocalLibraryView />);
 
-    fireEvent.click(within(filters).getByRole("button", { name: "Pending 43" }));
+    const filters = await screen.findByRole("region", { name: "Library filters" });
+    const pendingButton = await within(filters).findByRole("button", { name: "Pending 2" });
+
+    fireEvent.click(pendingButton);
     fireEvent.change(within(filters).getByLabelText("Match method"), { target: { value: "acoustic" } });
     fireEvent.change(within(filters).getByLabelText("File status"), { target: { value: "missing" } });
 
-    expect(within(filters).getByRole("button", { name: "Pending 43" })).toHaveAttribute("aria-pressed", "true");
+    expect(within(filters).getByRole("button", { name: "Pending 2" })).toHaveAttribute("aria-pressed", "true");
     expect(within(filters).getByLabelText("Match method")).toHaveValue("acoustic");
     expect(within(filters).getByLabelText("File status")).toHaveValue("missing");
 
@@ -35,18 +143,20 @@ describe("LocalLibraryView", () => {
     expect(resetButton).toBeEnabled();
     fireEvent.click(resetButton);
 
-    expect(within(filters).getByRole("button", { name: "All 312" })).toHaveAttribute("aria-pressed", "true");
+    expect(within(filters).getByRole("button", { name: "All 5" })).toHaveAttribute("aria-pressed", "true");
     expect(within(filters).getByLabelText("Match method")).toHaveValue("all");
     expect(within(filters).getByLabelText("File status")).toHaveValue("all");
     expect(resetButton).toBeDisabled();
   });
 
-  it("renders compact local library track rows with metadata and link state", () => {
-    render(<LocalLibraryView />);
+  it("renders compact local library track rows with backend metadata and link state", async () => {
+    mockLibraryFetch();
 
-    const trackList = screen.getByRole("region", { name: "Local library tracks" });
+    renderWithQueryClient(<LocalLibraryView />);
 
-    expect(within(trackList).getByRole("heading", { name: "Local library track list" })).toBeInTheDocument();
+    const trackList = await screen.findByRole("region", { name: "Local library tracks" });
+
+    expect(await within(trackList).findByRole("heading", { name: "Local library track list" })).toBeInTheDocument();
     expect(within(trackList).getByText("Showing 5 of 5 rows")).toBeInTheDocument();
     expect(within(trackList).getAllByRole("status", { name: "Linked track" })).toHaveLength(2);
     expect(within(trackList).getByText("Night Shift")).toBeInTheDocument();
@@ -56,14 +166,19 @@ describe("LocalLibraryView", () => {
     expect(within(trackList).getAllByText("4:05")).toHaveLength(2);
     expect(within(trackList).getAllByText("ISRC")).toHaveLength(1);
     expect(within(trackList).getAllByText("Available")).toHaveLength(3);
+    expect(within(trackList).getByText("Artist unavailable")).toBeInTheDocument();
+    expect(within(trackList).getByText("Album unavailable")).toBeInTheDocument();
   });
 
-  it("filters the rendered library track rows by selected facets", () => {
-    render(<LocalLibraryView />);
+  it("filters the rendered library track rows by selected facets", async () => {
+    mockLibraryFetch();
 
-    const filters = screen.getByRole("region", { name: "Library filters" });
+    renderWithQueryClient(<LocalLibraryView />);
 
-    fireEvent.click(within(filters).getByRole("button", { name: "Pending 43" }));
+    const filters = await screen.findByRole("region", { name: "Library filters" });
+    const pendingButton = await within(filters).findByRole("button", { name: "Pending 2" });
+
+    fireEvent.click(pendingButton);
     fireEvent.change(within(filters).getByLabelText("Match method"), { target: { value: "manual" } });
     fireEvent.change(within(filters).getByLabelText("File status"), { target: { value: "missing" } });
 
@@ -74,20 +189,32 @@ describe("LocalLibraryView", () => {
     expect(within(trackList).queryByText("Night Shift")).not.toBeInTheDocument();
   });
 
-  it("disables library filters while a refresh is pending", () => {
-    render(<LocalLibraryView isPending />);
+  it("disables library filters while a refresh is pending", async () => {
+    mockLibraryFetch();
 
-    expect(screen.getByText("Library refresh in progress")).toBeInTheDocument();
+    renderWithQueryClient(<LocalLibraryView isPending />);
+
+    expect(await screen.findByText("Library refresh in progress")).toBeInTheDocument();
 
     const filters = screen.getByRole("region", { name: "Library filters" });
-    expect(within(filters).getByRole("button", { name: "All 312" })).toBeDisabled();
+    expect(await within(filters).findByRole("button", { name: "All 5" })).toBeDisabled();
     expect(within(filters).getByLabelText("Match method")).toBeDisabled();
     expect(within(filters).getByLabelText("File status")).toBeDisabled();
     expect(within(filters).getByRole("button", { name: "Reset library filters" })).toBeDisabled();
   });
 
-  it("renders the library loading, error, and empty states", () => {
-    const { rerender } = render(<LocalLibraryView state="loading" />);
+  it("renders the library loading, error, and empty states", async () => {
+    mockLibraryFetch({
+      stats: {
+        linked: 0,
+        pending: 0,
+        total: 0,
+        unlinked: 0,
+      },
+      tracks: [],
+    });
+
+    const { rerender } = renderWithQueryClient(<LocalLibraryView state="loading" />);
 
     expect(screen.getByRole("status")).toHaveTextContent("Loading library tracks");
     expect(screen.getByRole("region", { name: "Library filters" })).toBeInTheDocument();
@@ -97,8 +224,8 @@ describe("LocalLibraryView", () => {
     expect(screen.getByRole("alert")).toHaveTextContent("Library unavailable");
     expect(screen.getByRole("region", { name: "Library filters" })).toBeInTheDocument();
 
-    rerender(<LocalLibraryView tracks={[]} />);
+    rerender(<LocalLibraryView tracksResponse={{ stats: libraryTracksResponse.stats, tracks: [] }} />);
 
-    expect(screen.getByRole("heading", { name: "No matching library tracks" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "No matching library tracks" })).toBeInTheDocument();
   });
 });

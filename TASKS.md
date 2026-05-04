@@ -44,7 +44,7 @@
   - Add focused frontend query tests that assert the exact API paths and error handling.
   - Run the relevant frontend validation for the changed frontend files: targeted `npm test`, `npm run lint`, and `npm run build`.
 
-- [ ] Wire the Local Library view to backend data
+- [x] Wire the Local Library view to backend data
   - Replace hardcoded library stats and track fixtures with the new library query data.
   - Preserve the existing route, navigation, loading, error, empty, disabled, and pending UI states.
   - Keep filters client-side for now using the fetched rows unless backend filtering becomes necessary.
