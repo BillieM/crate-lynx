@@ -82,7 +82,7 @@
   - Preserve the actual tested behavior in unit/integration tests where it is still product, setup, or operational behavior; do not keep shell scripts just to exercise endpoints manually.
   - Run targeted validation for changed files. If only scripts/docs change, use shell syntax checks where practical and any relevant existing backend tests for touched API setup paths.
 
-- [ ] Remove unused matching debug endpoints if no active workflow depends on them
+- [x] Remove unused matching debug endpoints if no active workflow depends on them
   - Candidate endpoints: `GET /api/matching/status` and `POST /api/matching/tracks/{local_track_id}/run`.
   - Current UI does not call either endpoint. First-run matching is enqueued directly after ingestion, and the product rerun action uses `POST /api/local-tracks/{local_track_id}/rematch`.
   - `GET /api/matching/status` exposes raw `suggested_links` rows across statuses; it overlaps with `GET /api/proposals`, which is the product queue and should return pending proposals only.
