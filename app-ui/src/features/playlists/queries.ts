@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 
 export type PlaylistTrackStatus = "linked" | "pending" | "unlinked";
+export type LinkProposalConfidenceBand = "high" | "medium" | "low";
 
 export type PlaylistDetail = {
   account_id: number;
@@ -72,6 +73,29 @@ export type PlaylistM3uExport = {
   filename: string;
 };
 
+export type LinkProposal = {
+  confidence_band: LinkProposalConfidenceBand;
+  id: number;
+  local_file_path: string;
+  local_track_id: number;
+  match_method: string;
+  rejected_at: string | null;
+  score: number;
+  status: string;
+  streaming_album: string | null;
+  streaming_artist: string;
+  streaming_title: string;
+  streaming_track_id: number;
+};
+
+export type LinkProposalsResponse = {
+  proposals: LinkProposal[];
+};
+
+export type LinkProposalListFilters = {
+  confidenceBand?: LinkProposalConfidenceBand | null;
+};
+
 export type StreamingSyncResponse = {
   account_id: number;
   job_id: string;
@@ -87,6 +111,8 @@ export const playlistQueryKeys = {
   config: () => ["playlists", "config"] as const,
   detail: (playlistId: number | string) => ["playlists", playlistId, "detail"] as const,
   list: () => ["playlists", "list"] as const,
+  proposals: (filters: LinkProposalListFilters = {}) =>
+    ["playlists", "proposals", { confidenceBand: filters.confidenceBand ?? null }] as const,
   tracks: (playlistId: number | string) => ["playlists", playlistId, "tracks"] as const,
 };
 
@@ -178,6 +204,17 @@ export async function fetchPlaylistTracks(playlistId: number | string): Promise<
   return fetchJson<PlaylistTracksResponse>(`/api/playlists/${encodeURIComponent(String(playlistId))}/tracks`);
 }
 
+export async function fetchLinkProposals(filters: LinkProposalListFilters = {}): Promise<LinkProposalsResponse> {
+  const params = new URLSearchParams();
+
+  if (filters.confidenceBand) {
+    params.set("band", filters.confidenceBand);
+  }
+
+  const queryString = params.toString();
+  return fetchJson<LinkProposalsResponse>(`/api/proposals${queryString ? `?${queryString}` : ""}`);
+}
+
 export async function exportPlaylistM3u(playlistId: number | string): Promise<PlaylistM3uExport> {
   const response = await fetch(`/api/playlists/${encodeURIComponent(String(playlistId))}/m3u`);
 
@@ -218,5 +255,12 @@ export function usePlaylistTracksQuery(playlistId: number | string | null | unde
     queryKey: hasPlaylistId(playlistId) ? playlistQueryKeys.tracks(playlistId) : playlistQueryKeys.tracks("idle"),
     queryFn: () => fetchPlaylistTracks(playlistId as number | string),
     enabled: hasPlaylistId(playlistId),
+  });
+}
+
+export function useLinkProposalsQuery(filters: LinkProposalListFilters = {}) {
+  return useQuery({
+    queryKey: playlistQueryKeys.proposals(filters),
+    queryFn: () => fetchLinkProposals(filters),
   });
 }

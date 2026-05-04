@@ -4,6 +4,7 @@ import type { PropsWithChildren } from "react";
 
 import {
   exportPlaylistM3u,
+  fetchLinkProposals,
   fetchPlaylistDetail,
   fetchStreamingPlaylistConfig,
   fetchStreamingPlaylists,
@@ -11,6 +12,7 @@ import {
   playlistQueryKeys,
   refreshStreamingAccountMetadata,
   updateStreamingPlaylistConfig,
+  useLinkProposalsQuery,
   usePlaylistDetailQuery,
   useStreamingPlaylistConfigQuery,
   useStreamingPlaylistsQuery,
@@ -45,6 +47,12 @@ describe("playlist queries", () => {
     expect(playlistQueryKeys.config()).toEqual(["playlists", "config"]);
     expect(playlistQueryKeys.detail(12)).toEqual(["playlists", 12, "detail"]);
     expect(playlistQueryKeys.list()).toEqual(["playlists", "list"]);
+    expect(playlistQueryKeys.proposals()).toEqual(["playlists", "proposals", { confidenceBand: null }]);
+    expect(playlistQueryKeys.proposals({ confidenceBand: "high" })).toEqual([
+      "playlists",
+      "proposals",
+      { confidenceBand: "high" },
+    ]);
     expect(playlistQueryKeys.tracks(12)).toEqual(["playlists", 12, "tracks"]);
   });
 
@@ -128,6 +136,60 @@ describe("playlist queries", () => {
       ],
     });
     expect(fetchMock).toHaveBeenCalledWith("/api/playlists/12/tracks");
+  });
+
+  it("fetches link proposals without a confidence-band filter", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        proposals: [
+          {
+            id: 44,
+            local_track_id: 8,
+            local_file_path: "Frame Delay/Open Road.flac",
+            streaming_track_id: 77,
+            streaming_title: "Open Road",
+            streaming_artist: "Frame Delay",
+            streaming_album: "Late Night Drive",
+            match_method: "tags",
+            score: 0.88,
+            status: "pending",
+            confidence_band: "medium",
+            rejected_at: null,
+          },
+        ],
+      }),
+    } as Response);
+
+    await expect(fetchLinkProposals()).resolves.toEqual({
+      proposals: [
+        {
+          id: 44,
+          local_track_id: 8,
+          local_file_path: "Frame Delay/Open Road.flac",
+          streaming_track_id: 77,
+          streaming_title: "Open Road",
+          streaming_artist: "Frame Delay",
+          streaming_album: "Late Night Drive",
+          match_method: "tags",
+          score: 0.88,
+          status: "pending",
+          confidence_band: "medium",
+          rejected_at: null,
+        },
+      ],
+    });
+    expect(fetchMock).toHaveBeenCalledWith("/api/proposals");
+  });
+
+  it("fetches link proposals with a confidence-band filter", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      json: async () => ({ proposals: [] }),
+    } as Response);
+
+    await expect(fetchLinkProposals({ confidenceBand: "high" })).resolves.toEqual({ proposals: [] });
+    expect(fetchMock).toHaveBeenCalledWith("/api/proposals?band=high");
   });
 
   it("fetches synced streaming playlists from the backend sidebar endpoint", async () => {
@@ -471,5 +533,44 @@ describe("playlist queries", () => {
       status: "pending",
       proposal_id: 303,
     });
+  });
+
+  it("runs the link proposals hook with confidence-band query state", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        proposals: [
+          {
+            id: 90,
+            local_track_id: 12,
+            local_file_path: "Phase Memory/Signal Loss.flac",
+            streaming_track_id: 88,
+            streaming_title: "Signal Loss",
+            streaming_artist: "Phase Memory",
+            streaming_album: null,
+            match_method: "isrc",
+            score: 0.98,
+            status: "pending",
+            confidence_band: "high",
+            rejected_at: null,
+          },
+        ],
+      }),
+    } as Response);
+
+    const { result } = renderHook(() => useLinkProposalsQuery({ confidenceBand: "high" }), {
+      wrapper: createWrapper(),
+    });
+
+    await waitFor(() => {
+      expect(result.current.isSuccess).toBe(true);
+    });
+
+    expect(result.current.data?.proposals[0]).toMatchObject({
+      id: 90,
+      confidence_band: "high",
+      match_method: "isrc",
+    });
+    expect(fetchMock).toHaveBeenCalledWith("/api/proposals?band=high");
   });
 });

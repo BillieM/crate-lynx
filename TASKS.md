@@ -1,13 +1,12 @@
-# E14 — Frontend: sidebar, topbar, and per-playlist UX
+# E15 — Frontend: link proposals view
 
-- [x] Ensure the sidebar relies on `GET /api/streaming/playlists` returning selected playlists only, with no extra client-side selected filter
-- [x] Replace the playlist-view topbar sync action with `POST /api/streaming/playlists/{id}/sync`
-- [x] Hide or reroute the topbar sync action when no playlist is selected
-- [x] Add pending, success, and error states for per-playlist sync
-- [x] Surface each playlist's last sync error string and timestamp in the playlist view when present
-- [x] Add an empty state for no selected playlists that routes users to configure YouTube Music sync
-- [x] Add loading and error states for metadata refresh and selected-playlist sync where they affect navigation or playlist views
-- [x] Extract shared `StatusMessage` or `EmptyStateCard` components if the new states reuse the same pattern three or more times
-- [x] Update frontend tests for the topbar sync button to expect the per-playlist sync endpoint
-- [x] Update frontend tests for no-selected-playlists and per-playlist sync failure states
-- [x] Run relevant frontend validation: `npm run lint`, `npm test`, and `npm run build`
+- [x] Add a frontend API client method for listing link proposals with optional confidence-band filtering
+- [ ] Add frontend API client methods for approving and rejecting link proposals
+- [ ] Create the link proposals routed view and wire it into the app navigation
+- [ ] Render proposals grouped by confidence band: High, Medium, and Low
+- [ ] Build proposal cards with confidence bar, local track column, streaming track column, match method badge, and score
+- [ ] Add confidence-band filter chips that update the proposals query
+- [ ] Implement optimistic approve and reject mutations with TanStack Query cache updates
+- [ ] Add loading, empty, and error states for the proposals view
+- [ ] Add frontend tests for grouped rendering, band filtering, and optimistic approve/reject behavior
+- [ ] Run relevant frontend validation: `npm run lint`, `npm test`, and `npm run build`
