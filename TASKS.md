@@ -4,7 +4,7 @@
 - [x] Add durable streaming-track fingerprint fields and a migration for acoustic fallback results
 - [x] Implement yt-dlp audio download to a temporary file for candidate streaming tracks
 - [x] Run Chromaprint `fpcalc` on downloaded streaming audio and persist the resulting fingerprint data
-- [ ] Compare local and streaming fingerprints and derive an acoustic similarity score
+- [x] Compare local and streaming fingerprints and derive an acoustic similarity score
 - [ ] Update the acoustic RQ job handler to promote or discard low-confidence suggestions based on fingerprint similarity
 - [ ] Ensure temporary audio files are always cleaned up after success, failure, or cancellation
 - [ ] Add backend tests for download, fingerprint extraction, similarity scoring, suggestion promotion, suggestion discard, and cleanup behavior

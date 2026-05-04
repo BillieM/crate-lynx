@@ -54,6 +54,65 @@ def test_acoustic_matcher_returns_best_candidate_for_local_fingerprint(
     assert result.confidence_band is ConfidenceBand.HIGH
 
 
+def test_acoustic_matcher_scores_raw_chromaprint_frame_similarity(
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite:///{tmp_path / 'app.db'}"
+    engine = create_engine(database_url)
+    local_metadata.create_all(engine)
+
+    with engine.begin() as connection:
+        connection.execute(
+            insert(local_tracks_table).values(
+                file_path="Artist/Track.mp3",
+                library_root_rel_path="Artist/Track.mp3",
+                fingerprint="1, 3, 7, 15",
+                beets_id=42,
+            )
+        )
+
+    result = AcousticMatcher(database_url=database_url).match(
+        1,
+        [
+            AcousticCandidate(streaming_track_id=3, fingerprint="1, 3"),
+            AcousticCandidate(streaming_track_id=5, fingerprint="1, 3, 7, 14"),
+        ],
+    )
+
+    assert result is not None
+    assert result.streaming_track_id == 5
+    assert result.score == 0.9921875
+    assert result.confidence_band is ConfidenceBand.HIGH
+
+
+def test_acoustic_matcher_aligns_shifted_raw_chromaprint_frames(
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite:///{tmp_path / 'app.db'}"
+    engine = create_engine(database_url)
+    local_metadata.create_all(engine)
+
+    with engine.begin() as connection:
+        connection.execute(
+            insert(local_tracks_table).values(
+                file_path="Artist/Track.mp3",
+                library_root_rel_path="Artist/Track.mp3",
+                fingerprint="10 20 30 40",
+                beets_id=42,
+            )
+        )
+
+    result = AcousticMatcher(database_url=database_url).match(
+        1,
+        [AcousticCandidate(streaming_track_id=7, fingerprint="999 10 20 30 40")],
+    )
+
+    assert result is not None
+    assert result.streaming_track_id == 7
+    assert result.score == 0.8
+    assert result.confidence_band is ConfidenceBand.MEDIUM
+
+
 def test_acoustic_matcher_returns_none_when_local_fingerprint_is_missing(
     tmp_path: Path,
 ) -> None:

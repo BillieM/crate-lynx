@@ -21,6 +21,8 @@ from app.streaming.models import streaming_tracks_table
 
 YOUTUBE_MUSIC_WATCH_URL = "https://music.youtube.com/watch?v={provider_track_id}"
 PARTIAL_DOWNLOAD_SUFFIXES = frozenset({".part", ".temp", ".tmp", ".ytdl"})
+CHROMAPRINT_FRAME_BITS = 32
+CHROMAPRINT_MAX_ALIGNMENT_SHIFT = 12
 
 
 class CommandRunner(Protocol):
@@ -313,7 +315,59 @@ def _candidate_from_payload(payload: dict[str, object]) -> AcousticCandidate:
 
 
 def _score_fingerprints(left: str, right: str) -> float:
+    left_frames = _parse_raw_chromaprint(left)
+    right_frames = _parse_raw_chromaprint(right)
+    if left_frames is not None and right_frames is not None:
+        return _score_raw_chromaprints(left_frames, right_frames)
+
     return Levenshtein.normalized_similarity(left, right)
+
+
+def _parse_raw_chromaprint(value: str) -> tuple[int, ...] | None:
+    normalized = value.replace(",", " ")
+    tokens = normalized.split()
+    if not tokens:
+        return None
+
+    frames: list[int] = []
+    for token in tokens:
+        try:
+            frames.append(int(token, 10))
+        except ValueError:
+            return None
+
+    return tuple(frames)
+
+
+def _score_raw_chromaprints(left: tuple[int, ...], right: tuple[int, ...]) -> float:
+    if not left or not right:
+        return 0.0
+
+    max_shift = min(CHROMAPRINT_MAX_ALIGNMENT_SHIFT, max(len(left), len(right)) - 1)
+    best_score = 0.0
+    for shift in range(-max_shift, max_shift + 1):
+        left_start = max(0, shift)
+        right_start = max(0, -shift)
+        overlap = min(len(left) - left_start, len(right) - right_start)
+        if overlap <= 0:
+            continue
+
+        bit_distance = sum(
+            _chromaprint_frame_distance(
+                left[left_start + offset],
+                right[right_start + offset],
+            )
+            for offset in range(overlap)
+        )
+        bit_similarity = 1.0 - (bit_distance / (overlap * CHROMAPRINT_FRAME_BITS))
+        coverage = overlap / max(len(left), len(right))
+        best_score = max(best_score, bit_similarity * coverage)
+
+    return best_score
+
+
+def _chromaprint_frame_distance(left: int, right: int) -> int:
+    return ((left ^ right) & 0xFFFFFFFF).bit_count()
 
 
 def _find_downloaded_audio_file(download_root: Path) -> Path:
