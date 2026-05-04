@@ -15,6 +15,7 @@ from app.ingestion.status import IngestionStatusStore
 from app.library.router import create_router as create_library_router
 from app.links.router import create_router as create_links_router
 from app.local_tracks.store import LocalTrackStore
+from app.maintenance.router import create_router as create_maintenance_router
 from app.matching.jobs import MatchingJobEnqueuer
 from app.matching.router import create_router as create_matching_router
 from app.rescue.router import create_router as create_rescue_router
@@ -121,6 +122,10 @@ def create_app() -> FastAPI:
     app.include_router(create_search_router(require_database_url=require_database_url))
     app.include_router(
         create_library_router(require_database_url=require_database_url),
+        prefix="/api",
+    )
+    app.include_router(
+        create_maintenance_router(require_database_url=require_database_url),
         prefix="/api",
     )
     app.include_router(

@@ -16,7 +16,7 @@
   - Add backend tests that prove the counts match the returned row statuses.
   - Run the relevant backend validation for the changed backend files: `ruff check .`, `ruff format --check .`, and targeted `pytest`.
 
-- [ ] Add backend Missing Locally report endpoint with aggregated playlist usage
+- [x] Add backend Missing Locally report endpoint with aggregated playlist usage
   - Confirm there is no existing endpoint that already provides this report before adding a new route.
   - Add `GET /api/maintenance/missing-locally` following the existing router/store/schema structure.
   - Return one row per missing `streaming_tracks` record, not one row per playlist membership.

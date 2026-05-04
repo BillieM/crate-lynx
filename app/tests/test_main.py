@@ -53,6 +53,7 @@ def test_links_routes_are_mounted_under_api_prefix() -> None:
     assert "/api/playlists/{playlist_id}/tracks" in route_paths
     assert "/api/playlists/{playlist_id}/m3u" in route_paths
     assert "/api/library/tracks" in route_paths
+    assert "/api/maintenance/missing-locally" in route_paths
     assert "/api/streaming/accounts/{account_id}/sync" in route_paths
     assert "/api/streaming/accounts/{account_id}/refresh-metadata" in route_paths
     assert "/api/streaming/playlists/config" in route_paths
@@ -978,6 +979,126 @@ def test_library_tracks_endpoint_returns_linked_pending_unlinked_and_no_match_ro
                 "file_status": "available",
             },
         ],
+    }
+
+
+def test_missing_locally_endpoint_aggregates_playlist_usage_and_excludes_links(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite:///{tmp_path / 'missing-locally.db'}"
+    engine = create_engine(database_url)
+    metadata.create_all(engine)
+    local_tracks_metadata.create_all(engine)
+    links_metadata.create_all(engine)
+    monkeypatch.setenv("DATABASE_URL", database_url)
+
+    with engine.begin() as connection:
+        connection.execute(
+            insert(streaming_playlists_table),
+            [
+                {
+                    "id": 1,
+                    "account_id": 1,
+                    "provider_playlist_id": "PL1",
+                    "title": "Morning Mix",
+                },
+                {
+                    "id": 2,
+                    "account_id": 1,
+                    "provider_playlist_id": "PL2",
+                    "title": "Road Trip",
+                },
+            ],
+        )
+        connection.execute(
+            insert(streaming_tracks_table),
+            [
+                {
+                    "id": 10,
+                    "provider_track_id": "ytm-10",
+                    "title": "Single Playlist Song",
+                    "artist": "Artist A",
+                    "album": "Album A",
+                    "duration_ms": 181000,
+                },
+                {
+                    "id": 11,
+                    "provider_track_id": "ytm-11",
+                    "title": "Multi Playlist Song",
+                    "artist": "Artist B",
+                    "album": None,
+                    "duration_ms": None,
+                },
+                {
+                    "id": 12,
+                    "provider_track_id": "ytm-12",
+                    "title": "Linked Song",
+                    "artist": "Artist C",
+                    "album": "Album C",
+                    "duration_ms": 200000,
+                },
+            ],
+        )
+        connection.execute(
+            insert(playlist_membership_table),
+            [
+                {"playlist_id": 1, "streaming_track_id": 10, "position": 1},
+                {"playlist_id": 1, "streaming_track_id": 11, "position": 2},
+                {"playlist_id": 2, "streaming_track_id": 11, "position": 1},
+                {"playlist_id": 2, "streaming_track_id": 12, "position": 2},
+            ],
+        )
+        connection.execute(
+            insert(local_tracks_table).values(
+                id=5,
+                file_path="Artist/linked.mp3",
+                library_root_rel_path="Artist/linked.mp3",
+                fingerprint="fp-linked",
+                beets_id=5,
+            )
+        )
+        connection.execute(
+            insert(final_links_table).values(
+                id=3,
+                local_track_id=5,
+                streaming_track_id=12,
+            )
+        )
+
+    app = create_app()
+    route = next(
+        route
+        for route in app.routes
+        if getattr(route, "path", None) == "/api/maintenance/missing-locally"
+        and "GET" in getattr(route, "methods", set())
+    )
+
+    response = asyncio.run(route.endpoint())
+
+    assert response.model_dump(mode="json") == {
+        "tracks": [
+            {
+                "id": 10,
+                "provider_track_id": "ytm-10",
+                "title": "Single Playlist Song",
+                "artist": "Artist A",
+                "album": "Album A",
+                "duration_ms": 181000,
+                "playlist_count": 1,
+                "playlist_titles": ["Morning Mix"],
+            },
+            {
+                "id": 11,
+                "provider_track_id": "ytm-11",
+                "title": "Multi Playlist Song",
+                "artist": "Artist B",
+                "album": None,
+                "duration_ms": None,
+                "playlist_count": 2,
+                "playlist_titles": ["Morning Mix", "Road Trip"],
+            },
+        ]
     }
 
 
