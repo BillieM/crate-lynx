@@ -200,6 +200,18 @@ export async function refreshStreamingAccountMetadata(accountId: number | string
   return (await response.json()) as StreamingSyncResponse;
 }
 
+export async function syncStreamingAccount(accountId: number | string): Promise<StreamingSyncResponse> {
+  const response = await fetch(`/api/streaming/accounts/${encodeURIComponent(String(accountId))}/sync`, {
+    method: "POST",
+  });
+
+  if (!response.ok) {
+    throw new Error(`Sync request failed with status ${response.status}`);
+  }
+
+  return (await response.json()) as StreamingSyncResponse;
+}
+
 export async function syncStreamingPlaylist(playlistId: number | string): Promise<PlaylistSyncResponse> {
   const response = await fetch(`/api/streaming/playlists/${encodeURIComponent(String(playlistId))}/sync`, {
     method: "POST",

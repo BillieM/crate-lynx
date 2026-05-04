@@ -1,28 +1,19 @@
 /* eslint-disable react-refresh/only-export-components */
 
 import { useEffect, useMemo, useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocation, useNavigate } from "react-router-dom";
-import { ActionButton } from "./components/ActionButton";
 import { EmptyStateCard } from "./components/EmptyStateCard";
-import { StatusMessage, type OperationStatus } from "./components/StatusMessage";
+import { StatusMessage } from "./components/StatusMessage";
 import { FilterChips } from "./features/playlists/FilterChips";
 import { PlaylistHeader } from "./features/playlists/PlaylistHeader";
+import { PlaylistSyncConfiguration } from "./features/playlists/PlaylistSyncConfiguration";
 import { PlaylistTrackActions } from "./features/playlists/PlaylistTrackActions";
 import { PlaylistTrackRow } from "./features/playlists/PlaylistTrackRow";
 import {
-  exportPlaylistM3u,
-  playlistQueryKeys,
-  refreshStreamingAccountMetadata,
-  syncStreamingPlaylist,
   type StreamingPlaylist,
-  type StreamingPlaylistConfig,
-  type StreamingSyncResponse,
-  updateStreamingPlaylistConfig,
   usePlaylistDetailQuery,
-  useStreamingPlaylistConfigQuery,
-  useStreamingPlaylistsQuery,
   usePlaylistTracksQuery,
+  useStreamingPlaylistsQuery,
 } from "./features/playlists/queries";
 import { LinkProposalsView } from "./features/proposals/LinkProposalsView";
 import {
@@ -30,92 +21,13 @@ import {
   getPlaylistTrackFilterCounts,
   type PlaylistTrackFilter,
 } from "./features/playlists/filterTracks";
-import { pillToneClasses, type PillTone } from "./styles/toneClasses";
+import { Sidebar } from "./features/shell/Sidebar";
+import { Topbar } from "./features/shell/Topbar";
+import { asRgb, getProgressColor, lerp, mixColors } from "./features/shell/progress";
+import type { NavItem, PlaylistSyncViewState, ViewConfig } from "./features/shell/types";
 
-export type ProgressStatus = "unlinked" | "pending" | "linked";
-
-export type RgbColor = {
-  blue: number;
-  green: number;
-  red: number;
-};
-
-const progressPalette = {
-  linked: { red: 166, green: 227, blue: 161 },
-  pending: { red: 249, green: 226, blue: 175 },
-  unlinked: { red: 108, green: 112, blue: 134 },
-} satisfies Record<ProgressStatus, RgbColor>;
-
-function clampPercentage(matchPercentage: number) {
-  return Math.max(0, Math.min(100, matchPercentage));
-}
-
-export function lerp(start: number, end: number, amount: number) {
-  return Math.round(start + (end - start) * amount);
-}
-
-export function mixColors(start: RgbColor, end: RgbColor, amount: number): RgbColor {
-  return {
-    red: lerp(start.red, end.red, amount),
-    green: lerp(start.green, end.green, amount),
-    blue: lerp(start.blue, end.blue, amount),
-  };
-}
-
-export function getProgressColor(matchPercentage: number): RgbColor {
-  const normalized = clampPercentage(matchPercentage) / 100;
-
-  if (normalized <= 0.5) {
-    return mixColors(progressPalette.unlinked, progressPalette.pending, normalized / 0.5);
-  }
-
-  return mixColors(progressPalette.pending, progressPalette.linked, (normalized - 0.5) / 0.5);
-}
-
-export function asRgb(color: RgbColor, alpha = 1) {
-  return `rgba(${color.red}, ${color.green}, ${color.blue}, ${alpha})`;
-}
-
-type NavItem = {
-  badge?: number;
-  id: string;
-  label: string;
-  progress?: {
-    complete: number;
-    total: number;
-  };
-  tone: ProgressStatus | "alert" | "accent";
-};
-
-type TopbarPillTone = "pill-info" | "pill-pending" | "pill-lib";
-type SearchResult = {
-  id: number;
-  kind: "playlist" | "streaming_track" | "local_track";
-  route_path: string;
-  subtitle: string;
-  title: string;
-};
-
-type SearchResponse = {
-  query: string;
-  results: SearchResult[];
-};
-
-type ViewConfig = {
-  actionLabels: string[];
-  icon: "spark" | "playlist" | "library";
-  id: string;
-  playlistResourceId?: number;
-  pillLabel: string;
-  pillTone: TopbarPillTone;
-  title: string;
-};
-
-type PlaylistCollectionStatus = "empty" | "error" | "loading" | "ready";
-type PlaylistSyncViewState = {
-  playlistId: number;
-  status: OperationStatus;
-};
+export { asRgb, getProgressColor, lerp, mixColors };
+export type { ProgressStatus, RgbColor } from "./features/shell/progress";
 
 const maintenanceItems: NavItem[] = [
   { id: "proposals", label: "Link proposals", badge: 14, tone: "pending" },
@@ -172,12 +84,6 @@ const playlistCollectionViewConfig = {
   actionLabels: [],
   icon: "playlist",
 } satisfies ViewConfig;
-
-const searchKindLabels: Record<SearchResult["kind"], string> = {
-  playlist: "Playlist",
-  streaming_track: "Streaming",
-  local_track: "Local",
-};
 
 const staticViewRoutes: Record<string, string> = {
   library: "/library",
@@ -238,417 +144,6 @@ function buildPlaylistViewConfigs(playlists: StreamingPlaylist[]): ViewConfig[] 
     actionLabels: ["Sync", "Export M3U"],
     icon: "playlist",
   }));
-}
-
-function formatPlaylistTimestamp(timestamp: string | null) {
-  if (!timestamp) {
-    return "Not synced yet";
-  }
-
-  return timestamp.replace("T", " ").replace(/(?:\.\d+)?Z?$/, "");
-}
-
-function getSelectedPlaylistCount(playlists: StreamingPlaylistConfig[]) {
-  return playlists.filter((playlist) => playlist.selected_for_sync).length;
-}
-
-function useDebouncedValue(value: string, delayMs: number) {
-  const [debouncedValue, setDebouncedValue] = useState(value);
-
-  useEffect(() => {
-    const timeoutId = window.setTimeout(() => {
-      setDebouncedValue(value);
-    }, delayMs);
-
-    return () => {
-      window.clearTimeout(timeoutId);
-    };
-  }, [delayMs, value]);
-
-  return debouncedValue;
-}
-
-async function fetchSearchResults(query: string) {
-  const response = await fetch(`/api/search?q=${encodeURIComponent(query)}`);
-
-  if (!response.ok) {
-    throw new Error(`Search request failed with status ${response.status}`);
-  }
-
-  return (await response.json()) as SearchResponse;
-}
-
-async function syncStreamingAccount(accountId: number): Promise<StreamingSyncResponse> {
-  const response = await fetch(`/api/streaming/accounts/${encodeURIComponent(String(accountId))}/sync`, {
-    method: "POST",
-  });
-
-  if (!response.ok) {
-    throw new Error(`Sync request failed with status ${response.status}`);
-  }
-
-  return (await response.json()) as StreamingSyncResponse;
-}
-
-function downloadBlob(blob: Blob, filename: string) {
-  const url = window.URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-
-  anchor.href = url;
-  anchor.download = filename;
-  document.body.append(anchor);
-  anchor.click();
-  anchor.remove();
-  window.URL.revokeObjectURL(url);
-}
-
-function getBadgeClasses(tone: NavItem["tone"]) {
-  switch (tone) {
-    case "pending":
-      return pillToneClasses.pending;
-    case "alert":
-      return pillToneClasses.danger;
-    case "accent":
-      return pillToneClasses.accent;
-    case "linked":
-      return pillToneClasses.success;
-    case "unlinked":
-      return pillToneClasses.neutral;
-  }
-}
-
-function getTopbarPillClasses(tone: TopbarPillTone) {
-  const toneMap = {
-    "pill-info": "neutral",
-    "pill-lib": "accent",
-    "pill-pending": "pending",
-  } satisfies Record<TopbarPillTone, PillTone>;
-
-  return pillToneClasses[toneMap[tone]];
-}
-
-function TopbarIcon({ icon }: { icon: ViewConfig["icon"] }) {
-  if (icon === "playlist") {
-    return (
-      <svg aria-hidden="true" className="h-4 w-4" fill="none" viewBox="0 0 24 24">
-        <path
-          d="M8 18a2 2 0 1 1-4 0 2 2 0 0 1 4 0Zm10-3a2 2 0 1 1-4 0 2 2 0 0 1 4 0Zm-4 0V6l6-1.5v9"
-          stroke="currentColor"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          strokeWidth="1.7"
-        />
-      </svg>
-    );
-  }
-
-  if (icon === "library") {
-    return (
-      <svg aria-hidden="true" className="h-4 w-4" fill="none" viewBox="0 0 24 24">
-        <path
-          d="M5 6.5A2.5 2.5 0 0 1 7.5 4h9A2.5 2.5 0 0 1 19 6.5v11a1.5 1.5 0 0 1-1.5 1.5h-10A2.5 2.5 0 0 1 5 16.5v-10Z"
-          stroke="currentColor"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          strokeWidth="1.7"
-        />
-        <path d="M8.5 8.5h7m-7 3h7m-7 3h4" stroke="currentColor" strokeLinecap="round" strokeWidth="1.7" />
-      </svg>
-    );
-  }
-
-  return (
-    <svg aria-hidden="true" className="h-4 w-4" fill="none" viewBox="0 0 24 24">
-      <path
-        d="m12 3 1.9 4.97L19 10l-5.1 2.03L12 17l-1.9-4.97L5 10l5.1-2.03L12 3Z"
-        stroke="currentColor"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth="1.7"
-      />
-    </svg>
-  );
-}
-
-function SidebarSection({
-  activeItemId,
-  emptyActionLabel,
-  emptyMessage,
-  items,
-  onEmptyAction,
-  onSelect,
-  title,
-}: {
-  activeItemId: string;
-  emptyActionLabel?: string;
-  emptyMessage?: string;
-  items: NavItem[];
-  onEmptyAction?: () => void;
-  onSelect: (itemId: string) => void;
-  title: string;
-}) {
-  return (
-    <section className="space-y-3">
-      <h2 className="px-4 text-[11px] font-semibold uppercase tracking-[0.24em] text-ctp-subtext0">
-        {title}
-      </h2>
-      <div className="space-y-1.5">
-        {items.length === 0 && emptyMessage ? (
-          <div className="space-y-2 px-4 py-2.5">
-            <p className="text-[12px] leading-5 text-ctp-subtext0">{emptyMessage}</p>
-            {emptyActionLabel && onEmptyAction ? (
-              <ActionButton onClick={onEmptyAction}>
-                {emptyActionLabel}
-              </ActionButton>
-            ) : null}
-          </div>
-        ) : null}
-        {items.map((item) => (
-          <button
-            key={item.id}
-            className={`flex w-full items-center gap-3 rounded-[10px] px-4 py-2.5 text-left transition-colors hover:bg-ctp-surface0/80 ${
-              item.id === activeItemId ? "bg-ctp-surface0 text-ctp-text" : "text-ctp-subtext1"
-            }`}
-            onClick={() => onSelect(item.id)}
-            type="button"
-          >
-            <span className="min-w-0 flex-1 truncate text-[14px] font-medium">
-              {item.label}
-            </span>
-            {item.progress ? (
-              <ProgressFraction complete={item.progress.complete} total={item.progress.total} />
-            ) : null}
-            {item.badge ? (
-              <span
-                className={`rounded-full px-2.5 py-1 text-[11px] font-semibold tabular-nums ${getBadgeClasses(item.tone)}`}
-              >
-                {item.badge}
-              </span>
-            ) : null}
-          </button>
-        ))}
-      </div>
-    </section>
-  );
-}
-
-function ProgressFraction({ complete, total }: { complete: number; total: number }) {
-  const color = getProgressColor((complete / total) * 100);
-
-  return (
-    <span className="ml-auto flex shrink-0 items-baseline text-[11px] font-semibold tabular-nums">
-      <span className="min-w-[2ch] text-right" style={{ color: asRgb(color, 1) }}>
-        {complete}
-      </span>
-      <span className="px-0.5 text-ctp-overlay1">/</span>
-      <span className="min-w-[2ch] text-left text-ctp-subtext0">{total}</span>
-    </span>
-  );
-}
-
-function Topbar({
-  onConfigureSync,
-  onPlaylistSyncStateChange,
-  view,
-}: {
-  onConfigureSync: () => void;
-  onPlaylistSyncStateChange: (state: PlaylistSyncViewState) => void;
-  view: ViewConfig;
-}) {
-  const queryClient = useQueryClient();
-  const playlistDetailQuery = usePlaylistDetailQuery(view.playlistResourceId ?? null);
-  const playlist = playlistDetailQuery.data?.playlist;
-  const exportMutation = useMutation({
-    mutationFn: exportPlaylistM3u,
-    onSuccess: ({ blob, filename }) => {
-      downloadBlob(blob, filename);
-    },
-  });
-  const syncMutation = useMutation({
-    mutationFn: syncStreamingPlaylist,
-    onMutate: (playlistId) => {
-      onPlaylistSyncStateChange({ playlistId: Number(playlistId), status: "pending" });
-    },
-    onError: (_error, playlistId) => {
-      onPlaylistSyncStateChange({ playlistId: Number(playlistId), status: "error" });
-    },
-    onSuccess: async (_data, playlistId) => {
-      onPlaylistSyncStateChange({ playlistId: Number(playlistId), status: "success" });
-      await queryClient.invalidateQueries({ queryKey: ["playlists"] });
-      if (view.playlistResourceId !== undefined) {
-        await queryClient.invalidateQueries({ queryKey: ["playlists", view.playlistResourceId] });
-      }
-    },
-  });
-
-  function renderActionButton(actionLabel: string) {
-    if (actionLabel === "Sync") {
-      if (view.playlistResourceId === undefined) {
-        return null;
-      }
-
-      const canSync = playlist !== undefined && !syncMutation.isPending;
-
-      return (
-        <ActionButton
-          aria-live="polite"
-          disabled={!canSync}
-          key={actionLabel}
-          onClick={() => {
-            if (view.playlistResourceId !== undefined) {
-              syncMutation.mutate(view.playlistResourceId);
-            }
-          }}
-        >
-          {syncMutation.isPending ? "Syncing..." : actionLabel}
-        </ActionButton>
-      );
-    }
-
-    if (actionLabel === "Export M3U") {
-      const canExport = view.playlistResourceId !== undefined && !exportMutation.isPending;
-
-      return (
-        <ActionButton
-          aria-live="polite"
-          disabled={!canExport}
-          key={actionLabel}
-          onClick={() => {
-            if (view.playlistResourceId !== undefined) {
-              exportMutation.mutate(view.playlistResourceId);
-            }
-          }}
-        >
-          {exportMutation.isPending ? "Exporting..." : actionLabel}
-        </ActionButton>
-      );
-    }
-
-    return (
-      <ActionButton key={actionLabel}>
-        {actionLabel}
-      </ActionButton>
-    );
-  }
-
-  return (
-    <header className="flex h-11 shrink-0 items-center justify-between border-b border-ctp-surface0 bg-ctp-mantle px-5">
-      <div className="flex min-w-0 items-center gap-3">
-        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] bg-ctp-surface0 text-ctp-mauve">
-          <TopbarIcon icon={view.icon} />
-        </span>
-        <div className="flex min-w-0 items-center gap-3">
-          <h1 className="truncate text-[15px] font-semibold text-ctp-text">{view.title}</h1>
-          <span
-            className={`rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] ${getTopbarPillClasses(view.pillTone)}`}
-          >
-            {view.pillLabel}
-          </span>
-        </div>
-      </div>
-
-      <div className="flex items-center gap-2">
-        <PlaylistActionStatus
-          errorText="Playlist sync failed."
-          isError={syncMutation.isError}
-          isPending={syncMutation.isPending}
-          isSuccess={syncMutation.isSuccess}
-          pendingText="Syncing playlist..."
-          successText="Playlist sync queued."
-        />
-        {exportMutation.isSuccess ? <span className="text-[11px] font-medium text-ctp-green">M3U ready.</span> : null}
-        {exportMutation.isError ? <span className="text-[11px] font-medium text-ctp-red">Export failed.</span> : null}
-        {view.id !== playlistCollectionViewId ? (
-          <ActionButton onClick={onConfigureSync}>
-            Configure sync
-          </ActionButton>
-        ) : null}
-        {view.actionLabels.map((actionLabel) => renderActionButton(actionLabel))}
-      </div>
-    </header>
-  );
-}
-
-function SearchPanel() {
-  const [query, setQuery] = useState("");
-  const debouncedQuery = useDebouncedValue(query.trim(), 250);
-  const hasQuery = debouncedQuery.length > 0;
-  const { data, error, isFetching } = useQuery({
-    queryKey: ["sidebar-search", debouncedQuery],
-    queryFn: () => fetchSearchResults(debouncedQuery),
-    enabled: hasQuery,
-    retry: false,
-  });
-
-  const results = data?.results ?? [];
-  const isOpen = query.trim().length > 0;
-
-  return (
-    <div className="relative">
-      <label className="sr-only" htmlFor="sidebar-search">
-        Search library
-      </label>
-      <div className="flex items-center gap-2 rounded-[10px] bg-ctp-surface0 px-3 py-2.5 text-ctp-subtext0 ring-1 ring-inset ring-ctp-surface1/70 focus-within:text-ctp-text focus-within:ring-ctp-overlay0">
-        <svg aria-hidden="true" className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24">
-          <path
-            d="m21 21-4.35-4.35m1.85-5.15a7 7 0 1 1-14 0 7 7 0 0 1 14 0Z"
-            stroke="currentColor"
-            strokeLinecap="round"
-            strokeWidth="1.8"
-          />
-        </svg>
-        <input
-          autoComplete="off"
-          className="w-full border-0 bg-transparent p-0 text-[13px] text-ctp-text outline-none placeholder:text-ctp-subtext0"
-          id="sidebar-search"
-          onChange={(event) => setQuery(event.target.value)}
-          placeholder="Search tracks, artists, playlists"
-          type="search"
-          value={query}
-        />
-      </div>
-
-      {isOpen ? (
-        <div className="absolute inset-x-0 top-[calc(100%+0.5rem)] z-10 overflow-hidden rounded-[12px] border border-ctp-surface1 bg-ctp-mantle shadow-[0_20px_48px_color-mix(in_srgb,var(--color-ctp-crust)_38%,transparent)]">
-          {isFetching ? (
-            <p className="px-3 py-3 text-[12px] text-ctp-subtext0">Searching library…</p>
-          ) : null}
-
-          {!isFetching && error ? (
-            <p className="px-3 py-3 text-[12px] text-ctp-red">Search unavailable right now.</p>
-          ) : null}
-
-          {!isFetching && !error && hasQuery && results.length === 0 ? (
-            <p className="px-3 py-3 text-[12px] text-ctp-subtext0">No matching playlists or tracks.</p>
-          ) : null}
-
-          {!isFetching && !error && results.length > 0 ? (
-            <div className="py-1.5">
-              {results.map((result) => (
-                <button
-                  key={`${result.kind}-${result.id}`}
-                  className="flex w-full items-start gap-3 px-3 py-2.5 text-left transition-colors hover:bg-ctp-surface0/80"
-                  type="button"
-                >
-                  <span className="mt-0.5 rounded-full bg-ctp-surface0 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-ctp-subtext0 ring-1 ring-inset ring-ctp-surface1/70">
-                    {searchKindLabels[result.kind]}
-                  </span>
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-[12px] font-semibold text-ctp-text">
-                      {result.title}
-                    </span>
-                    <span className="mt-1 block truncate text-[11px] text-ctp-subtext0">
-                      {result.subtitle}
-                    </span>
-                  </span>
-                </button>
-              ))}
-            </div>
-          ) : null}
-        </div>
-      ) : null}
-    </div>
-  );
 }
 
 function PlaylistView({
@@ -738,294 +233,6 @@ function PlaylistView({
   );
 }
 
-function PlaylistCollectionState({ status }: { status: PlaylistCollectionStatus }) {
-  const copy = {
-    empty: {
-      title: "No selected playlists",
-      body: "Configure which YouTube Music playlists to sync, then selected playlists will appear in the sidebar.",
-    },
-    error: {
-      title: "Playlists unavailable",
-      body: "The synced playlist list could not be loaded. Try again after the backend is reachable.",
-    },
-    loading: {
-      title: "Loading playlists",
-      body: "Checking for synced YouTube Music playlists.",
-    },
-    ready: {
-      title: "Playlist sync configuration",
-      body: "Review discovered YouTube Music playlists and choose which ones appear in the sync queue.",
-    },
-  } satisfies Record<PlaylistCollectionStatus, { body: string; title: string }>;
-
-  return (
-    <section className="flex min-h-0 flex-1 items-center justify-center">
-      <EmptyStateCard body={copy[status].body} className="max-w-[420px] py-7" title={copy[status].title} />
-    </section>
-  );
-}
-
-function PlaylistActionStatus({
-  errorText,
-  isError,
-  isPending,
-  isSuccess,
-  pendingText,
-  successText,
-}: {
-  errorText: string;
-  isError: boolean;
-  isPending: boolean;
-  isSuccess: boolean;
-  pendingText: string;
-  successText: string;
-}) {
-  if (isPending) {
-    return (
-      <p className="text-[12px] font-medium text-ctp-yellow" role="status">
-        {pendingText}
-      </p>
-    );
-  }
-
-  if (isError) {
-    return (
-      <p className="text-[12px] font-medium text-ctp-red" role="alert">
-        {errorText}
-      </p>
-    );
-  }
-
-  if (isSuccess) {
-    return (
-      <p className="text-[12px] font-medium text-ctp-green" role="status">
-        {successText}
-      </p>
-    );
-  }
-
-  return null;
-}
-
-function PlaylistSyncToggle({
-  isPending,
-  onToggle,
-  playlist,
-}: {
-  isPending: boolean;
-  onToggle: (selectedForSync: boolean) => void;
-  playlist: StreamingPlaylistConfig;
-}) {
-  return (
-    <label className="inline-flex shrink-0 items-center gap-2 text-[12px] font-semibold text-ctp-subtext0">
-      <input
-        aria-label={`Select ${playlist.title} for sync`}
-        checked={playlist.selected_for_sync}
-        className="h-4 w-4 rounded border-ctp-surface1 bg-ctp-surface0 text-ctp-mauve accent-ctp-mauve"
-        disabled={isPending}
-        onChange={(event) => onToggle(event.target.checked)}
-        type="checkbox"
-      />
-      {isPending ? "Updating..." : playlist.selected_for_sync ? "Selected" : "Not selected"}
-    </label>
-  );
-}
-
-function PlaylistConfigRow({
-  isTogglePending,
-  onTogglePlaylist,
-  playlist,
-}: {
-  isTogglePending: boolean;
-  onTogglePlaylist: (playlist: StreamingPlaylistConfig, selectedForSync: boolean) => void;
-  playlist: StreamingPlaylistConfig;
-}) {
-  return (
-    <article className="rounded-[18px] border border-ctp-surface1/80 bg-ctp-mantle px-5 py-4">
-      <div className="flex items-start justify-between gap-4">
-        <div className="min-w-0">
-          <h3 className="truncate text-[15px] font-semibold text-ctp-text">{playlist.title}</h3>
-          <p className="mt-1 text-[12px] text-ctp-subtext0">
-            Provider ID {playlist.provider_playlist_id} / Account {playlist.account_id}
-          </p>
-        </div>
-        <PlaylistSyncToggle
-          isPending={isTogglePending}
-          onToggle={(selectedForSync) => onTogglePlaylist(playlist, selectedForSync)}
-          playlist={playlist}
-        />
-      </div>
-
-      <dl className="mt-4 grid gap-3 text-[12px] sm:grid-cols-3">
-        <div>
-          <dt className="font-medium text-ctp-subtext0">Tracks</dt>
-          <dd className="mt-1 font-semibold tabular-nums text-ctp-text">{playlist.track_count}</dd>
-        </div>
-        <div>
-          <dt className="font-medium text-ctp-subtext0">Last metadata sync</dt>
-          <dd className="mt-1 font-semibold text-ctp-text">{formatPlaylistTimestamp(playlist.synced_at)}</dd>
-        </div>
-        <div>
-          <dt className="font-medium text-ctp-subtext0">Last sync error</dt>
-          <dd className={playlist.last_sync_error ? "mt-1 font-semibold text-ctp-red" : "mt-1 font-semibold text-ctp-green"}>
-            {playlist.last_sync_error ?? "None"}
-          </dd>
-        </div>
-      </dl>
-    </article>
-  );
-}
-
-function PlaylistSyncConfiguration() {
-  const queryClient = useQueryClient();
-  const configQuery = useStreamingPlaylistConfigQuery();
-  const selectedSyncMutation = useMutation({
-    mutationFn: syncStreamingAccount,
-    onSuccess: async () => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: playlistQueryKeys.list() }),
-        queryClient.invalidateQueries({ queryKey: playlistQueryKeys.config() }),
-      ]);
-    },
-  });
-  const metadataRefreshMutation = useMutation({
-    mutationFn: refreshStreamingAccountMetadata,
-    onSuccess: async () => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: playlistQueryKeys.list() }),
-        queryClient.invalidateQueries({ queryKey: playlistQueryKeys.config() }),
-      ]);
-    },
-  });
-  const toggleMutation = useMutation({
-    mutationFn: updateStreamingPlaylistConfig,
-    onSuccess: async () => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: playlistQueryKeys.list() }),
-        queryClient.invalidateQueries({ queryKey: playlistQueryKeys.config() }),
-      ]);
-    },
-  });
-  const playlists = configQuery.data?.playlists ?? [];
-  const selectedCount = getSelectedPlaylistCount(playlists);
-  const accountId = playlists[0]?.account_id;
-  const operationMessage = selectedSyncMutation.isPending
-    ? {
-        body: "Selected playlists are being synced. Sidebar counts and playlist views may update when the job finishes.",
-        status: "pending",
-        title: "Selected playlist sync in progress",
-      }
-    : selectedSyncMutation.isError
-      ? {
-          body: "The selected playlist sync request failed before a job could be queued.",
-          status: "error",
-          title: "Selected playlist sync failed",
-        }
-      : metadataRefreshMutation.isPending
-        ? {
-            body: "Playlist metadata is being refreshed. Newly discovered playlists may appear here after the job finishes.",
-            status: "pending",
-            title: "Metadata refresh in progress",
-          }
-        : metadataRefreshMutation.isError
-          ? {
-              body: "The playlist metadata refresh request failed before a job could be queued.",
-              status: "error",
-              title: "Metadata refresh failed",
-            }
-          : null;
-
-  if (configQuery.isPending) {
-    return <PlaylistCollectionState status="loading" />;
-  }
-
-  if (configQuery.isError) {
-    return <PlaylistCollectionState status="error" />;
-  }
-
-  if (playlists.length === 0) {
-    return <PlaylistCollectionState status="empty" />;
-  }
-
-  return (
-    <section className="flex min-h-0 flex-1 flex-col gap-4">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h2 className="text-[18px] font-semibold text-ctp-text">Playlist sync configuration</h2>
-          <p className="mt-1 text-[13px] text-ctp-subtext0">
-            {selectedCount} of {playlists.length} discovered playlists selected for sync.
-          </p>
-        </div>
-        <div className="flex flex-col items-start gap-2 sm:items-end">
-          <div className="flex flex-wrap justify-start gap-2 sm:justify-end">
-            <ActionButton
-              disabled={accountId === undefined || selectedCount === 0 || selectedSyncMutation.isPending}
-              onClick={() => {
-                if (accountId !== undefined) {
-                  selectedSyncMutation.mutate(accountId);
-                }
-              }}
-            >
-              {selectedSyncMutation.isPending ? "Syncing selected..." : "Sync selected"}
-            </ActionButton>
-            <ActionButton
-              disabled={accountId === undefined || metadataRefreshMutation.isPending}
-              onClick={() => {
-                if (accountId !== undefined) {
-                  metadataRefreshMutation.mutate(accountId);
-                }
-              }}
-            >
-              {metadataRefreshMutation.isPending ? "Refreshing..." : "Refresh playlist metadata"}
-            </ActionButton>
-          </div>
-          <PlaylistActionStatus
-            errorText="Selected playlist sync failed."
-            isError={selectedSyncMutation.isError}
-            isPending={selectedSyncMutation.isPending}
-            isSuccess={selectedSyncMutation.isSuccess}
-            pendingText="Syncing selected playlists..."
-            successText="Selected playlist sync queued."
-          />
-          <PlaylistActionStatus
-            errorText="Metadata refresh failed."
-            isError={metadataRefreshMutation.isError}
-            isPending={metadataRefreshMutation.isPending}
-            isSuccess={metadataRefreshMutation.isSuccess}
-            pendingText="Refreshing playlist metadata..."
-            successText="Metadata refresh queued."
-          />
-        </div>
-      </div>
-
-      <div aria-label="Playlist sync configuration list" className="min-h-0 flex-1 overflow-y-auto pb-1 pr-1" role="region">
-        <div className="space-y-3">
-          {operationMessage ? (
-            <StatusMessage
-              body={operationMessage.body}
-              status={operationMessage.status as OperationStatus}
-              title={operationMessage.title}
-            />
-          ) : null}
-          {playlists.map((playlist) => (
-            <PlaylistConfigRow
-              isTogglePending={toggleMutation.isPending && toggleMutation.variables?.playlistId === playlist.id}
-              key={playlist.id}
-              onTogglePlaylist={(playlistToUpdate, selectedForSync) =>
-                toggleMutation.mutate({
-                  playlistId: playlistToUpdate.id,
-                  selected_for_sync: selectedForSync,
-                })
-              }
-              playlist={playlist}
-            />
-          ))}
-        </div>
-      </div>
-    </section>
-  );
-}
-
 function ViewShell({
   activeViewId,
   playlistResourceId,
@@ -1090,6 +297,7 @@ function App() {
     : playlistsQuery.isError
       ? "Playlists unavailable."
       : "No selected playlists. Configure YouTube Music sync to choose playlists.";
+  const playlistEmptyActionLabel = !playlistsQuery.isPending && !playlistsQuery.isError ? "Configure sync" : undefined;
   const routedViewId = useMemo(() => getViewIdFromPath(location.pathname), [location.pathname]);
 
   useEffect(() => {
@@ -1123,88 +331,36 @@ function App() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-row overflow-hidden bg-ctp-base text-ctp-text">
-      <aside className="flex min-h-0 w-[220px] shrink-0 flex-col border-r border-ctp-surface0 bg-ctp-mantle">
-          <div className="border-b border-ctp-surface0 px-5 py-5">
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-[12px] bg-ctp-surface0 text-ctp-mauve">
-                <svg
-                  aria-hidden="true"
-                  className="h-5 w-5"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    d="M5 16.5V7.5l7-4 7 4v9l-7 4-7-4Z"
-                    stroke="currentColor"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth="1.7"
-                  />
-                  <path
-                    d="m9 10 3 1.75L15 10m-3 1.75V17"
-                    stroke="currentColor"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth="1.7"
-                  />
-                </svg>
-              </div>
-              <div>
-                <p className="font-display text-[11px] font-bold uppercase tracking-[0.32em] text-ctp-mauve">
-                  MUSEBRIDGE
-                </p>
-                <p className="mt-1 text-[12px] text-ctp-subtext0">Playlist linking control room</p>
-              </div>
-            </div>
-          </div>
+      <Sidebar
+        activeItemId={activeViewId}
+        libraryItems={libraryItems}
+        maintenanceItems={maintenanceItems}
+        onConfigureSync={() => handleViewSelect(playlistCollectionViewId)}
+        onSelect={handleViewSelect}
+        playlistEmptyActionLabel={playlistEmptyActionLabel}
+        playlistEmptyMessage={playlistEmptyMessage}
+        playlistItems={playlistItems}
+      />
 
-          <div className="border-b border-ctp-surface0 px-4 py-4">
-            <SearchPanel />
-          </div>
-
-          <div className="flex-1 space-y-6 overflow-y-auto px-0 py-5">
-            <SidebarSection
-              activeItemId={activeViewId}
-              items={maintenanceItems}
-              onSelect={handleViewSelect}
-              title="Maintenance"
+      <main className="flex min-h-0 flex-1 flex-col bg-ctp-base">
+        <Topbar
+          onConfigureSync={() => handleViewSelect(playlistCollectionViewId)}
+          onPlaylistSyncStateChange={setPlaylistSyncState}
+          playlistCollectionViewId={playlistCollectionViewId}
+          view={activeView}
+        />
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+          {viewShellIds.map((viewId) => (
+            <ViewShell
+              key={viewId}
+              activeViewId={activeViewId}
+              playlistResourceId={viewConfigById[viewId].playlistResourceId}
+              playlistSyncState={playlistSyncState}
+              viewId={viewId}
             />
-            <SidebarSection
-              activeItemId={activeViewId}
-              emptyActionLabel={!playlistsQuery.isPending && !playlistsQuery.isError ? "Configure sync" : undefined}
-              emptyMessage={playlistEmptyMessage}
-              items={playlistItems}
-              onEmptyAction={() => handleViewSelect(playlistCollectionViewId)}
-              onSelect={handleViewSelect}
-              title="YouTube Music"
-            />
-            <SidebarSection
-              activeItemId={activeViewId}
-              items={libraryItems}
-              onSelect={handleViewSelect}
-              title="Local Library"
-            />
-          </div>
-        </aside>
-
-        <main className="flex min-h-0 flex-1 flex-col bg-ctp-base">
-          <Topbar
-            onConfigureSync={() => handleViewSelect(playlistCollectionViewId)}
-            onPlaylistSyncStateChange={setPlaylistSyncState}
-            view={activeView}
-          />
-          <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-            {viewShellIds.map((viewId) => (
-              <ViewShell
-                key={viewId}
-                activeViewId={activeViewId}
-                playlistSyncState={playlistSyncState}
-                playlistResourceId={viewConfigById[viewId].playlistResourceId}
-                viewId={viewId}
-              />
-            ))}
-          </div>
-        </main>
+          ))}
+        </div>
+      </main>
     </div>
   );
 }
