@@ -657,7 +657,7 @@ function Topbar({
   }
 
   return (
-    <header className="flex h-11 items-center justify-between border-b border-ctp-surface0 bg-ctp-mantle px-5">
+    <header className="flex h-11 shrink-0 items-center justify-between border-b border-ctp-surface0 bg-ctp-mantle px-5">
       <div className="flex min-w-0 items-center gap-3">
         <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] bg-ctp-surface0 text-ctp-mauve">
           <TopbarIcon icon={view.icon} />
@@ -844,7 +844,7 @@ function PlaylistView({
           Showing {filteredTracks.length} of {tracks.length} tracks
         </p>
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto pr-1">
+      <div aria-label="Playlist tracks" className="min-h-0 flex-1 overflow-y-auto pb-1 pr-1" role="region">
         {filteredTracks.length > 0 ? (
           <div className="space-y-3">
             {filteredTracks.map((track) => (
@@ -1383,7 +1383,7 @@ function PlaylistSyncConfiguration() {
         </div>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto pr-1">
+      <div aria-label="Playlist sync configuration list" className="min-h-0 flex-1 overflow-y-auto pb-1 pr-1" role="region">
         <div className="space-y-3">
           {operationMessage ? (
             <StatusMessage
@@ -1427,12 +1427,12 @@ function ViewShell({
   return (
     <div
       aria-hidden={!isActive}
-      className={isActive ? "flex flex-1 flex-col overflow-y-auto" : "hidden"}
+      className={isActive ? "flex min-h-0 flex-1 flex-col overflow-hidden" : "hidden"}
       data-view-active={isActive ? "true" : "false"}
       id={viewId}
     >
       {isActive ? (
-        <div className="flex min-h-0 flex-1 flex-col p-6">
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden p-6">
           {playlistResourceId !== undefined ? (
             <PlaylistView
               isActive={isActive}
@@ -1507,8 +1507,8 @@ function App() {
   }
 
   return (
-    <div className="flex flex-1 flex-row overflow-hidden bg-ctp-base text-ctp-text">
-      <aside className="flex w-[220px] shrink-0 flex-col border-r border-ctp-surface0 bg-ctp-mantle">
+    <div className="flex min-h-0 flex-1 flex-row overflow-hidden bg-ctp-base text-ctp-text">
+      <aside className="flex min-h-0 w-[220px] shrink-0 flex-col border-r border-ctp-surface0 bg-ctp-mantle">
           <div className="border-b border-ctp-surface0 px-5 py-5">
             <div className="flex items-center gap-3">
               <div className="flex h-10 w-10 items-center justify-center rounded-[12px] bg-ctp-surface0 text-ctp-mauve">
@@ -1572,13 +1572,13 @@ function App() {
           </div>
         </aside>
 
-        <main className="flex flex-1 flex-col bg-ctp-base">
+        <main className="flex min-h-0 flex-1 flex-col bg-ctp-base">
           <Topbar
             onConfigureSync={() => handleViewSelect(playlistCollectionViewId)}
             onPlaylistSyncStateChange={setPlaylistSyncState}
             view={activeView}
           />
-          <div className="flex flex-1 flex-col">
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
             {viewShellIds.map((viewId) => (
               <ViewShell
                 key={viewId}

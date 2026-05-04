@@ -408,11 +408,27 @@ describe("App", () => {
     mockPlaylistFetch();
     const { container } = renderApp();
 
-    expect(container.firstChild).toHaveClass("flex", "flex-1", "flex-row", "overflow-hidden", "bg-ctp-base", "text-ctp-text");
+    expect(container.firstChild).toHaveClass(
+      "flex",
+      "min-h-0",
+      "flex-1",
+      "flex-row",
+      "overflow-hidden",
+      "bg-ctp-base",
+      "text-ctp-text",
+    );
 
     const shell = container.querySelector(".bg-ctp-base");
 
-    expect(shell).toHaveClass("flex", "flex-1", "flex-row", "overflow-hidden", "bg-ctp-base", "text-ctp-text");
+    expect(shell).toHaveClass(
+      "flex",
+      "min-h-0",
+      "flex-1",
+      "flex-row",
+      "overflow-hidden",
+      "bg-ctp-base",
+      "text-ctp-text",
+    );
 
     const sidebar = screen.getByRole("complementary");
 
@@ -878,8 +894,36 @@ describe("App", () => {
     expect(screen.getByText("Pending Signal")).toBeInTheDocument();
     expect(screen.getByText("Loose Cable")).toBeInTheDocument();
     expect(screen.getByText("Showing 3 of 3 tracks")).toBeInTheDocument();
+    expect(document.getElementById("playlist-12")).toHaveClass("min-h-0", "overflow-hidden");
+    expect(screen.getByRole("region", { name: "Playlist tracks" })).toHaveClass(
+      "min-h-0",
+      "flex-1",
+      "overflow-y-auto",
+      "pb-1",
+    );
     expect(fetchMock).toHaveBeenCalledWith("/api/playlists/12");
     expect(fetchMock).toHaveBeenCalledWith("/api/playlists/12/tracks");
+  });
+
+  it("keeps the playlist sync header fixed while configuration rows scroll", async () => {
+    mockPlaylistFetch();
+
+    renderApp();
+
+    expect(await screen.findByRole("heading", { level: 1, name: "Late Night Drive" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Configure sync" }));
+
+    expect(await screen.findByRole("heading", { level: 2, name: "Playlist sync configuration" })).toBeInTheDocument();
+    expect(document.getElementById("playlists")).toHaveClass("min-h-0", "overflow-hidden");
+    expect(screen.getByRole("region", { name: "Playlist sync configuration list" })).toHaveClass(
+      "min-h-0",
+      "flex-1",
+      "overflow-y-auto",
+      "pb-1",
+    );
+    expect(screen.getByRole("button", { name: "Sync selected" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 3, name: "Late Night Drive" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 3, name: "Fresh Discoveries" })).toBeInTheDocument();
   });
 
   it("renders secondary playlist shells with their configured playlist resources", async () => {
