@@ -119,8 +119,7 @@ const streamingPlaylistConfigResponse: StreamingPlaylistConfigResponse = {
 };
 const selectedPlaylistSyncEndpoint = "/api/streaming/accounts/4/sync";
 const selectedPlaylistSyncResponse = { account_id: 4, job_id: "selected-playlists-sync-job-4" };
-const activePlaylistSyncEndpoint = "/api/streaming/playlists/12/sync";
-const activePlaylistSyncResponse = { playlist_id: 12, job_id: "playlist-sync-job-12" };
+const activePlaylistSyncEndpoint = (playlistId: number | string) => `/api/streaming/playlists/${playlistId}/sync`;
 const metadataRefreshEndpoint = "/api/streaming/accounts/4/refresh-metadata";
 const metadataRefreshResponse = { account_id: 4, job_id: "metadata-refresh-job-4" };
 
@@ -252,14 +251,16 @@ function mockPlaylistFetch({ activeSyncHandler, metadataRefreshHandler, selected
       } as Response;
     }
 
-    if (url === activePlaylistSyncEndpoint && init?.method === "POST") {
+    const activePlaylistSyncMatch = url.match(/^\/api\/streaming\/playlists\/(\d+)\/sync$/);
+    if (activePlaylistSyncMatch && init?.method === "POST") {
       if (activeSyncHandler) {
         return activeSyncHandler();
       }
 
+      const [, playlistId] = activePlaylistSyncMatch;
       return {
         ok: true,
-        json: async () => activePlaylistSyncResponse,
+        json: async () => ({ playlist_id: Number(playlistId), job_id: `playlist-sync-job-${playlistId}` }),
       } as Response;
     }
 
@@ -665,7 +666,7 @@ describe("App", () => {
     const fetchMock = mockPlaylistFetch();
 
     renderApp();
-    fireEvent.click(await screen.findByRole("button", { name: /Late Night Drive/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /Static Bloom/i }));
 
     const syncButton = await screen.findByRole("button", { name: "Sync" });
     await waitFor(() => {
@@ -675,8 +676,9 @@ describe("App", () => {
     fireEvent.click(syncButton);
 
     await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledWith(activePlaylistSyncEndpoint, { method: "POST" });
+      expect(fetchMock).toHaveBeenCalledWith(activePlaylistSyncEndpoint(9), { method: "POST" });
     });
+    expect(fetchMock).not.toHaveBeenCalledWith(selectedPlaylistSyncEndpoint, { method: "POST" });
     expect(await screen.findByText("Playlist sync queued.")).toBeInTheDocument();
   });
 
@@ -705,7 +707,7 @@ describe("App", () => {
 
     resolveSync({
       ok: true,
-      json: async () => activePlaylistSyncResponse,
+      json: async () => ({ playlist_id: 12, job_id: "playlist-sync-job-12" }),
     } as Response);
 
     expect(await screen.findByText("Playlist sync queued.")).toBeInTheDocument();
