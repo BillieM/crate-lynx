@@ -12,6 +12,7 @@ type FilterChipGroupProps<TValue extends string> = {
   activeValue: TValue;
   ariaLabel: string;
   density?: "default" | "compact";
+  disabled?: boolean;
   onValueChange: (value: TValue) => void;
   options: FilterChipOption<TValue>[];
 };
@@ -20,6 +21,7 @@ export function FilterChipGroup<TValue extends string>({
   activeValue,
   ariaLabel,
   density = "default",
+  disabled = false,
   onValueChange,
   options,
 }: FilterChipGroupProps<TValue>) {
@@ -35,7 +37,8 @@ export function FilterChipGroup<TValue extends string>({
         return (
           <button
             aria-pressed={isSelected}
-            className={`${chipClasses} ${isSelected ? selectedFilterChipClasses[option.tone] : controlClasses.filterChipInactive}`}
+            className={`${chipClasses} ${isSelected ? selectedFilterChipClasses[option.tone] : controlClasses.filterChipInactive} disabled:cursor-not-allowed disabled:opacity-60`}
+            disabled={disabled}
             key={option.value}
             onClick={() => onValueChange(option.value)}
             type="button"

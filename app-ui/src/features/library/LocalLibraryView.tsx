@@ -4,9 +4,11 @@ import { ActionButton } from "../../components/ActionButton";
 import { EmptyStateCard } from "../../components/EmptyStateCard";
 import { FilterChipGroup, type FilterChipOption } from "../../components/FilterChipGroup";
 import { Pill, type PillTone } from "../../components/Pill";
+import { StatusMessage } from "../../components/StatusMessage";
 import { controlClasses, surfaceClasses, textClasses } from "../../styles/componentClasses";
 import { trackStatusDotClasses } from "../../styles/toneClasses";
 
+type LibraryViewState = "ready" | "loading" | "error";
 type LibraryLinkStatusFilter = "all" | "linked" | "pending" | "unlinked";
 type LibraryMatchMethodFilter = "all" | "isrc" | "tag" | "acoustic" | "manual";
 type LibraryFileStatusFilter = "all" | "available" | "missing" | "beets_failed";
@@ -243,11 +245,13 @@ function LibraryStatCard({ stat }: { stat: LibraryStat }) {
 }
 
 function LibrarySelectFilter<TValue extends string>({
+  disabled = false,
   label,
   onValueChange,
   options,
   value,
 }: {
+  disabled?: boolean;
   label: string;
   onValueChange: (value: TValue) => void;
   options: { label: string; value: TValue }[];
@@ -258,6 +262,7 @@ function LibrarySelectFilter<TValue extends string>({
       <span className={textClasses.microEyebrow}>{label}</span>
       <select
         className={`${controlClasses.controlRadius} min-h-9 border border-ctp-surface1 bg-ctp-surface0 px-2.5 text-[12px] font-semibold text-ctp-text outline-none transition-colors hover:border-ctp-overlay0 focus:border-ctp-blue focus:ring-2 focus:ring-ctp-blue/20`}
+        disabled={disabled}
         onChange={(event) => onValueChange(event.target.value as TValue)}
         value={value}
       >
@@ -272,6 +277,7 @@ function LibrarySelectFilter<TValue extends string>({
 }
 
 function LibraryFilterBar({
+  disabled = false,
   fileStatusFilter,
   linkStatusFilter,
   matchMethodFilter,
@@ -280,6 +286,7 @@ function LibraryFilterBar({
   onMatchMethodFilterChange,
   onResetFilters,
 }: {
+  disabled?: boolean;
   fileStatusFilter: LibraryFileStatusFilter;
   linkStatusFilter: LibraryLinkStatusFilter;
   matchMethodFilter: LibraryMatchMethodFilter;
@@ -307,17 +314,20 @@ function LibraryFilterBar({
               activeValue={linkStatusFilter}
               ariaLabel="Library link status filters"
               density="compact"
+              disabled={disabled}
               onValueChange={onLinkStatusFilterChange}
               options={linkStatusFilters}
             />
           </div>
           <LibrarySelectFilter
+            disabled={disabled}
             label="Match method"
             onValueChange={onMatchMethodFilterChange}
             options={matchMethodFilters}
             value={matchMethodFilter}
           />
           <LibrarySelectFilter
+            disabled={disabled}
             label="File status"
             onValueChange={onFileStatusFilterChange}
             options={fileStatusFilters}
@@ -328,7 +338,7 @@ function LibraryFilterBar({
       <ActionButton
         aria-label="Reset library filters"
         className={`${controlClasses.actionButtonCompact} inline-flex items-center gap-1.5`}
-        disabled={!hasActiveFilters}
+        disabled={disabled || !hasActiveFilters}
         onClick={onResetFilters}
       >
         <RotateCcw aria-hidden="true" className="h-3.5 w-3.5" strokeWidth={1.9} />
@@ -387,14 +397,21 @@ function LibraryTrackRow({ track }: { track: LibraryTrack }) {
   );
 }
 
-export function LocalLibraryView() {
+type LocalLibraryViewProps = {
+  isPending?: boolean;
+  state?: LibraryViewState;
+  tracks?: readonly LibraryTrack[];
+};
+
+export function LocalLibraryView({ isPending = false, state = "ready", tracks = libraryTracks }: LocalLibraryViewProps = {}) {
   const [linkStatusFilter, setLinkStatusFilter] = useState<LibraryLinkStatusFilter>("all");
   const [matchMethodFilter, setMatchMethodFilter] = useState<LibraryMatchMethodFilter>("all");
   const [fileStatusFilter, setFileStatusFilter] = useState<LibraryFileStatusFilter>("all");
   const visibleTracks = useMemo(
-    () => filterLibraryTracks(libraryTracks, linkStatusFilter, matchMethodFilter, fileStatusFilter),
-    [fileStatusFilter, linkStatusFilter, matchMethodFilter],
+    () => filterLibraryTracks([...tracks], linkStatusFilter, matchMethodFilter, fileStatusFilter),
+    [fileStatusFilter, linkStatusFilter, matchMethodFilter, tracks],
   );
+  const controlsDisabled = state !== "ready" || isPending;
 
   const resetFilters = () => {
     setLinkStatusFilter("all");
@@ -404,6 +421,14 @@ export function LocalLibraryView() {
 
   return (
     <section className="flex min-h-0 flex-1 flex-col gap-4">
+      {isPending ? (
+        <StatusMessage
+          body="Library rows and counts may update when the maintenance job finishes."
+          status="pending"
+          title="Library refresh in progress"
+        />
+      ) : null}
+
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4" aria-label="Library stats">
         {libraryStats.map((stat) => (
           <LibraryStatCard key={stat.label} stat={stat} />
@@ -412,6 +437,7 @@ export function LocalLibraryView() {
 
       <section className="flex min-h-0 flex-1 flex-col gap-4">
         <LibraryFilterBar
+          disabled={controlsDisabled}
           fileStatusFilter={fileStatusFilter}
           linkStatusFilter={linkStatusFilter}
           matchMethodFilter={matchMethodFilter}
@@ -422,12 +448,27 @@ export function LocalLibraryView() {
         />
 
         <div className="min-h-0 flex-1 overflow-y-auto pb-1 pr-1" aria-label="Local library tracks" role="region">
-          {visibleTracks.length > 0 ? (
+          {state === "loading" ? (
+            <EmptyStateCard
+              body="Fetching local track metadata, link states, and file availability."
+              className="text-left"
+              role="status"
+              title="Loading library tracks"
+            />
+          ) : state === "error" ? (
+            <EmptyStateCard
+              body="Local library data could not be loaded."
+              className="text-left"
+              role="alert"
+              title="Library unavailable"
+              tone="error"
+            />
+          ) : visibleTracks.length > 0 ? (
             <div className="grid gap-2.5">
               <div className="flex items-center justify-between gap-3 px-1">
                 <h2 className={textClasses.label}>Local library track list</h2>
                 <p className={`${textClasses.caption} tabular-nums`}>
-                  Showing {visibleTracks.length} of {libraryTracks.length} rows
+                  Showing {visibleTracks.length} of {tracks.length} rows
                 </p>
               </div>
               {visibleTracks.map((track) => (

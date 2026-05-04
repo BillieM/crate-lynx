@@ -3,8 +3,11 @@ import { useMutation } from "@tanstack/react-query";
 import { ActionButton } from "../../components/ActionButton";
 import { EmptyStateCard } from "../../components/EmptyStateCard";
 import { Pill } from "../../components/Pill";
+import { StatusMessage } from "../../components/StatusMessage";
 import { controlClasses, surfaceClasses, textClasses } from "../../styles/componentClasses";
 import { rescueLocalTrackMetadata } from "./queries";
+
+type MaintenanceViewState = "ready" | "loading" | "error";
 
 type UnidentifiedTrack = {
   failedAt: string;
@@ -42,7 +45,7 @@ const unidentifiedTracks = [
   },
 ] satisfies UnidentifiedTrack[];
 
-function UnidentifiedTrackRow({ track }: { track: UnidentifiedTrack }) {
+function UnidentifiedTrackRow({ rescueDisabled = false, track }: { rescueDisabled?: boolean; track: UnidentifiedTrack }) {
   const rescueMutation = useMutation({
     mutationFn: rescueLocalTrackMetadata,
   });
@@ -97,7 +100,7 @@ function UnidentifiedTrackRow({ track }: { track: UnidentifiedTrack }) {
         <ActionButton
           aria-label={`Rescue ${track.filename}`}
           className={`${controlClasses.actionButtonCompact} inline-flex items-center gap-1.5`}
-          disabled={rescueMutation.isPending}
+          disabled={rescueDisabled || rescueMutation.isPending}
           onClick={() => rescueMutation.mutate(track.id)}
         >
           <WandSparkles aria-hidden="true" className="h-3.5 w-3.5" strokeWidth={1.9} />
@@ -141,24 +144,55 @@ function UnidentifiedSummaryCard({
   );
 }
 
-export function UnidentifiedView() {
+type UnidentifiedViewProps = {
+  isPending?: boolean;
+  state?: MaintenanceViewState;
+  tracks?: readonly UnidentifiedTrack[];
+};
+
+export function UnidentifiedView({ isPending = false, state = "ready", tracks = unidentifiedTracks }: UnidentifiedViewProps = {}) {
+  const actionsDisabled = state !== "ready" || isPending;
+
   return (
     <section className="flex min-h-0 flex-1 flex-col gap-4">
+      {isPending ? (
+        <StatusMessage
+          body="Metadata rescue availability may update when the import review finishes."
+          status="pending"
+          title="Unidentified review in progress"
+        />
+      ) : null}
+
       <div className="grid gap-3 sm:grid-cols-3" aria-label="Unidentified summary">
-        <UnidentifiedSummaryCard icon={FileQuestion} label="Failed imports" value={unidentifiedTracks.length.toString()} />
-        <UnidentifiedSummaryCard icon={Fingerprint} label="Fingerprinted" value={unidentifiedTracks.length.toString()} />
+        <UnidentifiedSummaryCard icon={FileQuestion} label="Failed imports" value={tracks.length.toString()} />
+        <UnidentifiedSummaryCard icon={Fingerprint} label="Fingerprinted" value={tracks.length.toString()} />
         <UnidentifiedSummaryCard icon={HardDrive} label="Source" value="Beets" />
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto pb-1 pr-1" aria-label="Unidentified tracks" role="region">
-        {unidentifiedTracks.length > 0 ? (
+        {state === "loading" ? (
+          <EmptyStateCard
+            body="Checking Beets-failed imports and fingerprint hashes."
+            className="text-left"
+            role="status"
+            title="Loading unidentified tracks"
+          />
+        ) : state === "error" ? (
+          <EmptyStateCard
+            body="The unidentified import queue could not be loaded."
+            className="text-left"
+            role="alert"
+            title="Unidentified queue unavailable"
+            tone="error"
+          />
+        ) : tracks.length > 0 ? (
           <div className="grid gap-2.5">
             <div className="flex items-center justify-between gap-3 px-1">
               <h2 className={textClasses.label}>Beets failed track list</h2>
-              <p className={`${textClasses.caption} tabular-nums`}>{unidentifiedTracks.length} rows</p>
+              <p className={`${textClasses.caption} tabular-nums`}>{tracks.length} rows</p>
             </div>
-            {unidentifiedTracks.map((track) => (
-              <UnidentifiedTrackRow key={track.id} track={track} />
+            {tracks.map((track) => (
+              <UnidentifiedTrackRow key={track.id} rescueDisabled={actionsDisabled} track={track} />
             ))}
           </div>
         ) : (

@@ -7,6 +7,6 @@
 - [x] Build the Unidentified maintenance view listing Beets-failed tracks with filename and fingerprint hash
 - [x] Wire the Unidentified Rescue action to the existing metadata rescue endpoint from E08
 - [x] Build the Missing Locally maintenance view listing streaming tracks with no local match
-- [ ] Add loading, empty, error, disabled, and pending states for the library and maintenance views
+- [x] Add loading, empty, error, disabled, and pending states for the library and maintenance views
 - [ ] Update affected frontend tests for the new library and maintenance view behavior
 - [ ] Run frontend validation: `npm run lint`, `npm test`, and `npm run build`

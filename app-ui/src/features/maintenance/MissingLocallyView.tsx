@@ -1,8 +1,10 @@
 import { AlertTriangle, ListMusic, Music2, RadioTower, SearchX } from "lucide-react";
 import { EmptyStateCard } from "../../components/EmptyStateCard";
 import { Pill, type PillTone } from "../../components/Pill";
+import { StatusMessage } from "../../components/StatusMessage";
 import { surfaceClasses, textClasses } from "../../styles/componentClasses";
 
+type MaintenanceViewState = "ready" | "loading" | "error";
 type MissingSeverity = "high" | "medium" | "low";
 
 type MissingStreamingTrack = {
@@ -157,18 +159,32 @@ function MissingTrackRow({ track }: { track: MissingStreamingTrack }) {
   );
 }
 
-export function MissingLocallyView() {
-  const highPriorityCount = missingStreamingTracks.filter((track) => track.severity === "high").length;
-  const playlistCount = new Set(missingStreamingTracks.map((track) => track.playlistTitle)).size;
+type MissingLocallyViewProps = {
+  isPending?: boolean;
+  state?: MaintenanceViewState;
+  tracks?: readonly MissingStreamingTrack[];
+};
+
+export function MissingLocallyView({ isPending = false, state = "ready", tracks = missingStreamingTracks }: MissingLocallyViewProps = {}) {
+  const highPriorityCount = tracks.filter((track) => track.severity === "high").length;
+  const playlistCount = new Set(tracks.map((track) => track.playlistTitle)).size;
 
   return (
     <section className="flex min-h-0 flex-1 flex-col gap-4">
+      {isPending ? (
+        <StatusMessage
+          body="Missing-local-match results may update when playlist matching finishes."
+          status="pending"
+          title="Missing locally scan in progress"
+        />
+      ) : null}
+
       <div className="grid gap-3 sm:grid-cols-3" aria-label="Missing locally summary">
         <MissingSummaryCard
           icon={SearchX}
           label="Missing tracks"
           toneClass="bg-ctp-yellow/18 text-ctp-yellow ring-ctp-yellow/30"
-          value={missingStreamingTracks.length.toString()}
+          value={tracks.length.toString()}
         />
         <MissingSummaryCard
           icon={ListMusic}
@@ -185,16 +201,31 @@ export function MissingLocallyView() {
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto pb-1 pr-1" aria-label="Missing local tracks" role="region">
-        {missingStreamingTracks.length > 0 ? (
+        {state === "loading" ? (
+          <EmptyStateCard
+            body="Checking synced streaming tracks against the local library."
+            className="text-left"
+            role="status"
+            title="Loading missing tracks"
+          />
+        ) : state === "error" ? (
+          <EmptyStateCard
+            body="The missing locally report could not be loaded."
+            className="text-left"
+            role="alert"
+            title="Missing locally unavailable"
+            tone="error"
+          />
+        ) : tracks.length > 0 ? (
           <div className="grid gap-2.5">
             <div className="flex items-center justify-between gap-3 px-1">
               <div className="flex items-center gap-2 text-ctp-subtext0">
                 <RadioTower aria-hidden="true" className="h-4 w-4" strokeWidth={1.8} />
                 <h2 className={textClasses.label}>Streaming tracks without local matches</h2>
               </div>
-              <p className={`${textClasses.caption} tabular-nums`}>{missingStreamingTracks.length} rows</p>
+              <p className={`${textClasses.caption} tabular-nums`}>{tracks.length} rows</p>
             </div>
-            {missingStreamingTracks.map((track) => (
+            {tracks.map((track) => (
               <MissingTrackRow key={track.id} track={track} />
             ))}
           </div>
