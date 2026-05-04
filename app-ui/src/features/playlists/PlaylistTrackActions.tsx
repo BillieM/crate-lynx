@@ -1,7 +1,7 @@
 import { useState } from "react";
-import type { ReactNode } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
+import { ActionButton } from "../../components/ActionButton";
 import type { PlaylistTrack } from "./queries";
 
 type PlaylistTrackActionsProps = {
@@ -35,27 +35,6 @@ function buildProposalTrackUrl(track: PlaylistTrack) {
   }
 
   return `/proposals?${params.toString()}`;
-}
-
-function ActionButton({
-  children,
-  disabled = false,
-  onClick,
-}: {
-  children: ReactNode;
-  disabled?: boolean;
-  onClick?: () => void;
-}) {
-  return (
-    <button
-      className="rounded-[10px] border border-ctp-surface1 bg-ctp-surface0 px-3 py-1.5 text-[12px] font-semibold text-ctp-text transition-colors hover:border-ctp-overlay0 hover:bg-ctp-surface1 disabled:cursor-not-allowed disabled:border-ctp-surface0 disabled:text-ctp-overlay1 disabled:hover:bg-ctp-surface0"
-      disabled={disabled}
-      onClick={onClick}
-      type="button"
-    >
-      {children}
-    </button>
-  );
 }
 
 export function PlaylistTrackActions({ onReviewTrack, playlistId, track }: PlaylistTrackActionsProps) {

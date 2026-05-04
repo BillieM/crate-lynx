@@ -1,12 +1,14 @@
-# E15 — Frontend: link proposals view
+# E16 — Frontend: Tailwind and Catppuccin cleanup
 
-- [x] Add a frontend API client method for listing link proposals with optional confidence-band filtering
-- [x] Add frontend API client methods for approving and rejecting link proposals
-- [x] Create the link proposals routed view and wire it into the app navigation
-- [x] Render proposals grouped by confidence band: High, Medium, and Low
-- [x] Build proposal cards with confidence bar, local track column, streaming track column, match method badge, and score
-- [x] Add confidence-band filter chips that update the proposals query
-- [x] Implement optimistic approve and reject mutations with TanStack Query cache updates
-- [x] Add loading, empty, and error states for the proposals view
-- [x] Add frontend tests for grouped rendering, band filtering, and optimistic approve/reject behavior
-- [x] Run relevant frontend validation: `npm run lint`, `npm test`, and `npm run build`
+- [x] Add shared UI primitives for repeated actions, badges/pills, empty states, and status messages
+- [ ] Centralize tone and status class mappings around Catppuccin Mocha `ctp-*` Tailwind classes
+- [ ] Replace repeated action button class strings in `App.tsx` and playlist components with the shared button primitive
+- [ ] Consolidate playlist and proposal filter chips into one reusable filter chip component
+- [ ] Move proposal queue UI out of `App.tsx` into focused feature components
+- [ ] Move sidebar, topbar, and playlist sync configuration UI out of `App.tsx` into focused components
+- [ ] Replace hardcoded Catppuccin RGB values with CSS variables or theme-backed Tailwind classes where practical
+- [ ] Keep inline styles only for genuinely dynamic values such as progress width or computed SVG stroke offset
+- [ ] Review arbitrary Tailwind values and convert repeated radii, shadows, and typography patterns into shared component styles
+- [ ] Replace hand-written generic SVG icons with a consistent icon approach, preferably `lucide-react`
+- [ ] Add or update frontend tests for shared UI primitives, reusable filter chips, and extracted proposal/config components
+- [ ] Run relevant frontend validation: `npm run lint`, `npm test`, and `npm run build`
