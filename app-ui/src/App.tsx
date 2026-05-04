@@ -5,6 +5,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocation, useNavigate } from "react-router-dom";
 import { ActionButton } from "./components/ActionButton";
 import { EmptyStateCard } from "./components/EmptyStateCard";
+import { FilterChipGroup, type FilterChipOption } from "./components/FilterChipGroup";
 import { StatusMessage, type OperationStatus } from "./components/StatusMessage";
 import { FilterChips } from "./features/playlists/FilterChips";
 import { PlaylistHeader } from "./features/playlists/PlaylistHeader";
@@ -35,7 +36,7 @@ import {
   getPlaylistTrackFilterCounts,
   type PlaylistTrackFilter,
 } from "./features/playlists/filterTracks";
-import { pillToneClasses, selectedFilterChipClasses, type PillTone } from "./styles/toneClasses";
+import { pillToneClasses, type PillTone } from "./styles/toneClasses";
 
 export type ProgressStatus = "unlinked" | "pending" | "linked";
 
@@ -93,8 +94,6 @@ type NavItem = {
 };
 
 type TopbarPillTone = "pill-info" | "pill-pending" | "pill-lib";
-type ProposalFilterChipTone = "all" | "linked" | "pending" | "unlinked";
-
 type SearchResult = {
   id: number;
   kind: "playlist" | "streaming_track" | "local_track";
@@ -183,30 +182,26 @@ const proposalBandLabels = {
 } satisfies Record<LinkProposalConfidenceBand, string>;
 const proposalBandFilterChips = [
   {
-    filter: "all",
     label: "All",
     tone: "all",
+    value: "all",
   },
   {
-    filter: "high",
     label: "High",
     tone: "linked",
+    value: "high",
   },
   {
-    filter: "medium",
     label: "Medium",
     tone: "pending",
+    value: "medium",
   },
   {
-    filter: "low",
     label: "Low",
     tone: "unlinked",
+    value: "low",
   },
-] satisfies {
-  filter: LinkProposalConfidenceBandFilter;
-  label: string;
-  tone: ProposalFilterChipTone;
-}[];
+] satisfies FilterChipOption<LinkProposalConfidenceBandFilter>[];
 const playlistCollectionViewId = "playlists";
 const playlistCollectionViewConfig = {
   id: playlistCollectionViewId,
@@ -950,27 +945,12 @@ function LinkProposalsView() {
               : "Pending suggestions grouped by confidence."}
           </p>
         </div>
-        <div aria-label="Confidence band filters" className="flex flex-wrap items-center gap-2" role="group">
-          {proposalBandFilterChips.map((chip) => {
-            const isSelected = activeFilter === chip.filter;
-
-            return (
-              <button
-                aria-pressed={isSelected}
-                className={`inline-flex min-h-10 items-center rounded-[999px] border px-4 text-[13px] font-semibold transition-colors ${
-                  isSelected
-                    ? selectedFilterChipClasses[chip.tone]
-                    : "border-ctp-surface1 bg-ctp-surface0 text-ctp-subtext0 hover:border-ctp-overlay0 hover:bg-ctp-surface1 hover:text-ctp-text"
-                }`}
-                key={chip.filter}
-                onClick={() => updateConfidenceBandFilter(chip.filter)}
-                type="button"
-              >
-                {chip.label}
-              </button>
-            );
-          })}
-        </div>
+        <FilterChipGroup
+          activeValue={activeFilter}
+          ariaLabel="Confidence band filters"
+          onValueChange={updateConfidenceBandFilter}
+          options={proposalBandFilterChips}
+        />
       </div>
       {children}
     </section>

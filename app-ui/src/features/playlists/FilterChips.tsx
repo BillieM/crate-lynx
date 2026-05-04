@@ -1,5 +1,5 @@
 import type { PlaylistTrackFilter } from "./filterTracks";
-import { selectedFilterChipClasses } from "../../styles/toneClasses";
+import { FilterChipGroup, type FilterChipOption } from "../../components/FilterChipGroup";
 
 type FilterChipsProps = {
   activeFilter: PlaylistTrackFilter;
@@ -7,58 +7,41 @@ type FilterChipsProps = {
   onFilterChange: (filter: PlaylistTrackFilter) => void;
 };
 
-type FilterChipConfig = {
-  filter: PlaylistTrackFilter;
-  label: string;
-};
-
-const filterChips: FilterChipConfig[] = [
+const filterChips = [
   {
-    filter: "all",
     label: "All",
+    tone: "all",
+    value: "all",
   },
   {
-    filter: "linked",
     label: "Linked",
+    tone: "linked",
+    value: "linked",
   },
   {
-    filter: "pending",
     label: "Pending",
+    tone: "pending",
+    value: "pending",
   },
   {
-    filter: "unlinked",
     label: "Unlinked",
+    tone: "unlinked",
+    value: "unlinked",
   },
-];
+] satisfies FilterChipOption<PlaylistTrackFilter>[];
 
 export function FilterChips({ activeFilter, counts, onFilterChange }: FilterChipsProps) {
-  return (
-    <div aria-label="Track status filters" className="flex flex-wrap items-center gap-2" role="group">
-      {filterChips.map((chip) => {
-        const isSelected = activeFilter === chip.filter;
-        const count = counts?.[chip.filter];
+  const options = filterChips.map((chip) => ({
+    ...chip,
+    count: counts?.[chip.value],
+  }));
 
-        return (
-          <button
-            aria-pressed={isSelected}
-            className={`inline-flex min-h-10 items-center gap-2 rounded-[999px] border px-4 text-[13px] font-semibold transition-colors ${
-              isSelected
-                ? selectedFilterChipClasses[chip.filter]
-                : "border-ctp-surface1 bg-ctp-surface0 text-ctp-subtext0 hover:border-ctp-overlay0 hover:bg-ctp-surface1 hover:text-ctp-text"
-            }`}
-            key={chip.filter}
-            onClick={() => onFilterChange(chip.filter)}
-            type="button"
-          >
-            <span>{chip.label}</span>
-            {count !== undefined ? (
-              <span className="min-w-6 rounded-[999px] bg-ctp-mantle px-2 py-0.5 text-center text-[11px] tabular-nums text-ctp-subtext0 ring-1 ring-inset ring-ctp-surface1">
-                {count}
-              </span>
-            ) : null}
-          </button>
-        );
-      })}
-    </div>
+  return (
+    <FilterChipGroup
+      activeValue={activeFilter}
+      ariaLabel="Track status filters"
+      onValueChange={onFilterChange}
+      options={options}
+    />
   );
 }
