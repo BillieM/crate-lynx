@@ -1,4 +1,5 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { BookOpenText, ListMusic, Sparkles, type LucideIcon } from "lucide-react";
 import { ActionButton } from "../../components/ActionButton";
 import { controlClasses, textClasses } from "../../styles/componentClasses";
 import {
@@ -32,47 +33,16 @@ function getTopbarPillClasses(tone: TopbarPillTone) {
 }
 
 function TopbarIcon({ icon }: { icon: ViewConfig["icon"] }) {
-  if (icon === "playlist") {
-    return (
-      <svg aria-hidden="true" className="h-4 w-4" fill="none" viewBox="0 0 24 24">
-        <path
-          d="M8 18a2 2 0 1 1-4 0 2 2 0 0 1 4 0Zm10-3a2 2 0 1 1-4 0 2 2 0 0 1 4 0Zm-4 0V6l6-1.5v9"
-          stroke="currentColor"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          strokeWidth="1.7"
-        />
-      </svg>
-    );
-  }
+  const Icon = topbarIconMap[icon];
 
-  if (icon === "library") {
-    return (
-      <svg aria-hidden="true" className="h-4 w-4" fill="none" viewBox="0 0 24 24">
-        <path
-          d="M5 6.5A2.5 2.5 0 0 1 7.5 4h9A2.5 2.5 0 0 1 19 6.5v11a1.5 1.5 0 0 1-1.5 1.5h-10A2.5 2.5 0 0 1 5 16.5v-10Z"
-          stroke="currentColor"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          strokeWidth="1.7"
-        />
-        <path d="M8.5 8.5h7m-7 3h7m-7 3h4" stroke="currentColor" strokeLinecap="round" strokeWidth="1.7" />
-      </svg>
-    );
-  }
-
-  return (
-    <svg aria-hidden="true" className="h-4 w-4" fill="none" viewBox="0 0 24 24">
-      <path
-        d="m12 3 1.9 4.97L19 10l-5.1 2.03L12 17l-1.9-4.97L5 10l5.1-2.03L12 3Z"
-        stroke="currentColor"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth="1.7"
-      />
-    </svg>
-  );
+  return <Icon aria-hidden="true" className="h-4 w-4" strokeWidth={1.7} />;
 }
+
+const topbarIconMap = {
+  library: BookOpenText,
+  playlist: ListMusic,
+  spark: Sparkles,
+} satisfies Record<ViewConfig["icon"], LucideIcon>;
 
 export function PlaylistActionStatus({
   errorText,

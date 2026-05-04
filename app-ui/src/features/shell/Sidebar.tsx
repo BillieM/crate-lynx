@@ -1,5 +1,6 @@
 import { useEffect, useState, type CSSProperties } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { Package, Search } from "lucide-react";
 import { ActionButton } from "../../components/ActionButton";
 import { controlClasses, surfaceClasses, textClasses } from "../../styles/componentClasses";
 import { pillToneClasses } from "../../styles/toneClasses";
@@ -150,14 +151,7 @@ function SearchPanel() {
         Search library
       </label>
       <div className={`flex items-center gap-2 px-3 py-2.5 text-ctp-subtext0 ${controlClasses.searchFrame}`}>
-        <svg aria-hidden="true" className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24">
-          <path
-            d="m21 21-4.35-4.35m1.85-5.15a7 7 0 1 1-14 0 7 7 0 0 1 14 0Z"
-            stroke="currentColor"
-            strokeLinecap="round"
-            strokeWidth="1.8"
-          />
-        </svg>
+        <Search aria-hidden="true" className="h-4 w-4 shrink-0" strokeWidth={1.8} />
         <input
           autoComplete="off"
           className="w-full border-0 bg-transparent p-0 text-[13px] text-ctp-text outline-none placeholder:text-ctp-subtext0"
@@ -236,22 +230,7 @@ export function Sidebar({
       <div className="border-b border-ctp-surface0 px-5 py-5">
         <div className="flex items-center gap-3">
           <div className="flex h-10 w-10 items-center justify-center rounded-[12px] bg-ctp-surface0 text-ctp-mauve">
-            <svg aria-hidden="true" className="h-5 w-5" fill="none" viewBox="0 0 24 24">
-              <path
-                d="M5 16.5V7.5l7-4 7 4v9l-7 4-7-4Z"
-                stroke="currentColor"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth="1.7"
-              />
-              <path
-                d="m9 10 3 1.75L15 10m-3 1.75V17"
-                stroke="currentColor"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth="1.7"
-              />
-            </svg>
+            <Package aria-hidden="true" className="h-5 w-5" strokeWidth={1.7} />
           </div>
           <div>
             <p className="font-display text-[11px] font-bold uppercase tracking-[0.32em] text-ctp-mauve">

@@ -1,3 +1,4 @@
+import { ListMusic } from "lucide-react";
 import { surfaceClasses, textClasses } from "../../styles/componentClasses";
 import type { PlaylistDetail } from "./queries";
 
@@ -75,15 +76,7 @@ function CoverArt({ playlist }: { playlist: PlaylistDetail }) {
 
   return (
     <div className={`flex h-28 w-28 items-center justify-center bg-ctp-surface0 text-ctp-blue ${surfaceClasses.raisedArtwork}`}>
-      <svg aria-hidden="true" className="h-10 w-10" fill="none" viewBox="0 0 24 24">
-        <path
-          d="M8 18a2 2 0 1 1-4 0 2 2 0 0 1 4 0Zm10-3a2 2 0 1 1-4 0 2 2 0 0 1 4 0Zm-4 0V6l6-1.5v9"
-          stroke="currentColor"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          strokeWidth="1.7"
-        />
-      </svg>
+      <ListMusic aria-hidden="true" className="h-10 w-10" strokeWidth={1.7} />
     </div>
   );
 }
