@@ -9,8 +9,11 @@ Docker Compose should use explicit host mounts:
 - Host `/srv/mergerfs/hdds/music-in` -> container `/ingestion`
 - Host `/srv/mergerfs/hdds/soulseek/downloads` -> container `/soulseek`
 - Host `/srv/mergerfs/hdds/media/music` -> container `/music`
+- Host `/docker/appdata/cratelynx` -> container `/data`
 
 Processed/imported music must be stored under `/music` in the container. `/music` is the library output path, not an ingest input, to avoid re-ingesting files that Beets has already imported.
+
+Application-owned data, including the Beets SQLite database, must be stored under `/data` in the container. Docker Compose should back `/data` with `/docker/appdata/cratelynx` on the host.
 
 ## API, data, and runtime behavior
 
@@ -35,7 +38,7 @@ Processed/imported music must be stored under `/music` in the container. `/music
 ## Tasks
 
 - [x] Inspect current settings routing, ingestion startup, watcher lifecycle, Docker Compose mounts, Beets library path usage, and API/store patterns; record side effects around container paths, host mounts, and live watcher updates
-- [x] Update Docker Compose app configuration so `/ingestion`, `/soulseek`, and `/music` map to the requested host directories, `LIBRARY_ROOT` defaults to `/music`, and `BEETS_LIBRARY` defaults to `/music/library.db`
+- [x] Update Docker Compose app configuration so `/ingestion`, `/soulseek`, `/music`, and `/data` map to the requested host directories, `LIBRARY_ROOT` defaults to `/music`, and `BEETS_LIBRARY` defaults to `/data/beets/library.db`
 - [ ] Add an `ingest_folders` database model and Alembic migration with unique normalized `path`, created/updated timestamps, and seed defaults for `/ingestion` and `/soulseek`
 - [ ] Add a backend settings store that lists, creates, deletes, normalizes, deduplicates, and validates ingest folders using absolute container paths
 - [ ] Add settings schemas and API routes for `GET /api/settings/general`, `POST /api/settings/ingest-folders`, and `DELETE /api/settings/ingest-folders/{folder_id}`
@@ -64,10 +67,10 @@ Processed/imported music must be stored under `/music` in the container. `/music
 - App startup creates one `IngestionProcessor` and one `IngestionWatcher` rooted at `INGESTION_ROOT` with default `/ingestion`. The watcher starts during FastAPI lifespan and stops on shutdown.
 - `IngestionWatcher` supports only one root. `start()` creates that root with `mkdir(parents=True, exist_ok=True)`, schedules one Watchdog handler, and does not retain schedule handles for live unscheduling.
 - The ingestion event handler processes closed files synchronously through the shared `IngestionProcessor`; removing a watched root later will only affect new events, not an in-flight processor call.
-- Beets import defaults are still `/library`: `LIBRARY_ROOT` defaults to `/library`, `BEETS_LIBRARY` defaults to `library_root / "library.db"`, and compose maps named volume `library_data` to `/library`.
-- Docker Compose currently maps named volumes only: `library_data:/library` and `ingestion_data:/ingestion`. There is no `/soulseek` or `/music` mount yet.
+- Beets import defaults were `/library`: `LIBRARY_ROOT` defaulted to `/library`, `BEETS_LIBRARY` defaulted to `library_root / "library.db"`, and compose mapped named volume `library_data` to `/library`.
+- Docker Compose previously mapped named volumes only: `library_data:/library` and `ingestion_data:/ingestion`. There was no `/soulseek`, `/music`, or `/data` mount.
 - Runtime `/library` defaults also appear in M3U export, links, rescue, streaming, and ingestion code paths. Test fixtures also use `/library`; later tasks should change runtime defaults without rewriting unrelated test-local expectations.
-- Local track persistence stores paths relative to `library_root`, so moving production `LIBRARY_ROOT` to `/music` should preserve relative database values if Beets paths stay under that root.
+- Local track persistence stores paths relative to `library_root`, so moving production `LIBRARY_ROOT` to `/music` should preserve relative database values if Beets paths stay under that root. The Beets database itself belongs under `/data`, not `/music`.
 - Migration/model patterns are split between SQLAlchemy ORM models in `db/models.py` for Alembic and lightweight table definitions in app stores/models; `updated_at` commonly uses `server_default=func.now()` and ORM `onupdate=func.now()`.
 - Frontend data access uses per-feature `queries.ts` files with `fetchJson`, exported query key factories, and TanStack Query hooks. Settings helpers should follow that pattern and invalidate both general settings and any affected ingest-folder keys after mutations.
 - README still describes dropping files into `ingestion/` and asks for `LIBRARY_ROOT`; it needs explicit host mount guidance and clear wording that `/music` is output only.

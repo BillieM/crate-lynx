@@ -264,6 +264,41 @@ def test_beets_importer_runs_quiet_singleton_move_import(
     ]
 
 
+def test_beets_importer_creates_library_database_parent(
+    tmp_path: Path, monkeypatch
+) -> None:
+    library_root = tmp_path / "music"
+    library_database = tmp_path / "data" / "beets" / "library.db"
+    prepared_path = tmp_path / "staging" / "track.mp3"
+    prepared_path.parent.mkdir()
+    prepared_path.write_bytes(b"mp3")
+
+    def fake_run(
+        command: list[str], *, check: bool, capture_output: bool, text: bool
+    ) -> subprocess.CompletedProcess[str]:
+        assert library_database.parent.is_dir()
+        with sqlite3.connect(library_database) as connection:
+            connection.execute(
+                "CREATE TABLE items (id INTEGER PRIMARY KEY, path BLOB NOT NULL)"
+            )
+            connection.execute(
+                "INSERT INTO items (id, path) VALUES (?, ?)",
+                (1, str(library_root / "Artist" / "track.mp3").encode("utf-8")),
+            )
+            connection.commit()
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr("app.ingestion.pipeline.subprocess.run", fake_run)
+
+    imported = BeetsImporter(
+        library_root=library_root,
+        library_database=library_database,
+    ).import_file(prepared_path)
+
+    assert imported.library_path == library_root / "Artist" / "track.mp3"
+    assert library_database.parent.is_dir()
+
+
 def test_fingerprint_generator_runs_fpcalc_and_parses_json(
     tmp_path: Path, monkeypatch
 ) -> None:

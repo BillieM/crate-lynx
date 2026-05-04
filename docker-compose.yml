@@ -49,7 +49,7 @@ services:
       REDIS_URL: redis://redis:6379/0
       TOKEN_ENCRYPTION_KEY: ${TOKEN_ENCRYPTION_KEY:-change-me}
       LIBRARY_ROOT: ${LIBRARY_ROOT:-/music}
-      BEETS_LIBRARY: ${BEETS_LIBRARY:-/music/library.db}
+      BEETS_LIBRARY: ${BEETS_LIBRARY:-/data/beets/library.db}
       INGESTION_ROOT: /ingestion
     ports:
       - "18101:8000"
@@ -57,6 +57,7 @@ services:
       - /srv/mergerfs/hdds/music-in:/ingestion
       - /srv/mergerfs/hdds/soulseek/downloads:/soulseek
       - /srv/mergerfs/hdds/media/music:/music
+      - /docker/appdata/cratelynx:/data
     healthcheck:
       test:
         - CMD

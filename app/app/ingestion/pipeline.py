@@ -106,6 +106,7 @@ class BeetsImporter:
             if self.library_database is not None
             else library_root / "library.db"
         )
+        library_database.parent.mkdir(parents=True, exist_ok=True)
         previous_item_id = self._latest_item_id(library_database)
 
         subprocess.run(

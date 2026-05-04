@@ -39,7 +39,9 @@ def create_app() -> FastAPI:
             beets_importer=BeetsImporter(
                 beet_binary=os.environ.get("BEET_BINARY", "beet"),
                 library_root=library_root,
-                library_database=os.environ.get("BEETS_LIBRARY"),
+                library_database=os.environ.get(
+                    "BEETS_LIBRARY", "/data/beets/library.db"
+                ),
             ),
             track_store=LocalTrackStore(database_url) if database_url else None,
             failed_attempt_store=(
