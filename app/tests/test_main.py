@@ -46,9 +46,10 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 class StubIngestionWatcher:
     instances: list["StubIngestionWatcher"] = []
 
-    def __init__(self, root, on_new_file) -> None:
+    def __init__(self, root, on_new_file, recursive=False) -> None:
         self.root = root
         self.on_new_file = on_new_file
+        self.recursive = recursive
         self.added_roots: list[str] = []
         self.removed_roots: list[str] = []
         self.started = False
@@ -114,6 +115,7 @@ def test_startup_seeds_persisted_ingest_folders_and_watches_them(
             watcher = StubIngestionWatcher.instances[-1]
             assert watcher.started is True
             assert watcher.root == [Path("/ingestion"), Path("/soulseek")]
+            assert watcher.recursive is True
 
     asyncio.run(run_lifespan())
 

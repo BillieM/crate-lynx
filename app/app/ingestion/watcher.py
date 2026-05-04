@@ -8,6 +8,8 @@ from typing import Callable, Iterable
 from watchdog.events import FileClosedEvent, FileSystemEventHandler
 from watchdog.observers import Observer
 
+from app.ingestion.pipeline import SUPPORTED_AUDIO_EXTENSIONS
+
 
 FileCallback = Callable[[Path], None]
 WatchHandle = object
@@ -19,7 +21,13 @@ class IngestionEventHandler(FileSystemEventHandler):
         self._on_new_file = on_new_file
 
     def on_closed(self, event: FileClosedEvent) -> None:
+        if event.is_directory:
+            return
+
         source_path = Path(event.src_path)
+        if source_path.suffix.lower() not in SUPPORTED_AUDIO_EXTENSIONS:
+            return
+
         try:
             self._on_new_file(source_path)
         except Exception:

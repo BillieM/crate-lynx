@@ -1,6 +1,7 @@
 from pathlib import Path
 import sqlite3
 import subprocess
+from types import SimpleNamespace
 from unittest.mock import Mock
 
 from watchdog.events import FileClosedEvent
@@ -57,6 +58,39 @@ def test_ingestion_event_handler_forwards_new_files() -> None:
     handler.on_closed(FileClosedEvent("/tmp/ingestion/track.mp3"))
 
     assert seen == [Path("/tmp/ingestion/track.mp3")]
+
+
+def test_ingestion_event_handler_ignores_non_audio_files() -> None:
+    seen: list[Path] = []
+    handler = IngestionEventHandler(seen.append)
+
+    handler.on_closed(FileClosedEvent("/tmp/ingestion/.DS_Store"))
+    handler.on_closed(
+        FileClosedEvent("/tmp/ingestion/2f940acf775f48998bf67a0866d66d56")
+    )
+    handler.on_closed(FileClosedEvent("/tmp/ingestion/cover.jpg"))
+
+    assert seen == []
+
+
+def test_ingestion_event_handler_ignores_directory_events() -> None:
+    seen: list[Path] = []
+    handler = IngestionEventHandler(seen.append)
+
+    handler.on_closed(
+        SimpleNamespace(src_path="/tmp/ingestion/Artist", is_directory=True)
+    )
+
+    assert seen == []
+
+
+def test_ingestion_event_handler_forwards_nested_supported_files() -> None:
+    seen: list[Path] = []
+    handler = IngestionEventHandler(seen.append)
+
+    handler.on_closed(FileClosedEvent("/tmp/ingestion/Artist/Album/track.FLAC"))
+
+    assert seen == [Path("/tmp/ingestion/Artist/Album/track.FLAC")]
 
 
 def test_ingestion_event_handler_logs_failures_without_raising(

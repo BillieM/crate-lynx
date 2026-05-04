@@ -59,6 +59,7 @@ def create_app() -> FastAPI:
         watcher = IngestionWatcher(
             root=ingest_roots,
             on_new_file=process_new_file,
+            recursive=True,
         )
         app.state.ingestion_watcher = watcher
         watcher.start()
