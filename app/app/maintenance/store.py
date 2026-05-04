@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from sqlalchemy import create_engine, select, true
 
 from app.ingestion.failures import failed_ingestion_attempts_table
+from app.ingestion.pipeline import SUPPORTED_AUDIO_EXTENSIONS
 from app.links.store import final_links_table
 from app.streaming.models import (
     playlist_membership_table,
@@ -156,4 +157,11 @@ class MaintenanceStore:
                 source_path=row["source_path"],
             )
             for row in rows
+            if _is_supported_audio_filename(row["filename"])
         ]
+
+
+def _is_supported_audio_filename(filename: str) -> bool:
+    return any(
+        filename.lower().endswith(extension) for extension in SUPPORTED_AUDIO_EXTENSIONS
+    )

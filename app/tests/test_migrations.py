@@ -166,3 +166,50 @@ def test_ingest_folders_migration_seeds_default_unique_paths(
             pass
         else:
             raise AssertionError("duplicate ingest folder path was accepted")
+
+
+def test_failed_ingestion_cleanup_migration_removes_non_audio_rows(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite:///{tmp_path / 'failed-ingestion-cleanup.db'}"
+    monkeypatch.setenv("DATABASE_URL", database_url)
+
+    alembic_config = Config("db/alembic.ini")
+    command.upgrade(alembic_config, "e17a4c9b2d01")
+
+    engine = create_engine(database_url)
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                """
+                INSERT INTO failed_ingestion_attempts
+                    (source_path, filename, fingerprint, failure_reason)
+                VALUES
+                    ('/ingestion/.DS_Store', '.DS_Store', NULL, 'Unsupported audio format'),
+                    ('/soulseek/2f940acf775f48998bf67a0866d66d56',
+                     '2f940acf775f48998bf67a0866d66d56', NULL, 'Unsupported audio format'),
+                    ('/ingestion/cover.jpg', 'cover.jpg', NULL, 'Unsupported audio format'),
+                    ('/ingestion/track.mp3', 'track.mp3', NULL, 'Beets import failed'),
+                    ('/ingestion/album.FLAC', 'album.FLAC', NULL, 'Beets import failed')
+                """
+            )
+        )
+
+    command.upgrade(alembic_config, "head")
+
+    with engine.connect() as connection:
+        filenames = [
+            row["filename"]
+            for row in connection.execute(
+                text(
+                    """
+                    SELECT filename
+                    FROM failed_ingestion_attempts
+                    ORDER BY id
+                    """
+                )
+            ).mappings()
+        ]
+
+    assert filenames == ["track.mp3", "album.FLAC"]

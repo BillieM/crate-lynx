@@ -1233,6 +1233,24 @@ def test_unidentified_endpoint_lists_durable_failed_ingestion_attempts(
                     "failed_at": datetime(2026, 5, 2, 21, 44, tzinfo=UTC),
                     "local_track_id": 91,
                 },
+                {
+                    "id": 3,
+                    "source_path": "/ingestion/.DS_Store",
+                    "filename": ".DS_Store",
+                    "fingerprint": None,
+                    "failure_reason": "Unsupported audio format",
+                    "failed_at": datetime(2026, 5, 3, 8, 12, tzinfo=UTC),
+                    "local_track_id": None,
+                },
+                {
+                    "id": 4,
+                    "source_path": "/soulseek/2f940acf775f48998bf67a0866d66d56",
+                    "filename": "2f940acf775f48998bf67a0866d66d56",
+                    "fingerprint": None,
+                    "failure_reason": "Unsupported audio format",
+                    "failed_at": datetime(2026, 5, 3, 9, 15, tzinfo=UTC),
+                    "local_track_id": None,
+                },
             ],
         )
 
