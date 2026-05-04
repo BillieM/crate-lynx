@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocation, useNavigate } from "react-router-dom";
+import { ActionButton } from "./components/ActionButton";
 import { EmptyStateCard } from "./components/EmptyStateCard";
 import { StatusMessage, type OperationStatus } from "./components/StatusMessage";
 import { FilterChips } from "./features/playlists/FilterChips";
@@ -521,13 +522,9 @@ function SidebarSection({
           <div className="space-y-2 px-4 py-2.5">
             <p className="text-[12px] leading-5 text-ctp-subtext0">{emptyMessage}</p>
             {emptyActionLabel && onEmptyAction ? (
-              <button
-                className="rounded-[10px] border border-ctp-surface1 bg-ctp-surface0 px-3 py-1.5 text-[12px] font-semibold text-ctp-text transition-colors hover:border-ctp-overlay0 hover:bg-ctp-surface1"
-                onClick={onEmptyAction}
-                type="button"
-              >
+              <ActionButton onClick={onEmptyAction}>
                 {emptyActionLabel}
-              </button>
+              </ActionButton>
             ) : null}
           </div>
         ) : null}
@@ -618,9 +615,8 @@ function Topbar({
       const canSync = playlist !== undefined && !syncMutation.isPending;
 
       return (
-        <button
+        <ActionButton
           aria-live="polite"
-          className="rounded-[10px] border border-ctp-surface1 bg-ctp-surface0 px-3 py-1.5 text-[12px] font-semibold text-ctp-text transition-colors hover:border-ctp-overlay0 hover:bg-ctp-surface1 disabled:cursor-not-allowed disabled:border-ctp-surface0 disabled:text-ctp-overlay1 disabled:hover:bg-ctp-surface0"
           disabled={!canSync}
           key={actionLabel}
           onClick={() => {
@@ -628,10 +624,9 @@ function Topbar({
               syncMutation.mutate(view.playlistResourceId);
             }
           }}
-          type="button"
         >
           {syncMutation.isPending ? "Syncing..." : actionLabel}
-        </button>
+        </ActionButton>
       );
     }
 
@@ -639,9 +634,8 @@ function Topbar({
       const canExport = view.playlistResourceId !== undefined && !exportMutation.isPending;
 
       return (
-        <button
+        <ActionButton
           aria-live="polite"
-          className="rounded-[10px] border border-ctp-surface1 bg-ctp-surface0 px-3 py-1.5 text-[12px] font-semibold text-ctp-text transition-colors hover:border-ctp-overlay0 hover:bg-ctp-surface1 disabled:cursor-not-allowed disabled:border-ctp-surface0 disabled:text-ctp-overlay1 disabled:hover:bg-ctp-surface0"
           disabled={!canExport}
           key={actionLabel}
           onClick={() => {
@@ -649,21 +643,16 @@ function Topbar({
               exportMutation.mutate(view.playlistResourceId);
             }
           }}
-          type="button"
         >
           {exportMutation.isPending ? "Exporting..." : actionLabel}
-        </button>
+        </ActionButton>
       );
     }
 
     return (
-      <button
-        key={actionLabel}
-        className="rounded-[10px] border border-ctp-surface1 bg-ctp-surface0 px-3 py-1.5 text-[12px] font-semibold text-ctp-text transition-colors hover:border-ctp-overlay0 hover:bg-ctp-surface1"
-        type="button"
-      >
+      <ActionButton key={actionLabel}>
         {actionLabel}
-      </button>
+      </ActionButton>
     );
   }
 
@@ -695,13 +684,9 @@ function Topbar({
         {exportMutation.isSuccess ? <span className="text-[11px] font-medium text-ctp-green">M3U ready.</span> : null}
         {exportMutation.isError ? <span className="text-[11px] font-medium text-ctp-red">Export failed.</span> : null}
         {view.id !== playlistCollectionViewId ? (
-          <button
-            className="rounded-[10px] border border-ctp-surface1 bg-ctp-surface0 px-3 py-1.5 text-[12px] font-semibold text-ctp-text transition-colors hover:border-ctp-overlay0 hover:bg-ctp-surface1"
-            onClick={onConfigureSync}
-            type="button"
-          >
+          <ActionButton onClick={onConfigureSync}>
             Configure sync
-          </button>
+          </ActionButton>
         ) : null}
         {view.actionLabels.map((actionLabel) => renderActionButton(actionLabel))}
       </div>
@@ -1143,22 +1128,20 @@ function ProposalCard({
             <p className="mt-2 text-[12px] font-medium text-ctp-subtext0">Confidence score</p>
           </div>
           <div className="flex flex-wrap items-center gap-2 xl:justify-end">
-            <button
-              className="rounded-[10px] border border-ctp-green/40 bg-ctp-green/12 px-3 py-1.5 text-[12px] font-semibold text-ctp-green transition-colors hover:bg-ctp-green/18 disabled:cursor-not-allowed disabled:border-ctp-surface0 disabled:bg-ctp-surface0 disabled:text-ctp-overlay1"
+            <ActionButton
               disabled={isActionPending}
               onClick={onApprove}
-              type="button"
+              tone="success"
             >
               {isApproving ? "Approving..." : "Approve"}
-            </button>
-            <button
-              className="rounded-[10px] border border-ctp-red/40 bg-ctp-red/12 px-3 py-1.5 text-[12px] font-semibold text-ctp-red transition-colors hover:bg-ctp-red/18 disabled:cursor-not-allowed disabled:border-ctp-surface0 disabled:bg-ctp-surface0 disabled:text-ctp-overlay1"
+            </ActionButton>
+            <ActionButton
               disabled={isActionPending}
               onClick={onReject}
-              type="button"
+              tone="danger"
             >
               {isRejecting ? "Rejecting..." : "Reject"}
-            </button>
+            </ActionButton>
             {actionError ? <p className="basis-full text-right text-[11px] font-medium text-ctp-red">{actionError}</p> : null}
           </div>
         </div>
@@ -1360,30 +1343,26 @@ function PlaylistSyncConfiguration() {
         </div>
         <div className="flex flex-col items-start gap-2 sm:items-end">
           <div className="flex flex-wrap justify-start gap-2 sm:justify-end">
-            <button
-              className="rounded-[10px] border border-ctp-surface1 bg-ctp-surface0 px-3 py-1.5 text-[12px] font-semibold text-ctp-text transition-colors hover:border-ctp-overlay0 hover:bg-ctp-surface1 disabled:cursor-not-allowed disabled:border-ctp-surface0 disabled:text-ctp-overlay1 disabled:hover:bg-ctp-surface0"
+            <ActionButton
               disabled={accountId === undefined || selectedCount === 0 || selectedSyncMutation.isPending}
               onClick={() => {
                 if (accountId !== undefined) {
                   selectedSyncMutation.mutate(accountId);
                 }
               }}
-              type="button"
             >
               {selectedSyncMutation.isPending ? "Syncing selected..." : "Sync selected"}
-            </button>
-            <button
-              className="rounded-[10px] border border-ctp-surface1 bg-ctp-surface0 px-3 py-1.5 text-[12px] font-semibold text-ctp-text transition-colors hover:border-ctp-overlay0 hover:bg-ctp-surface1 disabled:cursor-not-allowed disabled:border-ctp-surface0 disabled:text-ctp-overlay1 disabled:hover:bg-ctp-surface0"
+            </ActionButton>
+            <ActionButton
               disabled={accountId === undefined || metadataRefreshMutation.isPending}
               onClick={() => {
                 if (accountId !== undefined) {
                   metadataRefreshMutation.mutate(accountId);
                 }
               }}
-              type="button"
             >
               {metadataRefreshMutation.isPending ? "Refreshing..." : "Refresh playlist metadata"}
-            </button>
+            </ActionButton>
           </div>
           <PlaylistActionStatus
             errorText="Selected playlist sync failed."

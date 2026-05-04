@@ -2,7 +2,7 @@
 
 - [x] Add shared UI primitives for repeated actions, badges/pills, empty states, and status messages
 - [x] Centralize tone and status class mappings around Catppuccin Mocha `ctp-*` Tailwind classes
-- [ ] Replace repeated action button class strings in `App.tsx` and playlist components with the shared button primitive
+- [x] Replace repeated action button class strings in `App.tsx` and playlist components with the shared button primitive
 - [ ] Consolidate playlist and proposal filter chips into one reusable filter chip component
 - [ ] Move proposal queue UI out of `App.tsx` into focused feature components
 - [ ] Move sidebar, topbar, and playlist sync configuration UI out of `App.tsx` into focused components
