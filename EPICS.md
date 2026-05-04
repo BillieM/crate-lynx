@@ -129,13 +129,13 @@ Wire the new endpoints into navigation and per-playlist views.
 
 ---
 
-### E15 — Frontend: link proposals view `in progress`
+### E15 — Frontend: link proposals view `done`
 **Subdir:** `app-ui/`
 Proposals list grouped by confidence band (High / Medium / Low). Per-card: confidence bar, local vs streaming track columns, match method badge (ISRC / Tag / Acoustic), score, Approve / Reject buttons. Filter chips by band. Approve/reject actions optimistically update UI via TanStack Query mutation.
 
 ---
 
-### E16 — Frontend: library & maintenance views
+### E16 — Frontend: library & maintenance views `in progress`
 **Subdir:** `app-ui/`
 **Library:** stats cards (total / linked / pending / unlinked), faceted filter bar (link status / match method / file status), flat track list.
 **Unidentified:** list of Beets-failed tracks with filename, fingerprint hash, Rescue button (triggers E08).

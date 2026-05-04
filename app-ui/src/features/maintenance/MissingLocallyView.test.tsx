@@ -10,7 +10,7 @@ describe("MissingLocallyView", () => {
 
     expect(within(summary).getByLabelText("Missing tracks")).toHaveTextContent("3");
     expect(within(summary).getByLabelText("Affected playlists")).toHaveTextContent("3");
-    expect(within(summary).getByLabelText("High priority")).toHaveTextContent("1");
+    expect(within(summary).queryByLabelText("High priority")).not.toBeInTheDocument();
   });
 
   it("lists streaming tracks with playlist and match gap details", () => {
@@ -26,8 +26,9 @@ describe("MissingLocallyView", () => {
     expect(within(trackList).getByText("Immunity")).toBeInTheDocument();
     expect(within(trackList).getByText("Late Night Drive")).toBeInTheDocument();
     expect(within(trackList).getByText("ytm:VLPL_missing_018")).toBeInTheDocument();
-    expect(within(trackList).getByText("High gap")).toBeInTheDocument();
-    expect(within(trackList).getAllByText("No local match")).toHaveLength(3);
+    expect(within(trackList).queryByText("High gap")).not.toBeInTheDocument();
+    expect(within(trackList).queryByText("Streaming only")).not.toBeInTheDocument();
+    expect(within(trackList).queryByText("No local match")).not.toBeInTheDocument();
     expect(within(trackList).getByText("No Reason")).toBeInTheDocument();
     expect(within(trackList).getByText("Bonobo feat. Nick Murphy")).toBeInTheDocument();
     expect(within(trackList).getByText("Melt!")).toBeInTheDocument();
@@ -56,6 +57,6 @@ describe("MissingLocallyView", () => {
     expect(screen.getByRole("heading", { name: "No missing tracks" })).toBeInTheDocument();
     expect(screen.getByLabelText("Missing tracks")).toHaveTextContent("0");
     expect(screen.getByLabelText("Affected playlists")).toHaveTextContent("0");
-    expect(screen.getByLabelText("High priority")).toHaveTextContent("0");
+    expect(screen.queryByLabelText("High priority")).not.toBeInTheDocument();
   });
 });

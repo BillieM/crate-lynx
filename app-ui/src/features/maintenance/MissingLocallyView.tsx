@@ -1,11 +1,9 @@
-import { AlertTriangle, ListMusic, Music2, RadioTower, SearchX } from "lucide-react";
+import { ListMusic, Music2, RadioTower, SearchX } from "lucide-react";
 import { EmptyStateCard } from "../../components/EmptyStateCard";
-import { Pill, type PillTone } from "../../components/Pill";
 import { StatusMessage } from "../../components/StatusMessage";
 import { surfaceClasses, textClasses } from "../../styles/componentClasses";
 
 type MaintenanceViewState = "ready" | "loading" | "error";
-type MissingSeverity = "high" | "medium" | "low";
 
 type MissingStreamingTrack = {
   album: string | null;
@@ -15,7 +13,6 @@ type MissingStreamingTrack = {
   lastCheckedAt: string;
   playlistTitle: string;
   serviceTrackId: string;
-  severity: MissingSeverity;
   title: string;
 };
 
@@ -28,7 +25,6 @@ const missingStreamingTracks = [
     lastCheckedAt: "2026-05-03 19:42",
     playlistTitle: "Late Night Drive",
     serviceTrackId: "ytm:VLPL_missing_018",
-    severity: "high",
     title: "Open Eye Signal",
   },
   {
@@ -39,7 +35,6 @@ const missingStreamingTracks = [
     lastCheckedAt: "2026-05-03 19:40",
     playlistTitle: "Focus Queue",
     serviceTrackId: "ytm:VLPL_missing_024",
-    severity: "medium",
     title: "No Reason",
   },
   {
@@ -50,22 +45,9 @@ const missingStreamingTracks = [
     lastCheckedAt: "2026-05-03 19:37",
     playlistTitle: "New Imports",
     serviceTrackId: "ytm:VLPL_missing_031",
-    severity: "low",
     title: "Melt!",
   },
 ] satisfies MissingStreamingTrack[];
-
-const severityLabels = {
-  high: "High gap",
-  low: "Low gap",
-  medium: "Medium gap",
-} satisfies Record<MissingSeverity, string>;
-
-const severityTones = {
-  high: "danger",
-  low: "neutral",
-  medium: "pending",
-} satisfies Record<MissingSeverity, PillTone>;
 
 function formatDuration(durationMs: number | null) {
   if (durationMs === null || durationMs < 0) {
@@ -107,7 +89,7 @@ function MissingSummaryCard({
 
 function MissingTrackRow({ track }: { track: MissingStreamingTrack }) {
   return (
-    <article className={`${surfaceClasses.rowCardCompact} sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center`}>
+    <article className={surfaceClasses.rowCardCompact}>
       <div className="grid min-w-0 gap-1.5">
         <div className="flex min-w-0 items-center gap-3">
           <span
@@ -149,12 +131,6 @@ function MissingTrackRow({ track }: { track: MissingStreamingTrack }) {
           </div>
         </dl>
       </div>
-
-      <div className="flex flex-wrap items-center gap-1.5 pl-9 sm:justify-end sm:pl-0">
-        <Pill tone={severityTones[track.severity]}>{severityLabels[track.severity]}</Pill>
-        <Pill tone="info">Streaming only</Pill>
-        <Pill tone="pending">No local match</Pill>
-      </div>
     </article>
   );
 }
@@ -166,7 +142,6 @@ type MissingLocallyViewProps = {
 };
 
 export function MissingLocallyView({ isPending = false, state = "ready", tracks = missingStreamingTracks }: MissingLocallyViewProps = {}) {
-  const highPriorityCount = tracks.filter((track) => track.severity === "high").length;
   const playlistCount = new Set(tracks.map((track) => track.playlistTitle)).size;
 
   return (
@@ -179,7 +154,7 @@ export function MissingLocallyView({ isPending = false, state = "ready", tracks 
         />
       ) : null}
 
-      <div className="grid gap-3 sm:grid-cols-3" aria-label="Missing locally summary">
+      <div className="grid gap-3 sm:grid-cols-2" aria-label="Missing locally summary">
         <MissingSummaryCard
           icon={SearchX}
           label="Missing tracks"
@@ -191,12 +166,6 @@ export function MissingLocallyView({ isPending = false, state = "ready", tracks 
           label="Affected playlists"
           toneClass="bg-ctp-blue/18 text-ctp-blue ring-ctp-blue/30"
           value={playlistCount.toString()}
-        />
-        <MissingSummaryCard
-          icon={AlertTriangle}
-          label="High priority"
-          toneClass="bg-ctp-red/18 text-ctp-red ring-ctp-red/30"
-          value={highPriorityCount.toString()}
         />
       </div>
 
