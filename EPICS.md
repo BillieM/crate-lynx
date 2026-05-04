@@ -106,7 +106,7 @@ Add per-playlist sync selection and split discovery from track-sync.
 
 ---
 
-### E13 — Frontend: playlist sync configuration UI `in progress`
+### E13 — Frontend: playlist sync configuration UI `done`
 **Subdir:** `app-ui/`
 Build the YouTube Music config surface (no existing settings/config shell — start from zero).
 
@@ -118,7 +118,7 @@ Build the YouTube Music config surface (no existing settings/config shell — st
 
 ---
 
-### E14 — Frontend: sidebar, topbar, and per-playlist UX
+### E14 — Frontend: sidebar, topbar, and per-playlist UX `done`
 **Subdir:** `app-ui/`
 Wire the new endpoints into navigation and per-playlist views.
 
@@ -129,7 +129,7 @@ Wire the new endpoints into navigation and per-playlist views.
 
 ---
 
-### E15 — Frontend: link proposals view
+### E15 — Frontend: link proposals view `in progress`
 **Subdir:** `app-ui/`
 Proposals list grouped by confidence band (High / Medium / Low). Per-card: confidence bar, local vs streaming track columns, match method badge (ISRC / Tag / Acoustic), score, Approve / Reject buttons. Filter chips by band. Approve/reject actions optimistically update UI via TanStack Query mutation.
 

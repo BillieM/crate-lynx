@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import App, { asRgb, getProgressColor, lerp, mixColors } from "./App";
 import type {
@@ -173,8 +173,10 @@ const linkProposalsResponse: LinkProposalsResponse = {
 
 type MockPlaylistFetchOptions = {
   activeSyncHandler?: () => Promise<Response> | Response;
+  approveProposalHandler?: (proposalId: string) => Promise<Response> | Response;
   linkProposalsHandler?: (url: string) => Promise<Response> | Response;
   metadataRefreshHandler?: () => Promise<Response> | Response;
+  rejectProposalHandler?: (proposalId: string) => Promise<Response> | Response;
   selectedSyncHandler?: () => Promise<Response> | Response;
 };
 
@@ -215,8 +217,10 @@ function buildPlaylistTracks(id: number, title: string): PlaylistTracksResponse 
 
 function mockPlaylistFetch({
   activeSyncHandler,
+  approveProposalHandler,
   linkProposalsHandler,
   metadataRefreshHandler,
+  rejectProposalHandler,
   selectedSyncHandler,
 }: MockPlaylistFetchOptions = {}) {
   const playlistDetailsById = new Map<string, typeof playlistDetailResponse>([
@@ -254,6 +258,38 @@ function mockPlaylistFetch({
       return {
         ok: true,
         json: async () => linkProposalsResponse,
+      } as Response;
+    }
+
+    const approveProposalMatch = url.match(/^\/api\/proposals\/(\d+)\/approve$/);
+    if (approveProposalMatch && init?.method === "POST") {
+      if (approveProposalHandler) {
+        return approveProposalHandler(approveProposalMatch[1]);
+      }
+
+      return {
+        ok: true,
+        json: async () => ({
+          final_link_id: 9000 + Number(approveProposalMatch[1]),
+          proposal_id: Number(approveProposalMatch[1]),
+          status: "approved",
+        }),
+      } as Response;
+    }
+
+    const rejectProposalMatch = url.match(/^\/api\/proposals\/(\d+)\/reject$/);
+    if (rejectProposalMatch && init?.method === "POST") {
+      if (rejectProposalHandler) {
+        return rejectProposalHandler(rejectProposalMatch[1]);
+      }
+
+      return {
+        ok: true,
+        json: async () => ({
+          proposal_id: Number(rejectProposalMatch[1]),
+          rejected_at: "2026-05-04T10:00:00Z",
+          status: "rejected",
+        }),
       } as Response;
     }
 
@@ -456,6 +492,106 @@ describe("App", () => {
     expect(screen.getByText("Loose Cable.mp3")).toBeInTheDocument();
     expect(document.getElementById("proposals")).toHaveAttribute("data-view-active", "true");
     expect(document.getElementById("playlists")).toHaveAttribute("data-view-active", "false");
+  });
+
+  it("renders link proposals grouped by confidence band with proposal details", async () => {
+    mockPlaylistFetch();
+
+    renderApp(["/proposals"]);
+
+    expect(await screen.findByRole("heading", { level: 2, name: "Proposal queue" })).toBeInTheDocument();
+
+    const highSection = (await screen.findByRole("heading", { level: 3, name: "High" })).closest("section");
+    const mediumSection = screen.getByRole("heading", { level: 3, name: "Medium" }).closest("section");
+    const lowSection = screen.getByRole("heading", { level: 3, name: "Low" }).closest("section");
+
+    expect(highSection).not.toBeNull();
+    expect(mediumSection).not.toBeNull();
+    expect(lowSection).not.toBeNull();
+    expect(within(highSection!).getByText("1")).toBeInTheDocument();
+    expect(within(highSection!).getByText("Night Runner.mp3")).toBeInTheDocument();
+    expect(within(highSection!).getByText("Night Runner")).toBeInTheDocument();
+    expect(within(highSection!).getByText("Frame Delay")).toBeInTheDocument();
+    expect(within(highSection!).getByText("Tag")).toBeInTheDocument();
+    expect(within(highSection!).getByText("92%")).toBeInTheDocument();
+    expect(within(mediumSection!).getByText("Pending Signal.mp3")).toBeInTheDocument();
+    expect(within(mediumSection!).getByText("Album unavailable")).toBeInTheDocument();
+    expect(within(lowSection!).getByText("Loose Cable.mp3")).toBeInTheDocument();
+    expect(within(lowSection!).getByText("Acoustic")).toBeInTheDocument();
+  });
+
+  it("filters link proposals by confidence band", async () => {
+    const fetchMock = mockPlaylistFetch({
+      linkProposalsHandler: (url) => {
+        const [, queryString = ""] = url.split("?");
+        const band = new URLSearchParams(queryString).get("band");
+        const proposals = band
+          ? linkProposalsResponse.proposals.filter((proposal) => proposal.confidence_band === band)
+          : linkProposalsResponse.proposals;
+
+        return {
+          ok: true,
+          json: async () => ({ proposals }),
+        } as Response;
+      },
+    });
+
+    renderApp(["/proposals"]);
+
+    expect(await screen.findByText("Night Runner.mp3")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Medium" }));
+
+    expect(await screen.findByText("Pending Signal.mp3")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith("/api/proposals?band=medium");
+      expect(screen.queryByText("Night Runner.mp3")).not.toBeInTheDocument();
+      expect(screen.queryByText("Loose Cable.mp3")).not.toBeInTheDocument();
+    });
+    expect(screen.getByRole("button", { name: "Medium" })).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("optimistically removes approved and rejected link proposals", async () => {
+    let resolveApprove: (response: Response) => void = () => {};
+    let resolveReject: (response: Response) => void = () => {};
+    const approvePromise = new Promise<Response>((resolve) => {
+      resolveApprove = resolve;
+    });
+    const rejectPromise = new Promise<Response>((resolve) => {
+      resolveReject = resolve;
+    });
+    const fetchMock = mockPlaylistFetch({
+      approveProposalHandler: () => approvePromise,
+      rejectProposalHandler: () => rejectPromise,
+    });
+
+    renderApp(["/proposals"]);
+
+    expect(await screen.findByText("Night Runner.mp3")).toBeInTheDocument();
+    fireEvent.click(screen.getAllByRole("button", { name: "Approve" })[0]);
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith("/api/proposals/44/approve", { method: "POST" });
+      expect(screen.queryByText("Night Runner.mp3")).not.toBeInTheDocument();
+    });
+    expect(screen.getByText("Pending Signal.mp3")).toBeInTheDocument();
+    expect(screen.getByText("Loose Cable.mp3")).toBeInTheDocument();
+
+    fireEvent.click(screen.getAllByRole("button", { name: "Reject" })[0]);
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith("/api/proposals/45/reject", { method: "POST" });
+      expect(screen.queryByText("Pending Signal.mp3")).not.toBeInTheDocument();
+    });
+    expect(screen.getByText("Loose Cable.mp3")).toBeInTheDocument();
+
+    resolveApprove({
+      ok: true,
+      json: async () => ({ final_link_id: 9044, proposal_id: 44, status: "approved" }),
+    } as Response);
+    resolveReject({
+      ok: true,
+      json: async () => ({ proposal_id: 45, rejected_at: "2026-05-04T10:00:00Z", status: "rejected" }),
+    } as Response);
   });
 
   it("keeps proposal filters visible while proposals are loading", async () => {
