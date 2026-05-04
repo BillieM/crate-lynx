@@ -63,6 +63,8 @@ describe("playlist queries", () => {
           pending_count: 3,
           unlinked_count: 1,
           synced_at: "2026-05-01T09:00:00",
+          last_sync_error: "Malformed playlist payload",
+          last_sync_error_at: "2026-05-02T10:30:00",
         },
       }),
     } as Response);
@@ -79,6 +81,8 @@ describe("playlist queries", () => {
         pending_count: 3,
         unlinked_count: 1,
         synced_at: "2026-05-01T09:00:00",
+        last_sync_error: "Malformed playlist payload",
+        last_sync_error_at: "2026-05-02T10:30:00",
       },
     });
     expect(fetchMock).toHaveBeenCalledWith("/api/playlists/12");
@@ -347,6 +351,8 @@ describe("playlist queries", () => {
           pending_count: 9,
           unlinked_count: 8,
           synced_at: null,
+          last_sync_error: null,
+          last_sync_error_at: null,
         },
       }),
     } as Response);

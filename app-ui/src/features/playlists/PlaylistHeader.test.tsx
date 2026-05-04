@@ -15,6 +15,8 @@ function buildPlaylist(overrides: Partial<PlaylistDetail> = {}): PlaylistDetail 
     pending_count: 3,
     unlinked_count: 1,
     synced_at: "2026-05-01T09:00:00Z",
+    last_sync_error: null,
+    last_sync_error_at: null,
     ...overrides,
   };
 }
@@ -38,5 +40,20 @@ describe("PlaylistHeader", () => {
 
     expect(screen.queryByRole("img")).not.toBeInTheDocument();
     expect(screen.getByText("Awaiting first sync")).toBeInTheDocument();
+  });
+
+  it("surfaces the last sync error string and timestamp when present", () => {
+    render(
+      <PlaylistHeader
+        playlist={buildPlaylist({
+          last_sync_error: "Malformed playlist payload",
+          last_sync_error_at: "2026-05-02T10:30:00Z",
+        })}
+      />,
+    );
+
+    expect(screen.getByText("Last sync error")).toBeInTheDocument();
+    expect(screen.getByText("Malformed playlist payload")).toBeInTheDocument();
+    expect(screen.getByText(/Failed/)).toHaveTextContent(/May 2/);
   });
 });

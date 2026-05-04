@@ -40,6 +40,27 @@ function formatRelativeSyncTime(timestamp: string | null) {
   return `Synced ${formatter.format(syncedAt)}`;
 }
 
+function formatSyncErrorTime(timestamp: string | null) {
+  if (timestamp === null) {
+    return "time unavailable";
+  }
+
+  const failedAt = new Date(timestamp);
+
+  if (Number.isNaN(failedAt.getTime())) {
+    return "time unavailable";
+  }
+
+  const formatter = new Intl.DateTimeFormat(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+
+  return formatter.format(failedAt);
+}
+
 function CoverArt({ playlist }: { playlist: PlaylistDetail }) {
   if (playlist.cover_art_url) {
     return (
@@ -136,6 +157,24 @@ function StatCard({
   );
 }
 
+function PlaylistSyncError({ playlist }: { playlist: PlaylistDetail }) {
+  if (!playlist.last_sync_error) {
+    return null;
+  }
+
+  return (
+    <div className="rounded-[18px] border border-ctp-red/35 bg-ctp-red/10 px-4 py-3">
+      <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-ctp-red">
+        Last sync error
+      </p>
+      <p className="mt-2 text-[13px] leading-5 text-ctp-text">{playlist.last_sync_error}</p>
+      <p className="mt-1 text-[12px] text-ctp-subtext0">
+        Failed {formatSyncErrorTime(playlist.last_sync_error_at)}
+      </p>
+    </div>
+  );
+}
+
 export function PlaylistHeader({ playlist }: PlaylistHeaderProps) {
   return (
     <section className="rounded-[30px] border border-ctp-surface1/80 bg-[linear-gradient(135deg,color-mix(in_srgb,var(--color-ctp-base)_96%,transparent),color-mix(in_srgb,var(--color-ctp-surface0)_92%,transparent))] px-6 py-6 shadow-[0_24px_64px_color-mix(in_srgb,var(--color-ctp-crust)_24%,transparent)]">
@@ -158,6 +197,7 @@ export function PlaylistHeader({ playlist }: PlaylistHeaderProps) {
               <StatCard label="Pending" toneClassName="bg-ctp-yellow" value={playlist.pending_count} />
               <StatCard label="Unlinked" toneClassName="bg-ctp-red" value={playlist.unlinked_count} />
             </div>
+            <PlaylistSyncError playlist={playlist} />
           </div>
         </div>
 

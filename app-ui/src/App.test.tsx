@@ -20,6 +20,8 @@ const playlistDetailResponse: PlaylistDetailResponse = {
     pending_count: 3,
     unlinked_count: 1,
     synced_at: "2026-05-01T09:00:00Z",
+    last_sync_error: null,
+    last_sync_error_at: null,
   },
 };
 

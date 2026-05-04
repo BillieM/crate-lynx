@@ -6,6 +6,8 @@ export type PlaylistDetail = {
   account_id: number;
   cover_art_url: string | null;
   id: number;
+  last_sync_error: string | null;
+  last_sync_error_at: string | null;
   linked_count: number;
   name: string;
   pending_count: number;
