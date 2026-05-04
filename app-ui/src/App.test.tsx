@@ -573,6 +573,20 @@ describe("App", () => {
     expect(document.getElementById("playlists")).toHaveAttribute("data-view-active", "false");
   });
 
+  it("opens the unidentified maintenance routed view from the URL", async () => {
+    mockPlaylistFetch();
+
+    renderApp(["/unidentified"]);
+
+    expect(screen.getByRole("heading", { level: 1, name: "Unidentified" })).toBeInTheDocument();
+    expect(screen.getByText("Rescue queue")).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Unidentified tracks" })).toBeInTheDocument();
+    expect(screen.getByText("unknown-import-9a4f.mp3")).toBeInTheDocument();
+    expect(screen.getByText("fp_7d91c2a8e4b0")).toBeInTheDocument();
+    expect(document.getElementById("unidentified")).toHaveAttribute("data-view-active", "true");
+    expect(document.getElementById("playlists")).toHaveAttribute("data-view-active", "false");
+  });
+
   it("renders link proposals grouped by confidence band with proposal details", async () => {
     mockPlaylistFetch();
 

@@ -10,6 +10,7 @@ import { PlaylistSyncConfiguration } from "./features/playlists/PlaylistSyncConf
 import { PlaylistTrackActions } from "./features/playlists/PlaylistTrackActions";
 import { PlaylistTrackRow } from "./features/playlists/PlaylistTrackRow";
 import { LocalLibraryView } from "./features/library/LocalLibraryView";
+import { UnidentifiedView } from "./features/maintenance/UnidentifiedView";
 import {
   type StreamingPlaylist,
   usePlaylistDetailQuery,
@@ -269,6 +270,8 @@ function ViewShell({
             <LinkProposalsView />
           ) : viewId === "library" ? (
             <LocalLibraryView />
+          ) : viewId === "unidentified" ? (
+            <UnidentifiedView />
           ) : null}
         </div>
       ) : null}
