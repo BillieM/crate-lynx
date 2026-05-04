@@ -1,4 +1,5 @@
 import { Clock3, FileAudio, Link2, Music2, RotateCcw, SlidersHorizontal, Unlink } from "lucide-react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { ActionButton } from "../../components/ActionButton";
 import { EmptyStateCard } from "../../components/EmptyStateCard";
@@ -13,8 +14,10 @@ import {
   type LibraryStats,
   type LibraryTrack,
   type LibraryTracksResponse,
+  libraryQueryKeys,
   useLibraryTracksQuery,
 } from "./queries";
+import { playlistQueryKeys } from "../playlists/queries";
 
 type LibraryViewState = "ready" | "loading" | "error";
 type LibraryLinkStatusFilter = "all" | "linked" | "pending" | "unlinked";
@@ -36,6 +39,23 @@ const defaultLibraryStats = {
   unlinked: 0,
 } satisfies LibraryStats;
 const emptyLibraryTracks: LibraryTrack[] = [];
+
+type RematchResponse = {
+  job_id: string;
+  local_track_id: number;
+};
+
+async function rematchLocalTrack(localTrackId: number): Promise<RematchResponse> {
+  const response = await fetch(`/api/local-tracks/${encodeURIComponent(String(localTrackId))}/rematch`, {
+    method: "POST",
+  });
+
+  if (!response.ok) {
+    throw new Error(`Re-match request failed with status ${response.status}`);
+  }
+
+  return (await response.json()) as RematchResponse;
+}
 
 const libraryStatConfigs = [
   {
@@ -308,11 +328,24 @@ function LibraryFilterBar({
 }
 
 function LibraryTrackRow({ track }: { track: LibraryTrack }) {
+  const queryClient = useQueryClient();
   const matchLabel = formatMatchMethod(track.match_method);
   const matchTone: PillTone = track.match_method === null ? "neutral" : "info";
   const artist = track.artist ?? "Artist unavailable";
   const album = track.album ?? "Album unavailable";
   const filePath = track.library_root_rel_path || track.file_path;
+  const rematchMutation = useMutation({
+    mutationFn: rematchLocalTrack,
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: libraryQueryKeys.all }),
+        queryClient.invalidateQueries({ queryKey: libraryQueryKeys.tracks() }),
+        queryClient.invalidateQueries({ queryKey: playlistQueryKeys.all }),
+        queryClient.invalidateQueries({ queryKey: playlistQueryKeys.proposals() }),
+      ]);
+    },
+  });
+  const canRematch = track.link_status === "unlinked";
 
   return (
     <article className={`${surfaceClasses.rowCardCompact} sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center`}>
@@ -350,10 +383,25 @@ function LibraryTrackRow({ track }: { track: LibraryTrack }) {
         </dl>
       </div>
 
-      <div className="flex flex-wrap items-center gap-1.5 pl-9 sm:justify-end sm:pl-0">
-        <Pill tone={linkStatusTones[track.link_status]}>{linkStatusLabels[track.link_status]}</Pill>
-        <Pill tone={matchTone}>{matchLabel}</Pill>
-        <Pill tone={fileStatusTones[track.file_status]}>{fileStatusLabels[track.file_status]}</Pill>
+      <div className="flex flex-col items-start gap-1.5 pl-9 sm:items-end sm:pl-0">
+        <div className="flex flex-wrap items-center gap-1.5 sm:justify-end">
+          <Pill tone={linkStatusTones[track.link_status]}>{linkStatusLabels[track.link_status]}</Pill>
+          <Pill tone={matchTone}>{matchLabel}</Pill>
+          <Pill tone={fileStatusTones[track.file_status]}>{fileStatusLabels[track.file_status]}</Pill>
+        </div>
+        {canRematch ? (
+          <div className="flex flex-col items-start gap-1 sm:items-end">
+            <ActionButton
+              className={controlClasses.actionButtonCompact}
+              disabled={rematchMutation.isPending}
+              onClick={() => rematchMutation.mutate(track.id)}
+            >
+              {rematchMutation.isPending ? "Matching..." : "Re-match"}
+            </ActionButton>
+            {rematchMutation.isSuccess ? <p className={`${textClasses.finePrint} text-ctp-green`}>Re-match queued.</p> : null}
+            {rematchMutation.isError ? <p className={`${textClasses.finePrint} text-ctp-red`}>Re-match failed.</p> : null}
+          </div>
+        ) : null}
       </div>
     </article>
   );

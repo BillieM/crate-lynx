@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { PropsWithChildren, ReactElement } from "react";
 
 import { LocalLibraryView } from "./LocalLibraryView";
@@ -81,6 +81,27 @@ function mockLibraryFetch(response: LibraryTracksResponse = libraryTracksRespons
     ok: true,
     json: async () => response,
   } as Response);
+}
+
+function mockLibraryFetchWithRematch({
+  libraryResponse = libraryTracksResponse,
+  rematchResponse,
+}: {
+  libraryResponse?: LibraryTracksResponse;
+  rematchResponse: Promise<Response> | Response;
+}) {
+  return vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+    const url = String(input);
+
+    if (url.includes("/rematch")) {
+      return await rematchResponse;
+    }
+
+    return {
+      ok: true,
+      json: async () => libraryResponse,
+    } as Response;
+  });
 }
 
 function renderWithQueryClient(ui: ReactElement) {
@@ -168,6 +189,75 @@ describe("LocalLibraryView", () => {
     expect(within(trackList).getAllByText("Available")).toHaveLength(3);
     expect(within(trackList).getByText("Artist unavailable")).toBeInTheDocument();
     expect(within(trackList).getByText("Album unavailable")).toBeInTheDocument();
+  });
+
+  it("shows re-match only for unlinked local rows", async () => {
+    mockLibraryFetch();
+
+    const { unmount } = renderWithQueryClient(<LocalLibraryView />);
+
+    const trackList = await screen.findByRole("region", { name: "Local library tracks" });
+
+    expect(await within(trackList).findByRole("button", { name: "Re-match" })).toBeInTheDocument();
+
+    const linkedAndPendingTracks: LibraryTracksResponse = {
+      stats: {
+        linked: 1,
+        pending: 1,
+        total: 2,
+        unlinked: 0,
+      },
+      tracks: libraryTracksResponse.tracks.filter((track) => track.link_status !== "unlinked").slice(0, 2),
+    };
+
+    unmount();
+    vi.restoreAllMocks();
+    mockLibraryFetch(linkedAndPendingTracks);
+    renderWithQueryClient(<LocalLibraryView />);
+
+    expect(await screen.findByText("Showing 2 of 2 rows")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Re-match" })).not.toBeInTheDocument();
+  });
+
+  it("posts a re-match request for unlinked local rows and renders success feedback", async () => {
+    let resolveRematch: (response: Response) => void = () => undefined;
+    const rematchResponse = new Promise<Response>((resolve) => {
+      resolveRematch = resolve;
+    });
+    const fetchMock = mockLibraryFetchWithRematch({ rematchResponse });
+
+    renderWithQueryClient(<LocalLibraryView />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Re-match" }));
+
+    expect(await screen.findByText("Matching...")).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledWith("/api/local-tracks/1004/rematch", { method: "POST" });
+
+    resolveRematch({
+      ok: true,
+      json: async () => ({ job_id: "match-job-1004", local_track_id: 1004 }),
+    } as Response);
+
+    expect(await screen.findByText("Re-match queued.")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith("/api/library/tracks");
+    });
+  });
+
+  it("renders re-match error feedback for unlinked local rows", async () => {
+    mockLibraryFetchWithRematch({
+      rematchResponse: {
+        ok: false,
+        status: 500,
+        json: async () => ({ detail: "failed" }),
+      } as Response,
+    });
+
+    renderWithQueryClient(<LocalLibraryView />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Re-match" }));
+
+    expect(await screen.findByText("Re-match failed.")).toBeInTheDocument();
   });
 
   it("filters the rendered library track rows by selected facets", async () => {

@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import type { PropsWithChildren } from "react";
 
 import { PlaylistTrackActions } from "./PlaylistTrackActions";
@@ -65,25 +65,16 @@ describe("PlaylistTrackActions", () => {
     expect(onReviewTrack).toHaveBeenCalledWith(track);
   });
 
-  it("posts a re-match request for unlinked tracks with local track ids", async () => {
-    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({
-      ok: true,
-      json: async () => ({ local_track_id: 22, job_id: "match-job-22" }),
-    } as Response);
-
+  it("renders no action for unlinked tracks", () => {
     render(<PlaylistTrackActions playlistId={12} track={buildTrack({ status: "unlinked" })} />, {
       wrapper: createWrapper(),
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "Match" }));
-
-    await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledWith("/api/local-tracks/22/rematch", { method: "POST" });
-    });
-    expect(await screen.findByText("Re-match queued.")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Match" })).not.toBeInTheDocument();
+    expect(screen.queryByText("No local track to re-match.")).not.toBeInTheDocument();
   });
 
-  it("disables re-match when an unlinked row has no local track id", () => {
+  it("renders no disabled re-match label when an unlinked row has no local track id", () => {
     render(
       <PlaylistTrackActions
         track={buildTrack({
@@ -94,7 +85,7 @@ describe("PlaylistTrackActions", () => {
       { wrapper: createWrapper() },
     );
 
-    expect(screen.getByRole("button", { name: "Match" })).toBeDisabled();
-    expect(screen.getByText("No local track to re-match.")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Match" })).not.toBeInTheDocument();
+    expect(screen.queryByText("No local track to re-match.")).not.toBeInTheDocument();
   });
 });
