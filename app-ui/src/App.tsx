@@ -2,6 +2,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { EmptyStateCard } from "./components/EmptyStateCard";
+import { StatusMessage, type OperationStatus } from "./components/StatusMessage";
 import { FilterChips } from "./features/playlists/FilterChips";
 import { PlaylistHeader } from "./features/playlists/PlaylistHeader";
 import { PlaylistTrackActions } from "./features/playlists/PlaylistTrackActions";
@@ -107,7 +109,6 @@ type ViewConfig = {
 };
 
 type PlaylistCollectionStatus = "empty" | "error" | "loading" | "ready";
-type OperationStatus = "error" | "pending" | "success";
 type PlaylistSyncViewState = {
   playlistId: number;
   status: OperationStatus;
@@ -654,17 +655,22 @@ function PlaylistView({
 
   if (playlistDetailQuery.isPending || playlistTracksQuery.isPending) {
     return (
-      <section className="rounded-[30px] border border-ctp-surface1/80 bg-ctp-mantle px-6 py-6 text-[13px] text-ctp-subtext0">
-        Loading playlist overview…
-      </section>
+      <EmptyStateCard
+        body="Loading playlist overview..."
+        className="text-left"
+        title="Loading playlist overview"
+      />
     );
   }
 
   if (playlistDetailQuery.isError || playlistTracksQuery.isError) {
     return (
-      <section className="rounded-[30px] border border-ctp-red/30 bg-ctp-surface0/60 px-6 py-6 text-[13px] text-ctp-red">
-        Playlist overview is unavailable right now.
-      </section>
+      <EmptyStateCard
+        body="Playlist overview is unavailable right now."
+        className="text-left"
+        title="Playlist unavailable"
+        tone="error"
+      />
     );
   }
 
@@ -707,9 +713,7 @@ function PlaylistView({
             ))}
           </div>
         ) : (
-          <div className="rounded-[24px] border border-ctp-surface1/80 bg-ctp-mantle px-5 py-6 text-[13px] text-ctp-subtext0">
-            No tracks match this filter.
-          </div>
+          <EmptyStateCard body="No tracks match this filter." title="No matching tracks" />
         )}
       </div>
     </section>
@@ -738,33 +742,7 @@ function PlaylistCollectionState({ status }: { status: PlaylistCollectionStatus 
 
   return (
     <section className="flex min-h-0 flex-1 items-center justify-center">
-      <div className="max-w-[420px] rounded-[24px] border border-ctp-surface1/80 bg-ctp-mantle px-6 py-7 text-center">
-        <h2 className="text-[18px] font-semibold text-ctp-text">{copy[status].title}</h2>
-        <p className="mt-2 text-[13px] leading-6 text-ctp-subtext0">{copy[status].body}</p>
-      </div>
-    </section>
-  );
-}
-
-function StatusMessage({
-  body,
-  status,
-  title,
-}: {
-  body: string;
-  status: OperationStatus;
-  title: string;
-}) {
-  const classes = {
-    error: "border-ctp-red/30 bg-ctp-red/10 text-ctp-red",
-    pending: "border-ctp-yellow/30 bg-ctp-yellow/10 text-ctp-yellow",
-    success: "border-ctp-green/30 bg-ctp-green/10 text-ctp-green",
-  } satisfies Record<OperationStatus, string>;
-
-  return (
-    <section className={`rounded-[18px] border px-5 py-4 ${classes[status]}`}>
-      <h3 className="text-[13px] font-semibold text-ctp-text">{title}</h3>
-      <p className="mt-1 text-[12px] leading-5">{body}</p>
+      <EmptyStateCard body={copy[status].body} className="max-w-[420px] py-7" title={copy[status].title} />
     </section>
   );
 }
