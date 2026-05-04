@@ -14,10 +14,13 @@ import {
   playlistQueryKeys,
   refreshStreamingAccountMetadata,
   syncStreamingPlaylist,
+  type LinkProposal,
+  type LinkProposalConfidenceBand,
   type StreamingPlaylist,
   type StreamingPlaylistConfig,
   type StreamingSyncResponse,
   updateStreamingPlaylistConfig,
+  useLinkProposalsQuery,
   usePlaylistDetailQuery,
   useStreamingPlaylistConfigQuery,
   useStreamingPlaylistsQuery,
@@ -114,6 +117,7 @@ type PlaylistSyncViewState = {
   playlistId: number;
   status: OperationStatus;
 };
+type GroupedLinkProposals = Record<LinkProposalConfidenceBand, LinkProposal[]>;
 
 const maintenanceItems: NavItem[] = [
   { id: "proposals", label: "Link proposals", badge: 14, tone: "pending" },
@@ -161,6 +165,12 @@ const baseViewConfigs = [
 ] satisfies ViewConfig[];
 
 const emptyStreamingPlaylists: StreamingPlaylist[] = [];
+const proposalBandOrder = ["high", "medium", "low"] satisfies LinkProposalConfidenceBand[];
+const proposalBandLabels = {
+  high: "High",
+  low: "Low",
+  medium: "Medium",
+} satisfies Record<LinkProposalConfidenceBand, string>;
 const playlistCollectionViewId = "playlists";
 const playlistCollectionViewConfig = {
   id: playlistCollectionViewId,
@@ -236,6 +246,29 @@ function buildPlaylistViewConfigs(playlists: StreamingPlaylist[]): ViewConfig[] 
     actionLabels: ["Sync", "Export M3U"],
     icon: "playlist",
   }));
+}
+
+function getEmptyProposalGroups(): GroupedLinkProposals {
+  return {
+    high: [],
+    low: [],
+    medium: [],
+  };
+}
+
+function groupLinkProposalsByBand(proposals: LinkProposal[]): GroupedLinkProposals {
+  return proposals.reduce<GroupedLinkProposals>((groups, proposal) => {
+    groups[proposal.confidence_band].push(proposal);
+    return groups;
+  }, getEmptyProposalGroups());
+}
+
+function getLocalTrackLabel(proposal: LinkProposal) {
+  return proposal.local_file_path.split("/").pop() || proposal.local_file_path;
+}
+
+function formatProposalScore(score: number) {
+  return `${Math.round(score * 100)}%`;
 }
 
 function formatPlaylistTimestamp(timestamp: string | null) {
@@ -781,13 +814,101 @@ function PlaylistCollectionState({ status }: { status: PlaylistCollectionStatus 
 }
 
 function LinkProposalsView() {
+  const proposalsQuery = useLinkProposalsQuery();
+  const proposals = proposalsQuery.data?.proposals;
+  const proposalCount = proposals?.length ?? 0;
+  const groupedProposals = useMemo(() => groupLinkProposalsByBand(proposals ?? []), [proposals]);
+
+  if (proposalsQuery.isPending) {
+    return (
+      <section className="flex min-h-0 flex-1 items-center justify-center">
+        <EmptyStateCard body="Checking for pending local-to-streaming match suggestions." title="Loading proposals" />
+      </section>
+    );
+  }
+
+  if (proposalsQuery.isError) {
+    return (
+      <section className="flex min-h-0 flex-1 items-center justify-center">
+        <EmptyStateCard
+          body="Pending local-to-streaming match suggestions could not be loaded."
+          title="Proposals unavailable"
+          tone="error"
+        />
+      </section>
+    );
+  }
+
+  if (proposalCount === 0) {
+    return (
+      <section className="flex min-h-0 flex-1 items-center justify-center">
+        <EmptyStateCard
+          body="Pending local-to-streaming match suggestions will appear here as matching jobs finish."
+          className="max-w-[460px] py-7 text-left"
+          title="Proposal queue"
+        />
+      </section>
+    );
+  }
+
   return (
-    <section className="flex min-h-0 flex-1 flex-col">
-      <EmptyStateCard
-        body="Pending local-to-streaming match suggestions will appear here as matching jobs finish."
-        className="max-w-[460px] self-center py-7 text-left"
-        title="Proposal queue"
-      />
+    <section className="flex min-h-0 flex-1 flex-col gap-4">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h2 className="text-[18px] font-semibold text-ctp-text">Proposal queue</h2>
+          <p className="mt-1 text-[13px] text-ctp-subtext0">{proposalCount} pending suggestions grouped by confidence.</p>
+        </div>
+      </div>
+      <div className="min-h-0 flex-1 overflow-y-auto pr-1">
+        <div className="grid gap-4">
+          {proposalBandOrder.map((band) => {
+            const bandProposals = groupedProposals[band];
+            const label = proposalBandLabels[band];
+
+            return (
+              <section
+                aria-labelledby={`proposal-band-${band}`}
+                className="rounded-[18px] border border-ctp-surface0 bg-ctp-mantle/80"
+                key={band}
+              >
+                <header className="flex items-center justify-between gap-3 border-b border-ctp-surface0 px-5 py-4">
+                  <h3 className="text-[14px] font-semibold text-ctp-text" id={`proposal-band-${band}`}>
+                    {label}
+                  </h3>
+                  <span className="rounded-full bg-ctp-surface0 px-2.5 py-1 text-[12px] font-semibold text-ctp-subtext0">
+                    {bandProposals.length}
+                  </span>
+                </header>
+                {bandProposals.length > 0 ? (
+                  <ul className="divide-y divide-ctp-surface0">
+                    {bandProposals.map((proposal) => (
+                      <li className="grid gap-3 px-5 py-4 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]" key={proposal.id}>
+                        <div className="min-w-0">
+                          <p className="truncate text-[13px] font-semibold text-ctp-text">{getLocalTrackLabel(proposal)}</p>
+                          <p className="mt-1 text-[12px] text-ctp-subtext0">Local track #{proposal.local_track_id}</p>
+                        </div>
+                        <div className="min-w-0">
+                          <p className="truncate text-[13px] font-semibold text-ctp-text">{proposal.streaming_title}</p>
+                          <p className="mt-1 truncate text-[12px] text-ctp-subtext0">
+                            {proposal.streaming_artist}
+                            {proposal.streaming_album ? ` / ${proposal.streaming_album}` : ""}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2 text-[12px] font-semibold text-ctp-subtext0">
+                          <span className="rounded-full bg-ctp-surface0 px-2.5 py-1 uppercase">{proposal.match_method}</span>
+                          <span>{formatProposalScore(proposal.score)}</span>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="px-5 py-4 text-[13px] text-ctp-subtext0">No {label.toLowerCase()} confidence proposals.</p>
+                )}
+              </section>
+            );
+          })}
+        </div>
+      </div>
     </section>
   );
 }

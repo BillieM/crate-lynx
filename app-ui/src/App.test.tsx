@@ -3,6 +3,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import App, { asRgb, getProgressColor, lerp, mixColors } from "./App";
 import type {
+  LinkProposalsResponse,
   PlaylistDetailResponse,
   PlaylistTracksResponse,
   StreamingPlaylistConfigResponse,
@@ -123,6 +124,52 @@ const selectedPlaylistSyncResponse = { account_id: 4, job_id: "selected-playlist
 const activePlaylistSyncEndpoint = (playlistId: number | string) => `/api/streaming/playlists/${playlistId}/sync`;
 const metadataRefreshEndpoint = "/api/streaming/accounts/4/refresh-metadata";
 const metadataRefreshResponse = { account_id: 4, job_id: "metadata-refresh-job-4" };
+const linkProposalsResponse: LinkProposalsResponse = {
+  proposals: [
+    {
+      id: 44,
+      local_track_id: 501,
+      local_file_path: "Frame Delay/Night Runner.mp3",
+      streaming_track_id: 901,
+      streaming_title: "Night Runner",
+      streaming_artist: "Frame Delay",
+      streaming_album: "Late Night Drive",
+      match_method: "tag",
+      score: 0.92,
+      status: "pending",
+      rejected_at: null,
+      confidence_band: "high",
+    },
+    {
+      id: 45,
+      local_track_id: 502,
+      local_file_path: "Static Gate/Pending Signal.mp3",
+      streaming_track_id: 902,
+      streaming_title: "Pending Signal",
+      streaming_artist: "Static Gate",
+      streaming_album: null,
+      match_method: "tag",
+      score: 0.72,
+      status: "pending",
+      rejected_at: null,
+      confidence_band: "medium",
+    },
+    {
+      id: 46,
+      local_track_id: 503,
+      local_file_path: "Patch Bay/Loose Cable.mp3",
+      streaming_track_id: 903,
+      streaming_title: "Loose Cable",
+      streaming_artist: "Patch Bay",
+      streaming_album: "Maintenance Window",
+      match_method: "acoustic",
+      score: 0.44,
+      status: "pending",
+      rejected_at: null,
+      confidence_band: "low",
+    },
+  ],
+};
 
 type MockPlaylistFetchOptions = {
   activeSyncHandler?: () => Promise<Response> | Response;
@@ -190,6 +237,13 @@ function mockPlaylistFetch({ activeSyncHandler, metadataRefreshHandler, selected
       return {
         ok: true,
         json: async () => streamingPlaylistConfigResponse,
+      } as Response;
+    }
+
+    if (url === "/api/proposals") {
+      return {
+        ok: true,
+        json: async () => linkProposalsResponse,
       } as Response;
     }
 
@@ -383,7 +437,13 @@ describe("App", () => {
 
     expect(screen.getByRole("heading", { level: 1, name: "Link proposals" })).toBeInTheDocument();
     expect(screen.getByText("Needs approval")).toBeInTheDocument();
-    expect(screen.getByRole("heading", { level: 2, name: "Proposal queue" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { level: 2, name: "Proposal queue" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 3, name: "High" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 3, name: "Medium" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 3, name: "Low" })).toBeInTheDocument();
+    expect(screen.getByText("Night Runner.mp3")).toBeInTheDocument();
+    expect(screen.getByText("Pending Signal.mp3")).toBeInTheDocument();
+    expect(screen.getByText("Loose Cable.mp3")).toBeInTheDocument();
     expect(document.getElementById("proposals")).toHaveAttribute("data-view-active", "true");
     expect(document.getElementById("playlists")).toHaveAttribute("data-view-active", "false");
   });
