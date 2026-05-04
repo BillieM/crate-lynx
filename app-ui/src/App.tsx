@@ -10,12 +10,15 @@ import { PlaylistHeader } from "./features/playlists/PlaylistHeader";
 import { PlaylistTrackActions } from "./features/playlists/PlaylistTrackActions";
 import { PlaylistTrackRow } from "./features/playlists/PlaylistTrackRow";
 import {
+  approveLinkProposal,
   exportPlaylistM3u,
   playlistQueryKeys,
+  rejectLinkProposal,
   refreshStreamingAccountMetadata,
   syncStreamingPlaylist,
   type LinkProposal,
   type LinkProposalConfidenceBand,
+  type LinkProposalsResponse,
   type StreamingPlaylist,
   type StreamingPlaylistConfig,
   type StreamingSyncResponse,
@@ -119,6 +122,9 @@ type PlaylistSyncViewState = {
 };
 type GroupedLinkProposals = Record<LinkProposalConfidenceBand, LinkProposal[]>;
 type LinkProposalConfidenceBandFilter = LinkProposalConfidenceBand | "all";
+type OptimisticProposalMutationContext = {
+  previousProposalQueries: [readonly unknown[], LinkProposalsResponse | undefined][];
+};
 
 const maintenanceItems: NavItem[] = [
   { id: "proposals", label: "Link proposals", badge: 14, tone: "pending" },
@@ -292,6 +298,38 @@ function groupLinkProposalsByBand(proposals: LinkProposal[]): GroupedLinkProposa
     groups[proposal.confidence_band].push(proposal);
     return groups;
   }, getEmptyProposalGroups());
+}
+
+async function removeProposalFromCache(
+  queryClient: ReturnType<typeof useQueryClient>,
+  proposalId: number | string,
+): Promise<OptimisticProposalMutationContext> {
+  await queryClient.cancelQueries({ queryKey: ["playlists", "proposals"] });
+
+  const previousProposalQueries = queryClient.getQueriesData<LinkProposalsResponse>({
+    queryKey: ["playlists", "proposals"],
+  });
+
+  queryClient.setQueriesData<LinkProposalsResponse>({ queryKey: ["playlists", "proposals"] }, (current) => {
+    if (!current) {
+      return current;
+    }
+
+    return {
+      proposals: current.proposals.filter((proposal) => String(proposal.id) !== String(proposalId)),
+    };
+  });
+
+  return { previousProposalQueries };
+}
+
+function restoreProposalCache(
+  queryClient: ReturnType<typeof useQueryClient>,
+  context: OptimisticProposalMutationContext | undefined,
+) {
+  context?.previousProposalQueries.forEach(([queryKey, data]) => {
+    queryClient.setQueryData(queryKey, data);
+  });
 }
 
 function isProposalConfidenceBand(value: string | null): value is LinkProposalConfidenceBand {
@@ -873,15 +911,40 @@ function PlaylistCollectionState({ status }: { status: PlaylistCollectionStatus 
 function LinkProposalsView() {
   const location = useLocation();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const activeConfidenceBand = useMemo(() => {
     const band = new URLSearchParams(location.search).get("band");
     return isProposalConfidenceBand(band) ? band : null;
   }, [location.search]);
   const activeFilter: LinkProposalConfidenceBandFilter = activeConfidenceBand ?? "all";
   const proposalsQuery = useLinkProposalsQuery({ confidenceBand: activeConfidenceBand });
+  const approveMutation = useMutation({
+    mutationFn: approveLinkProposal,
+    onMutate: (proposalId) => removeProposalFromCache(queryClient, proposalId),
+    onError: (_error, _proposalId, context) => {
+      restoreProposalCache(queryClient, context);
+    },
+    onSettled: async () => {
+      await queryClient.invalidateQueries({ queryKey: playlistQueryKeys.all });
+    },
+  });
+  const rejectMutation = useMutation({
+    mutationFn: rejectLinkProposal,
+    onMutate: (proposalId) => removeProposalFromCache(queryClient, proposalId),
+    onError: (_error, _proposalId, context) => {
+      restoreProposalCache(queryClient, context);
+    },
+    onSettled: async () => {
+      await queryClient.invalidateQueries({ queryKey: playlistQueryKeys.all });
+    },
+  });
   const proposals = proposalsQuery.data?.proposals;
   const proposalCount = proposals?.length ?? 0;
   const groupedProposals = useMemo(() => groupLinkProposalsByBand(proposals ?? []), [proposals]);
+  const activeApproveProposalId = approveMutation.isPending ? String(approveMutation.variables) : null;
+  const activeRejectProposalId = rejectMutation.isPending ? String(rejectMutation.variables) : null;
+  const failedApproveProposalId = approveMutation.isError ? String(approveMutation.variables) : null;
+  const failedRejectProposalId = rejectMutation.isError ? String(rejectMutation.variables) : null;
   const updateConfidenceBandFilter = (filter: LinkProposalConfidenceBandFilter) => {
     const params = new URLSearchParams(location.search);
 
@@ -975,7 +1038,21 @@ function LinkProposalsView() {
                 {bandProposals.length > 0 ? (
                   <ul className="grid gap-3">
                     {bandProposals.map((proposal) => (
-                      <ProposalCard key={proposal.id} proposal={proposal} />
+                      <ProposalCard
+                        actionError={
+                          failedApproveProposalId === String(proposal.id)
+                            ? "Approve failed."
+                            : failedRejectProposalId === String(proposal.id)
+                              ? "Reject failed."
+                              : null
+                        }
+                        isApproving={activeApproveProposalId === String(proposal.id)}
+                        isRejecting={activeRejectProposalId === String(proposal.id)}
+                        key={proposal.id}
+                        onApprove={() => approveMutation.mutate(proposal.id)}
+                        onReject={() => rejectMutation.mutate(proposal.id)}
+                        proposal={proposal}
+                      />
                     ))}
                   </ul>
                 ) : (
@@ -992,13 +1069,28 @@ function LinkProposalsView() {
   );
 }
 
-function ProposalCard({ proposal }: { proposal: LinkProposal }) {
+function ProposalCard({
+  actionError,
+  isApproving,
+  isRejecting,
+  onApprove,
+  onReject,
+  proposal,
+}: {
+  actionError: string | null;
+  isApproving: boolean;
+  isRejecting: boolean;
+  onApprove: () => void;
+  onReject: () => void;
+  proposal: LinkProposal;
+}) {
   const scorePercentage = getProposalScorePercentage(proposal.score);
   const scoreColor = asRgb(getProgressColor(scorePercentage));
+  const isActionPending = isApproving || isRejecting;
 
   return (
     <li className="rounded-[8px] border border-ctp-surface0 bg-ctp-mantle/80 p-4 shadow-sm shadow-ctp-crust/20">
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_170px]">
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_210px]">
         <div className="min-w-0">
           <p className="text-[11px] font-semibold uppercase text-ctp-subtext0">Local track</p>
           <p className="mt-1 truncate text-[14px] font-semibold text-ctp-text">{getLocalTrackLabel(proposal)}</p>
@@ -1031,6 +1123,25 @@ function ProposalCard({ proposal }: { proposal: LinkProposal }) {
               />
             </div>
             <p className="mt-2 text-[12px] font-medium text-ctp-subtext0">Confidence score</p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2 xl:justify-end">
+            <button
+              className="rounded-[10px] border border-ctp-green/40 bg-ctp-green/12 px-3 py-1.5 text-[12px] font-semibold text-ctp-green transition-colors hover:bg-ctp-green/18 disabled:cursor-not-allowed disabled:border-ctp-surface0 disabled:bg-ctp-surface0 disabled:text-ctp-overlay1"
+              disabled={isActionPending}
+              onClick={onApprove}
+              type="button"
+            >
+              {isApproving ? "Approving..." : "Approve"}
+            </button>
+            <button
+              className="rounded-[10px] border border-ctp-red/40 bg-ctp-red/12 px-3 py-1.5 text-[12px] font-semibold text-ctp-red transition-colors hover:bg-ctp-red/18 disabled:cursor-not-allowed disabled:border-ctp-surface0 disabled:bg-ctp-surface0 disabled:text-ctp-overlay1"
+              disabled={isActionPending}
+              onClick={onReject}
+              type="button"
+            >
+              {isRejecting ? "Rejecting..." : "Reject"}
+            </button>
+            {actionError ? <p className="basis-full text-right text-[11px] font-medium text-ctp-red">{actionError}</p> : null}
           </div>
         </div>
       </div>
