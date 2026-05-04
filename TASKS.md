@@ -16,4 +16,4 @@ Design constraints for every task:
 - [x] Review arbitrary Tailwind values across touched frontend components and replace repeated sizing, spacing, radius, shadow, and typography patterns with shared styles where practical
 - [x] Verify desktop and narrower viewport layouts for clipping, overlap, excessive whitespace, readable text, stable controls, and consistent Catppuccin Mocha theming
 - [x] Update affected frontend tests for changed structure, labels, accessible states, or shared primitive behavior
-- [ ] Run frontend validation: `npm run lint`, `npm test`, and `npm run build`
+- [x] Run frontend validation: `npm run lint`, `npm test`, and `npm run build`
