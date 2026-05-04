@@ -587,6 +587,21 @@ describe("App", () => {
     expect(document.getElementById("playlists")).toHaveAttribute("data-view-active", "false");
   });
 
+  it("opens the missing locally maintenance routed view from the URL", async () => {
+    mockPlaylistFetch();
+
+    renderApp(["/missing"]);
+
+    expect(screen.getByRole("heading", { level: 1, name: "Missing locally" })).toBeInTheDocument();
+    expect(screen.getByText("Gap report")).toBeInTheDocument();
+    expect(screen.getByLabelText("Missing locally summary")).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Missing local tracks" })).toBeInTheDocument();
+    expect(screen.getByText("Open Eye Signal")).toBeInTheDocument();
+    expect(screen.getByText("ytm:VLPL_missing_018")).toBeInTheDocument();
+    expect(document.getElementById("missing")).toHaveAttribute("data-view-active", "true");
+    expect(document.getElementById("playlists")).toHaveAttribute("data-view-active", "false");
+  });
+
   it("renders link proposals grouped by confidence band with proposal details", async () => {
     mockPlaylistFetch();
 
