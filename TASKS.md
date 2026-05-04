@@ -41,7 +41,7 @@ Application-owned data, including the Beets SQLite database, must be stored unde
 - [x] Update Docker Compose app configuration so `/ingestion`, `/soulseek`, `/music`, and `/data` map to the requested host directories, `LIBRARY_ROOT` defaults to `/music`, and `BEETS_LIBRARY` defaults to `/data/beets/library.db`
 - [x] Add an `ingest_folders` database model and Alembic migration with unique normalized `path`, created/updated timestamps, and seed defaults for `/ingestion` and `/soulseek`
 - [x] Add a backend settings store that lists, creates, deletes, normalizes, deduplicates, and validates ingest folders using absolute container paths
-- [ ] Add settings schemas and API routes for `GET /api/settings/general`, `POST /api/settings/ingest-folders`, and `DELETE /api/settings/ingest-folders/{folder_id}`
+- [x] Add settings schemas and API routes for `GET /api/settings/general`, `POST /api/settings/ingest-folders`, and `DELETE /api/settings/ingest-folders/{folder_id}`
 - [ ] Refactor `IngestionWatcher` to manage multiple watched roots, schedule/unschedule roots live, create missing directories on watch start/add, and keep existing event handling behavior
 - [ ] Wire app startup so ingestion loads persisted folders, seeds defaults when needed, uses `/music` for Beets imports, and keeps the active watcher synchronized after settings API mutations
 - [ ] Add backend tests for route mounting, default folder seeding, `/music` library configuration, path validation, duplicate rejection, delete behavior, multi-root watcher scheduling, live add/remove synchronization, and fallback behavior without `DATABASE_URL`

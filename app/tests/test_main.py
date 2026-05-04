@@ -63,6 +63,9 @@ def test_links_routes_are_mounted_under_api_prefix() -> None:
     assert "/api/streaming/playlists/{playlist_id}" in route_paths
     assert "/api/streaming/playlists/{playlist_id}/sync" in route_paths
     assert "/api/local-tracks/{local_track_id}/rematch" in route_paths
+    assert "/api/settings/general" in route_paths
+    assert "/api/settings/ingest-folders" in route_paths
+    assert "/api/settings/ingest-folders/{folder_id}" in route_paths
     assert "/ingest/status" not in route_paths
 
 
