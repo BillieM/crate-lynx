@@ -14,6 +14,7 @@ from app.local_tracks.store import (
 from app.links.store import final_links_table, metadata as links_metadata
 from app.main import create_app
 from app.matching.pipeline import (
+    SUGGESTED_LINK_STATUS_APPROVED,
     SUGGESTED_LINK_STATUS_PENDING,
     metadata as suggested_links_metadata,
     suggested_links_table,
@@ -51,6 +52,7 @@ def test_links_routes_are_mounted_under_api_prefix() -> None:
     assert "/api/playlists/{playlist_id}" in route_paths
     assert "/api/playlists/{playlist_id}/tracks" in route_paths
     assert "/api/playlists/{playlist_id}/m3u" in route_paths
+    assert "/api/library/tracks" in route_paths
     assert "/api/streaming/accounts/{account_id}/sync" in route_paths
     assert "/api/streaming/accounts/{account_id}/refresh-metadata" in route_paths
     assert "/api/streaming/playlists/config" in route_paths
@@ -784,6 +786,183 @@ def test_playlist_tracks_endpoint_returns_rows_with_link_status(
     assert response.tracks[1].proposal_id == 4
     assert response.tracks[2].status == "unlinked"
     assert response.tracks[2].local_track_id is None
+
+
+def test_library_tracks_endpoint_returns_linked_pending_unlinked_and_no_match_rows(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite:///{tmp_path / 'library-tracks.db'}"
+    engine = create_engine(database_url)
+    metadata.create_all(engine)
+    local_tracks_metadata.create_all(engine)
+    links_metadata.create_all(engine)
+    suggested_links_metadata.create_all(engine)
+    monkeypatch.setenv("DATABASE_URL", database_url)
+
+    with engine.begin() as connection:
+        connection.execute(
+            insert(local_tracks_table),
+            [
+                {
+                    "id": 5,
+                    "file_path": "Artist/linked.mp3",
+                    "library_root_rel_path": "Artist/linked.mp3",
+                    "fingerprint": "fp-linked",
+                    "beets_id": 5,
+                },
+                {
+                    "id": 6,
+                    "file_path": "Artist/pending.mp3",
+                    "library_root_rel_path": "Artist/pending.mp3",
+                    "fingerprint": "fp-pending",
+                    "beets_id": 6,
+                },
+                {
+                    "id": 7,
+                    "file_path": "Artist/rejected-only.mp3",
+                    "library_root_rel_path": "Artist/rejected-only.mp3",
+                    "fingerprint": "fp-rejected",
+                    "beets_id": 7,
+                },
+                {
+                    "id": 8,
+                    "file_path": "Loose/no-match.flac",
+                    "library_root_rel_path": "Loose/no-match.flac",
+                    "fingerprint": None,
+                    "beets_id": None,
+                },
+            ],
+        )
+        connection.execute(
+            insert(streaming_tracks_table),
+            [
+                {
+                    "id": 9,
+                    "provider_track_id": "ytm-9",
+                    "title": "Linked Song",
+                    "artist": "Artist A",
+                    "album": "Album A",
+                    "duration_ms": 181000,
+                },
+                {
+                    "id": 10,
+                    "provider_track_id": "ytm-10",
+                    "title": "Pending Song",
+                    "artist": "Artist B",
+                    "album": None,
+                    "duration_ms": None,
+                },
+                {
+                    "id": 11,
+                    "provider_track_id": "ytm-11",
+                    "title": "Rejected Song",
+                    "artist": "Artist C",
+                    "album": "Album C",
+                    "duration_ms": 200000,
+                },
+            ],
+        )
+        connection.execute(
+            insert(final_links_table).values(
+                id=3,
+                local_track_id=5,
+                streaming_track_id=9,
+            )
+        )
+        connection.execute(
+            insert(suggested_links_table),
+            [
+                {
+                    "id": 4,
+                    "local_track_id": 5,
+                    "streaming_track_id": 9,
+                    "match_method": "isrc",
+                    "score": 0.99,
+                    "status": SUGGESTED_LINK_STATUS_APPROVED,
+                },
+                {
+                    "id": 5,
+                    "local_track_id": 6,
+                    "streaming_track_id": 10,
+                    "match_method": "tags",
+                    "score": 0.82,
+                    "status": SUGGESTED_LINK_STATUS_PENDING,
+                },
+                {
+                    "id": 6,
+                    "local_track_id": 7,
+                    "streaming_track_id": 11,
+                    "match_method": "tags",
+                    "score": 0.42,
+                    "status": "rejected",
+                },
+            ],
+        )
+
+    app = create_app()
+    route = next(
+        route
+        for route in app.routes
+        if getattr(route, "path", None) == "/api/library/tracks"
+        and "GET" in getattr(route, "methods", set())
+    )
+
+    response = asyncio.run(route.endpoint())
+
+    assert [track.id for track in response.tracks] == [5, 6, 7, 8]
+    assert response.model_dump(mode="json") == {
+        "tracks": [
+            {
+                "id": 5,
+                "title": "Linked Song",
+                "artist": "Artist A",
+                "album": "Album A",
+                "duration_ms": 181000,
+                "file_path": "Artist/linked.mp3",
+                "library_root_rel_path": "Artist/linked.mp3",
+                "link_status": "linked",
+                "match_method": "isrc",
+                "file_status": "available",
+            },
+            {
+                "id": 6,
+                "title": "Pending Song",
+                "artist": "Artist B",
+                "album": None,
+                "duration_ms": None,
+                "file_path": "Artist/pending.mp3",
+                "library_root_rel_path": "Artist/pending.mp3",
+                "link_status": "pending",
+                "match_method": "tags",
+                "file_status": "available",
+            },
+            {
+                "id": 7,
+                "title": "rejected-only.mp3",
+                "artist": None,
+                "album": None,
+                "duration_ms": None,
+                "file_path": "Artist/rejected-only.mp3",
+                "library_root_rel_path": "Artist/rejected-only.mp3",
+                "link_status": "unlinked",
+                "match_method": None,
+                "file_status": "available",
+            },
+            {
+                "id": 8,
+                "title": "no-match.flac",
+                "artist": None,
+                "album": None,
+                "duration_ms": None,
+                "file_path": "Loose/no-match.flac",
+                "library_root_rel_path": "Loose/no-match.flac",
+                "link_status": "unlinked",
+                "match_method": None,
+                "file_status": "available",
+            },
+        ]
+    }
 
 
 def test_playlist_m3u_export_endpoint_returns_attachment(
