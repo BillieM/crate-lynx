@@ -1,4 +1,4 @@
-"""Ingestion pipeline, status, and filesystem watcher package."""
+"""Ingestion pipeline and filesystem watcher package."""
 
 from app.ingestion.pipeline import (
     AudioPreparer,
@@ -15,8 +15,6 @@ from app.ingestion.failures import (
     failed_ingestion_attempts_table,
     metadata as failed_ingestion_attempts_metadata,
 )
-from app.ingestion.router import router
-from app.ingestion.status import IngestionStatusEntry, IngestionStatusStore
 from app.ingestion.watcher import (
     FileCallback,
     IngestionEventHandler,
@@ -33,11 +31,8 @@ __all__ = [
     "ImportedTrack",
     "IngestionEventHandler",
     "IngestionProcessor",
-    "IngestionStatusEntry",
-    "IngestionStatusStore",
     "IngestionWatcher",
     "PreparedTrack",
-    "router",
     "UnsupportedAudioFormatError",
     "failed_ingestion_attempts_metadata",
     "failed_ingestion_attempts_table",

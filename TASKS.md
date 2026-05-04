@@ -92,7 +92,7 @@
   - If an explicit admin/debug workflow is still needed, keep the endpoints but document them as operational/admin-only and update naming/routes consistently instead of leaving them as product-looking APIs.
   - Run relevant backend validation: `ruff check .`, `ruff format --check .`, and targeted `pytest` for matching, main route registration, and any deleted endpoint tests.
 
-- [ ] Remove unused ingest status endpoint and in-memory status plumbing if it has no consumer
+- [x] Remove unused ingest status endpoint and in-memory status plumbing if it has no consumer
   - Candidate endpoint: `GET /ingest/status`.
   - Current UI does not call it, scripts do not call it, and Docker healthcheck uses `GET /health` instead.
   - The endpoint currently exposes recent in-memory ingestion status and queue depths. This is not durable state, and the Unidentified maintenance view now uses persistent failed-ingestion records rather than recent `/ingest/status` failures.

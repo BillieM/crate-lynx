@@ -5,14 +5,8 @@ from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
 
-from app.core.queueing import (
-    QueueDepthReader,
-)
-from app.core.worker import resolve_queue_names
 from app.ingestion import BeetsImporter, IngestionProcessor, IngestionWatcher
 from app.ingestion.failures import FailedIngestionAttemptStore
-from app.ingestion.router import router as ingestion_router
-from app.ingestion.status import IngestionStatusStore
 from app.library.router import create_router as create_library_router
 from app.links.router import create_router as create_links_router
 from app.local_tracks.store import LocalTrackStore
@@ -40,13 +34,6 @@ def create_app() -> FastAPI:
         library_root = Path(os.environ.get("LIBRARY_ROOT", "/library"))
         database_url = os.environ.get("DATABASE_URL")
         redis_url = os.environ.get("REDIS_URL")
-        queue_depth_reader = QueueDepthReader(
-            redis_url=redis_url,
-            queue_names=resolve_queue_names(),
-        )
-        app.state.ingestion_status = IngestionStatusStore(
-            queue_depth_reader=queue_depth_reader.read
-        )
         processor = IngestionProcessor(
             staging_root=staging_root,
             beets_importer=BeetsImporter(
@@ -62,16 +49,7 @@ def create_app() -> FastAPI:
         )
 
         def process_new_file(path: Path) -> None:
-            try:
-                prepared = processor.process(path)
-            except Exception as exc:
-                app.state.ingestion_status.record_failure(source_path=path, error=exc)
-                raise
-
-            app.state.ingestion_status.record_success(
-                source_path=path,
-                prepared_track=prepared,
-            )
+            prepared = processor.process(path)
             logger.info("Ingested track candidate: %s", prepared.library_path)
 
         watcher = IngestionWatcher(
@@ -86,7 +64,6 @@ def create_app() -> FastAPI:
             watcher.stop()
 
     app = FastAPI(title="crate-lynx", lifespan=lifespan)
-    app.state.ingestion_status = IngestionStatusStore(queue_depth_reader=lambda: {})
 
     def require_database_url() -> str:
         database_url = os.environ.get("DATABASE_URL")
@@ -107,7 +84,6 @@ def create_app() -> FastAPI:
         return redis_url
 
     app.include_router(system_router)
-    app.include_router(ingestion_router)
     app.include_router(
         create_streaming_router(
             require_database_url=require_database_url,
