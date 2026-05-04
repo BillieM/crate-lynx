@@ -177,7 +177,7 @@ const libraryTracksResponse: LibraryTracksResponse = {
   stats: {
     linked: 244,
     pending: 43,
-    total: 312,
+    total: 321,
     unlinked: 25,
   },
   tracks: [
@@ -532,7 +532,7 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: /Link proposals/i })).toBeInTheDocument();
     expect(await screen.findByRole("button", { name: /Late Night Drive/i })).toBeInTheDocument();
     expect(screen.getByText("62")).toBeInTheDocument();
-    expect(screen.getByText("312")).toBeInTheDocument();
+    expect(await screen.findByText("321")).toBeInTheDocument();
     expect(await screen.findByRole("heading", { level: 1, name: "Late Night Drive" })).toBeInTheDocument();
     expect(screen.getAllByText("YouTube Music")).toHaveLength(2);
     expect(screen.getByRole("button", { name: "Configure sync" })).toBeInTheDocument();
@@ -552,6 +552,19 @@ describe("App", () => {
     ]) {
       expect(document.getElementById(viewId)).toBeInTheDocument();
     }
+  });
+
+  it("renders Library and Maintenance sidebar badges from backend query data", async () => {
+    mockPlaylistFetch();
+
+    renderApp();
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Link proposals 3" })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Unidentified 1" })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Missing locally 1" })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "All tracks 321" })).toBeInTheDocument();
+    });
   });
 
   it("updates the topbar config when a playlist nav item is selected", async () => {
@@ -614,7 +627,7 @@ describe("App", () => {
     expect(screen.getByRole("region", { name: "Local library tracks" })).toBeInTheDocument();
     const stats = screen.getByLabelText("Library stats");
     await waitFor(() => {
-      expect(within(stats).getByLabelText("Total tracks")).toHaveTextContent("312");
+      expect(within(stats).getByLabelText("Total tracks")).toHaveTextContent("321");
     });
     expect(within(stats).getByLabelText("Linked tracks")).toHaveTextContent("244");
     expect(within(stats).getByLabelText("Pending tracks")).toHaveTextContent("43");

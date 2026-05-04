@@ -67,7 +67,7 @@
   - Update frontend tests to mock the chosen data source and the existing rescue endpoint.
   - Run the relevant validation for the changed files: backend checks if an API/data-source changed, frontend targeted `npm test`, `npm run lint`, and `npm run build`.
 
-- [ ] Replace hardcoded Library and Maintenance sidebar badges with backend-backed counts
+- [x] Replace hardcoded Library and Maintenance sidebar badges with backend-backed counts
   - Replace the static Library, Unidentified, and Missing Locally badge values in the app shell.
   - Reuse query data already loaded for the views where practical, or add small count queries only if needed.
   - Preserve existing playlist navigation and playlist badge behavior.

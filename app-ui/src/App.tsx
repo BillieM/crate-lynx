@@ -10,10 +10,13 @@ import { PlaylistSyncConfiguration } from "./features/playlists/PlaylistSyncConf
 import { PlaylistTrackActions } from "./features/playlists/PlaylistTrackActions";
 import { PlaylistTrackRow } from "./features/playlists/PlaylistTrackRow";
 import { LocalLibraryView } from "./features/library/LocalLibraryView";
+import { useLibraryTracksQuery } from "./features/library/queries";
 import { MissingLocallyView } from "./features/maintenance/MissingLocallyView";
 import { UnidentifiedView } from "./features/maintenance/UnidentifiedView";
+import { useMissingLocallyTracksQuery, useUnidentifiedTracksQuery } from "./features/maintenance/queries";
 import {
   type StreamingPlaylist,
+  useLinkProposalsQuery,
   usePlaylistDetailQuery,
   usePlaylistTracksQuery,
   useStreamingPlaylistsQuery,
@@ -32,16 +35,6 @@ import type { NavItem, PlaylistSyncViewState, ViewConfig } from "./features/shel
 
 export { getProgressColor };
 export type { ProgressColor, ProgressStatus } from "./features/shell/progress";
-
-const maintenanceItems: NavItem[] = [
-  { id: "proposals", label: "Link proposals", badge: 14, tone: "pending" },
-  { id: "unidentified", label: "Unidentified", badge: 3, tone: "alert" },
-  { id: "missing", label: "Missing locally", badge: 28, tone: "accent" },
-];
-
-const libraryItems: NavItem[] = [
-  { id: "library", label: "All tracks", badge: 312, tone: "accent" },
-];
 
 const baseViewConfigs = [
   {
@@ -148,6 +141,26 @@ function buildPlaylistViewConfigs(playlists: StreamingPlaylist[]): ViewConfig[] 
     actionLabels: ["Sync", "Export M3U"],
     icon: "playlist",
   }));
+}
+
+function buildMaintenanceNavItems({
+  missingCount,
+  proposalCount,
+  unidentifiedCount,
+}: {
+  missingCount?: number;
+  proposalCount?: number;
+  unidentifiedCount?: number;
+}): NavItem[] {
+  return [
+    { id: "proposals", label: "Link proposals", badge: proposalCount, tone: "pending" },
+    { id: "unidentified", label: "Unidentified", badge: unidentifiedCount, tone: "alert" },
+    { id: "missing", label: "Missing locally", badge: missingCount, tone: "accent" },
+  ];
+}
+
+function buildLibraryNavItems(totalTrackCount?: number): NavItem[] {
+  return [{ id: "library", label: "All tracks", badge: totalTrackCount, tone: "accent" }];
 }
 
 function PlaylistView({
@@ -288,9 +301,30 @@ function App() {
   const [activeViewId, setActiveViewId] = useState(playlistCollectionViewId);
   const [hasUserSelectedView, setHasUserSelectedView] = useState(false);
   const [playlistSyncState, setPlaylistSyncState] = useState<PlaylistSyncViewState>();
+  const libraryTracksQuery = useLibraryTracksQuery();
+  const linkProposalsQuery = useLinkProposalsQuery();
+  const missingLocallyQuery = useMissingLocallyTracksQuery();
   const playlistsQuery = useStreamingPlaylistsQuery();
+  const unidentifiedQuery = useUnidentifiedTracksQuery();
   const streamingPlaylists = playlistsQuery.data?.playlists ?? emptyStreamingPlaylists;
   const defaultPlaylistViewId = streamingPlaylists[0] ? getPlaylistViewId(streamingPlaylists[0].id) : playlistCollectionViewId;
+  const libraryItems = useMemo(
+    () => buildLibraryNavItems(libraryTracksQuery.data?.stats.total),
+    [libraryTracksQuery.data?.stats.total],
+  );
+  const maintenanceItems = useMemo(
+    () =>
+      buildMaintenanceNavItems({
+        missingCount: missingLocallyQuery.data?.tracks.length,
+        proposalCount: linkProposalsQuery.data?.proposals.length,
+        unidentifiedCount: unidentifiedQuery.data?.tracks.length,
+      }),
+    [
+      linkProposalsQuery.data?.proposals.length,
+      missingLocallyQuery.data?.tracks.length,
+      unidentifiedQuery.data?.tracks.length,
+    ],
+  );
   const playlistItems = useMemo(() => buildPlaylistNavItems(streamingPlaylists), [streamingPlaylists]);
   const viewConfigs = useMemo(
     () => [...baseViewConfigs, playlistCollectionViewConfig, ...buildPlaylistViewConfigs(streamingPlaylists)],

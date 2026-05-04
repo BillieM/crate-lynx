@@ -113,7 +113,7 @@ function SidebarSection({
             {item.progress ? (
               <ProgressFraction complete={item.progress.complete} total={item.progress.total} />
             ) : null}
-            {item.badge ? (
+            {item.badge !== undefined ? (
               <span className={`tabular-nums ${controlClasses.pill} ${shellClasses.navBadge} ${getBadgeClasses(item.tone)}`}>
                 {item.badge}
               </span>
