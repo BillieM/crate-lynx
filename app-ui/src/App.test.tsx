@@ -544,7 +544,10 @@ describe("App", () => {
     expect(within(stats).getByLabelText("Linked tracks")).toHaveTextContent("244");
     expect(within(stats).getByLabelText("Pending tracks")).toHaveTextContent("43");
     expect(within(stats).getByLabelText("Unlinked tracks")).toHaveTextContent("25");
-    expect(screen.getByLabelText("Library filters shell")).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Library filters" })).toBeInTheDocument();
+    expect(screen.getByRole("group", { name: "Library link status filters" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Match method")).toBeInTheDocument();
+    expect(screen.getByLabelText("File status")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Configure sync" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Sync" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Export M3U" })).not.toBeInTheDocument();
