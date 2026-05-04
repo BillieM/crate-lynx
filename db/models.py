@@ -112,6 +112,11 @@ class StreamingTrack(Base):
     year: Mapped[int] = mapped_column(nullable=True)
     isrc: Mapped[str] = mapped_column(String, nullable=True)
     duration_ms: Mapped[int] = mapped_column(nullable=True)
+    fingerprint: Mapped[str | None] = mapped_column(String, nullable=True)
+    fingerprint_duration_seconds: Mapped[float | None] = mapped_column(nullable=True)
+    fingerprinted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
 
 class PlaylistMembership(Base):

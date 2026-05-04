@@ -4,7 +4,7 @@ from pathlib import Path
 
 from alembic import command
 from alembic.config import Config
-from sqlalchemy import create_engine, insert, select
+from sqlalchemy import create_engine, insert, select, text
 
 from app.streaming.models import (
     playlist_membership_table,
@@ -80,3 +80,46 @@ def test_selected_for_sync_migration_backfills_playlists_with_memberships(
         playlist_with_membership_id: True,
         playlist_without_membership_id: False,
     }
+
+
+def test_streaming_track_fingerprint_migration_preserves_existing_tracks(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite:///{tmp_path / 'fingerprints.db'}"
+    monkeypatch.setenv("DATABASE_URL", database_url)
+
+    alembic_config = Config("db/alembic.ini")
+    command.upgrade(alembic_config, "bc4c3e1785d7")
+
+    engine = create_engine(database_url)
+    with engine.begin() as connection:
+        track_id = connection.execute(
+            insert(streaming_tracks_table).values(
+                provider_track_id="track-1",
+                title="Track 1",
+                artist="Artist 1",
+            )
+        ).inserted_primary_key[0]
+
+    command.upgrade(alembic_config, "head")
+
+    with engine.connect() as connection:
+        row = (
+            connection.execute(
+                text(
+                    """
+                    SELECT fingerprint, fingerprint_duration_seconds, fingerprinted_at
+                    FROM streaming_tracks
+                    WHERE id = :track_id
+                    """
+                ),
+                {"track_id": track_id},
+            )
+            .mappings()
+            .one()
+        )
+
+    assert row["fingerprint"] is None
+    assert row["fingerprint_duration_seconds"] is None
+    assert row["fingerprinted_at"] is None

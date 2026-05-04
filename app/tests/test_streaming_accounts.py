@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from cryptography.fernet import Fernet
-from sqlalchemy import create_engine, select
+from sqlalchemy import create_engine, select, update
 from ytmusicapi.exceptions import YTMusicUserError
 
 from app.streaming.jobs import (
@@ -441,6 +441,18 @@ def test_streaming_account_store_upserts_tracks_and_playlist_membership(
 
     assert [membership.position for membership in inserted] == [1, 2]
 
+    fingerprinted_at = datetime(2026, 5, 4, 12, 0, tzinfo=UTC)
+    with engine.begin() as connection:
+        connection.execute(
+            update(streaming_tracks_table)
+            .where(streaming_tracks_table.c.provider_track_id == "track-2")
+            .values(
+                fingerprint="stream-fp-2",
+                fingerprint_duration_seconds=200.5,
+                fingerprinted_at=fingerprinted_at,
+            )
+        )
+
     updated = store.replace_playlist_membership(
         playlist_id=playlist.id,
         tracks=[
@@ -492,6 +504,9 @@ def test_streaming_account_store_upserts_tracks_and_playlist_membership(
     assert stored_tracks[0]["isrc"] == "GBUM72105976"
     assert stored_tracks[1]["isrc"] == "USQX92200001"
     assert stored_tracks[1]["duration_ms"] == 200000
+    assert stored_tracks[1]["fingerprint"] == "stream-fp-2"
+    assert stored_tracks[1]["fingerprint_duration_seconds"] == 200.5
+    assert stored_tracks[1]["fingerprinted_at"] == fingerprinted_at.replace(tzinfo=None)
     assert len(stored_memberships) == 2
     assert stored_memberships[0]["playlist_id"] == playlist.id
     assert stored_memberships[0]["position"] == 1

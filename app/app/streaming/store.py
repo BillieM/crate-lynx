@@ -519,6 +519,9 @@ class StreamingAccountStore:
                             streaming_tracks_table.c.year,
                             streaming_tracks_table.c.isrc,
                             streaming_tracks_table.c.duration_ms,
+                            streaming_tracks_table.c.fingerprint,
+                            streaming_tracks_table.c.fingerprint_duration_seconds,
+                            streaming_tracks_table.c.fingerprinted_at,
                         ).where(
                             streaming_tracks_table.c.provider_track_id
                             == track.provider_track_id
@@ -538,6 +541,9 @@ class StreamingAccountStore:
                             year=track.year,
                             isrc=track.isrc,
                             duration_ms=track.duration_ms,
+                            fingerprint=None,
+                            fingerprint_duration_seconds=None,
+                            fingerprinted_at=None,
                         )
                     )
                     track_id = result.inserted_primary_key[0]
@@ -553,6 +559,9 @@ class StreamingAccountStore:
                             year=track.year,
                             isrc=track.isrc,
                             duration_ms=track.duration_ms,
+                            fingerprint=None,
+                            fingerprint_duration_seconds=None,
+                            fingerprinted_at=None,
                         )
                     )
                     continue
@@ -568,6 +577,11 @@ class StreamingAccountStore:
                         year=track.year,
                         isrc=isrc,
                         duration_ms=track.duration_ms,
+                        fingerprint=existing["fingerprint"],
+                        fingerprint_duration_seconds=existing[
+                            "fingerprint_duration_seconds"
+                        ],
+                        fingerprinted_at=existing["fingerprinted_at"],
                     )
                 )
                 track_rows.append(
@@ -580,6 +594,11 @@ class StreamingAccountStore:
                         year=track.year,
                         isrc=isrc,
                         duration_ms=track.duration_ms,
+                        fingerprint=existing["fingerprint"],
+                        fingerprint_duration_seconds=existing[
+                            "fingerprint_duration_seconds"
+                        ],
+                        fingerprinted_at=existing["fingerprinted_at"],
                     )
                 )
 
