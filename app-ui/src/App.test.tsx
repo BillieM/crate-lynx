@@ -528,6 +528,43 @@ describe("App", () => {
     expect(document.getElementById("playlists")).toHaveAttribute("data-view-active", "false");
   });
 
+  it("opens the local library shell from the sidebar without changing playlist workflows", async () => {
+    mockPlaylistFetch();
+
+    renderApp();
+
+    expect(await screen.findByRole("heading", { level: 1, name: "Late Night Drive" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /All tracks/i }));
+
+    expect(screen.getByRole("heading", { level: 1, name: "All tracks" })).toBeInTheDocument();
+    expect(screen.getByText("Local library")).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Local library tracks" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Library stats shell")).toBeInTheDocument();
+    expect(screen.getByLabelText("Library filters shell")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Configure sync" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Sync" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Export M3U" })).not.toBeInTheDocument();
+    expect(document.getElementById("library")).toHaveAttribute("data-view-active", "true");
+    expect(document.getElementById("playlist-12")).toHaveAttribute("data-view-active", "false");
+
+    fireEvent.click(screen.getByRole("button", { name: "Configure sync" }));
+
+    expect(await screen.findByRole("heading", { level: 2, name: "Playlist sync configuration" })).toBeInTheDocument();
+    expect(document.getElementById("playlists")).toHaveAttribute("data-view-active", "true");
+  });
+
+  it("opens the local library routed view from the URL", async () => {
+    mockPlaylistFetch();
+
+    renderApp(["/library"]);
+
+    expect(screen.getByRole("heading", { level: 1, name: "All tracks" })).toBeInTheDocument();
+    expect(screen.getByText("Local library")).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Local library tracks" })).toBeInTheDocument();
+    expect(document.getElementById("library")).toHaveAttribute("data-view-active", "true");
+    expect(document.getElementById("playlists")).toHaveAttribute("data-view-active", "false");
+  });
+
   it("renders link proposals grouped by confidence band with proposal details", async () => {
     mockPlaylistFetch();
 

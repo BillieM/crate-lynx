@@ -9,6 +9,7 @@ import { PlaylistHeader } from "./features/playlists/PlaylistHeader";
 import { PlaylistSyncConfiguration } from "./features/playlists/PlaylistSyncConfiguration";
 import { PlaylistTrackActions } from "./features/playlists/PlaylistTrackActions";
 import { PlaylistTrackRow } from "./features/playlists/PlaylistTrackRow";
+import { LocalLibraryView } from "./features/library/LocalLibraryView";
 import {
   type StreamingPlaylist,
   usePlaylistDetailQuery,
@@ -266,6 +267,8 @@ function ViewShell({
             <PlaylistSyncConfiguration />
           ) : viewId === "proposals" ? (
             <LinkProposalsView />
+          ) : viewId === "library" ? (
+            <LocalLibraryView />
           ) : null}
         </div>
       ) : null}

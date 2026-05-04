@@ -1,19 +1,12 @@
-# Compact Minimal UI
+# E16 — Frontend: library & maintenance views
 
-Design constraints for every task:
-- Keep the UI comfortably compact, not spreadsheet-dense.
-- Preserve existing routes, API behavior, and user workflows.
-- Use built-in Tailwind utilities and existing Catppuccin Mocha `ctp-*` theme classes.
-- Prefer shared primitives and shared class maps over one-off component styling.
-- Keep typography, spacing, radii, borders, focus states, disabled states, and loading states consistent across the app.
-
-- [x] Establish compact shared UI styles in `app-ui/src/styles/componentClasses.ts`, reducing repeated oversized radii, padding, shadows, pills, panels, buttons, and row styles into reusable Tailwind/Catppuccin class groups
-- [x] Slim down the app shell by reducing sidebar header height, search field padding, section gaps, nav row height, badge size, topbar height, icon frames, and action button sizing while preserving current navigation behavior
-- [x] Replace the oversized playlist overview hero with a compact header band that keeps playlist title, sync time, linked/pending/unlinked counts, coverage, artwork, and sync errors visible without dominating the viewport
-- [x] Make playlist filters smaller and more space-efficient while preserving filter counts, selected states, keyboard accessibility, and Catppuccin status colors
-- [x] Convert playlist track cards into compact rows using the existing row-card model, reducing padding and duplicated information while keeping status, title, artist, album, duration, and actions easy to scan
-- [x] Apply the compact design system to proposal cards, empty states, loading states, status messages, and popovers so secondary views match the playlist screen
-- [x] Review arbitrary Tailwind values across touched frontend components and replace repeated sizing, spacing, radius, shadow, and typography patterns with shared styles where practical
-- [x] Verify desktop and narrower viewport layouts for clipping, overlap, excessive whitespace, readable text, stable controls, and consistent Catppuccin Mocha theming
-- [x] Update affected frontend tests for changed structure, labels, accessible states, or shared primitive behavior
-- [x] Run frontend validation: `npm run lint`, `npm test`, and `npm run build`
+- [x] Build the Local Library view shell in `app-ui/` with routes/navigation that preserve existing app workflows
+- [ ] Add library stats cards for total, linked, pending, and unlinked track counts
+- [ ] Add the library faceted filter bar for link status, match method, and file status
+- [ ] Build the flat library track list with compact, scannable rows for track metadata and link state
+- [ ] Build the Unidentified maintenance view listing Beets-failed tracks with filename and fingerprint hash
+- [ ] Wire the Unidentified Rescue action to the existing metadata rescue endpoint from E08
+- [ ] Build the Missing Locally maintenance view listing streaming tracks with no local match
+- [ ] Add loading, empty, error, disabled, and pending states for the library and maintenance views
+- [ ] Update affected frontend tests for the new library and maintenance view behavior
+- [ ] Run frontend validation: `npm run lint`, `npm test`, and `npm run build`
