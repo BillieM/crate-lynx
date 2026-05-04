@@ -1,3 +1,4 @@
+import { surfaceClasses, textClasses } from "../../styles/componentClasses";
 import type { PlaylistDetail } from "./queries";
 
 type PlaylistHeaderProps = {
@@ -66,14 +67,14 @@ function CoverArt({ playlist }: { playlist: PlaylistDetail }) {
     return (
       <img
         alt={`${playlist.name} cover art`}
-        className="h-28 w-28 rounded-[24px] object-cover shadow-[0_18px_42px_color-mix(in_srgb,var(--color-ctp-crust)_32%,transparent)] ring-1 ring-inset ring-ctp-surface1/80"
+        className={`h-28 w-28 object-cover ${surfaceClasses.raisedArtwork}`}
         src={playlist.cover_art_url}
       />
     );
   }
 
   return (
-    <div className="flex h-28 w-28 items-center justify-center rounded-[24px] bg-ctp-surface0 text-ctp-blue shadow-[0_18px_42px_color-mix(in_srgb,var(--color-ctp-crust)_24%,transparent)] ring-1 ring-inset ring-ctp-surface1/80">
+    <div className={`flex h-28 w-28 items-center justify-center bg-ctp-surface0 text-ctp-blue ${surfaceClasses.raisedArtwork}`}>
       <svg aria-hidden="true" className="h-10 w-10" fill="none" viewBox="0 0 24 24">
         <path
           d="M8 18a2 2 0 1 1-4 0 2 2 0 0 1 4 0Zm10-3a2 2 0 1 1-4 0 2 2 0 0 1 4 0Zm-4 0V6l6-1.5v9"
@@ -117,17 +118,17 @@ function ProgressRing({ playlist }: { playlist: PlaylistDetail }) {
         </svg>
         <div className="absolute inset-0 flex flex-col items-center justify-center">
           <span className="text-[28px] font-semibold leading-none text-ctp-text">{playlist.linked_count}</span>
-          <span className="mt-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-ctp-subtext0">
+          <span className={`mt-1 ${textClasses.eyebrow} text-ctp-subtext0`}>
             linked
           </span>
         </div>
       </div>
       <div className="space-y-2">
-        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-ctp-subtext0">Coverage</p>
-        <p className="text-[18px] font-semibold text-ctp-text">
+        <p className={`${textClasses.eyebrow} text-ctp-subtext0`}>Coverage</p>
+        <p className={textClasses.sectionTitle}>
           {playlist.linked_count} / {playlist.track_count}
         </p>
-        <p className="max-w-[12rem] text-[12px] leading-5 text-ctp-subtext0">
+        <p className={`max-w-[12rem] ${textClasses.bodyMutedRelaxed}`}>
           {playlist.unlinked_count === 0 && playlist.pending_count === 0
             ? "Every track in this playlist has a final local match."
             : "Linked tracks are ready for export while pending and unlinked rows still need attention."}
@@ -147,10 +148,10 @@ function StatCard({
   value: number;
 }) {
   return (
-    <div className="rounded-[18px] bg-ctp-surface0/72 px-4 py-3 ring-1 ring-inset ring-ctp-surface1/80">
+    <div className={`${surfaceClasses.insetPanel} px-4 py-3`}>
       <div className="flex items-center gap-2">
         <span className={`h-2.5 w-2.5 rounded-full ${toneClassName}`} />
-        <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-ctp-subtext0">{label}</span>
+        <span className={`${textClasses.eyebrow} text-ctp-subtext0`}>{label}</span>
       </div>
       <p className="mt-3 text-[24px] font-semibold leading-none text-ctp-text">{value}</p>
     </div>
@@ -163,12 +164,12 @@ function PlaylistSyncError({ playlist }: { playlist: PlaylistDetail }) {
   }
 
   return (
-    <div className="rounded-[18px] border border-ctp-red/35 bg-ctp-red/10 px-4 py-3">
-      <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-ctp-red">
+    <div className={`${surfaceClasses.panelRadius} border border-ctp-red/35 bg-ctp-red/10 px-4 py-3`}>
+      <p className={`${textClasses.eyebrow} text-ctp-red`}>
         Last sync error
       </p>
       <p className="mt-2 text-[13px] leading-5 text-ctp-text">{playlist.last_sync_error}</p>
-      <p className="mt-1 text-[12px] text-ctp-subtext0">
+      <p className={`mt-1 ${textClasses.caption}`}>
         Failed {formatSyncErrorTime(playlist.last_sync_error_at)}
       </p>
     </div>
@@ -177,19 +178,19 @@ function PlaylistSyncError({ playlist }: { playlist: PlaylistDetail }) {
 
 export function PlaylistHeader({ playlist }: PlaylistHeaderProps) {
   return (
-    <section className="rounded-[30px] border border-ctp-surface1/80 bg-[linear-gradient(135deg,color-mix(in_srgb,var(--color-ctp-base)_96%,transparent),color-mix(in_srgb,var(--color-ctp-surface0)_92%,transparent))] px-6 py-6 shadow-[0_24px_64px_color-mix(in_srgb,var(--color-ctp-crust)_24%,transparent)]">
+    <section className={surfaceClasses.elevatedPanel}>
       <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
         <div className="flex min-w-0 flex-col gap-5 sm:flex-row">
           <CoverArt playlist={playlist} />
           <div className="min-w-0 space-y-4">
             <div>
-              <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-ctp-lavender">
+              <p className={`${textClasses.eyebrow} text-ctp-lavender`}>
                 Playlist overview
               </p>
               <h2 className="mt-2 text-[30px] font-semibold tracking-[-0.03em] text-ctp-text">
                 {playlist.name}
               </h2>
-              <p className="mt-2 text-[13px] text-ctp-subtext0">{formatRelativeSyncTime(playlist.synced_at)}</p>
+              <p className={`mt-2 ${textClasses.bodyMuted}`}>{formatRelativeSyncTime(playlist.synced_at)}</p>
             </div>
 
             <div className="grid gap-3 sm:grid-cols-3">

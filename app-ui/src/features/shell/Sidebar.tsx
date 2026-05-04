@@ -1,6 +1,7 @@
 import { useEffect, useState, type CSSProperties } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ActionButton } from "../../components/ActionButton";
+import { controlClasses, surfaceClasses, textClasses } from "../../styles/componentClasses";
 import { pillToneClasses } from "../../styles/toneClasses";
 import { getProgressColor } from "./progress";
 import type { NavItem, SearchResponse, SearchResult } from "./types";
@@ -82,13 +83,13 @@ function SidebarSection({
 }) {
   return (
     <section className="space-y-3">
-      <h2 className="px-4 text-[11px] font-semibold uppercase tracking-[0.24em] text-ctp-subtext0">
+      <h2 className={`px-4 ${textClasses.eyebrow} tracking-[0.24em] text-ctp-subtext0`}>
         {title}
       </h2>
       <div className="space-y-1.5">
         {items.length === 0 && emptyMessage ? (
           <div className="space-y-2 px-4 py-2.5">
-            <p className="text-[12px] leading-5 text-ctp-subtext0">{emptyMessage}</p>
+            <p className={textClasses.bodyMutedRelaxed}>{emptyMessage}</p>
             {emptyActionLabel && onEmptyAction ? (
               <ActionButton onClick={onEmptyAction}>
                 {emptyActionLabel}
@@ -99,7 +100,7 @@ function SidebarSection({
         {items.map((item) => (
           <button
             key={item.id}
-            className={`flex w-full items-center gap-3 rounded-[10px] px-4 py-2.5 text-left transition-colors hover:bg-ctp-surface0/80 ${
+            className={`flex w-full items-center gap-3 px-4 py-2.5 text-left transition-colors hover:bg-ctp-surface0/80 ${controlClasses.controlRadius} ${
               item.id === activeItemId ? "bg-ctp-surface0 text-ctp-text" : "text-ctp-subtext1"
             }`}
             onClick={() => onSelect(item.id)}
@@ -112,9 +113,7 @@ function SidebarSection({
               <ProgressFraction complete={item.progress.complete} total={item.progress.total} />
             ) : null}
             {item.badge ? (
-              <span
-                className={`rounded-full px-2.5 py-1 text-[11px] font-semibold tabular-nums ${getBadgeClasses(item.tone)}`}
-              >
+              <span className={`tabular-nums ${controlClasses.pill} ${getBadgeClasses(item.tone)}`}>
                 {item.badge}
               </span>
             ) : null}
@@ -150,7 +149,7 @@ function SearchPanel() {
       <label className="sr-only" htmlFor="sidebar-search">
         Search library
       </label>
-      <div className="flex items-center gap-2 rounded-[10px] bg-ctp-surface0 px-3 py-2.5 text-ctp-subtext0 ring-1 ring-inset ring-ctp-surface1/70 focus-within:text-ctp-text focus-within:ring-ctp-overlay0">
+      <div className={`flex items-center gap-2 px-3 py-2.5 text-ctp-subtext0 ${controlClasses.searchFrame}`}>
         <svg aria-hidden="true" className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24">
           <path
             d="m21 21-4.35-4.35m1.85-5.15a7 7 0 1 1-14 0 7 7 0 0 1 14 0Z"
@@ -171,7 +170,7 @@ function SearchPanel() {
       </div>
 
       {isOpen ? (
-        <div className="absolute inset-x-0 top-[calc(100%+0.5rem)] z-10 overflow-hidden rounded-[12px] border border-ctp-surface1 bg-ctp-mantle shadow-[0_20px_48px_color-mix(in_srgb,var(--color-ctp-crust)_38%,transparent)]">
+        <div className={`absolute inset-x-0 top-[calc(100%+0.5rem)] z-10 overflow-hidden ${surfaceClasses.popover}`}>
           {isFetching ? (
             <p className="px-3 py-3 text-[12px] text-ctp-subtext0">Searching library...</p>
           ) : null}

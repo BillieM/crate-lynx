@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import { ActionButton } from "../../components/ActionButton";
+import { surfaceClasses, textClasses } from "../../styles/componentClasses";
 import type { PlaylistTrack } from "./queries";
 
 type PlaylistTrackActionsProps = {
@@ -56,11 +57,11 @@ export function PlaylistTrackActions({ onReviewTrack, playlistId, track }: Playl
         <ActionButton onClick={() => setIsLinkInfoOpen((current) => !current)}>Linked</ActionButton>
         {isLinkInfoOpen ? (
           <div
-            className="absolute right-0 top-[calc(100%+0.5rem)] z-10 w-56 rounded-[14px] border border-ctp-green/30 bg-ctp-mantle p-3 text-left shadow-[0_20px_48px_color-mix(in_srgb,var(--color-ctp-crust)_38%,transparent)]"
+            className={`absolute right-0 top-[calc(100%+0.5rem)] z-10 w-56 p-3 text-left ${surfaceClasses.popover} border-ctp-green/30`}
             role="dialog"
           >
-            <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-ctp-green">Final link info</p>
-            <p className="mt-2 text-[12px] text-ctp-subtext0">
+            <p className={`${textClasses.eyebrow} text-ctp-green`}>Final link info</p>
+            <p className={`mt-2 ${textClasses.caption}`}>
               Final link #{track.final_link_id ?? "unknown"} maps this playlist track to local track #
               {track.local_track_id ?? "unknown"}.
             </p>

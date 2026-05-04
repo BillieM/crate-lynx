@@ -1,5 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { ActionButton } from "../../components/ActionButton";
+import { controlClasses, textClasses } from "../../styles/componentClasses";
 import {
   exportPlaylistM3u,
   syncStreamingPlaylist,
@@ -205,13 +206,13 @@ export function Topbar({
   return (
     <header className="flex h-11 shrink-0 items-center justify-between border-b border-ctp-surface0 bg-ctp-mantle px-5">
       <div className="flex min-w-0 items-center gap-3">
-        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] bg-ctp-surface0 text-ctp-mauve">
+        <span className={`h-8 w-8 shrink-0 ${controlClasses.iconFrame}`}>
           <TopbarIcon icon={view.icon} />
         </span>
         <div className="flex min-w-0 items-center gap-3">
-          <h1 className="truncate text-[15px] font-semibold text-ctp-text">{view.title}</h1>
+          <h1 className={`truncate ${textClasses.title}`}>{view.title}</h1>
           <span
-            className={`rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] ${getTopbarPillClasses(view.pillTone)}`}
+            className={`uppercase tracking-[0.14em] ${controlClasses.pill} ${getTopbarPillClasses(view.pillTone)}`}
           >
             {view.pillLabel}
           </span>

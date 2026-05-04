@@ -4,6 +4,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { ActionButton } from "../../components/ActionButton";
 import { EmptyStateCard } from "../../components/EmptyStateCard";
 import { FilterChipGroup, type FilterChipOption } from "../../components/FilterChipGroup";
+import { controlClasses, surfaceClasses, textClasses } from "../../styles/componentClasses";
 import {
   approveLinkProposal,
   playlistQueryKeys,
@@ -199,8 +200,8 @@ export function LinkProposalsView() {
     <section className="flex min-h-0 flex-1 flex-col gap-4">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h2 className="text-[18px] font-semibold text-ctp-text">Proposal queue</h2>
-          <p className="mt-1 text-[13px] text-ctp-subtext0">
+          <h2 className={textClasses.sectionTitle}>Proposal queue</h2>
+          <p className={`mt-1 ${textClasses.bodyMuted}`}>
             {proposalsQuery.isSuccess
               ? `${proposalCount} pending suggestions grouped by confidence.`
               : "Pending suggestions grouped by confidence."}
@@ -295,7 +296,7 @@ export function LinkProposalsView() {
                   ))}
                 </ul>
               ) : (
-                <p className="rounded-[8px] border border-dashed border-ctp-surface0 px-5 py-4 text-[13px] text-ctp-subtext0">
+                <p className={`rounded-[8px] border border-dashed border-ctp-surface0 px-5 py-4 ${textClasses.bodyMuted}`}>
                   No {label.toLowerCase()} confidence proposals.
                 </p>
               )}
@@ -329,25 +330,25 @@ function ProposalCard({
   };
 
   return (
-    <li className="rounded-[8px] border border-ctp-surface0 bg-ctp-mantle/80 p-4 shadow-sm shadow-ctp-crust/20">
+    <li className={surfaceClasses.compactCard}>
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_210px]">
         <div className="min-w-0">
-          <p className="text-[11px] font-semibold uppercase text-ctp-subtext0">Local track</p>
+          <p className={`${textClasses.eyebrow} tracking-normal text-ctp-subtext0`}>Local track</p>
           <p className="mt-1 truncate text-[14px] font-semibold text-ctp-text">{getLocalTrackLabel(proposal)}</p>
-          <p className="mt-1 truncate text-[12px] text-ctp-subtext0">{proposal.local_file_path}</p>
-          <p className="mt-2 text-[12px] font-medium text-ctp-overlay1">Track #{proposal.local_track_id}</p>
+          <p className={`mt-1 truncate ${textClasses.caption}`}>{proposal.local_file_path}</p>
+          <p className={`mt-2 ${textClasses.detail}`}>Track #{proposal.local_track_id}</p>
         </div>
         <div className="min-w-0">
-          <p className="text-[11px] font-semibold uppercase text-ctp-subtext0">Streaming track</p>
+          <p className={`${textClasses.eyebrow} tracking-normal text-ctp-subtext0`}>Streaming track</p>
           <p className="mt-1 truncate text-[14px] font-semibold text-ctp-text">{proposal.streaming_title}</p>
-          <p className="mt-1 truncate text-[12px] text-ctp-subtext0">{proposal.streaming_artist}</p>
-          <p className="mt-2 truncate text-[12px] font-medium text-ctp-overlay1">
+          <p className={`mt-1 truncate ${textClasses.caption}`}>{proposal.streaming_artist}</p>
+          <p className={`mt-2 truncate ${textClasses.detail}`}>
             {proposal.streaming_album ?? "Album unavailable"}
           </p>
         </div>
         <div className="grid content-between gap-3">
           <div className="flex flex-wrap items-center gap-2 xl:justify-end">
-            <span className="rounded-full bg-ctp-surface0 px-2.5 py-1 text-[11px] font-semibold text-ctp-subtext0 ring-1 ring-inset ring-ctp-surface1">
+            <span className={`bg-ctp-surface0 text-ctp-subtext0 ring-1 ring-inset ring-ctp-surface1 ${controlClasses.pill}`}>
               {getMatchMethodLabel(proposal.match_method)}
             </span>
             <span className="text-[15px] font-semibold text-ctp-text">{formatProposalScore(proposal.score)}</span>

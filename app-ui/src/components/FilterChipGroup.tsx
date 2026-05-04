@@ -1,3 +1,4 @@
+import { controlClasses } from "../styles/componentClasses";
 import { selectedFilterChipClasses, type FilterChipTone } from "../styles/toneClasses";
 
 export type FilterChipOption<TValue extends string> = {
@@ -14,7 +15,7 @@ type FilterChipGroupProps<TValue extends string> = {
   options: FilterChipOption<TValue>[];
 };
 
-const baseClasses = "inline-flex min-h-10 items-center gap-2 rounded-[999px] border px-4 text-[13px] font-semibold transition-colors";
+const baseClasses = "inline-flex min-h-10 items-center gap-2 rounded-full border px-4 text-[13px] font-semibold transition-colors";
 const inactiveClasses =
   "border-ctp-surface1 bg-ctp-surface0 text-ctp-subtext0 hover:border-ctp-overlay0 hover:bg-ctp-surface1 hover:text-ctp-text";
 
@@ -39,7 +40,9 @@ export function FilterChipGroup<TValue extends string>({
           >
             <span>{option.label}</span>
             {option.count !== undefined ? (
-              <span className="min-w-6 rounded-[999px] bg-ctp-mantle px-2 py-0.5 text-center text-[11px] tabular-nums text-ctp-subtext0 ring-1 ring-inset ring-ctp-surface1">
+              <span
+                className={`min-w-6 bg-ctp-mantle px-2 py-0.5 text-center tabular-nums text-ctp-subtext0 ring-1 ring-inset ring-ctp-surface1 ${controlClasses.pill}`}
+              >
                 {option.count}
               </span>
             ) : null}

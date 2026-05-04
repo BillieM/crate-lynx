@@ -2,6 +2,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { ActionButton } from "../../components/ActionButton";
 import { EmptyStateCard } from "../../components/EmptyStateCard";
 import { StatusMessage, type OperationStatus } from "../../components/StatusMessage";
+import { surfaceClasses, textClasses } from "../../styles/componentClasses";
 import { PlaylistActionStatus } from "../shell/Topbar";
 import {
   playlistQueryKeys,
@@ -87,11 +88,11 @@ function PlaylistConfigRow({
   playlist: StreamingPlaylistConfig;
 }) {
   return (
-    <article className="rounded-[18px] border border-ctp-surface1/80 bg-ctp-mantle px-5 py-4">
+    <article className={`${surfaceClasses.panelRadius} border border-ctp-surface1/80 bg-ctp-mantle px-5 py-4`}>
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
-          <h3 className="truncate text-[15px] font-semibold text-ctp-text">{playlist.title}</h3>
-          <p className="mt-1 text-[12px] text-ctp-subtext0">
+          <h3 className={`truncate ${textClasses.title}`}>{playlist.title}</h3>
+          <p className={`mt-1 ${textClasses.caption}`}>
             Provider ID {playlist.provider_playlist_id} / Account {playlist.account_id}
           </p>
         </div>
@@ -197,8 +198,8 @@ export function PlaylistSyncConfiguration() {
     <section className="flex min-h-0 flex-1 flex-col gap-4">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h2 className="text-[18px] font-semibold text-ctp-text">Playlist sync configuration</h2>
-          <p className="mt-1 text-[13px] text-ctp-subtext0">
+          <h2 className={textClasses.sectionTitle}>Playlist sync configuration</h2>
+          <p className={`mt-1 ${textClasses.bodyMuted}`}>
             {selectedCount} of {playlists.length} discovered playlists selected for sync.
           </p>
         </div>
