@@ -21,7 +21,7 @@ The `app` container runs two processes: the FastAPI server (`uvicorn`) and the R
 
 ```bash
 cp .env.example .env
-# fill in TOKEN_ENCRYPTION_KEY and LIBRARY_ROOT
+# fill in TOKEN_ENCRYPTION_KEY
 docker compose up --build
 ```
 
@@ -58,7 +58,23 @@ docker-compose ps
 | Variable | Purpose |
 |---|---|
 | `TOKEN_ENCRYPTION_KEY` | Fernet key for encrypting streaming auth tokens |
-| `LIBRARY_ROOT` | Absolute path to your local music library (e.g. `/mnt/library`) |
+| `LIBRARY_ROOT` | Container path where processed music is stored. Defaults to `/music` |
+| `BEETS_LIBRARY` | Container path for the Beets SQLite database. Defaults to `/data/beets/library.db` |
+
+## Storage and mounts
+
+Docker Compose expects explicit host paths for ingestion, processed music, and application data:
+
+| Host path | Container path | Purpose |
+|---|---|---|
+| `/srv/mergerfs/hdds/music-in` | `/ingestion` | Default manual ingest input |
+| `/srv/mergerfs/hdds/soulseek/downloads` | `/soulseek` | Default Soulseek download ingest input |
+| `/srv/mergerfs/hdds/media/music` | `/music` | Processed library output managed by Beets |
+| `/docker/appdata/cratelynx` | `/data` | Application-owned data, including the Beets database |
+
+Create those host directories before starting the stack, or edit `docker-compose.yml` to point at equivalent host paths on your machine. The paths configured in Settings are container paths, so any useful ingest folder should also be mounted into the `app` container.
+
+`/music` is output only. Do not add it as an ingest folder, because completed imports are moved there and watching it would re-ingest files that Beets has already processed.
 
 ---
 
@@ -91,7 +107,11 @@ npm run build
 
 ### Ingestion
 
-Drop a file into the `ingestion/` folder. Watchdog picks it up, transcodes lossless formats to MP3 via FFmpeg, runs Beets for metadata enrichment, generates a Chromaprint fingerprint, and kicks off the matching pipeline.
+Ingest folders are configured in **Settings > General** and persisted in the application database. New installs seed two default container inputs: `/ingestion` and `/soulseek`.
+
+Drop a file into one of the configured ingest folders. Watchdog picks it up, transcodes lossless formats to MP3 via FFmpeg, runs Beets for metadata enrichment, moves the processed track under `/music`, generates a Chromaprint fingerprint, and kicks off the matching pipeline.
+
+Adding or removing ingest folders in Settings updates the active watcher immediately. If you add a path that is not backed by a Docker host mount, the app can create and watch that directory inside the container, but files placed on the host will not appear there unless the path is mounted.
 
 ### Matching pipeline
 
