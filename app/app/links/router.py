@@ -15,6 +15,7 @@ from app.local_tracks.store import local_tracks_table
 from app.matching.models import ConfidenceBand
 from app.matching.pipeline import (
     SUGGESTED_LINK_STATUS_APPROVED,
+    SUGGESTED_LINK_STATUS_PENDING,
     SUGGESTED_LINK_STATUS_REJECTED,
     SuggestedLinkStore,
     suggested_links_table,
@@ -66,6 +67,7 @@ def create_router(*, require_database_url: Callable[[], str]) -> APIRouter:
                     == suggested_links_table.c.streaming_track_id,
                 )
             )
+            .where(suggested_links_table.c.status == SUGGESTED_LINK_STATUS_PENDING)
             .order_by(suggested_links_table.c.id.asc())
         )
         if band is not None:

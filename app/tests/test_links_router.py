@@ -11,6 +11,7 @@ from app.local_tracks.store import local_tracks_table, metadata as local_tracks_
 from app.matching.models import ConfidenceBand
 from app.matching.pipeline import (
     SUGGESTED_LINK_STATUS_APPROVED,
+    SUGGESTED_LINK_STATUS_PENDING,
     SUGGESTED_LINK_STATUS_REJECTED,
     metadata as suggested_links_metadata,
     suggested_links_table,
@@ -23,7 +24,7 @@ from app.streaming.models import (
 )
 
 
-def test_list_proposals_returns_joined_records(tmp_path: Path) -> None:
+def test_list_proposals_returns_joined_pending_records(tmp_path: Path) -> None:
     database_url = f"sqlite:///{tmp_path / 'proposals.db'}"
     engine = create_engine(database_url)
     local_tracks_metadata.create_all(engine)
@@ -34,36 +35,70 @@ def test_list_proposals_returns_joined_records(tmp_path: Path) -> None:
 
     with engine.begin() as connection:
         connection.execute(
-            insert(local_tracks_table).values(
-                id=4,
-                file_path="Artist/Track.mp3",
-                library_root_rel_path="Artist/Track.mp3",
-                fingerprint="fp-4",
-                beets_id=4,
-            )
+            insert(local_tracks_table),
+            [
+                {
+                    "id": 4,
+                    "file_path": "Artist/Track.mp3",
+                    "library_root_rel_path": "Artist/Track.mp3",
+                    "fingerprint": "fp-4",
+                    "beets_id": 4,
+                },
+                {
+                    "id": 5,
+                    "file_path": "Artist/Rejected.mp3",
+                    "library_root_rel_path": "Artist/Rejected.mp3",
+                    "fingerprint": "fp-5",
+                    "beets_id": 5,
+                },
+            ],
         )
         connection.execute(
-            insert(streaming_tracks_table).values(
-                id=9,
-                provider_track_id="ytm-9",
-                title="Track",
-                artist="Artist",
-                album="Album",
-                year=2024,
-                isrc="ABC123456789",
-                duration_ms=123000,
-            )
+            insert(streaming_tracks_table),
+            [
+                {
+                    "id": 9,
+                    "provider_track_id": "ytm-9",
+                    "title": "Track",
+                    "artist": "Artist",
+                    "album": "Album",
+                    "year": 2024,
+                    "isrc": "ABC123456789",
+                    "duration_ms": 123000,
+                },
+                {
+                    "id": 10,
+                    "provider_track_id": "ytm-10",
+                    "title": "Rejected",
+                    "artist": "Artist",
+                    "album": "Album",
+                    "year": 2024,
+                    "isrc": "DEF123456789",
+                    "duration_ms": 124000,
+                },
+            ],
         )
         connection.execute(
-            insert(suggested_links_table).values(
-                id=13,
-                local_track_id=4,
-                streaming_track_id=9,
-                match_method="tags",
-                score=0.82,
-                status="rejected",
-                rejected_at=rejected_at,
-            )
+            insert(suggested_links_table),
+            [
+                {
+                    "id": 13,
+                    "local_track_id": 4,
+                    "streaming_track_id": 9,
+                    "match_method": "tags",
+                    "score": 0.82,
+                    "status": SUGGESTED_LINK_STATUS_PENDING,
+                },
+                {
+                    "id": 14,
+                    "local_track_id": 5,
+                    "streaming_track_id": 10,
+                    "match_method": "tags",
+                    "score": 0.72,
+                    "status": SUGGESTED_LINK_STATUS_REJECTED,
+                    "rejected_at": rejected_at,
+                },
+            ],
         )
 
     router = create_router(require_database_url=lambda: database_url)
@@ -87,9 +122,9 @@ def test_list_proposals_returns_joined_records(tmp_path: Path) -> None:
                 "streaming_album": "Album",
                 "match_method": "tags",
                 "score": 0.82,
-                "status": "rejected",
+                "status": "pending",
                 "confidence_band": "medium",
-                "rejected_at": "2026-05-03T12:00:00",
+                "rejected_at": None,
             }
         ]
     }
