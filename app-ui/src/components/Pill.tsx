@@ -2,6 +2,8 @@ import type { HTMLAttributes, ReactNode } from "react";
 import { controlClasses } from "../styles/componentClasses";
 import { pillToneClasses, type PillTone } from "../styles/toneClasses";
 
+export type { PillTone };
+
 type PillProps = HTMLAttributes<HTMLSpanElement> & {
   children: ReactNode;
   tone?: PillTone;

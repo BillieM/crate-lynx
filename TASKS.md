@@ -12,7 +12,7 @@ Design constraints for every task:
 - [x] Replace the oversized playlist overview hero with a compact header band that keeps playlist title, sync time, linked/pending/unlinked counts, coverage, artwork, and sync errors visible without dominating the viewport
 - [x] Make playlist filters smaller and more space-efficient while preserving filter counts, selected states, keyboard accessibility, and Catppuccin status colors
 - [x] Convert playlist track cards into compact rows using the existing row-card model, reducing padding and duplicated information while keeping status, title, artist, album, duration, and actions easy to scan
-- [ ] Apply the compact design system to proposal cards, empty states, loading states, status messages, and popovers so secondary views match the playlist screen
+- [x] Apply the compact design system to proposal cards, empty states, loading states, status messages, and popovers so secondary views match the playlist screen
 - [ ] Review arbitrary Tailwind values across touched frontend components and replace repeated sizing, spacing, radius, shadow, and typography patterns with shared styles where practical
 - [ ] Verify desktop and narrower viewport layouts for clipping, overlap, excessive whitespace, readable text, stable controls, and consistent Catppuccin Mocha theming
 - [ ] Update affected frontend tests for changed structure, labels, accessible states, or shared primitive behavior

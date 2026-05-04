@@ -49,7 +49,7 @@ function PlaylistCollectionState({ status }: { status: PlaylistCollectionStatus 
 
   return (
     <section className="flex min-h-0 flex-1 items-center justify-center">
-      <EmptyStateCard body={copy[status].body} className="max-w-[420px] py-7" title={copy[status].title} />
+      <EmptyStateCard body={copy[status].body} className="max-w-[420px]" title={copy[status].title} />
     </section>
   );
 }
@@ -88,7 +88,7 @@ function PlaylistConfigRow({
   playlist: StreamingPlaylistConfig;
 }) {
   return (
-    <article className={`${surfaceClasses.panelRadius} border border-ctp-surface1/80 bg-ctp-mantle px-5 py-4`}>
+    <article className={surfaceClasses.rowCardCompact}>
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
           <h3 className={`truncate ${textClasses.title}`}>{playlist.title}</h3>
@@ -103,7 +103,7 @@ function PlaylistConfigRow({
         />
       </div>
 
-      <dl className="mt-4 grid gap-3 text-[12px] sm:grid-cols-3">
+      <dl className="grid gap-3 text-[12px] sm:grid-cols-3">
         <div>
           <dt className="font-medium text-ctp-subtext0">Tracks</dt>
           <dd className="mt-1 font-semibold tabular-nums text-ctp-text">{playlist.track_count}</dd>

@@ -166,15 +166,15 @@ function SearchPanel() {
       {isOpen ? (
         <div className={`absolute inset-x-0 top-[calc(100%+0.5rem)] z-10 overflow-hidden ${surfaceClasses.popover}`}>
           {isFetching ? (
-            <p className="px-3 py-3 text-[12px] text-ctp-subtext0">Searching library...</p>
+            <p className={`${surfaceClasses.popoverBody} text-[12px] text-ctp-subtext0`}>Searching library...</p>
           ) : null}
 
           {!isFetching && error ? (
-            <p className="px-3 py-3 text-[12px] text-ctp-red">Search unavailable right now.</p>
+            <p className={`${surfaceClasses.popoverBody} text-[12px] text-ctp-red`}>Search unavailable right now.</p>
           ) : null}
 
           {!isFetching && !error && hasQuery && results.length === 0 ? (
-            <p className="px-3 py-3 text-[12px] text-ctp-subtext0">No matching playlists or tracks.</p>
+            <p className={`${surfaceClasses.popoverBody} text-[12px] text-ctp-subtext0`}>No matching playlists or tracks.</p>
           ) : null}
 
           {!isFetching && !error && results.length > 0 ? (

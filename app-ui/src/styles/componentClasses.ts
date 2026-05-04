@@ -29,14 +29,16 @@ const surfaceFillClasses = {
 export const surfaceClasses = {
   cardRadius: radiusClasses.card,
   compactCard: `${radiusClasses.card} ${borderClasses.muted} ${surfaceFillClasses.card} p-4 ${shadowClasses.compact}`,
-  emptyState: `${radiusClasses.card} border px-5 py-5 text-center`,
+  dashedPlaceholder: `${radiusClasses.card} border border-dashed border-ctp-surface0 px-4 py-3`,
+  emptyState: `${radiusClasses.card} border px-4 py-4 text-center`,
   elevatedPanel:
     `${radiusClasses.panel} ${borderClasses.default} ${surfaceFillClasses.elevated} px-5 py-5 ${shadowClasses.elevated}`,
   insetPanel: `${radiusClasses.panel} ${surfaceFillClasses.inset} ring-1 ring-inset ring-ctp-surface1/80`,
   panelRadius: radiusClasses.panel,
   popover: `${radiusClasses.popover} border border-ctp-surface1 bg-ctp-mantle ${shadowClasses.popover}`,
+  popoverBody: "px-3 py-2.5",
   raisedArtwork: `${radiusClasses.artwork} ${shadowClasses.elevated} ring-1 ring-inset ring-ctp-surface1/80`,
-  statusPanel: `${radiusClasses.panel} border px-4 py-3`,
+  statusPanel: `${radiusClasses.panel} border px-3.5 py-2.5`,
   trackCard: `${radiusClasses.card} ${borderClasses.default} ${surfaceFillClasses.row} ${shadowClasses.compact}`,
   rowCard: `grid gap-3 px-4 py-3 ${radiusClasses.card} ${borderClasses.default} ${surfaceFillClasses.row} ${shadowClasses.compact}`,
   rowCardCompact: `grid gap-2.5 px-3.5 py-2.5 ${radiusClasses.card} ${borderClasses.default} ${surfaceFillClasses.row} ${shadowClasses.compact}`,

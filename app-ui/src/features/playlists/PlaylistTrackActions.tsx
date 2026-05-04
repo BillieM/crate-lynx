@@ -57,7 +57,7 @@ export function PlaylistTrackActions({ onReviewTrack, playlistId, track }: Playl
         <ActionButton onClick={() => setIsLinkInfoOpen((current) => !current)}>Linked</ActionButton>
         {isLinkInfoOpen ? (
           <div
-            className={`absolute right-0 top-[calc(100%+0.5rem)] z-10 w-56 p-3 text-left ${surfaceClasses.popover} border-ctp-green/30`}
+            className={`absolute right-0 top-[calc(100%+0.5rem)] z-10 w-56 text-left ${surfaceClasses.popover} ${surfaceClasses.popoverBody} border-ctp-green/30`}
             role="dialog"
           >
             <p className={`${textClasses.eyebrow} text-ctp-green`}>Final link info</p>

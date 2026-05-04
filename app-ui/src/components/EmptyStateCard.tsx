@@ -16,8 +16,8 @@ export function EmptyStateCard({ body, className = "", role, title, tone = "neut
       className={`${surfaceClasses.emptyState} ${emptyStateToneClasses[tone]} ${className}`}
       role={role}
     >
-      <h2 className={textClasses.sectionTitle}>{title}</h2>
-      <p className="mt-2 text-[13px] leading-6">{body}</p>
+      <h2 className={textClasses.title}>{title}</h2>
+      <p className={`mt-1.5 ${textClasses.bodyMutedRelaxed}`}>{body}</p>
     </div>
   );
 }

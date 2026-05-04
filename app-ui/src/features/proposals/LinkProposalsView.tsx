@@ -4,6 +4,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { ActionButton } from "../../components/ActionButton";
 import { EmptyStateCard } from "../../components/EmptyStateCard";
 import { FilterChipGroup, type FilterChipOption } from "../../components/FilterChipGroup";
+import { Pill, type PillTone } from "../../components/Pill";
 import { controlClasses, surfaceClasses, textClasses } from "../../styles/componentClasses";
 import {
   approveLinkProposal,
@@ -127,6 +128,20 @@ function getMatchMethodLabel(matchMethod: string) {
   return matchMethod;
 }
 
+function getMatchMethodTone(matchMethod: string): PillTone {
+  const normalizedMethod = matchMethod.toLowerCase();
+
+  if (normalizedMethod === "isrc") {
+    return "success";
+  }
+
+  if (normalizedMethod === "acoustic") {
+    return "info";
+  }
+
+  return "neutral";
+}
+
 function formatProposalScore(score: number) {
   return `${Math.round(score * 100)}%`;
 }
@@ -210,6 +225,7 @@ export function LinkProposalsView() {
         <FilterChipGroup
           activeValue={activeFilter}
           ariaLabel="Confidence band filters"
+          density="compact"
           onValueChange={updateConfidenceBandFilter}
           options={proposalBandFilterChips}
         />
@@ -253,14 +269,14 @@ export function LinkProposalsView() {
 
     return renderProposalFrame(
       <div className="flex min-h-0 flex-1 items-center justify-center">
-        <EmptyStateCard body={emptyBody} className="max-w-[460px] py-7 text-left" title={emptyTitle} />
+        <EmptyStateCard body={emptyBody} className="max-w-[420px] text-left" title={emptyTitle} />
       </div>,
     );
   }
 
   return renderProposalFrame(
     <div className="min-h-0 flex-1 overflow-y-auto pr-1">
-      <div className="grid gap-6">
+      <div className="grid gap-4">
         {proposalBandOrder.map((band) => {
           const bandProposals = groupedProposals[band];
           const label = proposalBandLabels[band];
@@ -271,7 +287,7 @@ export function LinkProposalsView() {
                 <h3 className="text-[14px] font-semibold text-ctp-text" id={`proposal-band-${band}`}>
                   {label}
                 </h3>
-                <span className="rounded-full bg-ctp-surface0 px-2.5 py-1 text-[12px] font-semibold text-ctp-subtext0">
+                <span className={controlClasses.countBadge}>
                   {bandProposals.length}
                 </span>
               </header>
@@ -296,7 +312,7 @@ export function LinkProposalsView() {
                   ))}
                 </ul>
               ) : (
-                <p className={`rounded-[8px] border border-dashed border-ctp-surface0 px-5 py-4 ${textClasses.bodyMuted}`}>
+                <p className={`${surfaceClasses.dashedPlaceholder} ${textClasses.bodyMuted}`}>
                   No {label.toLowerCase()} confidence proposals.
                 </p>
               )}
@@ -330,8 +346,8 @@ function ProposalCard({
   };
 
   return (
-    <li className={surfaceClasses.compactCard}>
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_210px]">
+    <li className={surfaceClasses.rowCardCompact}>
+      <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_190px]">
         <div className="min-w-0">
           <p className={`${textClasses.eyebrow} tracking-normal text-ctp-subtext0`}>Local track</p>
           <p className="mt-1 truncate text-[14px] font-semibold text-ctp-text">{getLocalTrackLabel(proposal)}</p>
@@ -348,9 +364,9 @@ function ProposalCard({
         </div>
         <div className="grid content-between gap-3">
           <div className="flex flex-wrap items-center gap-2 xl:justify-end">
-            <span className={`bg-ctp-surface0 text-ctp-subtext0 ring-1 ring-inset ring-ctp-surface1 ${controlClasses.pill}`}>
+            <Pill tone={getMatchMethodTone(proposal.match_method)}>
               {getMatchMethodLabel(proposal.match_method)}
-            </span>
+            </Pill>
             <span className="text-[15px] font-semibold text-ctp-text">{formatProposalScore(proposal.score)}</span>
           </div>
           <div>
