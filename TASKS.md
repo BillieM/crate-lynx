@@ -8,5 +8,5 @@
 - [x] Add pending, success, and error states for the metadata refresh action
 - [x] Add a "Sync selected" action wired to `POST /api/streaming/accounts/{id}/sync`
 - [x] Add pending, success, and error states for the selected-playlist sync action
-- [ ] Cover newly discovered unselected playlists and toggle behavior in frontend tests
+- [x] Cover newly discovered unselected playlists and toggle behavior in frontend tests
 - [ ] Run relevant frontend validation: `npm run lint`, `npm test`, and `npm run build`

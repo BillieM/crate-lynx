@@ -198,6 +198,16 @@ function mockPlaylistFetch({ metadataRefreshHandler, selectedSyncHandler }: Mock
       } as Response;
     }
 
+    if (url === "/api/streaming/playlists/12" && init?.method === "PATCH") {
+      return {
+        ok: true,
+        json: async () => ({
+          ...streamingPlaylistConfigResponse.playlists[0],
+          selected_for_sync: false,
+        }),
+      } as Response;
+    }
+
     if (playlistEndpointMatch) {
       const [, playlistId, suffix] = playlistEndpointMatch;
 
@@ -352,6 +362,7 @@ describe("App", () => {
     renderApp();
 
     expect(await screen.findByRole("heading", { level: 1, name: "Late Night Drive" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Fresh Discoveries/i })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Configure sync" }));
 
     expect(screen.getByRole("heading", { level: 1, name: "YouTube Music" })).toBeInTheDocument();
@@ -369,7 +380,7 @@ describe("App", () => {
     expect(screen.queryByRole("button", { name: "Configure sync" })).not.toBeInTheDocument();
   });
 
-  it("updates playlist sync selection and refreshes sidebar and config queries", async () => {
+  it("updates playlist sync selections and refreshes sidebar and config queries", async () => {
     const fetchMock = mockPlaylistFetch();
 
     renderApp();
@@ -383,6 +394,18 @@ describe("App", () => {
     const configFetchesBeforeToggle = fetchMock.mock.calls.filter(
       ([input]) => String(input) === "/api/streaming/playlists/config",
     ).length;
+
+    fireEvent.click(await screen.findByRole("checkbox", { name: "Select Late Night Drive for sync" }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith("/api/streaming/playlists/12", {
+        body: JSON.stringify({ selected_for_sync: false }),
+        headers: {
+          "Content-Type": "application/json",
+        },
+        method: "PATCH",
+      });
+    });
 
     fireEvent.click(await screen.findByRole("checkbox", { name: "Select Fresh Discoveries for sync" }));
 
