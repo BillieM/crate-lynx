@@ -142,6 +142,50 @@ def test_startup_falls_back_to_env_ingestion_root_without_database_url(
     asyncio.run(run_lifespan())
 
 
+def test_startup_defaults_beets_imports_to_music_and_data(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite:///{tmp_path / 'settings.db'}"
+    engine = create_engine(database_url)
+    settings_metadata.create_all(engine)
+    seen: dict[str, object] = {}
+
+    class StubBeetsImporter:
+        def __init__(self, beet_binary, library_root, library_database) -> None:
+            self.beet_binary = beet_binary
+            self.library_root = library_root
+            self.library_database = library_database
+            seen["beets_importer"] = self
+
+    class StubIngestionProcessor:
+        def __init__(self, **kwargs) -> None:
+            seen["processor_kwargs"] = kwargs
+
+        def process(self, path: Path):
+            raise AssertionError(f"unexpected process call for {path}")
+
+    monkeypatch.setenv("DATABASE_URL", database_url)
+    monkeypatch.delenv("LIBRARY_ROOT", raising=False)
+    monkeypatch.delenv("BEETS_LIBRARY", raising=False)
+    monkeypatch.setattr("app.main.BeetsImporter", StubBeetsImporter)
+    monkeypatch.setattr("app.main.IngestionProcessor", StubIngestionProcessor)
+    monkeypatch.setattr("app.main.IngestionWatcher", StubIngestionWatcher)
+    StubIngestionWatcher.instances = []
+    app = create_app()
+
+    async def run_lifespan() -> None:
+        async with app.router.lifespan_context(app):
+            pass
+
+    asyncio.run(run_lifespan())
+
+    beets_importer = seen["beets_importer"]
+    assert beets_importer.library_root == Path("/music")
+    assert beets_importer.library_database == "/data/beets/library.db"
+    assert seen["processor_kwargs"]["beets_importer"] is beets_importer
+
+
 def test_settings_ingest_folder_mutations_synchronize_active_watcher(
     monkeypatch,
     tmp_path: Path,
