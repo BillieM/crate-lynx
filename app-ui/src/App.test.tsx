@@ -539,7 +539,11 @@ describe("App", () => {
     expect(screen.getByRole("heading", { level: 1, name: "All tracks" })).toBeInTheDocument();
     expect(screen.getByText("Local library")).toBeInTheDocument();
     expect(screen.getByRole("region", { name: "Local library tracks" })).toBeInTheDocument();
-    expect(screen.getByLabelText("Library stats shell")).toBeInTheDocument();
+    const stats = screen.getByLabelText("Library stats");
+    expect(within(stats).getByLabelText("Total tracks")).toHaveTextContent("312");
+    expect(within(stats).getByLabelText("Linked tracks")).toHaveTextContent("244");
+    expect(within(stats).getByLabelText("Pending tracks")).toHaveTextContent("43");
+    expect(within(stats).getByLabelText("Unlinked tracks")).toHaveTextContent("25");
     expect(screen.getByLabelText("Library filters shell")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Configure sync" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Sync" })).not.toBeInTheDocument();
@@ -560,6 +564,7 @@ describe("App", () => {
 
     expect(screen.getByRole("heading", { level: 1, name: "All tracks" })).toBeInTheDocument();
     expect(screen.getByText("Local library")).toBeInTheDocument();
+    expect(screen.getByLabelText("Library stats")).toBeInTheDocument();
     expect(screen.getByRole("region", { name: "Local library tracks" })).toBeInTheDocument();
     expect(document.getElementById("library")).toHaveAttribute("data-view-active", "true");
     expect(document.getElementById("playlists")).toHaveAttribute("data-view-active", "false");
