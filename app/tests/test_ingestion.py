@@ -28,12 +28,17 @@ from sqlalchemy import create_engine, select
 class StubObserver:
     def __init__(self) -> None:
         self.scheduled: list[tuple[object, str, bool]] = []
+        self.unscheduled: list[object] = []
         self.started = False
         self.stopped = False
         self.joined = False
 
-    def schedule(self, handler: object, path: str, recursive: bool) -> None:
+    def schedule(self, handler: object, path: str, recursive: bool) -> object:
         self.scheduled.append((handler, path, recursive))
+        return f"watch:{path}"
+
+    def unschedule(self, watch: object) -> None:
+        self.unscheduled.append(watch)
 
     def start(self) -> None:
         self.started = True
@@ -98,6 +103,53 @@ def test_ingestion_watcher_starts_and_stops(tmp_path: Path) -> None:
 
     assert stub_observer.stopped is True
     assert stub_observer.joined is True
+
+
+def test_ingestion_watcher_schedules_multiple_roots(tmp_path: Path) -> None:
+    stub_observer = StubObserver()
+    first_root = tmp_path / "ingestion"
+    second_root = tmp_path / "soulseek"
+    watcher = IngestionWatcher(
+        root=[first_root, second_root],
+        on_new_file=lambda path: None,
+        observer_factory=lambda: stub_observer,
+    )
+
+    watcher.start()
+
+    assert first_root.is_dir()
+    assert second_root.is_dir()
+    assert {scheduled_path for _, scheduled_path, _ in stub_observer.scheduled} == {
+        str(first_root),
+        str(second_root),
+    }
+    assert stub_observer.started is True
+
+
+def test_ingestion_watcher_adds_and_removes_roots_live(tmp_path: Path) -> None:
+    stub_observer = StubObserver()
+    initial_root = tmp_path / "ingestion"
+    added_root = tmp_path / "soulseek"
+    watcher = IngestionWatcher(
+        root=initial_root,
+        on_new_file=lambda path: None,
+        observer_factory=lambda: stub_observer,
+    )
+    watcher.start()
+
+    watcher.add_root(added_root)
+    watcher.add_root(added_root)
+
+    assert added_root.is_dir()
+    assert [scheduled_path for _, scheduled_path, _ in stub_observer.scheduled] == [
+        str(initial_root),
+        str(added_root),
+    ]
+
+    watcher.remove_root(added_root)
+    watcher.remove_root(added_root)
+
+    assert stub_observer.unscheduled == [f"watch:{added_root}"]
 
 
 def test_audio_preparer_passes_mp3_through_unchanged(
