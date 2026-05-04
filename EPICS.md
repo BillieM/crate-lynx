@@ -89,7 +89,7 @@ Out of scope: the discovery-call `get_library_playlists()` HTTP 400 (tracked sep
 
 ---
 
-### E12 — Backend: configurable per-playlist sync `in progress`
+### E12 — Backend: configurable per-playlist sync `done`
 **Subdir:** `app/`
 Add per-playlist sync selection and split discovery from track-sync.
 
@@ -106,7 +106,7 @@ Add per-playlist sync selection and split discovery from track-sync.
 
 ---
 
-### E13 — Frontend: playlist sync configuration UI
+### E13 — Frontend: playlist sync configuration UI `in progress`
 **Subdir:** `app-ui/`
 Build the YouTube Music config surface (no existing settings/config shell — start from zero).
 

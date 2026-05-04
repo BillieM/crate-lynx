@@ -9,6 +9,7 @@ import {
   fetchStreamingPlaylists,
   fetchPlaylistTracks,
   playlistQueryKeys,
+  refreshStreamingAccountMetadata,
   updateStreamingPlaylistConfig,
   usePlaylistDetailQuery,
   useStreamingPlaylistConfigQuery,
@@ -274,6 +275,32 @@ describe("playlist queries", () => {
         "Content-Type": "application/json",
       },
       method: "PATCH",
+    });
+  });
+
+  it("queues a streaming account metadata refresh", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+
+      if (url === "/api/streaming/accounts/4/refresh-metadata" && init?.method === "POST") {
+        return {
+          ok: true,
+          json: async () => ({
+            account_id: 4,
+            job_id: "metadata-refresh-job-4",
+          }),
+        } as Response;
+      }
+
+      failUnexpectedFetch(url, init);
+    });
+
+    await expect(refreshStreamingAccountMetadata(4)).resolves.toEqual({
+      account_id: 4,
+      job_id: "metadata-refresh-job-4",
+    });
+    expect(fetchMock).toHaveBeenCalledWith("/api/streaming/accounts/4/refresh-metadata", {
+      method: "POST",
     });
   });
 

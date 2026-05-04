@@ -117,6 +117,12 @@ const streamingPlaylistConfigResponse: StreamingPlaylistConfigResponse = {
 };
 const selectedPlaylistSyncEndpoint = "/api/streaming/accounts/4/sync";
 const selectedPlaylistSyncResponse = { account_id: 4, job_id: "selected-playlists-sync-job-4" };
+const metadataRefreshEndpoint = "/api/streaming/accounts/4/refresh-metadata";
+const metadataRefreshResponse = { account_id: 4, job_id: "metadata-refresh-job-4" };
+
+type MockPlaylistFetchOptions = {
+  metadataRefreshHandler?: () => Promise<Response> | Response;
+};
 
 function failUnexpectedFetch(url: string, init?: RequestInit): never {
   throw new Error(`Unexpected fetch request: ${init?.method ?? "GET"} ${url}`);
@@ -153,7 +159,7 @@ function buildPlaylistTracks(id: number, title: string): PlaylistTracksResponse 
   };
 }
 
-function mockPlaylistFetch() {
+function mockPlaylistFetch({ metadataRefreshHandler }: MockPlaylistFetchOptions = {}) {
   const playlistDetailsById = new Map<string, typeof playlistDetailResponse>([
     ["12", playlistDetailResponse],
     ...secondaryPlaylistFixtures.map(({ id, name }) => [String(id), buildPlaylistDetail(id, name)] as const),
@@ -223,6 +229,17 @@ function mockPlaylistFetch() {
       return {
         ok: true,
         json: async () => selectedPlaylistSyncResponse,
+      } as Response;
+    }
+
+    if (url === metadataRefreshEndpoint && init?.method === "POST") {
+      if (metadataRefreshHandler) {
+        return metadataRefreshHandler();
+      }
+
+      return {
+        ok: true,
+        json: async () => metadataRefreshResponse,
       } as Response;
     }
 
@@ -339,6 +356,7 @@ describe("App", () => {
     expect(screen.getByRole("heading", { level: 3, name: "Fresh Discoveries" })).toBeInTheDocument();
     expect(screen.getByRole("checkbox", { name: "Select Late Night Drive for sync" })).toBeChecked();
     expect(screen.getByRole("checkbox", { name: "Select Fresh Discoveries for sync" })).not.toBeChecked();
+    expect(screen.getByRole("button", { name: "Refresh playlist metadata" })).toBeInTheDocument();
     expect(screen.getByText("Provider ID PL31 / Account 4")).toBeInTheDocument();
     expect(screen.getByText("Malformed playlist payload")).toBeInTheDocument();
     expect(document.getElementById("playlists")).toHaveAttribute("data-view-active", "true");
@@ -380,6 +398,84 @@ describe("App", () => {
         fetchMock.mock.calls.filter(([input]) => String(input) === "/api/streaming/playlists/config").length,
       ).toBeGreaterThan(configFetchesBeforeToggle);
     });
+  });
+
+  it("queues a playlist metadata refresh and refreshes sidebar and config queries", async () => {
+    const fetchMock = mockPlaylistFetch();
+
+    renderApp();
+
+    expect(await screen.findByRole("heading", { level: 1, name: "Late Night Drive" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Configure sync" }));
+
+    const playlistListFetchesBeforeRefresh = fetchMock.mock.calls.filter(
+      ([input]) => String(input) === "/api/streaming/playlists",
+    ).length;
+    const configFetchesBeforeRefresh = fetchMock.mock.calls.filter(
+      ([input]) => String(input) === "/api/streaming/playlists/config",
+    ).length;
+
+    fireEvent.click(await screen.findByRole("button", { name: "Refresh playlist metadata" }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(metadataRefreshEndpoint, {
+        method: "POST",
+      });
+    });
+    expect(await screen.findByText("Metadata refresh queued.")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(
+        fetchMock.mock.calls.filter(([input]) => String(input) === "/api/streaming/playlists").length,
+      ).toBeGreaterThan(playlistListFetchesBeforeRefresh);
+      expect(
+        fetchMock.mock.calls.filter(([input]) => String(input) === "/api/streaming/playlists/config").length,
+      ).toBeGreaterThan(configFetchesBeforeRefresh);
+    });
+  });
+
+  it("shows pending state while playlist metadata refresh is running", async () => {
+    let resolveRefresh: (response: Response) => void = () => {};
+    const refreshPromise = new Promise<Response>((resolve) => {
+      resolveRefresh = resolve;
+    });
+    mockPlaylistFetch({
+      metadataRefreshHandler: () => refreshPromise,
+    });
+
+    renderApp();
+
+    expect(await screen.findByRole("heading", { level: 1, name: "Late Night Drive" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Configure sync" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Refresh playlist metadata" }));
+
+    expect(await screen.findByRole("button", { name: "Refreshing..." })).toBeDisabled();
+    expect(screen.getByRole("status")).toHaveTextContent("Refreshing playlist metadata...");
+
+    resolveRefresh({
+      ok: true,
+      json: async () => metadataRefreshResponse,
+    } as Response);
+
+    expect(await screen.findByText("Metadata refresh queued.")).toBeInTheDocument();
+  });
+
+  it("shows an error state when playlist metadata refresh fails", async () => {
+    mockPlaylistFetch({
+      metadataRefreshHandler: () =>
+        ({
+          ok: false,
+          status: 500,
+        }) as Response,
+    });
+
+    renderApp();
+
+    expect(await screen.findByRole("heading", { level: 1, name: "Late Night Drive" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Configure sync" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Refresh playlist metadata" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Metadata refresh failed.");
+    expect(screen.getByRole("button", { name: "Refresh playlist metadata" })).toBeEnabled();
   });
 
   it("opens the first synced playlist by default", async () => {

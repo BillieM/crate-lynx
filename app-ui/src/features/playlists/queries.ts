@@ -70,6 +70,11 @@ export type PlaylistM3uExport = {
   filename: string;
 };
 
+export type StreamingSyncResponse = {
+  account_id: number;
+  job_id: string;
+};
+
 export const playlistQueryKeys = {
   all: ["playlists"] as const,
   config: () => ["playlists", "config"] as const,
@@ -136,6 +141,18 @@ export async function updateStreamingPlaylistConfig({
   }
 
   return (await response.json()) as StreamingPlaylistConfig;
+}
+
+export async function refreshStreamingAccountMetadata(accountId: number | string): Promise<StreamingSyncResponse> {
+  const response = await fetch(`/api/streaming/accounts/${encodeURIComponent(String(accountId))}/refresh-metadata`, {
+    method: "POST",
+  });
+
+  if (!response.ok) {
+    throw new Error(`Metadata refresh request failed with status ${response.status}`);
+  }
+
+  return (await response.json()) as StreamingSyncResponse;
 }
 
 export async function fetchPlaylistTracks(playlistId: number | string): Promise<PlaylistTracksResponse> {

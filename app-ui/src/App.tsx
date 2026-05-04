@@ -9,8 +9,10 @@ import { PlaylistTrackRow } from "./features/playlists/PlaylistTrackRow";
 import {
   exportPlaylistM3u,
   playlistQueryKeys,
+  refreshStreamingAccountMetadata,
   type StreamingPlaylist,
   type StreamingPlaylistConfig,
+  type StreamingSyncResponse,
   updateStreamingPlaylistConfig,
   usePlaylistDetailQuery,
   useStreamingPlaylistConfigQuery,
@@ -91,11 +93,6 @@ type SearchResult = {
 type SearchResponse = {
   query: string;
   results: SearchResult[];
-};
-
-type StreamingSyncResponse = {
-  account_id: number;
-  job_id: string;
 };
 
 type ViewConfig = {
@@ -681,6 +678,48 @@ function PlaylistCollectionState({ status }: { status: PlaylistCollectionStatus 
   );
 }
 
+function PlaylistActionStatus({
+  errorText,
+  isError,
+  isPending,
+  isSuccess,
+  pendingText,
+  successText,
+}: {
+  errorText: string;
+  isError: boolean;
+  isPending: boolean;
+  isSuccess: boolean;
+  pendingText: string;
+  successText: string;
+}) {
+  if (isPending) {
+    return (
+      <p className="text-[12px] font-medium text-ctp-yellow" role="status">
+        {pendingText}
+      </p>
+    );
+  }
+
+  if (isError) {
+    return (
+      <p className="text-[12px] font-medium text-ctp-red" role="alert">
+        {errorText}
+      </p>
+    );
+  }
+
+  if (isSuccess) {
+    return (
+      <p className="text-[12px] font-medium text-ctp-green" role="status">
+        {successText}
+      </p>
+    );
+  }
+
+  return null;
+}
+
 function PlaylistSyncToggle({
   isPending,
   onToggle,
@@ -753,6 +792,15 @@ function PlaylistConfigRow({
 function PlaylistSyncConfiguration() {
   const queryClient = useQueryClient();
   const configQuery = useStreamingPlaylistConfigQuery();
+  const metadataRefreshMutation = useMutation({
+    mutationFn: refreshStreamingAccountMetadata,
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: playlistQueryKeys.list() }),
+        queryClient.invalidateQueries({ queryKey: playlistQueryKeys.config() }),
+      ]);
+    },
+  });
   const toggleMutation = useMutation({
     mutationFn: updateStreamingPlaylistConfig,
     onSuccess: async () => {
@@ -764,6 +812,7 @@ function PlaylistSyncConfiguration() {
   });
   const playlists = configQuery.data?.playlists ?? [];
   const selectedCount = getSelectedPlaylistCount(playlists);
+  const accountId = playlists[0]?.account_id;
 
   if (configQuery.isPending) {
     return <PlaylistCollectionState status="loading" />;
@@ -785,6 +834,28 @@ function PlaylistSyncConfiguration() {
           <p className="mt-1 text-[13px] text-ctp-subtext0">
             {selectedCount} of {playlists.length} discovered playlists selected for sync.
           </p>
+        </div>
+        <div className="flex flex-col items-start gap-2 sm:items-end">
+          <button
+            className="rounded-[10px] border border-ctp-surface1 bg-ctp-surface0 px-3 py-1.5 text-[12px] font-semibold text-ctp-text transition-colors hover:border-ctp-overlay0 hover:bg-ctp-surface1 disabled:cursor-not-allowed disabled:border-ctp-surface0 disabled:text-ctp-overlay1 disabled:hover:bg-ctp-surface0"
+            disabled={accountId === undefined || metadataRefreshMutation.isPending}
+            onClick={() => {
+              if (accountId !== undefined) {
+                metadataRefreshMutation.mutate(accountId);
+              }
+            }}
+            type="button"
+          >
+            {metadataRefreshMutation.isPending ? "Refreshing..." : "Refresh playlist metadata"}
+          </button>
+          <PlaylistActionStatus
+            errorText="Metadata refresh failed."
+            isError={metadataRefreshMutation.isError}
+            isPending={metadataRefreshMutation.isPending}
+            isSuccess={metadataRefreshMutation.isSuccess}
+            pendingText="Refreshing playlist metadata..."
+            successText="Metadata refresh queued."
+          />
         </div>
       </div>
 
