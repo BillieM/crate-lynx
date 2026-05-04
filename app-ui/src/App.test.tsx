@@ -173,6 +173,7 @@ const linkProposalsResponse: LinkProposalsResponse = {
 
 type MockPlaylistFetchOptions = {
   activeSyncHandler?: () => Promise<Response> | Response;
+  linkProposalsHandler?: (url: string) => Promise<Response> | Response;
   metadataRefreshHandler?: () => Promise<Response> | Response;
   selectedSyncHandler?: () => Promise<Response> | Response;
 };
@@ -212,7 +213,12 @@ function buildPlaylistTracks(id: number, title: string): PlaylistTracksResponse 
   };
 }
 
-function mockPlaylistFetch({ activeSyncHandler, metadataRefreshHandler, selectedSyncHandler }: MockPlaylistFetchOptions = {}) {
+function mockPlaylistFetch({
+  activeSyncHandler,
+  linkProposalsHandler,
+  metadataRefreshHandler,
+  selectedSyncHandler,
+}: MockPlaylistFetchOptions = {}) {
   const playlistDetailsById = new Map<string, typeof playlistDetailResponse>([
     ["12", playlistDetailResponse],
     ...secondaryPlaylistFixtures.map(({ id, name }) => [String(id), buildPlaylistDetail(id, name)] as const),
@@ -240,7 +246,11 @@ function mockPlaylistFetch({ activeSyncHandler, metadataRefreshHandler, selected
       } as Response;
     }
 
-    if (url === "/api/proposals") {
+    if (/^\/api\/proposals(?:\?|$)/.test(url)) {
+      if (linkProposalsHandler) {
+        return linkProposalsHandler(url);
+      }
+
       return {
         ok: true,
         json: async () => linkProposalsResponse,
@@ -438,7 +448,7 @@ describe("App", () => {
     expect(screen.getByRole("heading", { level: 1, name: "Link proposals" })).toBeInTheDocument();
     expect(screen.getByText("Needs approval")).toBeInTheDocument();
     expect(await screen.findByRole("heading", { level: 2, name: "Proposal queue" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { level: 3, name: "High" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { level: 3, name: "High" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { level: 3, name: "Medium" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { level: 3, name: "Low" })).toBeInTheDocument();
     expect(screen.getByText("Night Runner.mp3")).toBeInTheDocument();
@@ -446,6 +456,53 @@ describe("App", () => {
     expect(screen.getByText("Loose Cable.mp3")).toBeInTheDocument();
     expect(document.getElementById("proposals")).toHaveAttribute("data-view-active", "true");
     expect(document.getElementById("playlists")).toHaveAttribute("data-view-active", "false");
+  });
+
+  it("keeps proposal filters visible while proposals are loading", async () => {
+    mockPlaylistFetch({
+      linkProposalsHandler: () => new Promise<Response>(() => {}),
+    });
+
+    renderApp(["/proposals"]);
+
+    expect(await screen.findByRole("status")).toHaveTextContent("Loading proposals");
+    expect(screen.getByRole("group", { name: "Confidence band filters" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "All" })).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("keeps proposal filters visible when proposal loading fails", async () => {
+    mockPlaylistFetch({
+      linkProposalsHandler: () =>
+        ({
+          ok: false,
+          status: 500,
+        }) as Response,
+    });
+
+    renderApp(["/proposals"]);
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Proposals unavailable");
+    expect(screen.getByRole("group", { name: "Confidence band filters" })).toBeInTheDocument();
+  });
+
+  it("keeps proposal filters visible for an empty filtered proposal result", async () => {
+    const fetchMock = mockPlaylistFetch({
+      linkProposalsHandler: () =>
+        ({
+          ok: true,
+          json: async () => ({ proposals: [] }),
+        }) as Response,
+    });
+
+    renderApp(["/proposals?band=high"]);
+
+    expect(await screen.findByRole("heading", { level: 2, name: "No high confidence proposals" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "High" })).toHaveAttribute("aria-pressed", "true");
+    fireEvent.click(screen.getByRole("button", { name: "All" }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith("/api/proposals");
+    });
   });
 
   it("opens the YouTube Music sync configuration shell from the topbar", async () => {

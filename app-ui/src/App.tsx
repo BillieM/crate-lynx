@@ -1,6 +1,6 @@
 /* eslint-disable react-refresh/only-export-components */
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocation, useNavigate } from "react-router-dom";
 import { EmptyStateCard } from "./components/EmptyStateCard";
@@ -957,45 +957,16 @@ function LinkProposalsView() {
     const search = params.toString();
     navigate({ pathname: location.pathname, search: search ? `?${search}` : "" });
   };
-
-  if (proposalsQuery.isPending) {
-    return (
-      <section className="flex min-h-0 flex-1 items-center justify-center">
-        <EmptyStateCard body="Checking for pending local-to-streaming match suggestions." title="Loading proposals" />
-      </section>
-    );
-  }
-
-  if (proposalsQuery.isError) {
-    return (
-      <section className="flex min-h-0 flex-1 items-center justify-center">
-        <EmptyStateCard
-          body="Pending local-to-streaming match suggestions could not be loaded."
-          title="Proposals unavailable"
-          tone="error"
-        />
-      </section>
-    );
-  }
-
-  if (proposalCount === 0) {
-    return (
-      <section className="flex min-h-0 flex-1 items-center justify-center">
-        <EmptyStateCard
-          body="Pending local-to-streaming match suggestions will appear here as matching jobs finish."
-          className="max-w-[460px] py-7 text-left"
-          title="Proposal queue"
-        />
-      </section>
-    );
-  }
-
-  return (
+  const renderProposalFrame = (children: ReactNode) => (
     <section className="flex min-h-0 flex-1 flex-col gap-4">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h2 className="text-[18px] font-semibold text-ctp-text">Proposal queue</h2>
-          <p className="mt-1 text-[13px] text-ctp-subtext0">{proposalCount} pending suggestions grouped by confidence.</p>
+          <p className="mt-1 text-[13px] text-ctp-subtext0">
+            {proposalsQuery.isSuccess
+              ? `${proposalCount} pending suggestions grouped by confidence.`
+              : "Pending suggestions grouped by confidence."}
+          </p>
         </div>
         <div aria-label="Confidence band filters" className="flex flex-wrap items-center gap-2" role="group">
           {proposalBandFilterChips.map((chip) => {
@@ -1019,53 +990,103 @@ function LinkProposalsView() {
           })}
         </div>
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto pr-1">
-        <div className="grid gap-6">
-          {proposalBandOrder.map((band) => {
-            const bandProposals = groupedProposals[band];
-            const label = proposalBandLabels[band];
-
-            return (
-              <section aria-labelledby={`proposal-band-${band}`} className="grid gap-3" key={band}>
-                <header className="flex items-center justify-between gap-3">
-                  <h3 className="text-[14px] font-semibold text-ctp-text" id={`proposal-band-${band}`}>
-                    {label}
-                  </h3>
-                  <span className="rounded-full bg-ctp-surface0 px-2.5 py-1 text-[12px] font-semibold text-ctp-subtext0">
-                    {bandProposals.length}
-                  </span>
-                </header>
-                {bandProposals.length > 0 ? (
-                  <ul className="grid gap-3">
-                    {bandProposals.map((proposal) => (
-                      <ProposalCard
-                        actionError={
-                          failedApproveProposalId === String(proposal.id)
-                            ? "Approve failed."
-                            : failedRejectProposalId === String(proposal.id)
-                              ? "Reject failed."
-                              : null
-                        }
-                        isApproving={activeApproveProposalId === String(proposal.id)}
-                        isRejecting={activeRejectProposalId === String(proposal.id)}
-                        key={proposal.id}
-                        onApprove={() => approveMutation.mutate(proposal.id)}
-                        onReject={() => rejectMutation.mutate(proposal.id)}
-                        proposal={proposal}
-                      />
-                    ))}
-                  </ul>
-                ) : (
-                  <p className="rounded-[8px] border border-dashed border-ctp-surface0 px-5 py-4 text-[13px] text-ctp-subtext0">
-                    No {label.toLowerCase()} confidence proposals.
-                  </p>
-                )}
-              </section>
-            );
-          })}
-        </div>
-      </div>
+      {children}
     </section>
+  );
+
+  if (proposalsQuery.isPending) {
+    return (
+      renderProposalFrame(
+        <div className="flex min-h-0 flex-1 items-center justify-center">
+          <EmptyStateCard
+            body="Checking for pending local-to-streaming match suggestions."
+            role="status"
+            title="Loading proposals"
+          />
+        </div>,
+      )
+    );
+  }
+
+  if (proposalsQuery.isError) {
+    return (
+      renderProposalFrame(
+        <div className="flex min-h-0 flex-1 items-center justify-center">
+          <EmptyStateCard
+            body="Pending local-to-streaming match suggestions could not be loaded."
+            role="alert"
+            title="Proposals unavailable"
+            tone="error"
+          />
+        </div>,
+      )
+    );
+  }
+
+  if (proposalCount === 0) {
+    const emptyTitle = activeConfidenceBand
+      ? `No ${proposalBandLabels[activeConfidenceBand].toLowerCase()} confidence proposals`
+      : "Proposal queue";
+    const emptyBody = activeConfidenceBand
+      ? "Switch confidence bands or clear the filter to review other pending suggestions."
+      : "Pending local-to-streaming match suggestions will appear here as matching jobs finish.";
+
+    return (
+      renderProposalFrame(
+        <div className="flex min-h-0 flex-1 items-center justify-center">
+          <EmptyStateCard body={emptyBody} className="max-w-[460px] py-7 text-left" title={emptyTitle} />
+        </div>,
+      )
+    );
+  }
+
+  return renderProposalFrame(
+    <div className="min-h-0 flex-1 overflow-y-auto pr-1">
+      <div className="grid gap-6">
+        {proposalBandOrder.map((band) => {
+          const bandProposals = groupedProposals[band];
+          const label = proposalBandLabels[band];
+
+          return (
+            <section aria-labelledby={`proposal-band-${band}`} className="grid gap-3" key={band}>
+              <header className="flex items-center justify-between gap-3">
+                <h3 className="text-[14px] font-semibold text-ctp-text" id={`proposal-band-${band}`}>
+                  {label}
+                </h3>
+                <span className="rounded-full bg-ctp-surface0 px-2.5 py-1 text-[12px] font-semibold text-ctp-subtext0">
+                  {bandProposals.length}
+                </span>
+              </header>
+              {bandProposals.length > 0 ? (
+                <ul className="grid gap-3">
+                  {bandProposals.map((proposal) => (
+                    <ProposalCard
+                      actionError={
+                        failedApproveProposalId === String(proposal.id)
+                          ? "Approve failed."
+                          : failedRejectProposalId === String(proposal.id)
+                            ? "Reject failed."
+                            : null
+                      }
+                      isApproving={activeApproveProposalId === String(proposal.id)}
+                      isRejecting={activeRejectProposalId === String(proposal.id)}
+                      key={proposal.id}
+                      onApprove={() => approveMutation.mutate(proposal.id)}
+                      onReject={() => rejectMutation.mutate(proposal.id)}
+                      proposal={proposal}
+                    />
+                  ))}
+                </ul>
+              ) : (
+                <p className="rounded-[8px] border border-dashed border-ctp-surface0 px-5 py-4 text-[13px] text-ctp-subtext0">
+                  No {label.toLowerCase()} confidence proposals.
+                </p>
+              )}
+            </section>
+          );
+        })}
+      </div>
+    </div>,
   );
 }
 

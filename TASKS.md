@@ -7,6 +7,6 @@
 - [x] Build proposal cards with confidence bar, local track column, streaming track column, match method badge, and score
 - [x] Add confidence-band filter chips that update the proposals query
 - [x] Implement optimistic approve and reject mutations with TanStack Query cache updates
-- [ ] Add loading, empty, and error states for the proposals view
+- [x] Add loading, empty, and error states for the proposals view
 - [ ] Add frontend tests for grouped rendering, band filtering, and optimistic approve/reject behavior
 - [ ] Run relevant frontend validation: `npm run lint`, `npm test`, and `npm run build`

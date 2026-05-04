@@ -3,6 +3,7 @@ type EmptyStateTone = "error" | "neutral";
 type EmptyStateCardProps = {
   body: string;
   className?: string;
+  role?: "alert" | "status";
   title: string;
   tone?: EmptyStateTone;
 };
@@ -12,9 +13,13 @@ const toneClasses = {
   neutral: "border-ctp-surface1/80 bg-ctp-mantle text-ctp-subtext0",
 } satisfies Record<EmptyStateTone, string>;
 
-export function EmptyStateCard({ body, className = "", title, tone = "neutral" }: EmptyStateCardProps) {
+export function EmptyStateCard({ body, className = "", role, title, tone = "neutral" }: EmptyStateCardProps) {
   return (
-    <div className={`rounded-[24px] border px-6 py-6 text-center ${toneClasses[tone]} ${className}`}>
+    <div
+      aria-live={role === "alert" ? "assertive" : role === "status" ? "polite" : undefined}
+      className={`rounded-[24px] border px-6 py-6 text-center ${toneClasses[tone]} ${className}`}
+      role={role}
+    >
       <h2 className="text-[18px] font-semibold text-ctp-text">{title}</h2>
       <p className="mt-2 text-[13px] leading-6">{body}</p>
     </div>
