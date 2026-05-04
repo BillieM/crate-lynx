@@ -1,4 +1,5 @@
-import { ListMusic } from "lucide-react";
+import { AlertTriangle, ListMusic } from "lucide-react";
+import { Pill } from "../../components/Pill";
 import { surfaceClasses, textClasses } from "../../styles/componentClasses";
 import type { PlaylistDetail } from "./queries";
 
@@ -6,19 +7,12 @@ type PlaylistHeaderProps = {
   playlist: PlaylistDetail;
 };
 
-const ringRadius = 44;
-const ringCircumference = 2 * Math.PI * ringRadius;
-
 function getProgressPercentage(playlist: PlaylistDetail) {
   if (playlist.track_count <= 0) {
     return 0;
   }
 
   return Math.max(0, Math.min(100, (playlist.linked_count / playlist.track_count) * 100));
-}
-
-function getStrokeDashoffset(percentage: number) {
-  return ringCircumference - (ringCircumference * percentage) / 100;
 }
 
 function formatRelativeSyncTime(timestamp: string | null) {
@@ -68,86 +62,60 @@ function CoverArt({ playlist }: { playlist: PlaylistDetail }) {
     return (
       <img
         alt={`${playlist.name} cover art`}
-        className={`h-28 w-28 object-cover ${surfaceClasses.raisedArtwork}`}
+        className={`h-16 w-16 object-cover sm:h-[72px] sm:w-[72px] ${surfaceClasses.raisedArtwork}`}
         src={playlist.cover_art_url}
       />
     );
   }
 
   return (
-    <div className={`flex h-28 w-28 items-center justify-center bg-ctp-surface0 text-ctp-blue ${surfaceClasses.raisedArtwork}`}>
-      <ListMusic aria-hidden="true" className="h-10 w-10" strokeWidth={1.7} />
+    <div
+      className={`flex h-16 w-16 items-center justify-center bg-ctp-surface0 text-ctp-blue sm:h-[72px] sm:w-[72px] ${surfaceClasses.raisedArtwork}`}
+    >
+      <ListMusic aria-hidden="true" className="h-7 w-7" strokeWidth={1.7} />
     </div>
   );
 }
 
-function ProgressRing({ playlist }: { playlist: PlaylistDetail }) {
+function CoverageMeter({ playlist }: { playlist: PlaylistDetail }) {
   const percentage = getProgressPercentage(playlist);
-  const dashOffset = getStrokeDashoffset(percentage);
 
   return (
-    <div className="flex items-center gap-4 rounded-[24px] bg-ctp-surface0/72 px-5 py-4 ring-1 ring-inset ring-ctp-surface1/80">
-      <div className="relative h-28 w-28 shrink-0">
-        <svg aria-hidden="true" className="h-28 w-28 -rotate-90" viewBox="0 0 120 120">
-          <circle
-            cx="60"
-            cy="60"
-            fill="none"
-            r={ringRadius}
-            stroke="color-mix(in srgb, var(--color-ctp-surface1) 95%, transparent)"
-            strokeWidth="10"
-          />
-          <circle
-            cx="60"
-            cy="60"
-            fill="none"
-            r={ringRadius}
-            stroke="var(--color-ctp-green)"
-            strokeDasharray={ringCircumference}
-            strokeDashoffset={dashOffset}
-            strokeLinecap="round"
-            strokeWidth="10"
-          />
-        </svg>
-        <div className="absolute inset-0 flex flex-col items-center justify-center">
-          <span className="text-[28px] font-semibold leading-none text-ctp-text">{playlist.linked_count}</span>
-          <span className={`mt-1 ${textClasses.eyebrow} text-ctp-subtext0`}>
-            linked
-          </span>
-        </div>
-      </div>
-      <div className="space-y-2">
-        <p className={`${textClasses.eyebrow} text-ctp-subtext0`}>Coverage</p>
-        <p className={textClasses.sectionTitle}>
+    <div className="min-w-[11rem] space-y-2 sm:min-w-[13rem]">
+      <div className="flex items-center justify-between gap-3">
+        <span className={`${textClasses.eyebrow} text-ctp-subtext0`}>Coverage</span>
+        <span className="text-[12px] font-semibold tabular-nums text-ctp-text">
           {playlist.linked_count} / {playlist.track_count}
-        </p>
-        <p className={`max-w-[12rem] ${textClasses.bodyMutedRelaxed}`}>
-          {playlist.unlinked_count === 0 && playlist.pending_count === 0
-            ? "Every track in this playlist has a final local match."
-            : "Linked tracks are ready for export while pending and unlinked rows still need attention."}
-        </p>
+        </span>
+      </div>
+      <div
+        aria-label={`Coverage ${Math.round(percentage)}%`}
+        aria-valuemax={100}
+        aria-valuemin={0}
+        aria-valuenow={Math.round(percentage)}
+        className="h-2 rounded-full bg-ctp-surface0 ring-1 ring-inset ring-ctp-surface1"
+        role="progressbar"
+      >
+        <div className="h-full rounded-full bg-ctp-green" style={{ width: `${percentage}%` }} />
       </div>
     </div>
   );
 }
 
-function StatCard({
+function CountPill({
   label,
-  toneClassName,
+  tone,
   value,
 }: {
   label: string;
-  toneClassName: string;
+  tone: "danger" | "pending" | "success";
   value: number;
 }) {
   return (
-    <div className={`${surfaceClasses.insetPanel} px-4 py-3`}>
-      <div className="flex items-center gap-2">
-        <span className={`h-2.5 w-2.5 rounded-full ${toneClassName}`} />
-        <span className={`${textClasses.eyebrow} text-ctp-subtext0`}>{label}</span>
-      </div>
-      <p className="mt-3 text-[24px] font-semibold leading-none text-ctp-text">{value}</p>
-    </div>
+    <Pill className="inline-flex items-center gap-1.5 py-1" tone={tone}>
+      <span className="tabular-nums">{value}</span>
+      <span>{label}</span>
+    </Pill>
   );
 }
 
@@ -157,45 +125,46 @@ function PlaylistSyncError({ playlist }: { playlist: PlaylistDetail }) {
   }
 
   return (
-    <div className={`${surfaceClasses.panelRadius} border border-ctp-red/35 bg-ctp-red/10 px-4 py-3`}>
-      <p className={`${textClasses.eyebrow} text-ctp-red`}>
-        Last sync error
-      </p>
-      <p className="mt-2 text-[13px] leading-5 text-ctp-text">{playlist.last_sync_error}</p>
-      <p className={`mt-1 ${textClasses.caption}`}>
-        Failed {formatSyncErrorTime(playlist.last_sync_error_at)}
-      </p>
+    <div
+      className={`${surfaceClasses.panelRadius} flex min-w-0 items-start gap-2 border border-ctp-red/35 bg-ctp-red/10 px-3 py-2`}
+    >
+      <AlertTriangle aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0 text-ctp-red" />
+      <div className="min-w-0">
+        <p className={`${textClasses.eyebrow} text-ctp-red`}>Last sync error</p>
+        <p className="mt-2 text-[13px] leading-5 text-ctp-text">{playlist.last_sync_error}</p>
+        <p className={`mt-1 ${textClasses.caption}`}>Failed {formatSyncErrorTime(playlist.last_sync_error_at)}</p>
+      </div>
     </div>
   );
 }
 
 export function PlaylistHeader({ playlist }: PlaylistHeaderProps) {
   return (
-    <section className={surfaceClasses.elevatedPanel}>
-      <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
-        <div className="flex min-w-0 flex-col gap-5 sm:flex-row">
-          <CoverArt playlist={playlist} />
-          <div className="min-w-0 space-y-4">
-            <div>
-              <p className={`${textClasses.eyebrow} text-ctp-lavender`}>
-                Playlist overview
-              </p>
-              <h2 className="mt-2 text-[30px] font-semibold tracking-[-0.03em] text-ctp-text">
-                {playlist.name}
-              </h2>
-              <p className={`mt-2 ${textClasses.bodyMuted}`}>{formatRelativeSyncTime(playlist.synced_at)}</p>
+    <section className={`${surfaceClasses.elevatedPanel} py-4`}>
+      <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+        <div className="flex min-w-0 gap-3 sm:gap-4">
+          <div className="shrink-0">
+            <CoverArt playlist={playlist} />
+          </div>
+          <div className="min-w-0 space-y-2">
+            <div className="min-w-0">
+              <p className={`${textClasses.eyebrow} text-ctp-lavender`}>Playlist overview</p>
+              <h2 className="mt-1 truncate text-[22px] font-semibold text-ctp-text sm:text-[24px]">{playlist.name}</h2>
+              <p className={textClasses.bodyMuted}>{formatRelativeSyncTime(playlist.synced_at)}</p>
             </div>
 
-            <div className="grid gap-3 sm:grid-cols-3">
-              <StatCard label="Linked" toneClassName="bg-ctp-green" value={playlist.linked_count} />
-              <StatCard label="Pending" toneClassName="bg-ctp-yellow" value={playlist.pending_count} />
-              <StatCard label="Unlinked" toneClassName="bg-ctp-red" value={playlist.unlinked_count} />
+            <div className="flex flex-wrap gap-2">
+              <CountPill label="Linked" tone="success" value={playlist.linked_count} />
+              <CountPill label="Pending" tone="pending" value={playlist.pending_count} />
+              <CountPill label="Unlinked" tone="danger" value={playlist.unlinked_count} />
             </div>
-            <PlaylistSyncError playlist={playlist} />
           </div>
         </div>
 
-        <ProgressRing playlist={playlist} />
+        <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between xl:items-center">
+          <CoverageMeter playlist={playlist} />
+          <PlaylistSyncError playlist={playlist} />
+        </div>
       </div>
     </section>
   );

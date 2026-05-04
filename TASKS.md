@@ -9,7 +9,7 @@ Design constraints for every task:
 
 - [x] Establish compact shared UI styles in `app-ui/src/styles/componentClasses.ts`, reducing repeated oversized radii, padding, shadows, pills, panels, buttons, and row styles into reusable Tailwind/Catppuccin class groups
 - [x] Slim down the app shell by reducing sidebar header height, search field padding, section gaps, nav row height, badge size, topbar height, icon frames, and action button sizing while preserving current navigation behavior
-- [ ] Replace the oversized playlist overview hero with a compact header band that keeps playlist title, sync time, linked/pending/unlinked counts, coverage, artwork, and sync errors visible without dominating the viewport
+- [x] Replace the oversized playlist overview hero with a compact header band that keeps playlist title, sync time, linked/pending/unlinked counts, coverage, artwork, and sync errors visible without dominating the viewport
 - [ ] Make playlist filters smaller and more space-efficient while preserving filter counts, selected states, keyboard accessibility, and Catppuccin status colors
 - [ ] Convert playlist track cards into compact rows using the existing row-card model, reducing padding and duplicated information while keeping status, title, artist, album, duration, and actions easy to scan
 - [ ] Apply the compact design system to proposal cards, empty states, loading states, status messages, and popovers so secondary views match the playlist screen
