@@ -222,10 +222,19 @@ const unidentifiedResponse: UnidentifiedResponse = {
     },
   ],
 };
+const generalSettingsResponse = {
+  ingest_folders: [
+    { id: 1, path: "/ingestion" },
+    { id: 2, path: "/soulseek" },
+  ],
+};
 
 type MockPlaylistFetchOptions = {
   activeSyncHandler?: () => Promise<Response> | Response;
   approveProposalHandler?: (proposalId: string) => Promise<Response> | Response;
+  createIngestFolderHandler?: (init?: RequestInit) => Promise<Response> | Response;
+  deleteIngestFolderHandler?: (folderId: string) => Promise<Response> | Response;
+  generalSettingsHandler?: () => Promise<Response> | Response;
   linkProposalsHandler?: (url: string) => Promise<Response> | Response;
   metadataRefreshHandler?: () => Promise<Response> | Response;
   rejectProposalHandler?: (proposalId: string) => Promise<Response> | Response;
@@ -270,6 +279,9 @@ function buildPlaylistTracks(id: number, title: string): PlaylistTracksResponse 
 function mockPlaylistFetch({
   activeSyncHandler,
   approveProposalHandler,
+  createIngestFolderHandler,
+  deleteIngestFolderHandler,
+  generalSettingsHandler,
   linkProposalsHandler,
   metadataRefreshHandler,
   rejectProposalHandler,
@@ -331,6 +343,39 @@ function mockPlaylistFetch({
       return {
         ok: true,
         json: async () => unidentifiedResponse,
+      } as Response;
+    }
+
+    if (url === "/api/settings/general") {
+      if (generalSettingsHandler) {
+        return generalSettingsHandler();
+      }
+
+      return {
+        ok: true,
+        json: async () => generalSettingsResponse,
+      } as Response;
+    }
+
+    if (url === "/api/settings/ingest-folders" && init?.method === "POST") {
+      if (createIngestFolderHandler) {
+        return createIngestFolderHandler(init);
+      }
+
+      return {
+        ok: true,
+        json: async () => ({ id: 3, path: "/downloads" }),
+      } as Response;
+    }
+
+    const deleteIngestFolderMatch = url.match(/^\/api\/settings\/ingest-folders\/(\d+)$/);
+    if (deleteIngestFolderMatch && init?.method === "DELETE") {
+      if (deleteIngestFolderHandler) {
+        return deleteIngestFolderHandler(deleteIngestFolderMatch[1]);
+      }
+
+      return {
+        ok: true,
       } as Response;
     }
 
@@ -474,6 +519,7 @@ function renderApp(initialEntries = ["/"]) {
 async function openYoutubeMusicSettings() {
   fireEvent.click(screen.getByRole("button", { name: "Open app settings" }));
   expect(await screen.findByRole("heading", { level: 1, name: "Settings" })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "YouTube Music sync" }));
   expect(await screen.findByRole("heading", { level: 2, name: "Playlist sync configuration" })).toBeInTheDocument();
 }
 
@@ -550,6 +596,7 @@ describe("App", () => {
       "unidentified",
       "missing",
       "playlists",
+      "settings-general",
       "settings-sync-youtube-music",
       "playlist-12",
       "playlist-9",
@@ -841,7 +888,7 @@ describe("App", () => {
     });
   });
 
-  it("opens settings from the topbar and selects YouTube Music sync configuration", async () => {
+  it("opens General settings from the topbar and renders ingest folders", async () => {
     mockPlaylistFetch();
 
     renderApp();
@@ -854,25 +901,100 @@ describe("App", () => {
     fireEvent.click(openSettingsButton);
 
     expect(screen.getByRole("heading", { level: 1, name: "Settings" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "General" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "YouTube Music sync" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Sync Settings" })).not.toBeInTheDocument();
     expect(screen.queryByRole("group", { name: "Sync platforms" })).not.toBeInTheDocument();
-    expect(screen.getByRole("heading", { level: 2, name: "Playlist sync configuration" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { level: 2, name: "General settings" })).toBeInTheDocument();
+    expect(screen.getByText("2 ingest folders configured.")).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Ingest folders" })).toBeInTheDocument();
+    expect(screen.getByText("/ingestion")).toBeInTheDocument();
+    expect(screen.getByText("/soulseek")).toBeInTheDocument();
+    expect(screen.getByLabelText("Add ingest folder")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Add" })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "Sync" })).not.toBeInTheDocument();
+    expect(document.getElementById("settings-general")).toHaveAttribute("data-view-active", "true");
+    expect(document.getElementById("settings-sync-youtube-music")).toHaveAttribute("data-view-active", "false");
+    expect(document.getElementById("playlist-12")).toHaveAttribute("data-view-active", "false");
+    expect(screen.queryByRole("button", { name: "Configure sync" })).not.toBeInTheDocument();
+    const returnButton = screen.getByRole("button", { name: "Return to Link proposals" });
+    expect(returnButton.querySelector("svg")).toBeInTheDocument();
+    expect(returnButton).toHaveTextContent("");
+  });
+
+  it("navigates from General settings to YouTube Music sync settings", async () => {
+    mockPlaylistFetch();
+
+    renderApp(["/settings"]);
+
+    expect(await screen.findByRole("heading", { level: 2, name: "General settings" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "YouTube Music sync" }));
+
+    expect(await screen.findByRole("heading", { level: 2, name: "Playlist sync configuration" })).toBeInTheDocument();
     expect(await screen.findByText("1 of 2 discovered playlists selected for sync.")).toBeInTheDocument();
     expect(screen.getByRole("heading", { level: 3, name: "Late Night Drive" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { level: 3, name: "Fresh Discoveries" })).toBeInTheDocument();
     expect(screen.getByRole("checkbox", { name: "Select Late Night Drive for sync" })).toBeChecked();
     expect(screen.getByRole("checkbox", { name: "Select Fresh Discoveries for sync" })).not.toBeChecked();
     expect(screen.getByRole("button", { name: "Refresh playlist metadata" })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Sync" })).not.toBeInTheDocument();
     expect(screen.getByText("Provider ID PL31 / Account 4")).toBeInTheDocument();
     expect(screen.getByText("Malformed playlist payload")).toBeInTheDocument();
+    expect(document.getElementById("settings-general")).toHaveAttribute("data-view-active", "false");
     expect(document.getElementById("settings-sync-youtube-music")).toHaveAttribute("data-view-active", "true");
-    expect(document.getElementById("playlist-12")).toHaveAttribute("data-view-active", "false");
-    expect(screen.queryByRole("button", { name: "Configure sync" })).not.toBeInTheDocument();
-    const returnButton = screen.getByRole("button", { name: "Return to Link proposals" });
-    expect(returnButton.querySelector("svg")).toBeInTheDocument();
-    expect(returnButton).toHaveTextContent("");
+  });
+
+  it("adds ingest folders from General settings and refreshes settings", async () => {
+    const fetchMock = mockPlaylistFetch();
+
+    renderApp(["/settings"]);
+
+    expect(await screen.findByText("/ingestion")).toBeInTheDocument();
+    const pathInput = screen.getByLabelText("Add ingest folder");
+    const generalFetchesBeforeAdd = fetchMock.mock.calls.filter(([input]) => String(input) === "/api/settings/general").length;
+    fireEvent.change(pathInput, { target: { value: " /downloads " } });
+    fireEvent.click(screen.getByRole("button", { name: "Add" }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith("/api/settings/ingest-folders", {
+        body: JSON.stringify({ path: "/downloads" }),
+        headers: {
+          "Content-Type": "application/json",
+        },
+        method: "POST",
+      });
+    });
+    expect(await screen.findByText("The folder was saved and added to the active watcher.")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(pathInput).toHaveValue("");
+    });
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.filter(([input]) => String(input) === "/api/settings/general").length).toBeGreaterThan(
+        generalFetchesBeforeAdd,
+      );
+    });
+  });
+
+  it("removes ingest folders from General settings and refreshes settings", async () => {
+    const fetchMock = mockPlaylistFetch();
+
+    renderApp(["/settings"]);
+
+    expect(await screen.findByText("/soulseek")).toBeInTheDocument();
+
+    const generalFetchesBeforeDelete = fetchMock.mock.calls.filter(([input]) => String(input) === "/api/settings/general").length;
+    fireEvent.click(screen.getByRole("button", { name: "Remove ingest folder /soulseek" }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith("/api/settings/ingest-folders/2", {
+        method: "DELETE",
+      });
+    });
+    expect(await screen.findByText("The folder was removed from the active watcher.")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.filter(([input]) => String(input) === "/api/settings/general").length).toBeGreaterThan(
+        generalFetchesBeforeDelete,
+      );
+    });
   });
 
   it("switches the main sidebar into settings navigation on settings routes", async () => {
@@ -884,6 +1006,7 @@ describe("App", () => {
     expect(await screen.findByRole("heading", { level: 2, name: "Playlist sync configuration" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /MUSEBRIDGE/i })).toBeInTheDocument();
     expect(screen.getByRole("heading", { level: 2, name: "Settings" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "General" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "YouTube Music sync" })).toBeInTheDocument();
     expect(screen.queryByPlaceholderText("Search tracks, artists, playlists")).not.toBeInTheDocument();
     expect(screen.queryByText("Maintenance")).not.toBeInTheDocument();
@@ -913,16 +1036,20 @@ describe("App", () => {
     expect(document.getElementById("proposals")).toHaveAttribute("data-view-active", "true");
   });
 
-  it.each(["/settings", "/settings/sync", "/settings/sync/youtube-music"])(
-    "lands on YouTube Music sync configuration for %s",
-    async (route) => {
+  it.each([
+    ["/settings", "settings-general", "General settings"],
+    ["/settings/sync", "settings-sync-youtube-music", "Playlist sync configuration"],
+    ["/settings/sync/youtube-music", "settings-sync-youtube-music", "Playlist sync configuration"],
+  ])(
+    "lands on the expected settings page for %s",
+    async (route, activeViewId, heading) => {
       mockPlaylistFetch();
 
       renderApp([route]);
 
       expect(screen.getByRole("heading", { level: 1, name: "Settings" })).toBeInTheDocument();
-      expect(await screen.findByRole("heading", { level: 2, name: "Playlist sync configuration" })).toBeInTheDocument();
-      expect(document.getElementById("settings-sync-youtube-music")).toHaveAttribute("data-view-active", "true");
+      expect(await screen.findByRole("heading", { level: 2, name: heading })).toBeInTheDocument();
+      expect(document.getElementById(activeViewId)).toHaveAttribute("data-view-active", "true");
     },
   );
 

@@ -46,11 +46,11 @@ Application-owned data, including the Beets SQLite database, must be stored unde
 - [x] Wire app startup so ingestion loads persisted folders, seeds defaults when needed, uses `/music` for Beets imports, and keeps the active watcher synchronized after settings API mutations
 - [x] Add backend tests for route mounting, default folder seeding, `/music` library configuration, path validation, duplicate rejection, delete behavior, multi-root watcher scheduling, live add/remove synchronization, and fallback behavior without `DATABASE_URL`
 - [x] Add frontend settings query/mutation helpers and stable query keys for general settings and ingest folder mutations
-- [ ] Add a `GeneralSettingsView` with a folder list, icon-only remove buttons, an add-folder text field, loading/error/empty states, and mutation status feedback
-- [ ] Update settings navigation so `/settings` and the topbar settings button land on General, while YouTube Music sync remains available at `/settings/sync/youtube-music`
-- [ ] Update frontend tests for settings redirects, sidebar settings items, General page rendering, add-folder POST payloads, delete calls, query invalidation, and YouTube Music settings navigation
+- [x] Add a `GeneralSettingsView` with a folder list, icon-only remove buttons, an add-folder text field, loading/error/empty states, and mutation status feedback
+- [x] Update settings navigation so `/settings` and the topbar settings button land on General, while YouTube Music sync remains available at `/settings/sync/youtube-music`
+- [x] Update frontend tests for settings redirects, sidebar settings items, General page rendering, add-folder POST payloads, delete calls, query invalidation, and YouTube Music settings navigation
 - [x] Update README ingestion docs to explain configurable ingest folders, the default `/ingestion` and `/soulseek` inputs, `/music` as the processed library output, and Docker host mount requirements
-- [ ] Run relevant validation: backend `ruff check .`, `ruff format --check .`, targeted `pytest`; frontend `npm run lint`, `npm test`, and `npm run build`
+- [x] Run relevant validation: backend `ruff check .`, `ruff format --check .`, targeted `pytest`; frontend `npm run lint`, `npm test`, and `npm run build`
 
 ## Side effects to handle
 

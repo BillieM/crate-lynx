@@ -22,6 +22,7 @@ import {
   useStreamingPlaylistsQuery,
 } from "./features/playlists/queries";
 import { LinkProposalsView } from "./features/proposals/LinkProposalsView";
+import { GeneralSettingsView } from "./features/settings/GeneralSettingsView";
 import {
   filterPlaylistTracks,
   getPlaylistTrackFilterCounts,
@@ -72,7 +73,14 @@ const playlistCollectionViewConfig = {
   icon: "playlist",
 } satisfies ViewConfig;
 const settingsSyncYoutubeMusicViewId = "settings-sync-youtube-music";
+const settingsGeneralViewId = "settings-general";
 const settingsViewConfigs = [
+  {
+    id: settingsGeneralViewId,
+    title: "Settings",
+    actionLabels: [],
+    icon: "settings",
+  },
   {
     id: settingsSyncYoutubeMusicViewId,
     title: "Settings",
@@ -85,6 +93,7 @@ const staticViewRoutes: Record<string, string> = {
   library: "/library",
   missing: "/missing",
   proposals: "/proposals",
+  [settingsGeneralViewId]: "/settings",
   [settingsSyncYoutubeMusicViewId]: "/settings/sync/youtube-music",
   unidentified: "/unidentified",
 };
@@ -114,7 +123,7 @@ function getViewIdFromPath(pathname: string) {
     return null;
   }
 
-  if (normalizedPathname === "/settings" || normalizedPathname === "/settings/sync") {
+  if (normalizedPathname === "/settings/sync") {
     return settingsSyncYoutubeMusicViewId;
   }
 
@@ -165,7 +174,10 @@ function buildLibraryNavItems(totalTrackCount?: number): NavItem[] {
 }
 
 function buildSettingsNavItems(): NavItem[] {
-  return [{ id: settingsSyncYoutubeMusicViewId, label: "YouTube Music sync", tone: "accent" }];
+  return [
+    { id: settingsGeneralViewId, label: "General", tone: "accent" },
+    { id: settingsSyncYoutubeMusicViewId, label: "YouTube Music sync", tone: "accent" },
+  ];
 }
 
 function PlaylistView({
@@ -285,6 +297,8 @@ function ViewShell({
             />
           ) : viewId === playlistCollectionViewId ? (
             <PlaylistSyncConfiguration />
+          ) : viewId === settingsGeneralViewId ? (
+            <GeneralSettingsView />
           ) : viewId === settingsSyncYoutubeMusicViewId ? (
             <PlaylistSyncConfiguration />
           ) : viewId === "proposals" ? (
@@ -355,7 +369,7 @@ function App() {
   useEffect(() => {
     const normalizedPathname = location.pathname.replace(/\/$/, "") || "/";
 
-    if (normalizedPathname === "/settings" || normalizedPathname === "/settings/sync") {
+    if (normalizedPathname === "/settings/sync") {
       navigate(staticViewRoutes[settingsSyncYoutubeMusicViewId], { replace: true });
     }
 
@@ -393,7 +407,7 @@ function App() {
     navigate(getViewPath(viewId));
   }
 
-  const isSettingsView = activeViewId === settingsSyncYoutubeMusicViewId;
+  const isSettingsView = activeViewId === settingsGeneralViewId || activeViewId === settingsSyncYoutubeMusicViewId;
 
   return (
     <div className="flex min-h-0 flex-1 flex-row overflow-hidden bg-ctp-base text-ctp-text max-md:flex-col">
@@ -415,7 +429,7 @@ function App() {
         <Topbar
           isSettingsView={isSettingsView}
           onNavigateHome={() => handleViewSelect("proposals")}
-          onOpenAppSettings={() => handleViewSelect(settingsSyncYoutubeMusicViewId)}
+          onOpenAppSettings={() => handleViewSelect(settingsGeneralViewId)}
           onPlaylistSyncStateChange={setPlaylistSyncState}
           view={activeView}
         />
