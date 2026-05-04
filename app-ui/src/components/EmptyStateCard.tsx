@@ -1,4 +1,4 @@
-type EmptyStateTone = "error" | "neutral";
+import { emptyStateToneClasses, type EmptyStateTone } from "../styles/toneClasses";
 
 type EmptyStateCardProps = {
   body: string;
@@ -8,16 +8,11 @@ type EmptyStateCardProps = {
   tone?: EmptyStateTone;
 };
 
-const toneClasses = {
-  error: "border-ctp-red/30 bg-ctp-surface0/60 text-ctp-red",
-  neutral: "border-ctp-surface1/80 bg-ctp-mantle text-ctp-subtext0",
-} satisfies Record<EmptyStateTone, string>;
-
 export function EmptyStateCard({ body, className = "", role, title, tone = "neutral" }: EmptyStateCardProps) {
   return (
     <div
       aria-live={role === "alert" ? "assertive" : role === "status" ? "polite" : undefined}
-      className={`rounded-[24px] border px-6 py-6 text-center ${toneClasses[tone]} ${className}`}
+      className={`rounded-[24px] border px-6 py-6 text-center ${emptyStateToneClasses[tone]} ${className}`}
       role={role}
     >
       <h2 className="text-[18px] font-semibold text-ctp-text">{title}</h2>

@@ -34,6 +34,7 @@ import {
   getPlaylistTrackFilterCounts,
   type PlaylistTrackFilter,
 } from "./features/playlists/filterTracks";
+import { pillToneClasses, selectedFilterChipClasses, type PillTone } from "./styles/toneClasses";
 
 export type ProgressStatus = "unlinked" | "pending" | "linked";
 
@@ -91,6 +92,7 @@ type NavItem = {
 };
 
 type TopbarPillTone = "pill-info" | "pill-pending" | "pill-lib";
+type ProposalFilterChipTone = "all" | "linked" | "pending" | "unlinked";
 
 type SearchResult = {
   id: number;
@@ -182,31 +184,27 @@ const proposalBandFilterChips = [
   {
     filter: "all",
     label: "All",
-    selectedClassName:
-      "border-ctp-blue bg-ctp-blue/18 text-ctp-blue shadow-[0_0_0_4px_color-mix(in_srgb,var(--color-ctp-blue)_12%,transparent)]",
+    tone: "all",
   },
   {
     filter: "high",
     label: "High",
-    selectedClassName:
-      "border-ctp-green bg-ctp-green/18 text-ctp-green shadow-[0_0_0_4px_color-mix(in_srgb,var(--color-ctp-green)_12%,transparent)]",
+    tone: "linked",
   },
   {
     filter: "medium",
     label: "Medium",
-    selectedClassName:
-      "border-ctp-yellow bg-ctp-yellow/18 text-ctp-yellow shadow-[0_0_0_4px_color-mix(in_srgb,var(--color-ctp-yellow)_12%,transparent)]",
+    tone: "pending",
   },
   {
     filter: "low",
     label: "Low",
-    selectedClassName:
-      "border-ctp-red bg-ctp-red/18 text-ctp-red shadow-[0_0_0_4px_color-mix(in_srgb,var(--color-ctp-red)_12%,transparent)]",
+    tone: "unlinked",
   },
 ] satisfies {
   filter: LinkProposalConfidenceBandFilter;
   label: string;
-  selectedClassName: string;
+  tone: ProposalFilterChipTone;
 }[];
 const playlistCollectionViewId = "playlists";
 const playlistCollectionViewConfig = {
@@ -431,27 +429,26 @@ function downloadBlob(blob: Blob, filename: string) {
 function getBadgeClasses(tone: NavItem["tone"]) {
   switch (tone) {
     case "pending":
-      return "bg-ctp-yellow/18 text-ctp-yellow ring-1 ring-inset ring-ctp-yellow/30";
+      return pillToneClasses.pending;
     case "alert":
-      return "bg-ctp-red/18 text-ctp-red ring-1 ring-inset ring-ctp-red/30";
+      return pillToneClasses.danger;
     case "accent":
-      return "bg-ctp-mauve/20 text-ctp-mauve ring-1 ring-inset ring-ctp-mauve/30";
+      return pillToneClasses.accent;
     case "linked":
-      return "bg-ctp-green/18 text-ctp-green ring-1 ring-inset ring-ctp-green/30";
+      return pillToneClasses.success;
     case "unlinked":
-      return "bg-ctp-overlay0/25 text-ctp-subtext0 ring-1 ring-inset ring-ctp-surface1/70";
+      return pillToneClasses.neutral;
   }
 }
 
 function getTopbarPillClasses(tone: TopbarPillTone) {
-  switch (tone) {
-    case "pill-pending":
-      return "bg-ctp-yellow/18 text-ctp-yellow ring-1 ring-inset ring-ctp-yellow/30";
-    case "pill-lib":
-      return "bg-ctp-mauve/20 text-ctp-mauve ring-1 ring-inset ring-ctp-mauve/30";
-    case "pill-info":
-      return "bg-ctp-surface0 text-ctp-subtext0 ring-1 ring-inset ring-ctp-surface1/70";
-  }
+  const toneMap = {
+    "pill-info": "neutral",
+    "pill-lib": "accent",
+    "pill-pending": "pending",
+  } satisfies Record<TopbarPillTone, PillTone>;
+
+  return pillToneClasses[toneMap[tone]];
 }
 
 function TopbarIcon({ icon }: { icon: ViewConfig["icon"] }) {
@@ -977,7 +974,7 @@ function LinkProposalsView() {
                 aria-pressed={isSelected}
                 className={`inline-flex min-h-10 items-center rounded-[999px] border px-4 text-[13px] font-semibold transition-colors ${
                   isSelected
-                    ? chip.selectedClassName
+                    ? selectedFilterChipClasses[chip.tone]
                     : "border-ctp-surface1 bg-ctp-surface0 text-ctp-subtext0 hover:border-ctp-overlay0 hover:bg-ctp-surface1 hover:text-ctp-text"
                 }`}
                 key={chip.filter}
