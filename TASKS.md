@@ -36,7 +36,7 @@
   - Rationale: current `local_tracks` rows are only created after fingerprinting and a successful Beets import, so they cannot represent Beets-failed imports. Current `/ingest/status` failure entries are recent-only in-memory records and only include `source_path` plus `error`; they are not durable and do not reliably expose a fingerprint or backend-compatible local track ID for rescue.
   - Expected backend contract: persist failed ingestion attempts with filename/source path, failure reason, failed-at timestamp, and fingerprint when fingerprinting succeeded before the failure. Rescue must remain hidden or disabled for rows without a real persisted local track ID/final link compatible with the existing rescue endpoint.
 
-- [ ] Add frontend query helpers for library and maintenance reports
+- [x] Add frontend query helpers for library and maintenance reports
   - Follow the existing `app-ui/src/features/playlists/queries.ts` pattern for typed responses, fetch helpers, query keys, and `useQuery` hooks.
   - Add library query keys for the library track/stats payload.
   - Add maintenance query keys for the Missing Locally payload and, after the data-source decision, the Unidentified payload.
