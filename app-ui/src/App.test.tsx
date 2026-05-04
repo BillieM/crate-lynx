@@ -122,6 +122,7 @@ const metadataRefreshResponse = { account_id: 4, job_id: "metadata-refresh-job-4
 
 type MockPlaylistFetchOptions = {
   metadataRefreshHandler?: () => Promise<Response> | Response;
+  selectedSyncHandler?: () => Promise<Response> | Response;
 };
 
 function failUnexpectedFetch(url: string, init?: RequestInit): never {
@@ -159,7 +160,7 @@ function buildPlaylistTracks(id: number, title: string): PlaylistTracksResponse 
   };
 }
 
-function mockPlaylistFetch({ metadataRefreshHandler }: MockPlaylistFetchOptions = {}) {
+function mockPlaylistFetch({ metadataRefreshHandler, selectedSyncHandler }: MockPlaylistFetchOptions = {}) {
   const playlistDetailsById = new Map<string, typeof playlistDetailResponse>([
     ["12", playlistDetailResponse],
     ...secondaryPlaylistFixtures.map(({ id, name }) => [String(id), buildPlaylistDetail(id, name)] as const),
@@ -226,6 +227,10 @@ function mockPlaylistFetch({ metadataRefreshHandler }: MockPlaylistFetchOptions 
     }
 
     if (url === selectedPlaylistSyncEndpoint && init?.method === "POST") {
+      if (selectedSyncHandler) {
+        return selectedSyncHandler();
+      }
+
       return {
         ok: true,
         json: async () => selectedPlaylistSyncResponse,
@@ -431,6 +436,68 @@ describe("App", () => {
         fetchMock.mock.calls.filter(([input]) => String(input) === "/api/streaming/playlists/config").length,
       ).toBeGreaterThan(configFetchesBeforeRefresh);
     });
+  });
+
+  it("shows success state when selected playlist sync is queued", async () => {
+    const fetchMock = mockPlaylistFetch();
+
+    renderApp();
+
+    expect(await screen.findByRole("heading", { level: 1, name: "Late Night Drive" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Configure sync" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Sync selected" }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(selectedPlaylistSyncEndpoint, {
+        method: "POST",
+      });
+    });
+    expect(await screen.findByText("Selected playlist sync queued.")).toBeInTheDocument();
+  });
+
+  it("shows pending state while selected playlist sync is running", async () => {
+    let resolveSync: (response: Response) => void = () => {};
+    const syncPromise = new Promise<Response>((resolve) => {
+      resolveSync = resolve;
+    });
+    mockPlaylistFetch({
+      selectedSyncHandler: () => syncPromise,
+    });
+
+    renderApp();
+
+    expect(await screen.findByRole("heading", { level: 1, name: "Late Night Drive" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Configure sync" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Sync selected" }));
+
+    expect(await screen.findByRole("button", { name: "Syncing selected..." })).toBeDisabled();
+    expect(screen.getByRole("status")).toHaveTextContent("Syncing selected playlists...");
+
+    resolveSync({
+      ok: true,
+      json: async () => selectedPlaylistSyncResponse,
+    } as Response);
+
+    expect(await screen.findByText("Selected playlist sync queued.")).toBeInTheDocument();
+  });
+
+  it("shows an error state when selected playlist sync fails", async () => {
+    mockPlaylistFetch({
+      selectedSyncHandler: () =>
+        ({
+          ok: false,
+          status: 500,
+        }) as Response,
+    });
+
+    renderApp();
+
+    expect(await screen.findByRole("heading", { level: 1, name: "Late Night Drive" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Configure sync" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Sync selected" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Selected playlist sync failed.");
+    expect(screen.getByRole("button", { name: "Sync selected" })).toBeEnabled();
   });
 
   it("shows pending state while playlist metadata refresh is running", async () => {

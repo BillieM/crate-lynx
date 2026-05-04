@@ -856,7 +856,7 @@ function PlaylistSyncConfiguration() {
               }}
               type="button"
             >
-              Sync selected
+              {selectedSyncMutation.isPending ? "Syncing selected..." : "Sync selected"}
             </button>
             <button
               className="rounded-[10px] border border-ctp-surface1 bg-ctp-surface0 px-3 py-1.5 text-[12px] font-semibold text-ctp-text transition-colors hover:border-ctp-overlay0 hover:bg-ctp-surface1 disabled:cursor-not-allowed disabled:border-ctp-surface0 disabled:text-ctp-overlay1 disabled:hover:bg-ctp-surface0"
@@ -871,6 +871,14 @@ function PlaylistSyncConfiguration() {
               {metadataRefreshMutation.isPending ? "Refreshing..." : "Refresh playlist metadata"}
             </button>
           </div>
+          <PlaylistActionStatus
+            errorText="Selected playlist sync failed."
+            isError={selectedSyncMutation.isError}
+            isPending={selectedSyncMutation.isPending}
+            isSuccess={selectedSyncMutation.isSuccess}
+            pendingText="Syncing selected playlists..."
+            successText="Selected playlist sync queued."
+          />
           <PlaylistActionStatus
             errorText="Metadata refresh failed."
             isError={metadataRefreshMutation.isError}
