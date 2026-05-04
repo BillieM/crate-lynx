@@ -118,6 +118,7 @@ type PlaylistSyncViewState = {
   status: OperationStatus;
 };
 type GroupedLinkProposals = Record<LinkProposalConfidenceBand, LinkProposal[]>;
+type LinkProposalConfidenceBandFilter = LinkProposalConfidenceBand | "all";
 
 const maintenanceItems: NavItem[] = [
   { id: "proposals", label: "Link proposals", badge: 14, tone: "pending" },
@@ -171,6 +172,36 @@ const proposalBandLabels = {
   low: "Low",
   medium: "Medium",
 } satisfies Record<LinkProposalConfidenceBand, string>;
+const proposalBandFilterChips = [
+  {
+    filter: "all",
+    label: "All",
+    selectedClassName:
+      "border-ctp-blue bg-ctp-blue/18 text-ctp-blue shadow-[0_0_0_4px_color-mix(in_srgb,var(--color-ctp-blue)_12%,transparent)]",
+  },
+  {
+    filter: "high",
+    label: "High",
+    selectedClassName:
+      "border-ctp-green bg-ctp-green/18 text-ctp-green shadow-[0_0_0_4px_color-mix(in_srgb,var(--color-ctp-green)_12%,transparent)]",
+  },
+  {
+    filter: "medium",
+    label: "Medium",
+    selectedClassName:
+      "border-ctp-yellow bg-ctp-yellow/18 text-ctp-yellow shadow-[0_0_0_4px_color-mix(in_srgb,var(--color-ctp-yellow)_12%,transparent)]",
+  },
+  {
+    filter: "low",
+    label: "Low",
+    selectedClassName:
+      "border-ctp-red bg-ctp-red/18 text-ctp-red shadow-[0_0_0_4px_color-mix(in_srgb,var(--color-ctp-red)_12%,transparent)]",
+  },
+] satisfies {
+  filter: LinkProposalConfidenceBandFilter;
+  label: string;
+  selectedClassName: string;
+}[];
 const playlistCollectionViewId = "playlists";
 const playlistCollectionViewConfig = {
   id: playlistCollectionViewId,
@@ -261,6 +292,10 @@ function groupLinkProposalsByBand(proposals: LinkProposal[]): GroupedLinkProposa
     groups[proposal.confidence_band].push(proposal);
     return groups;
   }, getEmptyProposalGroups());
+}
+
+function isProposalConfidenceBand(value: string | null): value is LinkProposalConfidenceBand {
+  return value === "high" || value === "medium" || value === "low";
 }
 
 function getLocalTrackLabel(proposal: LinkProposal) {
@@ -836,10 +871,29 @@ function PlaylistCollectionState({ status }: { status: PlaylistCollectionStatus 
 }
 
 function LinkProposalsView() {
-  const proposalsQuery = useLinkProposalsQuery();
+  const location = useLocation();
+  const navigate = useNavigate();
+  const activeConfidenceBand = useMemo(() => {
+    const band = new URLSearchParams(location.search).get("band");
+    return isProposalConfidenceBand(band) ? band : null;
+  }, [location.search]);
+  const activeFilter: LinkProposalConfidenceBandFilter = activeConfidenceBand ?? "all";
+  const proposalsQuery = useLinkProposalsQuery({ confidenceBand: activeConfidenceBand });
   const proposals = proposalsQuery.data?.proposals;
   const proposalCount = proposals?.length ?? 0;
   const groupedProposals = useMemo(() => groupLinkProposalsByBand(proposals ?? []), [proposals]);
+  const updateConfidenceBandFilter = (filter: LinkProposalConfidenceBandFilter) => {
+    const params = new URLSearchParams(location.search);
+
+    if (filter === "all") {
+      params.delete("band");
+    } else {
+      params.set("band", filter);
+    }
+
+    const search = params.toString();
+    navigate({ pathname: location.pathname, search: search ? `?${search}` : "" });
+  };
 
   if (proposalsQuery.isPending) {
     return (
@@ -879,6 +933,27 @@ function LinkProposalsView() {
         <div>
           <h2 className="text-[18px] font-semibold text-ctp-text">Proposal queue</h2>
           <p className="mt-1 text-[13px] text-ctp-subtext0">{proposalCount} pending suggestions grouped by confidence.</p>
+        </div>
+        <div aria-label="Confidence band filters" className="flex flex-wrap items-center gap-2" role="group">
+          {proposalBandFilterChips.map((chip) => {
+            const isSelected = activeFilter === chip.filter;
+
+            return (
+              <button
+                aria-pressed={isSelected}
+                className={`inline-flex min-h-10 items-center rounded-[999px] border px-4 text-[13px] font-semibold transition-colors ${
+                  isSelected
+                    ? chip.selectedClassName
+                    : "border-ctp-surface1 bg-ctp-surface0 text-ctp-subtext0 hover:border-ctp-overlay0 hover:bg-ctp-surface1 hover:text-ctp-text"
+                }`}
+                key={chip.filter}
+                onClick={() => updateConfidenceBandFilter(chip.filter)}
+                type="button"
+              >
+                {chip.label}
+              </button>
+            );
+          })}
         </div>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto pr-1">
