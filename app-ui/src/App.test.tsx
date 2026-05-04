@@ -404,7 +404,7 @@ describe("App", () => {
     vi.useRealTimers();
   });
 
-  it("renders the fixed-height shell container, sidebar scaffold, and topbar", async () => {
+  it("renders the responsive shell container, sidebar scaffold, and topbar", async () => {
     mockPlaylistFetch();
     const { container } = renderApp();
 
@@ -416,6 +416,7 @@ describe("App", () => {
       "overflow-hidden",
       "bg-ctp-base",
       "text-ctp-text",
+      "max-md:flex-col",
     );
 
     const shell = container.querySelector(".bg-ctp-base");
@@ -428,11 +429,28 @@ describe("App", () => {
       "overflow-hidden",
       "bg-ctp-base",
       "text-ctp-text",
+      "max-md:flex-col",
     );
 
     const sidebar = screen.getByRole("complementary");
 
-    expect(sidebar).toHaveClass("w-[208px]", "bg-ctp-mantle", "border-r", "border-ctp-surface0");
+    expect(sidebar).toHaveClass(
+      "w-[208px]",
+      "bg-ctp-mantle",
+      "border-r",
+      "border-ctp-surface0",
+      "max-md:max-h-[45vh]",
+      "max-md:w-full",
+      "max-md:border-b",
+    );
+    expect(screen.getByRole("banner")).toHaveClass(
+      "h-10",
+      "min-h-10",
+      "justify-between",
+      "max-md:h-auto",
+      "max-md:flex-wrap",
+      "max-md:py-2",
+    );
     expect(screen.getByText("MUSEBRIDGE")).toBeInTheDocument();
     expect(screen.getByPlaceholderText("Search tracks, artists, playlists")).toBeInTheDocument();
     expect(screen.getByText("Maintenance")).toBeInTheDocument();
