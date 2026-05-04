@@ -332,14 +332,18 @@ function TopbarIcon({ icon }: { icon: ViewConfig["icon"] }) {
 
 function SidebarSection({
   activeItemId,
+  emptyActionLabel,
   emptyMessage,
   items,
+  onEmptyAction,
   onSelect,
   title,
 }: {
   activeItemId: string;
+  emptyActionLabel?: string;
   emptyMessage?: string;
   items: NavItem[];
+  onEmptyAction?: () => void;
   onSelect: (itemId: string) => void;
   title: string;
 }) {
@@ -350,7 +354,18 @@ function SidebarSection({
       </h2>
       <div className="space-y-1.5">
         {items.length === 0 && emptyMessage ? (
-          <p className="px-4 py-2.5 text-[12px] text-ctp-subtext0">{emptyMessage}</p>
+          <div className="space-y-2 px-4 py-2.5">
+            <p className="text-[12px] leading-5 text-ctp-subtext0">{emptyMessage}</p>
+            {emptyActionLabel && onEmptyAction ? (
+              <button
+                className="rounded-[10px] border border-ctp-surface1 bg-ctp-surface0 px-3 py-1.5 text-[12px] font-semibold text-ctp-text transition-colors hover:border-ctp-overlay0 hover:bg-ctp-surface1"
+                onClick={onEmptyAction}
+                type="button"
+              >
+                {emptyActionLabel}
+              </button>
+            ) : null}
+          </div>
         ) : null}
         {items.map((item) => (
           <button
@@ -662,8 +677,8 @@ function PlaylistView({ isActive, playlistResourceId }: { isActive: boolean; pla
 function PlaylistCollectionState({ status }: { status: PlaylistCollectionStatus }) {
   const copy = {
     empty: {
-      title: "No synced playlists",
-      body: "Sync a YouTube Music account to review playlist metadata, track matches, and M3U exports here.",
+      title: "No selected playlists",
+      body: "Configure which YouTube Music playlists to sync, then selected playlists will appear in the sidebar.",
     },
     error: {
       title: "Playlists unavailable",
@@ -974,7 +989,7 @@ function App() {
     ? "Loading playlists..."
     : playlistsQuery.isError
       ? "Playlists unavailable."
-      : "No synced playlists found.";
+      : "No selected playlists. Configure YouTube Music sync to choose playlists.";
 
   useEffect(() => {
     if (playlistsQuery.isPending) {
@@ -1041,8 +1056,10 @@ function App() {
             />
             <SidebarSection
               activeItemId={activeViewId}
+              emptyActionLabel={!playlistsQuery.isPending && !playlistsQuery.isError ? "Configure sync" : undefined}
               emptyMessage={playlistEmptyMessage}
               items={playlistItems}
+              onEmptyAction={() => handleViewSelect(playlistCollectionViewId)}
               onSelect={handleViewSelect}
               title="YouTube Music"
             />

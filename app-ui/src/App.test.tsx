@@ -631,7 +631,7 @@ describe("App", () => {
     }
   });
 
-  it("shows a playlist empty state when no synced playlists exist", async () => {
+  it("routes users to configure sync when no selected playlists exist", async () => {
     vi.spyOn(globalThis, "fetch").mockImplementation(async (input: RequestInfo | URL) => {
       const url = String(input);
 
@@ -654,8 +654,9 @@ describe("App", () => {
 
     renderApp();
 
-    expect(await screen.findByRole("heading", { name: "No synced playlists" })).toBeInTheDocument();
-    expect(screen.getByText("No synced playlists found.")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "No selected playlists" })).toBeInTheDocument();
+    expect(screen.getByText("No selected playlists. Configure YouTube Music sync to choose playlists.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Configure sync" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Sync" })).not.toBeInTheDocument();
     expect(document.getElementById("playlists")).toHaveAttribute("data-view-active", "true");
   });
