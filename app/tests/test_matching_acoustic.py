@@ -375,6 +375,25 @@ def test_ytdlp_audio_downloader_cleans_up_when_download_fails() -> None:
     assert not download_roots[0].exists()
 
 
+def test_ytdlp_audio_downloader_cleans_up_when_download_is_cancelled() -> None:
+    download_roots: list[Path] = []
+
+    def fake_run(command: list[str]) -> subprocess.CompletedProcess[str]:
+        output_template = Path(command[command.index("--output") + 1])
+        download_roots.append(output_template.parent)
+        raise KeyboardInterrupt
+
+    try:
+        YtDlpAudioDownloader(command_runner=fake_run).download("video-123")
+    except KeyboardInterrupt:
+        pass
+    else:
+        raise AssertionError("Expected yt-dlp cancellation")
+
+    assert download_roots
+    assert not download_roots[0].exists()
+
+
 def test_streaming_track_audio_downloader_uses_candidate_provider_track_id(
     tmp_path: Path,
 ) -> None:
@@ -525,3 +544,66 @@ def test_streaming_track_fingerprinter_persists_extracted_fingerprint(
     assert stored_track["fingerprint"] == "stream-fp-789"
     assert stored_track["fingerprint_duration_seconds"] == 198.5
     assert stored_track["fingerprinted_at"] == fingerprinted_at.replace(tzinfo=None)
+
+
+def test_streaming_track_fingerprinter_cleans_up_when_fingerprint_extraction_fails(
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite:///{tmp_path / 'streaming.db'}"
+    engine = create_engine(database_url)
+    streaming_metadata.create_all(engine)
+    audio_path = tmp_path / "downloaded.m4a"
+    audio_path.write_bytes(b"audio")
+
+    with engine.begin() as connection:
+        connection.execute(
+            insert(streaming_tracks_table).values(
+                provider_track_id="video-789",
+                title="Track",
+                artist="Artist",
+                album="Album",
+                year=2026,
+                isrc=None,
+                duration_ms=123000,
+                fingerprint=None,
+                fingerprint_duration_seconds=None,
+                fingerprinted_at=None,
+            )
+        )
+
+    class FakeDownloadedAudio:
+        def __init__(self) -> None:
+            self.path = audio_path
+            self.cleaned_up = False
+
+        def __enter__(self) -> Any:
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            self.cleaned_up = True
+
+    class FakeAudioDownloader:
+        def __init__(self) -> None:
+            self.downloaded = FakeDownloadedAudio()
+
+        def download(self, streaming_track_id: int) -> FakeDownloadedAudio:
+            return self.downloaded
+
+    class FakeFingerprintExtractor:
+        def extract(self, path: Path) -> StreamingAudioFingerprint:
+            raise ValueError("fpcalc failed")
+
+    audio_downloader = FakeAudioDownloader()
+
+    try:
+        StreamingTrackFingerprinter(
+            database_url=database_url,
+            audio_downloader=audio_downloader,
+            fingerprint_extractor=FakeFingerprintExtractor(),
+        ).fingerprint(1)
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("Expected fingerprint extraction failure")
+
+    assert audio_downloader.downloaded.cleaned_up is True

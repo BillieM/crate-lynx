@@ -92,7 +92,7 @@ class YtDlpAudioDownloader:
                 path=_find_downloaded_audio_file(download_root),
                 _temporary_directory=temporary_directory,
             )
-        except Exception:
+        except BaseException:
             temporary_directory.cleanup()
             raise
 
