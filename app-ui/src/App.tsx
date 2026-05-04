@@ -490,8 +490,14 @@ function Topbar({ onConfigureSync, view }: { onConfigureSync: () => void; view: 
       </div>
 
       <div className="flex items-center gap-2">
-        {syncMutation.isSuccess ? <span className="text-[11px] font-medium text-ctp-green">Sync queued.</span> : null}
-        {syncMutation.isError ? <span className="text-[11px] font-medium text-ctp-red">Sync failed.</span> : null}
+        <PlaylistActionStatus
+          errorText="Playlist sync failed."
+          isError={syncMutation.isError}
+          isPending={syncMutation.isPending}
+          isSuccess={syncMutation.isSuccess}
+          pendingText="Syncing playlist..."
+          successText="Playlist sync queued."
+        />
         {exportMutation.isSuccess ? <span className="text-[11px] font-medium text-ctp-green">M3U ready.</span> : null}
         {exportMutation.isError ? <span className="text-[11px] font-medium text-ctp-red">Export failed.</span> : null}
         {view.id !== playlistCollectionViewId ? (
