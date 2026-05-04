@@ -911,7 +911,23 @@ def test_library_tracks_endpoint_returns_linked_pending_unlinked_and_no_match_ro
     response = asyncio.run(route.endpoint())
 
     assert [track.id for track in response.tracks] == [5, 6, 7, 8]
+    assert response.stats.model_dump(mode="json") == {
+        "total": len(response.tracks),
+        "linked": sum(1 for track in response.tracks if track.link_status == "linked"),
+        "pending": sum(
+            1 for track in response.tracks if track.link_status == "pending"
+        ),
+        "unlinked": sum(
+            1 for track in response.tracks if track.link_status == "unlinked"
+        ),
+    }
     assert response.model_dump(mode="json") == {
+        "stats": {
+            "total": 4,
+            "linked": 1,
+            "pending": 1,
+            "unlinked": 2,
+        },
         "tracks": [
             {
                 "id": 5,
@@ -961,7 +977,7 @@ def test_library_tracks_endpoint_returns_linked_pending_unlinked_and_no_match_ro
                 "match_method": None,
                 "file_status": "available",
             },
-        ]
+        ],
     }
 
 

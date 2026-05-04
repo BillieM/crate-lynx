@@ -2,7 +2,11 @@ from collections.abc import Callable
 
 from fastapi import APIRouter
 
-from app.library.schemas import LibraryTrackResponse, LibraryTracksResponse
+from app.library.schemas import (
+    LibraryStatsResponse,
+    LibraryTrackResponse,
+    LibraryTracksResponse,
+)
 from app.library.store import LibraryStore
 
 
@@ -11,8 +15,14 @@ def create_router(*, require_database_url: Callable[[], str]) -> APIRouter:
 
     @router.get("/library/tracks", response_model=LibraryTracksResponse)
     async def list_library_tracks() -> LibraryTracksResponse:
-        tracks = LibraryStore(require_database_url()).list_tracks()
+        result = LibraryStore(require_database_url()).list_tracks()
         return LibraryTracksResponse(
+            stats=LibraryStatsResponse(
+                total=result.stats.total,
+                linked=result.stats.linked,
+                pending=result.stats.pending,
+                unlinked=result.stats.unlinked,
+            ),
             tracks=[
                 LibraryTrackResponse(
                     id=track.id,
@@ -26,8 +36,8 @@ def create_router(*, require_database_url: Callable[[], str]) -> APIRouter:
                     match_method=track.match_method,
                     file_status=track.file_status,
                 )
-                for track in tracks
-            ]
+                for track in result.tracks
+            ],
         )
 
     return router

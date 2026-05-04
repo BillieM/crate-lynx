@@ -9,7 +9,7 @@
   - Add focused backend tests for linked, pending, unlinked, and no-match rows.
   - Run the relevant backend validation for the changed backend files: `ruff check .`, `ruff format --check .`, and targeted `pytest`.
 
-- [ ] Add backend library stats using the same status derivation as the track list
+- [x] Add backend library stats using the same status derivation as the track list
   - Prefer returning `{ "stats": ..., "tracks": ... }` from the library track endpoint if that avoids duplicate queries and keeps the frontend simpler.
   - Include total, linked, pending, and unlinked counts.
   - Ensure stats and row statuses are produced from the same query logic or helper so they cannot drift.

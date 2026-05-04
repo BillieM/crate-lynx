@@ -29,11 +29,25 @@ class LibraryTrackRecord:
     file_status: str
 
 
+@dataclass(frozen=True, slots=True)
+class LibraryStatsRecord:
+    total: int
+    linked: int
+    pending: int
+    unlinked: int
+
+
+@dataclass(frozen=True, slots=True)
+class LibraryTracksResult:
+    stats: LibraryStatsRecord
+    tracks: list[LibraryTrackRecord]
+
+
 class LibraryStore:
     def __init__(self, database_url: str) -> None:
         self._engine = create_engine(database_url)
 
-    def list_tracks(self) -> list[LibraryTrackRecord]:
+    def list_tracks(self) -> LibraryTracksResult:
         pending_suggestion_ids = (
             select(
                 suggested_links_table.c.local_track_id,
@@ -123,7 +137,7 @@ class LibraryStore:
 
         with self._engine.connect() as connection:
             rows = connection.execute(query).mappings()
-            return [
+            tracks = [
                 LibraryTrackRecord(
                     id=row["id"],
                     title=(
@@ -146,6 +160,7 @@ class LibraryStore:
                 )
                 for row in rows
             ]
+            return LibraryTracksResult(stats=_library_stats(tracks), tracks=tracks)
 
 
 def _display_filename(path: str) -> str:
@@ -158,3 +173,15 @@ def _link_status(row: object) -> str:
     if row["pending_suggestion_id"] is not None:
         return "pending"
     return "unlinked"
+
+
+def _library_stats(tracks: list[LibraryTrackRecord]) -> LibraryStatsRecord:
+    linked = sum(1 for track in tracks if track.link_status == "linked")
+    pending = sum(1 for track in tracks if track.link_status == "pending")
+    unlinked = sum(1 for track in tracks if track.link_status == "unlinked")
+    return LibraryStatsRecord(
+        total=len(tracks),
+        linked=linked,
+        pending=pending,
+        unlinked=unlinked,
+    )

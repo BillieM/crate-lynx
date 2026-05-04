@@ -14,5 +14,13 @@ class LibraryTrackResponse(BaseModel):
     file_status: str
 
 
+class LibraryStatsResponse(BaseModel):
+    total: int
+    linked: int
+    pending: int
+    unlinked: int
+
+
 class LibraryTracksResponse(BaseModel):
+    stats: LibraryStatsResponse
     tracks: list[LibraryTrackResponse]
