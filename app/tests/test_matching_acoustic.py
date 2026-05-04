@@ -394,6 +394,27 @@ def test_ytdlp_audio_downloader_cleans_up_when_download_is_cancelled() -> None:
     assert not download_roots[0].exists()
 
 
+def test_ytdlp_audio_downloader_cleans_up_when_download_output_is_invalid() -> None:
+    download_roots: list[Path] = []
+
+    def fake_run(command: list[str]) -> subprocess.CompletedProcess[str]:
+        output_template = Path(command[command.index("--output") + 1])
+        download_roots.append(output_template.parent)
+        (output_template.parent / "video-123.m4a").write_bytes(b"audio")
+        (output_template.parent / "video-123.webm").write_bytes(b"audio")
+        return subprocess.CompletedProcess(command, 0)
+
+    try:
+        YtDlpAudioDownloader(command_runner=fake_run).download("video-123")
+    except RuntimeError:
+        pass
+    else:
+        raise AssertionError("Expected invalid yt-dlp output failure")
+
+    assert download_roots
+    assert not download_roots[0].exists()
+
+
 def test_streaming_track_audio_downloader_uses_candidate_provider_track_id(
     tmp_path: Path,
 ) -> None:
@@ -460,6 +481,23 @@ def test_streaming_audio_fingerprint_extractor_runs_fpcalc_and_parses_json(
         duration_seconds=201.25,
     )
     assert seen_commands == [["fpcalc-test", "-json", str(audio_path)]]
+
+
+def test_streaming_audio_fingerprint_extractor_rejects_missing_fingerprint(
+    tmp_path: Path,
+) -> None:
+    audio_path = tmp_path / "stream.m4a"
+    audio_path.write_bytes(b"audio")
+
+    def fake_run(command: list[str]) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(command, 0, stdout='{"duration":201.25}')
+
+    try:
+        StreamingAudioFingerprintExtractor(command_runner=fake_run).extract(audio_path)
+    except ValueError as exc:
+        assert "fingerprint" in str(exc)
+    else:
+        raise AssertionError("Expected missing fingerprint failure")
 
 
 def test_streaming_track_fingerprinter_persists_extracted_fingerprint(
