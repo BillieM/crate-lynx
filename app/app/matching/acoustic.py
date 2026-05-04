@@ -3,18 +3,136 @@ from __future__ import annotations
 from collections.abc import Iterable
 from dataclasses import dataclass
 import os
+from pathlib import Path
+import subprocess
+import tempfile
+from types import TracebackType
+from typing import Protocol
 
 from rapidfuzz.distance import Levenshtein
 from sqlalchemy import create_engine, select
 
 from app.local_tracks.store import local_tracks_table
 from app.matching.models import ConfidenceBand, MatchResult
+from app.streaming.models import streaming_tracks_table
+
+
+YOUTUBE_MUSIC_WATCH_URL = "https://music.youtube.com/watch?v={provider_track_id}"
+PARTIAL_DOWNLOAD_SUFFIXES = frozenset({".part", ".temp", ".tmp", ".ytdl"})
+
+
+class CommandRunner(Protocol):
+    def __call__(self, command: list[str]) -> subprocess.CompletedProcess[str]: ...
 
 
 @dataclass(frozen=True, slots=True)
 class AcousticCandidate:
     streaming_track_id: int
     fingerprint: str
+
+
+@dataclass(slots=True)
+class DownloadedStreamingAudio:
+    path: Path
+    _temporary_directory: tempfile.TemporaryDirectory[str]
+
+    def cleanup(self) -> None:
+        self._temporary_directory.cleanup()
+
+    def __enter__(self) -> DownloadedStreamingAudio:
+        return self
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None:
+        self.cleanup()
+
+
+@dataclass(slots=True)
+class YtDlpAudioDownloader:
+    yt_dlp_binary: str = "yt-dlp"
+    audio_format: str = "m4a"
+    command_runner: CommandRunner | None = None
+
+    def download(self, provider_track_id: str) -> DownloadedStreamingAudio:
+        temporary_directory = tempfile.TemporaryDirectory(prefix="crate-lynx-acoustic-")
+        download_root = Path(temporary_directory.name)
+        output_template = download_root / "%(id)s.%(ext)s"
+        command = [
+            self.yt_dlp_binary,
+            "--no-playlist",
+            "--format",
+            "bestaudio/best",
+            "--extract-audio",
+            "--audio-format",
+            self.audio_format,
+            "--output",
+            str(output_template),
+            YOUTUBE_MUSIC_WATCH_URL.format(provider_track_id=provider_track_id),
+        ]
+
+        try:
+            self._run(command)
+            return DownloadedStreamingAudio(
+                path=_find_downloaded_audio_file(download_root),
+                _temporary_directory=temporary_directory,
+            )
+        except Exception:
+            temporary_directory.cleanup()
+            raise
+
+    def _run(self, command: list[str]) -> subprocess.CompletedProcess[str]:
+        if self.command_runner is not None:
+            completed = self.command_runner(command)
+            completed.check_returncode()
+            return completed
+
+        return subprocess.run(
+            command,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+
+
+class StreamingTrackAudioDownloader:
+    def __init__(
+        self,
+        *,
+        database_url: str,
+        yt_dlp_downloader: YtDlpAudioDownloader | None = None,
+    ) -> None:
+        self._engine = create_engine(database_url)
+        self._yt_dlp_downloader = yt_dlp_downloader or YtDlpAudioDownloader()
+
+    def download(self, streaming_track_id: int) -> DownloadedStreamingAudio:
+        provider_track_id = self._lookup_provider_track_id(streaming_track_id)
+        if provider_track_id is None:
+            raise ValueError(
+                f"Streaming track {streaming_track_id} does not exist or has no provider track id"
+            )
+
+        return self._yt_dlp_downloader.download(provider_track_id)
+
+    def _lookup_provider_track_id(self, streaming_track_id: int) -> str | None:
+        with self._engine.connect() as connection:
+            row = (
+                connection.execute(
+                    select(streaming_tracks_table.c.provider_track_id).where(
+                        streaming_tracks_table.c.id == streaming_track_id
+                    )
+                )
+                .mappings()
+                .one_or_none()
+            )
+
+        if row is None:
+            return None
+
+        return _normalize_string(row["provider_track_id"])
 
 
 class AcousticMatcher:
@@ -106,7 +224,26 @@ def _score_fingerprints(left: str, right: str) -> float:
     return Levenshtein.normalized_similarity(left, right)
 
 
+def _find_downloaded_audio_file(download_root: Path) -> Path:
+    downloaded_files = [
+        path
+        for path in download_root.iterdir()
+        if path.is_file() and path.suffix not in PARTIAL_DOWNLOAD_SUFFIXES
+    ]
+
+    if len(downloaded_files) != 1:
+        raise RuntimeError(
+            "yt-dlp did not produce exactly one audio file for acoustic matching"
+        )
+
+    return downloaded_files[0]
+
+
 def _normalize_fingerprint(value: object) -> str | None:
+    return _normalize_string(value)
+
+
+def _normalize_string(value: object) -> str | None:
     if not isinstance(value, str):
         return None
 

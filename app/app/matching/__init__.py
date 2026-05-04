@@ -5,6 +5,9 @@ import logging
 from app.matching.acoustic import (
     AcousticCandidate,
     AcousticMatcher,
+    DownloadedStreamingAudio,
+    StreamingTrackAudioDownloader,
+    YtDlpAudioDownloader,
     run_acoustic_match_job,
 )
 from app.matching.isrc import IsrcMatcher
@@ -28,12 +31,15 @@ __all__ = [
     "AcousticJobEnqueuer",
     "AcousticMatcher",
     "ConfidenceBand",
+    "DownloadedStreamingAudio",
     "IsrcMatcher",
     "MatchResult",
     "MatchingJobEnqueuer",
     "MatchingPipeline",
+    "StreamingTrackAudioDownloader",
     "SuggestedLinkStore",
     "TagMatcher",
+    "YtDlpAudioDownloader",
     "fetch_suggested_links",
     "run_acoustic_match_job",
     "run_matching_pipeline",
