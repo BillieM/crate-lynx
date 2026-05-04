@@ -61,7 +61,7 @@ export function PlaylistActionStatus({
 }) {
   if (isPending) {
     return (
-      <p className="text-[12px] font-medium text-ctp-yellow" role="status">
+      <p className={`${textClasses.status} text-ctp-yellow`} role="status">
         {pendingText}
       </p>
     );
@@ -69,7 +69,7 @@ export function PlaylistActionStatus({
 
   if (isError) {
     return (
-      <p className="text-[12px] font-medium text-ctp-red" role="alert">
+      <p className={`${textClasses.status} text-ctp-red`} role="alert">
         {errorText}
       </p>
     );
@@ -77,7 +77,7 @@ export function PlaylistActionStatus({
 
   if (isSuccess) {
     return (
-      <p className="text-[12px] font-medium text-ctp-green" role="status">
+      <p className={`${textClasses.status} text-ctp-green`} role="status">
         {successText}
       </p>
     );
@@ -183,9 +183,7 @@ export function Topbar({
         </span>
         <div className="flex min-w-0 items-center gap-2.5">
           <h1 className={`truncate ${textClasses.title}`}>{view.title}</h1>
-          <span
-            className={`uppercase tracking-[0.14em] ${controlClasses.pill} ${getTopbarPillClasses(view.pillTone)}`}
-          >
+          <span className={`${textClasses.pillEyebrow} ${controlClasses.pill} ${getTopbarPillClasses(view.pillTone)}`}>
             {view.pillLabel}
           </span>
         </div>
@@ -200,8 +198,8 @@ export function Topbar({
           pendingText="Syncing playlist..."
           successText="Playlist sync queued."
         />
-        {exportMutation.isSuccess ? <span className="text-[11px] font-medium text-ctp-green">M3U ready.</span> : null}
-        {exportMutation.isError ? <span className="text-[11px] font-medium text-ctp-red">Export failed.</span> : null}
+        {exportMutation.isSuccess ? <span className={`${textClasses.finePrint} font-medium text-ctp-green`}>M3U ready.</span> : null}
+        {exportMutation.isError ? <span className={`${textClasses.finePrint} font-medium text-ctp-red`}>Export failed.</span> : null}
         {view.id !== playlistCollectionViewId ? (
           <ActionButton className={controlClasses.actionButtonCompact} onClick={onConfigureSync}>
             Configure sync

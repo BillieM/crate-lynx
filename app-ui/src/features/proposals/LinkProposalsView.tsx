@@ -5,7 +5,7 @@ import { ActionButton } from "../../components/ActionButton";
 import { EmptyStateCard } from "../../components/EmptyStateCard";
 import { FilterChipGroup, type FilterChipOption } from "../../components/FilterChipGroup";
 import { Pill, type PillTone } from "../../components/Pill";
-import { controlClasses, surfaceClasses, textClasses } from "../../styles/componentClasses";
+import { controlClasses, layoutClasses, surfaceClasses, textClasses } from "../../styles/componentClasses";
 import {
   approveLinkProposal,
   playlistQueryKeys,
@@ -269,7 +269,7 @@ export function LinkProposalsView() {
 
     return renderProposalFrame(
       <div className="flex min-h-0 flex-1 items-center justify-center">
-        <EmptyStateCard body={emptyBody} className="max-w-[420px] text-left" title={emptyTitle} />
+        <EmptyStateCard body={emptyBody} className={`${layoutClasses.emptyStateNarrow} text-left`} title={emptyTitle} />
       </div>,
     );
   }
@@ -284,7 +284,7 @@ export function LinkProposalsView() {
           return (
             <section aria-labelledby={`proposal-band-${band}`} className="grid gap-3" key={band}>
               <header className="flex items-center justify-between gap-3">
-                <h3 className="text-[14px] font-semibold text-ctp-text" id={`proposal-band-${band}`}>
+                <h3 className={textClasses.proposalTitle} id={`proposal-band-${band}`}>
                   {label}
                 </h3>
                 <span className={controlClasses.countBadge}>
@@ -350,13 +350,13 @@ function ProposalCard({
       <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_190px]">
         <div className="min-w-0">
           <p className={`${textClasses.eyebrow} tracking-normal text-ctp-subtext0`}>Local track</p>
-          <p className="mt-1 truncate text-[14px] font-semibold text-ctp-text">{getLocalTrackLabel(proposal)}</p>
+          <p className={`mt-1 truncate ${textClasses.proposalTitle}`}>{getLocalTrackLabel(proposal)}</p>
           <p className={`mt-1 truncate ${textClasses.caption}`}>{proposal.local_file_path}</p>
           <p className={`mt-2 ${textClasses.detail}`}>Track #{proposal.local_track_id}</p>
         </div>
         <div className="min-w-0">
           <p className={`${textClasses.eyebrow} tracking-normal text-ctp-subtext0`}>Streaming track</p>
-          <p className="mt-1 truncate text-[14px] font-semibold text-ctp-text">{proposal.streaming_title}</p>
+          <p className={`mt-1 truncate ${textClasses.proposalTitle}`}>{proposal.streaming_title}</p>
           <p className={`mt-1 truncate ${textClasses.caption}`}>{proposal.streaming_artist}</p>
           <p className={`mt-2 truncate ${textClasses.detail}`}>
             {proposal.streaming_album ?? "Album unavailable"}
@@ -367,7 +367,7 @@ function ProposalCard({
             <Pill tone={getMatchMethodTone(proposal.match_method)}>
               {getMatchMethodLabel(proposal.match_method)}
             </Pill>
-            <span className="text-[15px] font-semibold text-ctp-text">{formatProposalScore(proposal.score)}</span>
+            <span className={textClasses.score}>{formatProposalScore(proposal.score)}</span>
           </div>
           <div>
             <div className="h-2 overflow-hidden rounded-full bg-ctp-surface0" aria-hidden="true">
@@ -376,7 +376,7 @@ function ProposalCard({
                 style={scoreMeterStyle}
               />
             </div>
-            <p className="mt-2 text-[12px] font-medium text-ctp-subtext0">Confidence score</p>
+            <p className={`mt-2 text-ctp-subtext0 ${textClasses.status}`}>Confidence score</p>
           </div>
           <div className="flex flex-wrap items-center gap-2 xl:justify-end">
             <ActionButton disabled={isActionPending} onClick={onApprove} tone="success">
@@ -386,7 +386,7 @@ function ProposalCard({
               {isRejecting ? "Rejecting..." : "Reject"}
             </ActionButton>
             {actionError ? (
-              <p className="basis-full text-right text-[11px] font-medium text-ctp-red">{actionError}</p>
+              <p className={`basis-full text-right font-medium text-ctp-red ${textClasses.finePrint}`}>{actionError}</p>
             ) : null}
           </div>
         </div>

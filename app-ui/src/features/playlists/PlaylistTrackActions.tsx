@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import { ActionButton } from "../../components/ActionButton";
-import { surfaceClasses, textClasses } from "../../styles/componentClasses";
+import { controlClasses, surfaceClasses, textClasses } from "../../styles/componentClasses";
 import type { PlaylistTrack } from "./queries";
 
 type PlaylistTrackActionsProps = {
@@ -57,7 +57,7 @@ export function PlaylistTrackActions({ onReviewTrack, playlistId, track }: Playl
         <ActionButton onClick={() => setIsLinkInfoOpen((current) => !current)}>Linked</ActionButton>
         {isLinkInfoOpen ? (
           <div
-            className={`absolute right-0 top-[calc(100%+0.5rem)] z-10 w-56 text-left ${surfaceClasses.popover} ${surfaceClasses.popoverBody} border-ctp-green/30`}
+            className={`absolute right-0 ${controlClasses.popoverOffset} z-10 w-56 text-left ${surfaceClasses.popover} ${surfaceClasses.popoverBody} border-ctp-green/30`}
             role="dialog"
           >
             <p className={`${textClasses.eyebrow} text-ctp-green`}>Final link info</p>
@@ -99,9 +99,9 @@ export function PlaylistTrackActions({ onReviewTrack, playlistId, track }: Playl
       >
         {isPending ? "Matching..." : "Match"}
       </ActionButton>
-      {!canRematch ? <p className="text-[11px] text-ctp-subtext0">No local track to re-match.</p> : null}
-      {rematchMutation.isSuccess ? <p className="text-[11px] text-ctp-green">Re-match queued.</p> : null}
-      {rematchMutation.isError ? <p className="text-[11px] text-ctp-red">Re-match failed.</p> : null}
+      {!canRematch ? <p className={`${textClasses.finePrint} text-ctp-subtext0`}>No local track to re-match.</p> : null}
+      {rematchMutation.isSuccess ? <p className={`${textClasses.finePrint} text-ctp-green`}>Re-match queued.</p> : null}
+      {rematchMutation.isError ? <p className={`${textClasses.finePrint} text-ctp-red`}>Re-match failed.</p> : null}
     </div>
   );
 }

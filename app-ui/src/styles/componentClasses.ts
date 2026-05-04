@@ -51,7 +51,18 @@ export const textClasses = {
   caption: "text-[12px] text-ctp-subtext0",
   detail: "text-[12px] font-medium text-ctp-overlay1",
   eyebrow: "text-[11px] font-semibold uppercase tracking-[0.16em]",
+  finePrint: "text-[11px]",
+  input: "text-[13px]",
+  label: "text-[13px] font-semibold text-ctp-text",
+  metric: "text-[12px] font-semibold tabular-nums text-ctp-text",
+  microEyebrow: "text-[10px] font-semibold uppercase tracking-[0.16em]",
+  navItem: "text-[13px] font-medium",
+  pillEyebrow: "text-[11px] font-semibold uppercase tracking-[0.14em]",
+  playlistTitle: "text-[22px] font-semibold text-ctp-text sm:text-[24px]",
+  proposalTitle: "text-[14px] font-semibold text-ctp-text",
+  score: "text-[15px] font-semibold text-ctp-text",
   sectionTitle: "text-[18px] font-semibold text-ctp-text",
+  status: "text-[12px] font-medium",
   title: "text-[15px] font-semibold text-ctp-text",
 };
 
@@ -74,11 +85,13 @@ export const controlClasses = {
     "border-ctp-surface1 bg-ctp-surface0 text-ctp-subtext0 hover:border-ctp-overlay0 hover:bg-ctp-surface1 hover:text-ctp-text",
   iconFrame: `flex items-center justify-center ${radiusClasses.control} bg-ctp-surface0 text-ctp-mauve`,
   pill: `${radiusClasses.pill} px-2 py-0.5 text-[11px] font-semibold`,
+  popoverOffset: "top-[calc(100%+0.5rem)]",
   searchFrame:
     `${radiusClasses.control} bg-ctp-surface0 ring-1 ring-inset ring-ctp-surface1/70 focus-within:text-ctp-text focus-within:ring-ctp-overlay0`,
 };
 
 export const shellClasses = {
+  brandEyebrow: "font-display text-[10px] font-bold uppercase tracking-[0.26em]",
   navBadge: "px-1.5 py-0 text-[10px]",
   navItem:
     `flex w-full items-center gap-2.5 px-3.5 py-2 text-left transition-colors hover:bg-ctp-surface0/80 ${radiusClasses.control}`,
@@ -93,4 +106,11 @@ export const shellClasses = {
   sidebarSearch: "border-b border-ctp-surface0 px-3.5 py-3",
   topbar: "flex h-10 shrink-0 items-center justify-between border-b border-ctp-surface0 bg-ctp-mantle px-4",
   topbarIcon: "h-7 w-7",
+};
+
+export const layoutClasses = {
+  artworkCompact: "h-16 w-16 sm:h-[72px] sm:w-[72px]",
+  coverageMeter: "min-w-[11rem] sm:min-w-[13rem]",
+  emptyStateNarrow: "max-w-[420px]",
+  progressDigit: "min-w-[2ch]",
 };

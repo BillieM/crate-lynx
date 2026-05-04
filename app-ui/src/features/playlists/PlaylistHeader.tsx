@@ -1,6 +1,6 @@
 import { AlertTriangle, ListMusic } from "lucide-react";
 import { Pill } from "../../components/Pill";
-import { surfaceClasses, textClasses } from "../../styles/componentClasses";
+import { layoutClasses, surfaceClasses, textClasses } from "../../styles/componentClasses";
 import type { PlaylistDetail } from "./queries";
 
 type PlaylistHeaderProps = {
@@ -62,7 +62,7 @@ function CoverArt({ playlist }: { playlist: PlaylistDetail }) {
     return (
       <img
         alt={`${playlist.name} cover art`}
-        className={`h-16 w-16 object-cover sm:h-[72px] sm:w-[72px] ${surfaceClasses.raisedArtwork}`}
+        className={`${layoutClasses.artworkCompact} object-cover ${surfaceClasses.raisedArtwork}`}
         src={playlist.cover_art_url}
       />
     );
@@ -70,7 +70,7 @@ function CoverArt({ playlist }: { playlist: PlaylistDetail }) {
 
   return (
     <div
-      className={`flex h-16 w-16 items-center justify-center bg-ctp-surface0 text-ctp-blue sm:h-[72px] sm:w-[72px] ${surfaceClasses.raisedArtwork}`}
+      className={`flex ${layoutClasses.artworkCompact} items-center justify-center bg-ctp-surface0 text-ctp-blue ${surfaceClasses.raisedArtwork}`}
     >
       <ListMusic aria-hidden="true" className="h-7 w-7" strokeWidth={1.7} />
     </div>
@@ -81,10 +81,10 @@ function CoverageMeter({ playlist }: { playlist: PlaylistDetail }) {
   const percentage = getProgressPercentage(playlist);
 
   return (
-    <div className="min-w-[11rem] space-y-2 sm:min-w-[13rem]">
+    <div className={`${layoutClasses.coverageMeter} space-y-2`}>
       <div className="flex items-center justify-between gap-3">
         <span className={`${textClasses.eyebrow} text-ctp-subtext0`}>Coverage</span>
-        <span className="text-[12px] font-semibold tabular-nums text-ctp-text">
+        <span className={textClasses.metric}>
           {playlist.linked_count} / {playlist.track_count}
         </span>
       </div>
@@ -131,7 +131,7 @@ function PlaylistSyncError({ playlist }: { playlist: PlaylistDetail }) {
       <AlertTriangle aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0 text-ctp-red" />
       <div className="min-w-0">
         <p className={`${textClasses.eyebrow} text-ctp-red`}>Last sync error</p>
-        <p className="mt-2 text-[13px] leading-5 text-ctp-text">{playlist.last_sync_error}</p>
+        <p className={`mt-2 leading-5 text-ctp-text ${textClasses.input}`}>{playlist.last_sync_error}</p>
         <p className={`mt-1 ${textClasses.caption}`}>Failed {formatSyncErrorTime(playlist.last_sync_error_at)}</p>
       </div>
     </div>
@@ -149,7 +149,7 @@ export function PlaylistHeader({ playlist }: PlaylistHeaderProps) {
           <div className="min-w-0 space-y-2">
             <div className="min-w-0">
               <p className={`${textClasses.eyebrow} text-ctp-lavender`}>Playlist overview</p>
-              <h2 className="mt-1 truncate text-[22px] font-semibold text-ctp-text sm:text-[24px]">{playlist.name}</h2>
+              <h2 className={`mt-1 truncate ${textClasses.playlistTitle}`}>{playlist.name}</h2>
               <p className={textClasses.bodyMuted}>{formatRelativeSyncTime(playlist.synced_at)}</p>
             </div>
 

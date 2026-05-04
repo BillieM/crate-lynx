@@ -24,6 +24,7 @@ import {
 import { Sidebar } from "./features/shell/Sidebar";
 import { Topbar } from "./features/shell/Topbar";
 import { getProgressColor } from "./features/shell/progress";
+import { textClasses } from "./styles/componentClasses";
 import type { NavItem, PlaylistSyncViewState, ViewConfig } from "./features/shell/types";
 
 export { getProgressColor };
@@ -210,7 +211,7 @@ function PlaylistView({
       <PlaylistHeader playlist={playlistDetailQuery.data.playlist} />
       <div className="flex flex-wrap items-center justify-between gap-3">
         <FilterChips activeFilter={activeFilter} counts={filterCounts} onFilterChange={setActiveFilter} />
-        <p className="text-[12px] font-medium text-ctp-subtext0">
+        <p className={`${textClasses.status} text-ctp-subtext0`}>
           Showing {filteredTracks.length} of {tracks.length} tracks
         </p>
       </div>

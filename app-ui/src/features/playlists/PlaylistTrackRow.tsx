@@ -41,7 +41,7 @@ export function PlaylistTrackRow({ actionSlot, track }: PlaylistTrackRowProps) {
           <p className={`min-w-0 flex-1 truncate ${textClasses.title}`}>{track.title}</p>
         </div>
 
-        <dl className="grid min-w-0 gap-x-3 gap-y-1 pl-12 text-[12px] leading-5 text-ctp-subtext0 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
+        <dl className={`grid min-w-0 gap-x-3 gap-y-1 pl-12 text-ctp-subtext0 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] ${textClasses.bodyRelaxed}`}>
           <div className="flex min-w-0 items-baseline gap-1.5">
             <dt className="shrink-0 font-medium text-ctp-overlay1">Artist</dt>
             <dd className="truncate text-ctp-text">{track.artist}</dd>

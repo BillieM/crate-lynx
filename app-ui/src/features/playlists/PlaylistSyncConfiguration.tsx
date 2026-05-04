@@ -2,7 +2,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { ActionButton } from "../../components/ActionButton";
 import { EmptyStateCard } from "../../components/EmptyStateCard";
 import { StatusMessage, type OperationStatus } from "../../components/StatusMessage";
-import { surfaceClasses, textClasses } from "../../styles/componentClasses";
+import { layoutClasses, surfaceClasses, textClasses } from "../../styles/componentClasses";
 import { PlaylistActionStatus } from "../shell/Topbar";
 import {
   playlistQueryKeys,
@@ -49,7 +49,7 @@ function PlaylistCollectionState({ status }: { status: PlaylistCollectionStatus 
 
   return (
     <section className="flex min-h-0 flex-1 items-center justify-center">
-      <EmptyStateCard body={copy[status].body} className="max-w-[420px]" title={copy[status].title} />
+      <EmptyStateCard body={copy[status].body} className={layoutClasses.emptyStateNarrow} title={copy[status].title} />
     </section>
   );
 }
@@ -64,7 +64,7 @@ function PlaylistSyncToggle({
   playlist: StreamingPlaylistConfig;
 }) {
   return (
-    <label className="inline-flex shrink-0 items-center gap-2 text-[12px] font-semibold text-ctp-subtext0">
+    <label className={`inline-flex shrink-0 items-center gap-2 font-semibold text-ctp-subtext0 ${textClasses.status}`}>
       <input
         aria-label={`Select ${playlist.title} for sync`}
         checked={playlist.selected_for_sync}
@@ -103,7 +103,7 @@ function PlaylistConfigRow({
         />
       </div>
 
-      <dl className="grid gap-3 text-[12px] sm:grid-cols-3">
+      <dl className={`grid gap-3 sm:grid-cols-3 ${textClasses.caption}`}>
         <div>
           <dt className="font-medium text-ctp-subtext0">Tracks</dt>
           <dd className="mt-1 font-semibold tabular-nums text-ctp-text">{playlist.track_count}</dd>

@@ -2,7 +2,7 @@ import { useEffect, useState, type CSSProperties } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Package, Search } from "lucide-react";
 import { ActionButton } from "../../components/ActionButton";
-import { controlClasses, shellClasses, surfaceClasses, textClasses } from "../../styles/componentClasses";
+import { controlClasses, layoutClasses, shellClasses, surfaceClasses, textClasses } from "../../styles/componentClasses";
 import { pillToneClasses } from "../../styles/toneClasses";
 import { getProgressColor } from "./progress";
 import type { NavItem, SearchResponse, SearchResult } from "./types";
@@ -55,12 +55,12 @@ function ProgressFraction({ complete, total }: { complete: number; total: number
   };
 
   return (
-    <span className="ml-auto flex shrink-0 items-baseline text-[11px] font-semibold tabular-nums">
-      <span className="min-w-[2ch] text-right text-[var(--progress-color)]" style={progressColorStyle}>
+    <span className={`ml-auto flex shrink-0 items-baseline font-semibold tabular-nums ${textClasses.finePrint}`}>
+      <span className={`${layoutClasses.progressDigit} text-right text-[var(--progress-color)]`} style={progressColorStyle}>
         {complete}
       </span>
       <span className="px-0.5 text-ctp-overlay1">/</span>
-      <span className="min-w-[2ch] text-left text-ctp-subtext0">{total}</span>
+      <span className={`${layoutClasses.progressDigit} text-left text-ctp-subtext0`}>{total}</span>
     </span>
   );
 }
@@ -107,7 +107,7 @@ function SidebarSection({
             onClick={() => onSelect(item.id)}
             type="button"
           >
-            <span className="min-w-0 flex-1 truncate text-[13px] font-medium">
+            <span className={`min-w-0 flex-1 truncate ${textClasses.navItem}`}>
               {item.label}
             </span>
             {item.progress ? (
@@ -154,7 +154,7 @@ function SearchPanel() {
         <Search aria-hidden="true" className="h-4 w-4 shrink-0" strokeWidth={1.8} />
         <input
           autoComplete="off"
-          className="w-full border-0 bg-transparent p-0 text-[13px] text-ctp-text outline-none placeholder:text-ctp-subtext0"
+          className={`w-full border-0 bg-transparent p-0 text-ctp-text outline-none placeholder:text-ctp-subtext0 ${textClasses.input}`}
           id="sidebar-search"
           onChange={(event) => setQuery(event.target.value)}
           placeholder="Search tracks, artists, playlists"
@@ -164,17 +164,17 @@ function SearchPanel() {
       </div>
 
       {isOpen ? (
-        <div className={`absolute inset-x-0 top-[calc(100%+0.5rem)] z-10 overflow-hidden ${surfaceClasses.popover}`}>
+        <div className={`absolute inset-x-0 ${controlClasses.popoverOffset} z-10 overflow-hidden ${surfaceClasses.popover}`}>
           {isFetching ? (
-            <p className={`${surfaceClasses.popoverBody} text-[12px] text-ctp-subtext0`}>Searching library...</p>
+            <p className={`${surfaceClasses.popoverBody} ${textClasses.caption}`}>Searching library...</p>
           ) : null}
 
           {!isFetching && error ? (
-            <p className={`${surfaceClasses.popoverBody} text-[12px] text-ctp-red`}>Search unavailable right now.</p>
+            <p className={`${surfaceClasses.popoverBody} text-ctp-red ${textClasses.status}`}>Search unavailable right now.</p>
           ) : null}
 
           {!isFetching && !error && hasQuery && results.length === 0 ? (
-            <p className={`${surfaceClasses.popoverBody} text-[12px] text-ctp-subtext0`}>No matching playlists or tracks.</p>
+            <p className={`${surfaceClasses.popoverBody} ${textClasses.caption}`}>No matching playlists or tracks.</p>
           ) : null}
 
           {!isFetching && !error && results.length > 0 ? (
@@ -185,14 +185,14 @@ function SearchPanel() {
                   className="flex w-full items-start gap-3 px-3 py-2.5 text-left transition-colors hover:bg-ctp-surface0/80"
                   type="button"
                 >
-                  <span className="mt-0.5 rounded-full bg-ctp-surface0 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-ctp-subtext0 ring-1 ring-inset ring-ctp-surface1/70">
+                  <span className={`mt-0.5 rounded-full bg-ctp-surface0 px-2 py-1 text-ctp-subtext0 ring-1 ring-inset ring-ctp-surface1/70 ${textClasses.microEyebrow}`}>
                     {searchKindLabels[result.kind]}
                   </span>
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate text-[12px] font-semibold text-ctp-text">
+                    <span className={`block truncate ${textClasses.status} text-ctp-text`}>
                       {result.title}
                     </span>
-                    <span className="mt-1 block truncate text-[11px] text-ctp-subtext0">
+                    <span className={`mt-1 block truncate text-ctp-subtext0 ${textClasses.finePrint}`}>
                       {result.subtitle}
                     </span>
                   </span>
@@ -233,10 +233,10 @@ export function Sidebar({
             <Package aria-hidden="true" className="h-4 w-4" strokeWidth={1.7} />
           </div>
           <div>
-            <p className="font-display text-[10px] font-bold uppercase tracking-[0.26em] text-ctp-mauve">
+            <p className={`${shellClasses.brandEyebrow} text-ctp-mauve`}>
               MUSEBRIDGE
             </p>
-            <p className="mt-0.5 text-[11px] text-ctp-subtext0">Playlist linking control room</p>
+            <p className={`mt-0.5 text-ctp-subtext0 ${textClasses.finePrint}`}>Playlist linking control room</p>
           </div>
         </div>
       </div>

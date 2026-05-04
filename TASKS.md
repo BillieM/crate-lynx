@@ -13,7 +13,7 @@ Design constraints for every task:
 - [x] Make playlist filters smaller and more space-efficient while preserving filter counts, selected states, keyboard accessibility, and Catppuccin status colors
 - [x] Convert playlist track cards into compact rows using the existing row-card model, reducing padding and duplicated information while keeping status, title, artist, album, duration, and actions easy to scan
 - [x] Apply the compact design system to proposal cards, empty states, loading states, status messages, and popovers so secondary views match the playlist screen
-- [ ] Review arbitrary Tailwind values across touched frontend components and replace repeated sizing, spacing, radius, shadow, and typography patterns with shared styles where practical
+- [x] Review arbitrary Tailwind values across touched frontend components and replace repeated sizing, spacing, radius, shadow, and typography patterns with shared styles where practical
 - [ ] Verify desktop and narrower viewport layouts for clipping, overlap, excessive whitespace, readable text, stable controls, and consistent Catppuccin Mocha theming
 - [ ] Update affected frontend tests for changed structure, labels, accessible states, or shared primitive behavior
 - [ ] Run frontend validation: `npm run lint`, `npm test`, and `npm run build`
