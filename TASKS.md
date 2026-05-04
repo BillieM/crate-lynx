@@ -1,12 +1,13 @@
-# E13 — Frontend: playlist sync configuration UI
+# E14 — Frontend: sidebar, topbar, and per-playlist UX
 
-- [x] Add a YouTube Music configuration view entry point from the existing topbar or sidebar
-- [x] Fetch all discovered playlists from `GET /api/streaming/playlists/config` with a dedicated TanStack Query
-- [x] Render the configuration list with playlist metadata and a `selected_for_sync` toggle for each playlist
-- [x] Wire playlist toggles to `PATCH /api/streaming/playlists/{id}` and invalidate both sidebar and config queries on success
-- [x] Add a "Refresh playlist metadata" action wired to `POST /api/streaming/accounts/{id}/refresh-metadata`
-- [x] Add pending, success, and error states for the metadata refresh action
-- [x] Add a "Sync selected" action wired to `POST /api/streaming/accounts/{id}/sync`
-- [x] Add pending, success, and error states for the selected-playlist sync action
-- [x] Cover newly discovered unselected playlists and toggle behavior in frontend tests
-- [x] Run relevant frontend validation: `npm run lint`, `npm test`, and `npm run build`
+- [x] Ensure the sidebar relies on `GET /api/streaming/playlists` returning selected playlists only, with no extra client-side selected filter
+- [ ] Replace the playlist-view topbar sync action with `POST /api/streaming/playlists/{id}/sync`
+- [ ] Hide or reroute the topbar sync action when no playlist is selected
+- [ ] Add pending, success, and error states for per-playlist sync
+- [ ] Surface each playlist's last sync error string and timestamp in the playlist view when present
+- [ ] Add an empty state for no selected playlists that routes users to configure YouTube Music sync
+- [ ] Add loading and error states for metadata refresh and selected-playlist sync where they affect navigation or playlist views
+- [ ] Extract shared `StatusMessage` or `EmptyStateCard` components if the new states reuse the same pattern three or more times
+- [ ] Update frontend tests for the topbar sync button to expect the per-playlist sync endpoint
+- [ ] Update frontend tests for no-selected-playlists and per-playlist sync failure states
+- [ ] Run relevant frontend validation: `npm run lint`, `npm test`, and `npm run build`
