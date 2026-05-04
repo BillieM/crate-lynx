@@ -2,7 +2,7 @@ import { useEffect, useState, type CSSProperties } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Package, Search } from "lucide-react";
 import { ActionButton } from "../../components/ActionButton";
-import { controlClasses, surfaceClasses, textClasses } from "../../styles/componentClasses";
+import { controlClasses, shellClasses, surfaceClasses, textClasses } from "../../styles/componentClasses";
 import { pillToneClasses } from "../../styles/toneClasses";
 import { getProgressColor } from "./progress";
 import type { NavItem, SearchResponse, SearchResult } from "./types";
@@ -83,16 +83,16 @@ function SidebarSection({
   title: string;
 }) {
   return (
-    <section className="space-y-3">
-      <h2 className={`px-4 ${textClasses.eyebrow} tracking-[0.24em] text-ctp-subtext0`}>
+    <section className={shellClasses.navSection}>
+      <h2 className={`${shellClasses.navSectionTitle} ${textClasses.eyebrow} text-ctp-subtext0`}>
         {title}
       </h2>
-      <div className="space-y-1.5">
+      <div className={shellClasses.navStack}>
         {items.length === 0 && emptyMessage ? (
-          <div className="space-y-2 px-4 py-2.5">
+          <div className="space-y-2 px-3.5 py-2">
             <p className={textClasses.bodyMutedRelaxed}>{emptyMessage}</p>
             {emptyActionLabel && onEmptyAction ? (
-              <ActionButton onClick={onEmptyAction}>
+              <ActionButton className={controlClasses.actionButtonCompact} onClick={onEmptyAction}>
                 {emptyActionLabel}
               </ActionButton>
             ) : null}
@@ -101,20 +101,20 @@ function SidebarSection({
         {items.map((item) => (
           <button
             key={item.id}
-            className={`flex w-full items-center gap-3 px-4 py-2.5 text-left transition-colors hover:bg-ctp-surface0/80 ${controlClasses.controlRadius} ${
+            className={`${shellClasses.navItem} ${
               item.id === activeItemId ? "bg-ctp-surface0 text-ctp-text" : "text-ctp-subtext1"
             }`}
             onClick={() => onSelect(item.id)}
             type="button"
           >
-            <span className="min-w-0 flex-1 truncate text-[14px] font-medium">
+            <span className="min-w-0 flex-1 truncate text-[13px] font-medium">
               {item.label}
             </span>
             {item.progress ? (
               <ProgressFraction complete={item.progress.complete} total={item.progress.total} />
             ) : null}
             {item.badge ? (
-              <span className={`tabular-nums ${controlClasses.pill} ${getBadgeClasses(item.tone)}`}>
+              <span className={`tabular-nums ${controlClasses.pill} ${shellClasses.navBadge} ${getBadgeClasses(item.tone)}`}>
                 {item.badge}
               </span>
             ) : null}
@@ -150,7 +150,7 @@ function SearchPanel() {
       <label className="sr-only" htmlFor="sidebar-search">
         Search library
       </label>
-      <div className={`flex items-center gap-2 px-3 py-2.5 text-ctp-subtext0 ${controlClasses.searchFrame}`}>
+      <div className={`flex items-center gap-2 text-ctp-subtext0 ${shellClasses.searchField} ${controlClasses.searchFrame}`}>
         <Search aria-hidden="true" className="h-4 w-4 shrink-0" strokeWidth={1.8} />
         <input
           autoComplete="off"
@@ -226,26 +226,26 @@ export function Sidebar({
   playlistItems: NavItem[];
 }) {
   return (
-    <aside className="flex min-h-0 w-[220px] shrink-0 flex-col border-r border-ctp-surface0 bg-ctp-mantle">
-      <div className="border-b border-ctp-surface0 px-5 py-5">
-        <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-[12px] bg-ctp-surface0 text-ctp-mauve">
-            <Package aria-hidden="true" className="h-5 w-5" strokeWidth={1.7} />
+    <aside className={shellClasses.sidebar}>
+      <div className={shellClasses.sidebarHeader}>
+        <div className="flex items-center gap-2.5">
+          <div className={shellClasses.sidebarLogo}>
+            <Package aria-hidden="true" className="h-4 w-4" strokeWidth={1.7} />
           </div>
           <div>
-            <p className="font-display text-[11px] font-bold uppercase tracking-[0.32em] text-ctp-mauve">
+            <p className="font-display text-[10px] font-bold uppercase tracking-[0.26em] text-ctp-mauve">
               MUSEBRIDGE
             </p>
-            <p className="mt-1 text-[12px] text-ctp-subtext0">Playlist linking control room</p>
+            <p className="mt-0.5 text-[11px] text-ctp-subtext0">Playlist linking control room</p>
           </div>
         </div>
       </div>
 
-      <div className="border-b border-ctp-surface0 px-4 py-4">
+      <div className={shellClasses.sidebarSearch}>
         <SearchPanel />
       </div>
 
-      <div className="flex-1 space-y-6 overflow-y-auto px-0 py-5">
+      <div className={shellClasses.sidebarBody}>
         <SidebarSection activeItemId={activeItemId} items={maintenanceItems} onSelect={onSelect} title="Maintenance" />
         <SidebarSection
           activeItemId={activeItemId}

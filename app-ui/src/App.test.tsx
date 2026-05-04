@@ -432,7 +432,7 @@ describe("App", () => {
 
     const sidebar = screen.getByRole("complementary");
 
-    expect(sidebar).toHaveClass("w-[220px]", "bg-ctp-mantle", "border-r", "border-ctp-surface0");
+    expect(sidebar).toHaveClass("w-[208px]", "bg-ctp-mantle", "border-r", "border-ctp-surface0");
     expect(screen.getByText("MUSEBRIDGE")).toBeInTheDocument();
     expect(screen.getByPlaceholderText("Search tracks, artists, playlists")).toBeInTheDocument();
     expect(screen.getByText("Maintenance")).toBeInTheDocument();

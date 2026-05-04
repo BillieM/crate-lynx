@@ -55,6 +55,7 @@ export const textClasses = {
 export const controlClasses = {
   actionButton:
     `${radiusClasses.control} border px-3 py-1.5 text-[12px] font-semibold transition-colors disabled:cursor-not-allowed disabled:border-ctp-surface0 disabled:bg-ctp-surface0 disabled:text-ctp-overlay1 disabled:hover:bg-ctp-surface0`,
+  actionButtonCompact: "px-2.5 py-1 text-[11px]",
   controlRadius: radiusClasses.control,
   countBadge:
     `${radiusClasses.pill} min-w-6 bg-ctp-mantle px-2 py-0.5 text-center text-[11px] font-semibold tabular-nums text-ctp-subtext0 ring-1 ring-inset ring-ctp-surface1`,
@@ -66,4 +67,21 @@ export const controlClasses = {
   pill: `${radiusClasses.pill} px-2 py-0.5 text-[11px] font-semibold`,
   searchFrame:
     `${radiusClasses.control} bg-ctp-surface0 ring-1 ring-inset ring-ctp-surface1/70 focus-within:text-ctp-text focus-within:ring-ctp-overlay0`,
+};
+
+export const shellClasses = {
+  navBadge: "px-1.5 py-0 text-[10px]",
+  navItem:
+    `flex w-full items-center gap-2.5 px-3.5 py-2 text-left transition-colors hover:bg-ctp-surface0/80 ${radiusClasses.control}`,
+  navSection: "space-y-2",
+  navSectionTitle: "px-3.5 tracking-[0.18em]",
+  navStack: "space-y-1",
+  searchField: "px-2.5 py-2",
+  sidebar: "flex min-h-0 w-[208px] shrink-0 flex-col border-r border-ctp-surface0 bg-ctp-mantle",
+  sidebarBody: "flex-1 space-y-4 overflow-y-auto px-0 py-4",
+  sidebarHeader: "border-b border-ctp-surface0 px-4 py-3.5",
+  sidebarLogo: `flex h-8 w-8 items-center justify-center ${radiusClasses.control} bg-ctp-surface0 text-ctp-mauve`,
+  sidebarSearch: "border-b border-ctp-surface0 px-3.5 py-3",
+  topbar: "flex h-10 shrink-0 items-center justify-between border-b border-ctp-surface0 bg-ctp-mantle px-4",
+  topbarIcon: "h-7 w-7",
 };

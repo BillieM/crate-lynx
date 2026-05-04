@@ -1,7 +1,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { BookOpenText, ListMusic, Sparkles, type LucideIcon } from "lucide-react";
 import { ActionButton } from "../../components/ActionButton";
-import { controlClasses, textClasses } from "../../styles/componentClasses";
+import { controlClasses, shellClasses, textClasses } from "../../styles/componentClasses";
 import {
   exportPlaylistM3u,
   syncStreamingPlaylist,
@@ -134,6 +134,7 @@ export function Topbar({
       return (
         <ActionButton
           aria-live="polite"
+          className={controlClasses.actionButtonCompact}
           disabled={!canSync}
           key={actionLabel}
           onClick={() => {
@@ -153,6 +154,7 @@ export function Topbar({
       return (
         <ActionButton
           aria-live="polite"
+          className={controlClasses.actionButtonCompact}
           disabled={!canExport}
           key={actionLabel}
           onClick={() => {
@@ -167,19 +169,19 @@ export function Topbar({
     }
 
     return (
-      <ActionButton key={actionLabel}>
+      <ActionButton className={controlClasses.actionButtonCompact} key={actionLabel}>
         {actionLabel}
       </ActionButton>
     );
   }
 
   return (
-    <header className="flex h-11 shrink-0 items-center justify-between border-b border-ctp-surface0 bg-ctp-mantle px-5">
-      <div className="flex min-w-0 items-center gap-3">
-        <span className={`h-8 w-8 shrink-0 ${controlClasses.iconFrame}`}>
+    <header className={shellClasses.topbar}>
+      <div className="flex min-w-0 items-center gap-2.5">
+        <span className={`${shellClasses.topbarIcon} shrink-0 ${controlClasses.iconFrame}`}>
           <TopbarIcon icon={view.icon} />
         </span>
-        <div className="flex min-w-0 items-center gap-3">
+        <div className="flex min-w-0 items-center gap-2.5">
           <h1 className={`truncate ${textClasses.title}`}>{view.title}</h1>
           <span
             className={`uppercase tracking-[0.14em] ${controlClasses.pill} ${getTopbarPillClasses(view.pillTone)}`}
@@ -201,7 +203,7 @@ export function Topbar({
         {exportMutation.isSuccess ? <span className="text-[11px] font-medium text-ctp-green">M3U ready.</span> : null}
         {exportMutation.isError ? <span className="text-[11px] font-medium text-ctp-red">Export failed.</span> : null}
         {view.id !== playlistCollectionViewId ? (
-          <ActionButton onClick={onConfigureSync}>
+          <ActionButton className={controlClasses.actionButtonCompact} onClick={onConfigureSync}>
             Configure sync
           </ActionButton>
         ) : null}
