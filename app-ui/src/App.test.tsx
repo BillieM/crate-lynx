@@ -646,7 +646,7 @@ describe("App", () => {
       if (url === "/api/streaming/playlists/config") {
         return {
           ok: true,
-          json: async () => ({ playlists: [] }),
+          json: async () => streamingPlaylistConfigResponse,
         } as Response;
       }
 
@@ -655,9 +655,13 @@ describe("App", () => {
 
     renderApp();
 
-    expect(await screen.findByRole("heading", { name: "No selected playlists" })).toBeInTheDocument();
-    expect(screen.getByText("No selected playlists. Configure YouTube Music sync to choose playlists.")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Configure sync" })).toBeInTheDocument();
+    expect(await screen.findByText("No selected playlists. Configure YouTube Music sync to choose playlists.")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Configure sync" }));
+
+    expect(await screen.findByRole("heading", { level: 2, name: "Playlist sync configuration" })).toBeInTheDocument();
+    expect(screen.getByText("1 of 2 discovered playlists selected for sync.")).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: "Select Late Night Drive for sync" })).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "Select Fresh Discoveries for sync" })).not.toBeChecked();
     expect(screen.queryByRole("button", { name: "Sync" })).not.toBeInTheDocument();
     expect(document.getElementById("playlists")).toHaveAttribute("data-view-active", "true");
   });
@@ -733,6 +737,8 @@ describe("App", () => {
     fireEvent.click(syncButton);
 
     expect(await screen.findByRole("alert")).toHaveTextContent("Playlist sync failed.");
+    expect(screen.getByRole("heading", { level: 3, name: "Playlist sync failed" })).toBeInTheDocument();
+    expect(screen.getByText("The playlist sync request failed before the job could be queued.")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Sync" })).toBeEnabled();
   });
 

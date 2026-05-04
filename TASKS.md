@@ -9,5 +9,5 @@
 - [x] Add loading and error states for metadata refresh and selected-playlist sync where they affect navigation or playlist views
 - [x] Extract shared `StatusMessage` or `EmptyStateCard` components if the new states reuse the same pattern three or more times
 - [x] Update frontend tests for the topbar sync button to expect the per-playlist sync endpoint
-- [ ] Update frontend tests for no-selected-playlists and per-playlist sync failure states
+- [x] Update frontend tests for no-selected-playlists and per-playlist sync failure states
 - [ ] Run relevant frontend validation: `npm run lint`, `npm test`, and `npm run build`
