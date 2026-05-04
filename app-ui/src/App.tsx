@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useLocation, useNavigate } from "react-router-dom";
 import { EmptyStateCard } from "./components/EmptyStateCard";
 import { StatusMessage, type OperationStatus } from "./components/StatusMessage";
 import { FilterChips } from "./features/playlists/FilterChips";
@@ -176,8 +177,40 @@ const searchKindLabels: Record<SearchResult["kind"], string> = {
   local_track: "Local",
 };
 
+const staticViewRoutes: Record<string, string> = {
+  library: "/library",
+  missing: "/missing",
+  playlists: "/playlists",
+  proposals: "/proposals",
+  unidentified: "/unidentified",
+};
+
 function getPlaylistViewId(playlistId: number) {
   return `playlist-${playlistId}`;
+}
+
+function getViewPath(viewId: string) {
+  if (viewId.startsWith("playlist-")) {
+    return `/playlists/${viewId.replace("playlist-", "")}`;
+  }
+
+  return staticViewRoutes[viewId] ?? "/";
+}
+
+function getViewIdFromPath(pathname: string) {
+  const playlistRouteMatch = /^\/playlists\/(?<playlistId>\d+)\/?$/.exec(pathname);
+
+  if (playlistRouteMatch?.groups?.playlistId) {
+    return getPlaylistViewId(Number(playlistRouteMatch.groups.playlistId));
+  }
+
+  const normalizedPathname = pathname.replace(/\/$/, "") || "/";
+
+  if (normalizedPathname === "/") {
+    return null;
+  }
+
+  return Object.entries(staticViewRoutes).find(([, path]) => path === normalizedPathname)?.[0] ?? null;
 }
 
 function getPlaylistTone(playlist: StreamingPlaylist): NavItem["tone"] {
@@ -747,6 +780,18 @@ function PlaylistCollectionState({ status }: { status: PlaylistCollectionStatus 
   );
 }
 
+function LinkProposalsView() {
+  return (
+    <section className="flex min-h-0 flex-1 flex-col">
+      <EmptyStateCard
+        body="Pending local-to-streaming match suggestions will appear here as matching jobs finish."
+        className="max-w-[460px] self-center py-7 text-left"
+        title="Proposal queue"
+      />
+    </section>
+  );
+}
+
 function PlaylistActionStatus({
   errorText,
   isError,
@@ -1042,6 +1087,8 @@ function ViewShell({
             />
           ) : viewId === playlistCollectionViewId ? (
             <PlaylistSyncConfiguration />
+          ) : viewId === "proposals" ? (
+            <LinkProposalsView />
           ) : null}
         </div>
       ) : null}
@@ -1050,6 +1097,8 @@ function ViewShell({
 }
 
 function App() {
+  const location = useLocation();
+  const navigate = useNavigate();
   const [activeViewId, setActiveViewId] = useState(playlistCollectionViewId);
   const [hasUserSelectedView, setHasUserSelectedView] = useState(false);
   const [playlistSyncState, setPlaylistSyncState] = useState<PlaylistSyncViewState>();
@@ -1072,20 +1121,35 @@ function App() {
     : playlistsQuery.isError
       ? "Playlists unavailable."
       : "No selected playlists. Configure YouTube Music sync to choose playlists.";
+  const routedViewId = useMemo(() => getViewIdFromPath(location.pathname), [location.pathname]);
+
+  useEffect(() => {
+    if (!routedViewId || viewConfigById[routedViewId] === undefined) {
+      return;
+    }
+
+    setHasUserSelectedView(true);
+    setActiveViewId(routedViewId);
+  }, [routedViewId, viewConfigById]);
 
   useEffect(() => {
     if (playlistsQuery.isPending) {
       return;
     }
 
+    if (routedViewId) {
+      return;
+    }
+
     if (!hasUserSelectedView || viewConfigById[activeViewId] === undefined) {
       setActiveViewId(defaultPlaylistViewId);
     }
-  }, [activeViewId, defaultPlaylistViewId, hasUserSelectedView, playlistsQuery.isPending, viewConfigById]);
+  }, [activeViewId, defaultPlaylistViewId, hasUserSelectedView, playlistsQuery.isPending, routedViewId, viewConfigById]);
 
   function handleViewSelect(viewId: string) {
     setHasUserSelectedView(true);
     setActiveViewId(viewId);
+    navigate(getViewPath(viewId));
   }
 
   return (

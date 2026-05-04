@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
 import App, { asRgb, getProgressColor, lerp, mixColors } from "./App";
 import type {
   PlaylistDetailResponse,
@@ -279,7 +280,7 @@ function mockPlaylistFetch({ activeSyncHandler, metadataRefreshHandler, selected
   });
 }
 
-function renderApp() {
+function renderApp(initialEntries = ["/"]) {
   const queryClient = new QueryClient({
     defaultOptions: {
       queries: {
@@ -290,7 +291,9 @@ function renderApp() {
 
   return render(
     <QueryClientProvider client={queryClient}>
-      <App />
+      <MemoryRouter initialEntries={initialEntries}>
+        <App />
+      </MemoryRouter>
     </QueryClientProvider>,
   );
 }
@@ -371,6 +374,18 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: "Export M3U" })).toBeInTheDocument();
     expect(document.getElementById("proposals")).toHaveAttribute("data-view-active", "false");
     expect(document.getElementById("playlist-12")).toHaveAttribute("data-view-active", "true");
+  });
+
+  it("opens the link proposals routed view from the URL", async () => {
+    mockPlaylistFetch();
+
+    renderApp(["/proposals?proposal_id=44"]);
+
+    expect(screen.getByRole("heading", { level: 1, name: "Link proposals" })).toBeInTheDocument();
+    expect(screen.getByText("Needs approval")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 2, name: "Proposal queue" })).toBeInTheDocument();
+    expect(document.getElementById("proposals")).toHaveAttribute("data-view-active", "true");
+    expect(document.getElementById("playlists")).toHaveAttribute("data-view-active", "false");
   });
 
   it("opens the YouTube Music sync configuration shell from the topbar", async () => {
