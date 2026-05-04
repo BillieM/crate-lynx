@@ -5,6 +5,7 @@ from pathlib import Path
 from alembic import command
 from alembic.config import Config
 from sqlalchemy import create_engine, insert, select, text
+from sqlalchemy.exc import IntegrityError
 
 from app.streaming.models import (
     playlist_membership_table,
@@ -123,3 +124,45 @@ def test_streaming_track_fingerprint_migration_preserves_existing_tracks(
     assert row["fingerprint"] is None
     assert row["fingerprint_duration_seconds"] is None
     assert row["fingerprinted_at"] is None
+
+
+def test_ingest_folders_migration_seeds_default_unique_paths(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite:///{tmp_path / 'ingest_folders.db'}"
+    monkeypatch.setenv("DATABASE_URL", database_url)
+
+    alembic_config = Config("db/alembic.ini")
+    command.upgrade(alembic_config, "head")
+
+    engine = create_engine(database_url)
+    with engine.connect() as connection:
+        rows = (
+            connection.execute(
+                text(
+                    """
+                    SELECT path, created_at, updated_at
+                    FROM ingest_folders
+                    ORDER BY id
+                    """
+                )
+            )
+            .mappings()
+            .all()
+        )
+
+    assert [row["path"] for row in rows] == ["/ingestion", "/soulseek"]
+    assert all(row["created_at"] is not None for row in rows)
+    assert all(row["updated_at"] is not None for row in rows)
+
+    with engine.begin() as connection:
+        try:
+            connection.execute(
+                text("INSERT INTO ingest_folders (path) VALUES (:path)"),
+                {"path": "/ingestion"},
+            )
+        except IntegrityError:
+            pass
+        else:
+            raise AssertionError("duplicate ingest folder path was accepted")
