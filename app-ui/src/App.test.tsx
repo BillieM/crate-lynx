@@ -4,6 +4,7 @@ import App, { asRgb, getProgressColor, lerp, mixColors } from "./App";
 import type {
   PlaylistDetailResponse,
   PlaylistTracksResponse,
+  StreamingPlaylistConfigResponse,
   StreamingPlaylistsResponse,
 } from "./features/playlists/queries";
 
@@ -93,6 +94,27 @@ const streamingPlaylistsResponse: StreamingPlaylistsResponse = {
     })),
   ],
 };
+const streamingPlaylistConfigResponse: StreamingPlaylistConfigResponse = {
+  playlists: [
+    {
+      ...streamingPlaylistsResponse.playlists[0],
+      selected_for_sync: true,
+      last_sync_error: null,
+      last_sync_error_at: null,
+    },
+    {
+      id: 31,
+      account_id: 4,
+      provider_playlist_id: "PL31",
+      title: "Fresh Discoveries",
+      track_count: 0,
+      synced_at: null,
+      selected_for_sync: false,
+      last_sync_error: "Malformed playlist payload",
+      last_sync_error_at: "2026-05-02T10:30:00Z",
+    },
+  ],
+};
 const selectedPlaylistSyncEndpoint = "/api/streaming/accounts/4/sync";
 const selectedPlaylistSyncResponse = { account_id: 4, job_id: "selected-playlists-sync-job-4" };
 
@@ -149,6 +171,13 @@ function mockPlaylistFetch() {
       return {
         ok: true,
         json: async () => streamingPlaylistsResponse,
+      } as Response;
+    }
+
+    if (url === "/api/streaming/playlists/config") {
+      return {
+        ok: true,
+        json: async () => streamingPlaylistConfigResponse,
       } as Response;
     }
 
@@ -295,6 +324,13 @@ describe("App", () => {
 
     expect(screen.getByRole("heading", { level: 1, name: "YouTube Music" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { level: 2, name: "Playlist sync configuration" })).toBeInTheDocument();
+    expect(await screen.findByText("1 of 2 discovered playlists selected for sync.")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 3, name: "Late Night Drive" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 3, name: "Fresh Discoveries" })).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: "Select Late Night Drive for sync" })).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "Select Fresh Discoveries for sync" })).not.toBeChecked();
+    expect(screen.getByText("Provider ID PL31 / Account 4")).toBeInTheDocument();
+    expect(screen.getByText("Malformed playlist payload")).toBeInTheDocument();
     expect(document.getElementById("playlists")).toHaveAttribute("data-view-active", "true");
     expect(document.getElementById("playlist-12")).toHaveAttribute("data-view-active", "false");
     expect(screen.queryByRole("button", { name: "Configure sync" })).not.toBeInTheDocument();
@@ -351,6 +387,13 @@ describe("App", () => {
       const url = String(input);
 
       if (url === "/api/streaming/playlists") {
+        return {
+          ok: true,
+          json: async () => ({ playlists: [] }),
+        } as Response;
+      }
+
+      if (url === "/api/streaming/playlists/config") {
         return {
           ok: true,
           json: async () => ({ playlists: [] }),
@@ -438,6 +481,13 @@ describe("App", () => {
       const url = String(input);
 
       if (url === "/api/streaming/playlists") {
+        return {
+          ok: true,
+          json: async () => ({ playlists: [] }),
+        } as Response;
+      }
+
+      if (url === "/api/streaming/playlists/config") {
         return {
           ok: true,
           json: async () => ({ playlists: [] }),

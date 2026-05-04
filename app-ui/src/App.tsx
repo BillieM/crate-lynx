@@ -9,7 +9,9 @@ import { PlaylistTrackRow } from "./features/playlists/PlaylistTrackRow";
 import {
   exportPlaylistM3u,
   type StreamingPlaylist,
+  type StreamingPlaylistConfig,
   usePlaylistDetailQuery,
+  useStreamingPlaylistConfigQuery,
   useStreamingPlaylistsQuery,
   usePlaylistTracksQuery,
 } from "./features/playlists/queries";
@@ -195,6 +197,18 @@ function buildPlaylistViewConfigs(playlists: StreamingPlaylist[]): ViewConfig[] 
     actionLabels: ["Sync", "Export M3U"],
     icon: "playlist",
   }));
+}
+
+function formatPlaylistTimestamp(timestamp: string | null) {
+  if (!timestamp) {
+    return "Not synced yet";
+  }
+
+  return timestamp.replace("T", " ").replace(/(?:\.\d+)?Z?$/, "");
+}
+
+function getSelectedPlaylistCount(playlists: StreamingPlaylistConfig[]) {
+  return playlists.filter((playlist) => playlist.selected_for_sync).length;
 }
 
 function useDebouncedValue(value: string, delayMs: number) {
@@ -665,14 +679,99 @@ function PlaylistCollectionState({ status }: { status: PlaylistCollectionStatus 
   );
 }
 
+function PlaylistSyncToggle({ playlist }: { playlist: StreamingPlaylistConfig }) {
+  return (
+    <label className="inline-flex shrink-0 items-center gap-2 text-[12px] font-semibold text-ctp-subtext0">
+      <input
+        aria-label={`Select ${playlist.title} for sync`}
+        checked={playlist.selected_for_sync}
+        className="h-4 w-4 rounded border-ctp-surface1 bg-ctp-surface0 text-ctp-mauve accent-ctp-mauve"
+        readOnly
+        type="checkbox"
+      />
+      {playlist.selected_for_sync ? "Selected" : "Not selected"}
+    </label>
+  );
+}
+
+function PlaylistConfigRow({ playlist }: { playlist: StreamingPlaylistConfig }) {
+  return (
+    <article className="rounded-[18px] border border-ctp-surface1/80 bg-ctp-mantle px-5 py-4">
+      <div className="flex items-start justify-between gap-4">
+        <div className="min-w-0">
+          <h3 className="truncate text-[15px] font-semibold text-ctp-text">{playlist.title}</h3>
+          <p className="mt-1 text-[12px] text-ctp-subtext0">
+            Provider ID {playlist.provider_playlist_id} / Account {playlist.account_id}
+          </p>
+        </div>
+        <PlaylistSyncToggle playlist={playlist} />
+      </div>
+
+      <dl className="mt-4 grid gap-3 text-[12px] sm:grid-cols-3">
+        <div>
+          <dt className="font-medium text-ctp-subtext0">Tracks</dt>
+          <dd className="mt-1 font-semibold tabular-nums text-ctp-text">{playlist.track_count}</dd>
+        </div>
+        <div>
+          <dt className="font-medium text-ctp-subtext0">Last metadata sync</dt>
+          <dd className="mt-1 font-semibold text-ctp-text">{formatPlaylistTimestamp(playlist.synced_at)}</dd>
+        </div>
+        <div>
+          <dt className="font-medium text-ctp-subtext0">Last sync error</dt>
+          <dd className={playlist.last_sync_error ? "mt-1 font-semibold text-ctp-red" : "mt-1 font-semibold text-ctp-green"}>
+            {playlist.last_sync_error ?? "None"}
+          </dd>
+        </div>
+      </dl>
+    </article>
+  );
+}
+
+function PlaylistSyncConfiguration() {
+  const configQuery = useStreamingPlaylistConfigQuery();
+  const playlists = configQuery.data?.playlists ?? [];
+  const selectedCount = getSelectedPlaylistCount(playlists);
+
+  if (configQuery.isPending) {
+    return <PlaylistCollectionState status="loading" />;
+  }
+
+  if (configQuery.isError) {
+    return <PlaylistCollectionState status="error" />;
+  }
+
+  if (playlists.length === 0) {
+    return <PlaylistCollectionState status="empty" />;
+  }
+
+  return (
+    <section className="flex min-h-0 flex-1 flex-col gap-4">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h2 className="text-[18px] font-semibold text-ctp-text">Playlist sync configuration</h2>
+          <p className="mt-1 text-[13px] text-ctp-subtext0">
+            {selectedCount} of {playlists.length} discovered playlists selected for sync.
+          </p>
+        </div>
+      </div>
+
+      <div className="min-h-0 flex-1 overflow-y-auto pr-1">
+        <div className="space-y-3">
+          {playlists.map((playlist) => (
+            <PlaylistConfigRow key={playlist.id} playlist={playlist} />
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
 function ViewShell({
   activeViewId,
-  playlistCollectionStatus,
   playlistResourceId,
   viewId,
 }: {
   activeViewId: string;
-  playlistCollectionStatus: PlaylistCollectionStatus;
   playlistResourceId?: number;
   viewId: string;
 }) {
@@ -690,7 +789,7 @@ function ViewShell({
           {playlistResourceId !== undefined ? (
             <PlaylistView isActive={isActive} playlistResourceId={playlistResourceId} />
           ) : viewId === playlistCollectionViewId ? (
-            <PlaylistCollectionState status={playlistCollectionStatus} />
+            <PlaylistSyncConfiguration />
           ) : null}
         </div>
       ) : null}
@@ -715,13 +814,6 @@ function App() {
   );
   const activeView = viewConfigById[activeViewId] ?? viewConfigById.proposals;
   const viewShellIds = useMemo(() => viewConfigs.map((view) => view.id), [viewConfigs]);
-  const playlistCollectionStatus = playlistsQuery.isPending
-    ? "loading"
-    : playlistsQuery.isError
-      ? "error"
-      : streamingPlaylists.length > 0
-        ? "ready"
-        : "empty";
   const playlistEmptyMessage = playlistsQuery.isPending
     ? "Loading playlists..."
     : playlistsQuery.isError
@@ -814,7 +906,6 @@ function App() {
               <ViewShell
                 key={viewId}
                 activeViewId={activeViewId}
-                playlistCollectionStatus={playlistCollectionStatus}
                 playlistResourceId={viewConfigById[viewId].playlistResourceId}
                 viewId={viewId}
               />
