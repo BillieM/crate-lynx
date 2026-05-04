@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
-import App, { asRgb, getProgressColor, lerp, mixColors } from "./App";
+import App, { getProgressColor } from "./App";
 import type {
   LinkProposalsResponse,
   PlaylistDetailResponse,
@@ -1175,28 +1175,15 @@ describe("App", () => {
     expect(fetchMock).toHaveBeenCalledWith("/api/streaming/playlists");
   });
 
-  it("interpolates scalar values with rounding", () => {
-    expect(lerp(10, 20, 0.45)).toBe(15);
-  });
-
-  it("mixes RGB colors channel by channel", () => {
-    expect(
-      mixColors(
-        { red: 10, green: 20, blue: 30 },
-        { red: 40, green: 80, blue: 120 },
-        0.5,
-      ),
-    ).toEqual({ red: 25, green: 50, blue: 75 });
-  });
-
-  it("maps progress percentages onto the Catppuccin gradient", () => {
-    expect(getProgressColor(-10)).toEqual({ red: 108, green: 112, blue: 134 });
-    expect(getProgressColor(50)).toEqual({ red: 249, green: 226, blue: 175 });
-    expect(getProgressColor(100)).toEqual({ red: 166, green: 227, blue: 161 });
-  });
-
-  it("formats rgba strings with optional alpha", () => {
-    expect(asRgb({ red: 1, green: 2, blue: 3 })).toBe("rgba(1, 2, 3, 1)");
-    expect(asRgb({ red: 1, green: 2, blue: 3 }, 0.4)).toBe("rgba(1, 2, 3, 0.4)");
+  it("maps progress percentages onto the Catppuccin theme gradient", () => {
+    expect(getProgressColor(-10)).toBe("var(--color-ctp-overlay0)");
+    expect(getProgressColor(25)).toBe(
+      "color-mix(in srgb, var(--color-ctp-overlay0) 50%, var(--color-ctp-yellow))",
+    );
+    expect(getProgressColor(50)).toBe("var(--color-ctp-yellow)");
+    expect(getProgressColor(75)).toBe(
+      "color-mix(in srgb, var(--color-ctp-yellow) 50%, var(--color-ctp-green))",
+    );
+    expect(getProgressColor(100)).toBe("var(--color-ctp-green)");
   });
 });

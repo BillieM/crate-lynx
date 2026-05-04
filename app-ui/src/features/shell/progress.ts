@@ -1,43 +1,39 @@
 export type ProgressStatus = "unlinked" | "pending" | "linked";
 
-export type RgbColor = {
-  blue: number;
-  green: number;
-  red: number;
-};
+export type ProgressColor = string;
 
 const progressPalette = {
-  linked: { red: 166, green: 227, blue: 161 },
-  pending: { red: 249, green: 226, blue: 175 },
-  unlinked: { red: 108, green: 112, blue: 134 },
-} satisfies Record<ProgressStatus, RgbColor>;
+  linked: "var(--color-ctp-green)",
+  pending: "var(--color-ctp-yellow)",
+  unlinked: "var(--color-ctp-overlay0)",
+} satisfies Record<ProgressStatus, ProgressColor>;
 
 function clampPercentage(matchPercentage: number) {
   return Math.max(0, Math.min(100, matchPercentage));
 }
 
-export function lerp(start: number, end: number, amount: number) {
-  return Math.round(start + (end - start) * amount);
+function asMixPercentage(amount: number) {
+  return `${Math.round((1 - amount) * 10000) / 100}%`;
 }
 
-export function mixColors(start: RgbColor, end: RgbColor, amount: number): RgbColor {
-  return {
-    red: lerp(start.red, end.red, amount),
-    green: lerp(start.green, end.green, amount),
-    blue: lerp(start.blue, end.blue, amount),
-  };
+function mixProgressColors(start: ProgressColor, end: ProgressColor, amount: number) {
+  if (amount <= 0) {
+    return start;
+  }
+
+  if (amount >= 1) {
+    return end;
+  }
+
+  return `color-mix(in srgb, ${start} ${asMixPercentage(amount)}, ${end})`;
 }
 
-export function getProgressColor(matchPercentage: number): RgbColor {
+export function getProgressColor(matchPercentage: number): ProgressColor {
   const normalized = clampPercentage(matchPercentage) / 100;
 
   if (normalized <= 0.5) {
-    return mixColors(progressPalette.unlinked, progressPalette.pending, normalized / 0.5);
+    return mixProgressColors(progressPalette.unlinked, progressPalette.pending, normalized / 0.5);
   }
 
-  return mixColors(progressPalette.pending, progressPalette.linked, (normalized - 0.5) / 0.5);
-}
-
-export function asRgb(color: RgbColor, alpha = 1) {
-  return `rgba(${color.red}, ${color.green}, ${color.blue}, ${alpha})`;
+  return mixProgressColors(progressPalette.pending, progressPalette.linked, (normalized - 0.5) / 0.5);
 }

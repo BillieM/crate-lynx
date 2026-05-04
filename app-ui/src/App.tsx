@@ -23,11 +23,11 @@ import {
 } from "./features/playlists/filterTracks";
 import { Sidebar } from "./features/shell/Sidebar";
 import { Topbar } from "./features/shell/Topbar";
-import { asRgb, getProgressColor, lerp, mixColors } from "./features/shell/progress";
+import { getProgressColor } from "./features/shell/progress";
 import type { NavItem, PlaylistSyncViewState, ViewConfig } from "./features/shell/types";
 
-export { asRgb, getProgressColor, lerp, mixColors };
-export type { ProgressStatus, RgbColor } from "./features/shell/progress";
+export { getProgressColor };
+export type { ProgressColor, ProgressStatus } from "./features/shell/progress";
 
 const maintenanceItems: NavItem[] = [
   { id: "proposals", label: "Link proposals", badge: 14, tone: "pending" },
