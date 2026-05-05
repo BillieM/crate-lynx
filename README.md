@@ -94,8 +94,6 @@ pytest                # tests
 
 ### Frontend (`app-ui/`)
 
-> **Note:** React app is not yet scaffolded — these commands will be available once E09 is complete.
-
 ```bash
 npm run lint
 npm test

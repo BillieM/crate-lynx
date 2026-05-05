@@ -62,7 +62,7 @@ Frontend:
 
 ---
 
-### Task 1.3 — Update stale docs
+### [x] Task 1.3 — Update stale docs
 
 **Severity:** Low
 **Source:** Codex finding 8.
