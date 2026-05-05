@@ -48,6 +48,11 @@ def test_list_proposals_returns_joined_pending_records(
         file_path="Artist/Rejected.mp3",
         fingerprint="fp-5",
     )
+    linked_local_id = test_data.local_track(
+        beets_id=6,
+        file_path="Artist/Already Linked.mp3",
+        fingerprint="fp-6",
+    )
     pending_streaming_id = test_data.streaming_track(
         album="Album",
         artist="Artist",
@@ -66,6 +71,15 @@ def test_list_proposals_returns_joined_pending_records(
         title="Rejected",
         year=2024,
     )
+    linked_streaming_id = test_data.streaming_track(
+        album="Album",
+        artist="Artist",
+        duration_ms=125000,
+        isrc="GHI123456789",
+        provider_track_id="ytm-11",
+        title="Already Linked",
+        year=2024,
+    )
     proposal_id = test_data.suggested_link(
         local_track_id=pending_local_id,
         match_method="tags",
@@ -80,6 +94,17 @@ def test_list_proposals_returns_joined_pending_records(
         score=0.72,
         status=SUGGESTED_LINK_STATUS_REJECTED,
         streaming_track_id=rejected_streaming_id,
+    )
+    test_data.final_link(
+        local_track_id=linked_local_id,
+        streaming_track_id=linked_streaming_id,
+    )
+    test_data.suggested_link(
+        local_track_id=linked_local_id,
+        match_method="tags",
+        score=0.79,
+        status=SUGGESTED_LINK_STATUS_PENDING,
+        streaming_track_id=linked_streaming_id,
     )
 
     router = create_router(require_database_url=lambda: database_url)
@@ -117,6 +142,7 @@ def test_list_proposals_filters_by_confidence_band(tmp_path: Path) -> None:
     local_tracks_metadata.create_all(engine)
     streaming_metadata.create_all(engine)
     suggested_links_metadata.create_all(engine)
+    links_metadata.create_all(engine)
 
     with engine.begin() as connection:
         connection.execute(

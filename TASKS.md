@@ -22,7 +22,7 @@
   - Show one review item per local track with ranked candidate choices.
   - Approving any candidate removes the whole group optimistically; rejecting removes only that candidate.
 
-- [ ] Clean up orphaned suggestions for already-approved tracks.
+- [x] Clean up orphaned suggestions for already-approved tracks.
   - Add a proposal listing guard so pending suggestions are not returned when the local track already has a final link.
   - Add a maintenance cleanup path or store method to delete pending suggestions for linked tracks.
   - Verify and clean current pending suggestions joined to `final_links` by `local_track_id`.

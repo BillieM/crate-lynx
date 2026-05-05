@@ -78,13 +78,22 @@ def create_router(
                 suggested_links_table.join(
                     local_tracks_table,
                     local_tracks_table.c.id == suggested_links_table.c.local_track_id,
-                ).join(
+                )
+                .join(
                     streaming_tracks_table,
                     streaming_tracks_table.c.id
                     == suggested_links_table.c.streaming_track_id,
                 )
+                .outerjoin(
+                    final_links_table,
+                    final_links_table.c.local_track_id
+                    == suggested_links_table.c.local_track_id,
+                )
             )
-            .where(suggested_links_table.c.status == SUGGESTED_LINK_STATUS_PENDING)
+            .where(
+                suggested_links_table.c.status == SUGGESTED_LINK_STATUS_PENDING,
+                final_links_table.c.id.is_(None),
+            )
             .order_by(suggested_links_table.c.id.asc())
         )
         if band is not None:

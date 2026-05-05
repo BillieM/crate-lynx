@@ -12,11 +12,13 @@ from sqlalchemy import (
     MetaData,
     String,
     Table,
+    column,
     create_engine,
     delete,
     func,
     insert,
     select,
+    table,
 )
 from sqlalchemy.engine import Engine
 
@@ -50,6 +52,8 @@ suggested_links_table = Table(
     ),
 )
 
+final_links_view = table("final_links", column("local_track_id"))
+
 
 @dataclass(slots=True)
 class SuggestedLinkStore:
@@ -73,6 +77,19 @@ class SuggestedLinkStore:
                     suggested_links_table.c.status == SUGGESTED_LINK_STATUS_PENDING,
                 )
             )
+
+    def delete_pending_for_linked_tracks(self) -> int:
+        with self._engine.begin() as connection:
+            result = connection.execute(
+                delete(suggested_links_table).where(
+                    suggested_links_table.c.status == SUGGESTED_LINK_STATUS_PENDING,
+                    suggested_links_table.c.local_track_id.in_(
+                        select(final_links_view.c.local_track_id)
+                    ),
+                )
+            )
+
+        return result.rowcount or 0
 
     def has_rejected_pair(self, local_track_id: int, streaming_track_id: int) -> bool:
         with self._engine.connect() as connection:

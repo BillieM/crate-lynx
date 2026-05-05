@@ -5,6 +5,8 @@ from dataclasses import dataclass
 from sqlalchemy import create_engine
 from sqlalchemy import insert
 
+from app.links.store import final_links_table
+from app.links.store import metadata as links_metadata
 from app.matching import ConfidenceBand, MatchResult, MatchingPipeline
 from app.matching.pipeline import (
     fetch_suggested_links,
@@ -666,6 +668,90 @@ def test_suggested_link_store_clear_non_approved_for_track(tmp_path) -> None:
         {
             "local_track_id": 44,
             "streaming_track_id": 82,
+            "match_method": "isrc",
+            "score": 1.0,
+            "status": "approved",
+        },
+        {
+            "local_track_id": 45,
+            "streaming_track_id": 83,
+            "match_method": "tags",
+            "score": 0.9,
+            "status": "pending",
+        },
+    ]
+
+
+def test_suggested_link_store_deletes_pending_for_linked_tracks(tmp_path) -> None:
+    database_url = f"sqlite:///{tmp_path / 'linked-suggestions.db'}"
+    engine = create_engine(database_url)
+    suggested_links_metadata.create_all(engine)
+    links_metadata.create_all(engine)
+
+    with engine.begin() as connection:
+        connection.execute(
+            insert(final_links_table),
+            [
+                {
+                    "local_track_id": 44,
+                    "streaming_track_id": 82,
+                },
+                {
+                    "local_track_id": 46,
+                    "streaming_track_id": 84,
+                },
+            ],
+        )
+        connection.execute(
+            insert(suggested_links_table),
+            [
+                {
+                    "local_track_id": 44,
+                    "streaming_track_id": 80,
+                    "match_method": "tags",
+                    "score": 0.4,
+                    "status": "pending",
+                },
+                {
+                    "local_track_id": 44,
+                    "streaming_track_id": 81,
+                    "match_method": "tags",
+                    "score": 0.3,
+                    "status": "rejected",
+                },
+                {
+                    "local_track_id": 46,
+                    "streaming_track_id": 84,
+                    "match_method": "isrc",
+                    "score": 1.0,
+                    "status": "approved",
+                },
+                {
+                    "local_track_id": 45,
+                    "streaming_track_id": 83,
+                    "match_method": "tags",
+                    "score": 0.9,
+                    "status": "pending",
+                },
+            ],
+        )
+
+    from app.matching.pipeline import SuggestedLinkStore
+
+    deleted_count = SuggestedLinkStore(database_url).delete_pending_for_linked_tracks()
+
+    assert deleted_count == 1
+    assert fetch_suggested_links(database_url) == [
+        {
+            "local_track_id": 44,
+            "streaming_track_id": 81,
+            "match_method": "tags",
+            "score": 0.3,
+            "status": "rejected",
+        },
+        {
+            "local_track_id": 46,
+            "streaming_track_id": 84,
             "match_method": "isrc",
             "score": 1.0,
             "status": "approved",
