@@ -21,7 +21,6 @@ class UnidentifiedTrackResponse(BaseModel):
     failed_at: str
     failure_reason: str
     filename: str
-    fingerprint: str | None
     local_track_id: int | None
     source_path: str
 

@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 
 export type LibraryLinkStatus = "linked" | "pending" | "unlinked";
 export type LibraryFileStatus = "available" | "missing" | "beets_failed";
-export type LibraryMatchMethod = "isrc" | "tag" | "acoustic" | "manual" | string;
+export type LibraryMatchMethod = "isrc" | "tag" | "manual" | string;
 
 export type LibraryStats = {
   total: number;

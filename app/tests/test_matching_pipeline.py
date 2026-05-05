@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from types import SimpleNamespace
 
 from sqlalchemy import create_engine
 from sqlalchemy import insert
@@ -22,6 +21,46 @@ class FakeMatcher:
     def match(self, local_track_id: int) -> MatchResult | None:
         self.calls.append(local_track_id)
         return self.result
+
+    def candidates(
+        self,
+        local_track_id: int,
+        *,
+        excluded_streaming_track_ids: set[int] | frozenset[int] | None = None,
+        limit: int = 10,
+    ) -> list[MatchResult]:
+        self.calls.append(local_track_id)
+        if self.result is None:
+            return []
+        if (
+            excluded_streaming_track_ids is not None
+            and self.result.streaming_track_id in excluded_streaming_track_ids
+        ):
+            return []
+        return [self.result][:limit]
+
+
+@dataclass
+class FakeCandidateMatcher:
+    results: list[MatchResult]
+    calls: list[int]
+    seen_excluded_streaming_track_ids: set[int] | frozenset[int] | None = None
+
+    def candidates(
+        self,
+        local_track_id: int,
+        *,
+        excluded_streaming_track_ids: set[int] | frozenset[int] | None = None,
+        limit: int = 10,
+    ) -> list[MatchResult]:
+        self.calls.append(local_track_id)
+        self.seen_excluded_streaming_track_ids = excluded_streaming_track_ids
+        excluded_ids = excluded_streaming_track_ids or frozenset()
+        return [
+            result
+            for result in self.results
+            if result.streaming_track_id not in excluded_ids
+        ][:limit]
 
 
 def test_matching_pipeline_persists_isrc_match_without_running_tag_matcher(
@@ -64,7 +103,9 @@ def test_matching_pipeline_persists_isrc_match_without_running_tag_matcher(
     ]
 
 
-def test_matching_pipeline_persists_medium_confidence_tag_match(tmp_path) -> None:
+def test_matching_pipeline_persists_medium_confidence_tag_match(
+    tmp_path,
+) -> None:
     database_url = f"sqlite:///{tmp_path / 'app.db'}"
     engine = create_engine(database_url)
     suggested_links_metadata.create_all(engine)
@@ -83,6 +124,7 @@ def test_matching_pipeline_persists_medium_confidence_tag_match(tmp_path) -> Non
     result = MatchingPipeline(
         database_url=database_url,
         beets_library=tmp_path / "library.db",
+        redis_url="redis://redis:6379/0",
         isrc_matcher=FakeMatcher(result=None, calls=[]),
         tag_matcher=tag_matcher,
     ).run(9)
@@ -100,43 +142,12 @@ def test_matching_pipeline_persists_medium_confidence_tag_match(tmp_path) -> Non
     ]
 
 
-def test_matching_pipeline_enqueues_acoustic_job_for_low_confidence_tag_match(
-    monkeypatch,
+def test_matching_pipeline_persists_low_confidence_tag_match_without_acoustic_job(
     tmp_path,
 ) -> None:
     database_url = f"sqlite:///{tmp_path / 'app.db'}"
     engine = create_engine(database_url)
     suggested_links_metadata.create_all(engine)
-
-    seen: dict[str, object] = {}
-
-    class FakeRedis:
-        @classmethod
-        def from_url(cls, url: str) -> object:
-            seen["redis_url"] = url
-            return object()
-
-    class FakeQueue:
-        def __init__(self, name: str, connection: object) -> None:
-            seen["queue_name"] = name
-            seen["connection"] = connection
-
-        def enqueue(
-            self,
-            func: str,
-            local_track_id: int,
-            candidates: list[dict[str, object]],
-            *,
-            job_timeout: str,
-        ) -> SimpleNamespace:
-            seen["func"] = func
-            seen["local_track_id"] = local_track_id
-            seen["candidates"] = candidates
-            seen["job_timeout"] = job_timeout
-            return SimpleNamespace(id="acoustic-job-1")
-
-    monkeypatch.setattr("app.matching.pipeline.Redis", FakeRedis)
-    monkeypatch.setattr("app.matching.pipeline.Queue", FakeQueue)
 
     result = MatchingPipeline(
         database_url=database_url,
@@ -165,20 +176,6 @@ def test_matching_pipeline_enqueues_acoustic_job_for_low_confidence_tag_match(
             "status": "pending",
         }
     ]
-    assert seen == {
-        "redis_url": "redis://redis:6379/0",
-        "queue_name": "matching",
-        "connection": seen["connection"],
-        "func": "app.matching.run_acoustic_match_job",
-        "local_track_id": 22,
-        "candidates": [
-            {
-                "streaming_track_id": 31,
-                "fingerprint": "",
-            }
-        ],
-        "job_timeout": "10m",
-    }
 
 
 def test_matching_pipeline_rerun_clears_existing_non_approved_suggestion(
@@ -225,8 +222,8 @@ def test_matching_pipeline_rerun_clears_existing_non_approved_suggestion(
                 local_track_id=33,
                 streaming_track_id=99,
                 match_method="tags",
-                score=0.82,
-                confidence_band=ConfidenceBand.MEDIUM,
+                score=0.9,
+                confidence_band=ConfidenceBand.HIGH,
             ),
             calls=[],
         ),
@@ -252,7 +249,7 @@ def test_matching_pipeline_rerun_clears_existing_non_approved_suggestion(
             "local_track_id": 33,
             "streaming_track_id": 99,
             "match_method": "tags",
-            "score": 0.82,
+            "score": 0.9,
             "status": "pending",
         },
     ]
@@ -291,8 +288,8 @@ def test_matching_pipeline_skips_rejected_isrc_pair_and_persists_tag_match(
             local_track_id=52,
             streaming_track_id=92,
             match_method="tags",
-            score=0.8,
-            confidence_band=ConfidenceBand.MEDIUM,
+            score=0.9,
+            confidence_band=ConfidenceBand.HIGH,
         ),
         calls=[],
     )
@@ -320,7 +317,7 @@ def test_matching_pipeline_skips_rejected_isrc_pair_and_persists_tag_match(
             "local_track_id": 52,
             "streaming_track_id": 92,
             "match_method": "tags",
-            "score": 0.8,
+            "score": 0.9,
             "status": "pending",
         },
     ]
@@ -367,6 +364,122 @@ def test_matching_pipeline_does_not_recreate_rejected_tag_pair(tmp_path) -> None
             "score": 0.0,
             "status": "rejected",
         }
+    ]
+
+
+def test_matching_pipeline_filters_rejected_pairs_before_tag_ranking(tmp_path) -> None:
+    database_url = f"sqlite:///{tmp_path / 'filter-rejected-tag.db'}"
+    engine = create_engine(database_url)
+    suggested_links_metadata.create_all(engine)
+
+    with engine.begin() as connection:
+        connection.execute(
+            insert(suggested_links_table).values(
+                local_track_id=71,
+                streaming_track_id=201,
+                match_method="tags",
+                score=0.95,
+                status="rejected",
+            )
+        )
+
+    tag_matcher = FakeCandidateMatcher(
+        results=[
+            MatchResult(
+                local_track_id=71,
+                streaming_track_id=201,
+                match_method="tags",
+                score=0.95,
+                confidence_band=ConfidenceBand.HIGH,
+            ),
+            MatchResult(
+                local_track_id=71,
+                streaming_track_id=202,
+                match_method="tags",
+                score=0.91,
+                confidence_band=ConfidenceBand.HIGH,
+            ),
+        ],
+        calls=[],
+    )
+
+    result = MatchingPipeline(
+        database_url=database_url,
+        beets_library=tmp_path / "library.db",
+        isrc_matcher=FakeMatcher(result=None, calls=[]),
+        tag_matcher=tag_matcher,
+    ).run(71)
+
+    assert result is not None
+    assert result.streaming_track_id == 202
+    assert tag_matcher.seen_excluded_streaming_track_ids == {201}
+    assert fetch_suggested_links(database_url) == [
+        {
+            "local_track_id": 71,
+            "streaming_track_id": 201,
+            "match_method": "tags",
+            "score": 0.95,
+            "status": "rejected",
+        },
+        {
+            "local_track_id": 71,
+            "streaming_track_id": 202,
+            "match_method": "tags",
+            "score": 0.91,
+            "status": "pending",
+        },
+    ]
+
+
+def test_matching_pipeline_persists_ranked_tag_shortlist(
+    tmp_path,
+) -> None:
+    database_url = f"sqlite:///{tmp_path / 'tag-shortlist.db'}"
+    engine = create_engine(database_url)
+    suggested_links_metadata.create_all(engine)
+
+    result = MatchingPipeline(
+        database_url=database_url,
+        beets_library=tmp_path / "library.db",
+        redis_url="redis://redis:6379/0",
+        isrc_matcher=FakeMatcher(result=None, calls=[]),
+        tag_matcher=FakeCandidateMatcher(
+            results=[
+                MatchResult(
+                    local_track_id=81,
+                    streaming_track_id=301,
+                    match_method="tags",
+                    score=0.49,
+                    confidence_band=ConfidenceBand.LOW,
+                ),
+                MatchResult(
+                    local_track_id=81,
+                    streaming_track_id=302,
+                    match_method="tags",
+                    score=0.45,
+                    confidence_band=ConfidenceBand.LOW,
+                ),
+            ],
+            calls=[],
+        ),
+    ).run(81)
+
+    assert result is not None
+    assert fetch_suggested_links(database_url) == [
+        {
+            "local_track_id": 81,
+            "streaming_track_id": 301,
+            "match_method": "tags",
+            "score": 0.49,
+            "status": "pending",
+        },
+        {
+            "local_track_id": 81,
+            "streaming_track_id": 302,
+            "match_method": "tags",
+            "score": 0.45,
+            "status": "pending",
+        },
     ]
 
 

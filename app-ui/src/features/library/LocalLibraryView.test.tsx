@@ -46,7 +46,7 @@ const libraryTracksResponse: LibraryTracksResponse = {
       id: 1003,
       library_root_rel_path: "Downtempo/Bonobo/Migration/No Reason.flac",
       link_status: "linked",
-      match_method: "acoustic",
+      match_method: "manual",
       title: "No Reason",
     },
     {
@@ -153,11 +153,11 @@ describe("LocalLibraryView", () => {
     const pendingButton = await within(filters).findByRole("button", { name: "Pending 2" });
 
     fireEvent.click(pendingButton);
-    fireEvent.change(within(filters).getByLabelText("Match method"), { target: { value: "acoustic" } });
+    fireEvent.change(within(filters).getByLabelText("Match method"), { target: { value: "tag" } });
     fireEvent.change(within(filters).getByLabelText("File status"), { target: { value: "missing" } });
 
     expect(within(filters).getByRole("button", { name: "Pending 2" })).toHaveAttribute("aria-pressed", "true");
-    expect(within(filters).getByLabelText("Match method")).toHaveValue("acoustic");
+    expect(within(filters).getByLabelText("Match method")).toHaveValue("tag");
     expect(within(filters).getByLabelText("File status")).toHaveValue("missing");
 
     const resetButton = within(filters).getByRole("button", { name: "Reset library filters" });

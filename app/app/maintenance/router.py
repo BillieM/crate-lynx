@@ -43,7 +43,6 @@ def create_router(*, require_database_url: Callable[[], str]) -> APIRouter:
                     failed_at=track.failed_at,
                     failure_reason=track.failure_reason,
                     filename=track.filename,
-                    fingerprint=track.fingerprint,
                     local_track_id=track.local_track_id,
                     source_path=track.source_path,
                 )

@@ -11,7 +11,6 @@ const unidentifiedResponse: UnidentifiedResponse = {
       failed_at: "2026-05-02T21:44:00Z",
       failure_reason: "Beets could not identify metadata",
       filename: "unknown-import-9a4f.mp3",
-      fingerprint: "fp_7d91c2a8e4b0",
       id: 4001,
       local_track_id: null,
       source_path: "ingestion/failed/unknown-import-9a4f.mp3",
@@ -20,7 +19,6 @@ const unidentifiedResponse: UnidentifiedResponse = {
       failed_at: "2026-05-02T22:03:00Z",
       failure_reason: "Multiple low-confidence candidates",
       filename: "side-b-live-rip.flac",
-      fingerprint: "fp_2c0f88b4aa17",
       id: 4002,
       local_track_id: 1004,
       source_path: "ingestion/failed/side-b-live-rip.flac",
@@ -29,7 +27,6 @@ const unidentifiedResponse: UnidentifiedResponse = {
       failed_at: "2026-05-03T09:18:00Z",
       failure_reason: "No Beets match returned",
       filename: "cassette-transfer-03.wav",
-      fingerprint: null,
       id: 4003,
       local_track_id: null,
       source_path: "ingestion/failed/cassette-transfer-03.wav",
@@ -61,24 +58,21 @@ describe("UnidentifiedView", () => {
     vi.restoreAllMocks();
   });
 
-  it("renders Beets-failed tracks with filenames and fingerprint hashes", () => {
+  it("renders Beets-failed tracks with filenames", () => {
     renderUnidentifiedView({ tracksResponse: unidentifiedResponse });
 
     const summary = screen.getByLabelText("Unidentified summary");
     expect(within(summary).getByLabelText("Failed imports")).toHaveTextContent("3");
-    expect(within(summary).getByLabelText("Fingerprinted")).toHaveTextContent("2");
+    expect(within(summary).getByLabelText("Needs review")).toHaveTextContent("3");
 
     const trackList = screen.getByRole("region", { name: "Unidentified tracks" });
     expect(within(trackList).getByRole("heading", { name: "Beets failed track list" })).toBeInTheDocument();
     expect(within(trackList).getByText("3 rows")).toBeInTheDocument();
     expect(within(trackList).getAllByLabelText("Beets failed track")).toHaveLength(3);
     expect(within(trackList).getByText("unknown-import-9a4f.mp3")).toBeInTheDocument();
-    expect(within(trackList).getByText("fp_7d91c2a8e4b0")).toBeInTheDocument();
     expect(within(trackList).getByText("ingestion/failed/unknown-import-9a4f.mp3")).toBeInTheDocument();
     expect(within(trackList).getByText("side-b-live-rip.flac")).toBeInTheDocument();
-    expect(within(trackList).getByText("fp_2c0f88b4aa17")).toBeInTheDocument();
     expect(within(trackList).getByText("cassette-transfer-03.wav")).toBeInTheDocument();
-    expect(within(trackList).getByText("Not captured")).toBeInTheDocument();
   });
 
   it("posts to the metadata rescue endpoint when a rescue action is clicked", async () => {
@@ -86,7 +80,6 @@ describe("UnidentifiedView", () => {
       json: async () => ({
         beets_id: 91,
         file_path: "Artist/rescue.mp3",
-        fingerprint: "fp_7d91c2a8e4b0",
         id: 4001,
         library_root_rel_path: "Artist/rescue.mp3",
       }),
@@ -149,6 +142,6 @@ describe("UnidentifiedView", () => {
 
     expect(screen.getByRole("heading", { name: "No unidentified tracks" })).toBeInTheDocument();
     expect(screen.getByLabelText("Failed imports")).toHaveTextContent("0");
-    expect(screen.getByLabelText("Fingerprinted")).toHaveTextContent("0");
+    expect(screen.getByLabelText("Needs review")).toHaveTextContent("0");
   });
 });

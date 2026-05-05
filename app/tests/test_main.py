@@ -1271,7 +1271,6 @@ def test_unidentified_endpoint_lists_durable_failed_ingestion_attempts(
                 "failed_at": "2026-05-02T21:44:00",
                 "failure_reason": "Beets could not identify metadata",
                 "filename": "unknown-import-9a4f.mp3",
-                "fingerprint": "fp_7d91c2a8e4b0",
                 "local_track_id": 91,
                 "source_path": "/ingestion/unknown-import-9a4f.mp3",
             },
@@ -1280,7 +1279,6 @@ def test_unidentified_endpoint_lists_durable_failed_ingestion_attempts(
                 "failed_at": "2026-05-01T10:00:00",
                 "failure_reason": "Unsupported audio format",
                 "filename": "old.flac",
-                "fingerprint": None,
                 "local_track_id": None,
                 "source_path": "/ingestion/old.flac",
             },
@@ -1720,7 +1718,6 @@ def test_local_track_rescue_endpoint_returns_updated_track_record(
         "id": 21,
         "file_path": "Artist/rescue.mp3",
         "library_root_rel_path": "Artist/rescue.mp3",
-        "fingerprint": "fp-21",
         "beets_id": 21,
     }
     assert seen == {

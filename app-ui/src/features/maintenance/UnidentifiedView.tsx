@@ -1,4 +1,4 @@
-import { FileQuestion, Fingerprint, HardDrive, WandSparkles } from "lucide-react";
+import { FileQuestion, HardDrive, WandSparkles, XCircle } from "lucide-react";
 import { useMutation } from "@tanstack/react-query";
 import { ActionButton } from "../../components/ActionButton";
 import { EmptyStateCard } from "../../components/EmptyStateCard";
@@ -55,10 +55,6 @@ function UnidentifiedTrackRow({ rescueDisabled = false, track }: { rescueDisable
           <div className="flex min-w-0 items-baseline gap-1.5">
             <dt className="shrink-0 font-medium text-ctp-overlay1">File</dt>
             <dd className="truncate text-ctp-text">{track.source_path}</dd>
-          </div>
-          <div className="flex min-w-0 items-baseline gap-1.5">
-            <dt className="shrink-0 font-medium text-ctp-overlay1">Fingerprint</dt>
-            <dd className="truncate font-mono text-[11px] font-semibold text-ctp-text">{track.fingerprint ?? "Not captured"}</dd>
           </div>
           <div className="flex min-w-0 items-baseline gap-1.5 lg:justify-end">
             <dt className="shrink-0 font-medium text-ctp-overlay1">Failed</dt>
@@ -144,7 +140,6 @@ export function UnidentifiedView({ isPending = false, state, tracksResponse }: U
           ? "error"
           : "ready");
   const tracks = tracksResponse?.tracks ?? unidentifiedQuery.data?.tracks ?? emptyUnidentifiedTracks;
-  const fingerprintedCount = tracks.filter((track) => track.fingerprint !== null).length;
   const actionsDisabled = resolvedState !== "ready" || isPending;
 
   return (
@@ -159,14 +154,14 @@ export function UnidentifiedView({ isPending = false, state, tracksResponse }: U
 
       <div className="grid gap-3 sm:grid-cols-3" aria-label="Unidentified summary">
         <UnidentifiedSummaryCard icon={FileQuestion} label="Failed imports" value={tracks.length.toString()} />
-        <UnidentifiedSummaryCard icon={Fingerprint} label="Fingerprinted" value={fingerprintedCount.toString()} />
+        <UnidentifiedSummaryCard icon={XCircle} label="Needs review" value={tracks.length.toString()} />
         <UnidentifiedSummaryCard icon={HardDrive} label="Source" value="Ingest" />
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto pb-1 pr-1" aria-label="Unidentified tracks" role="region">
         {resolvedState === "loading" ? (
           <EmptyStateCard
-            body="Checking Beets-failed imports and fingerprint hashes."
+            body="Checking Beets-failed imports."
             className="text-left"
             role="status"
             title="Loading unidentified tracks"

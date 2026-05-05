@@ -115,21 +115,16 @@ Adding or removing ingest folders in Settings updates the active watcher immedia
 
 ### Matching pipeline
 
-Runs three stages in sequence, stopping at the first high-confidence result:
+Runs two stages in sequence:
 
 1. **ISRC match** — near-certain if both sides have a matching ISRC
-2. **Fuzzy tag match** — artist/title/album comparison via rapidfuzz
-3. **Acoustic fingerprint** — fallback when tag score is below threshold
+2. **Fuzzy tag match** — artist/title/album comparison via rapidfuzz, persisted as ranked suggestions across confidence bands
 
 Results land in the **Link Proposals** queue, grouped by confidence band (High / Medium / Low).
 
-Current acoustic fallback behavior is intentionally stubbed. The pipeline persists the
-low-confidence tag suggestion as a pending proposal before enqueueing the acoustic
-job. The queued acoustic payload contains only the candidate streaming track ID and
-an empty fingerprint string because streaming tracks do not yet store durable
-fingerprint data. As a result, the acoustic job can compare supplied fingerprints in
-tests, but the production fallback currently skips empty streaming fingerprints and
-does not promote, discard, or update the pending tag suggestion.
+Local Chromaprint fingerprints are generated and stored during import as internal
+metadata. They are not used for streaming-track matching and are not exposed in the
+maintenance API or UI.
 
 ### Approval
 

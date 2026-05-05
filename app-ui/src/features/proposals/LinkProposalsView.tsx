@@ -121,10 +121,6 @@ function getMatchMethodLabel(matchMethod: string) {
     return "Tag";
   }
 
-  if (normalizedMethod === "acoustic") {
-    return "Acoustic";
-  }
-
   return matchMethod;
 }
 
@@ -133,10 +129,6 @@ function getMatchMethodTone(matchMethod: string): PillTone {
 
   if (normalizedMethod === "isrc") {
     return "success";
-  }
-
-  if (normalizedMethod === "acoustic") {
-    return "info";
   }
 
   return "neutral";

@@ -14,6 +14,7 @@ from app.streaming.models import streaming_tracks_table
 
 
 _WHITESPACE_RE = re.compile(r"\s+")
+DEFAULT_TAG_CANDIDATE_LIMIT = 10
 
 
 @dataclass(frozen=True, slots=True)
@@ -29,14 +30,26 @@ class TagMatcher:
         self._beets_library = Path(beets_library)
 
     def match(self, local_track_id: int) -> MatchResult | None:
+        candidates = self.candidates(local_track_id, limit=1)
+        return candidates[0] if candidates else None
+
+    def candidates(
+        self,
+        local_track_id: int,
+        *,
+        excluded_streaming_track_ids: set[int] | frozenset[int] | None = None,
+        limit: int = DEFAULT_TAG_CANDIDATE_LIMIT,
+    ) -> list[MatchResult]:
         beets_id = self._lookup_beets_id(local_track_id)
         if beets_id is None:
-            return None
+            return []
 
         local_tags = self._lookup_local_tags(beets_id)
         if local_tags is None:
-            return None
+            return []
 
+        excluded_ids = excluded_streaming_track_ids or frozenset()
+        candidates: list[MatchResult] = []
         with self._engine.connect() as connection:
             rows = connection.execute(
                 select(
@@ -46,9 +59,6 @@ class TagMatcher:
                     streaming_tracks_table.c.album,
                 ).order_by(streaming_tracks_table.c.id.asc())
             ).mappings()
-
-            best_match: MatchResult | None = None
-            best_score = -1.0
 
             for row in rows:
                 streaming_track_id = row["id"]
@@ -61,6 +71,8 @@ class TagMatcher:
                     or artist is None
                 ):
                     continue
+                if streaming_track_id in excluded_ids:
+                    continue
 
                 score = _score_tags(
                     local_title=local_tags.title,
@@ -71,19 +83,18 @@ class TagMatcher:
                     streaming_album=album,
                 )
 
-                if score <= best_score:
-                    continue
-
-                best_score = score
-                best_match = MatchResult(
-                    local_track_id=local_track_id,
-                    streaming_track_id=streaming_track_id,
-                    match_method="tags",
-                    score=score,
-                    confidence_band=ConfidenceBand.from_score(score),
+                candidates.append(
+                    MatchResult(
+                        local_track_id=local_track_id,
+                        streaming_track_id=streaming_track_id,
+                        match_method="tags",
+                        score=score,
+                        confidence_band=ConfidenceBand.from_score(score),
+                    )
                 )
 
-        return best_match
+        candidates.sort(key=lambda candidate: candidate.score, reverse=True)
+        return candidates[:limit]
 
     def _lookup_beets_id(self, local_track_id: int) -> int | None:
         with self._engine.connect() as connection:

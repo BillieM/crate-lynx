@@ -164,7 +164,7 @@ const linkProposalsResponse: LinkProposalsResponse = {
       streaming_title: "Loose Cable",
       streaming_artist: "Patch Bay",
       streaming_album: "Maintenance Window",
-      match_method: "acoustic",
+      match_method: "tag",
       score: 0.44,
       status: "pending",
       rejected_at: null,
@@ -215,7 +215,6 @@ const unidentifiedResponse: UnidentifiedResponse = {
       failed_at: "2026-05-02T21:44:00Z",
       failure_reason: "Beets could not identify metadata",
       filename: "unknown-import-9a4f.mp3",
-      fingerprint: "fp_7d91c2a8e4b0",
       id: 4001,
       local_track_id: null,
       source_path: "ingestion/failed/unknown-import-9a4f.mp3",
@@ -722,7 +721,7 @@ describe("App", () => {
     expect(screen.getByRole("heading", { level: 1, name: "Unidentified" })).toBeInTheDocument();
     expect(screen.getByRole("region", { name: "Unidentified tracks" })).toBeInTheDocument();
     expect(await screen.findByText("unknown-import-9a4f.mp3")).toBeInTheDocument();
-    expect(screen.getByText("fp_7d91c2a8e4b0")).toBeInTheDocument();
+    expect(screen.getByText("Beets could not identify metadata")).toBeInTheDocument();
     expect(document.getElementById("unidentified")).toHaveAttribute("data-view-active", "true");
     expect(document.getElementById("playlists")).toHaveAttribute("data-view-active", "false");
   });
@@ -764,7 +763,7 @@ describe("App", () => {
     expect(within(mediumSection!).getByText("Pending Signal.mp3")).toBeInTheDocument();
     expect(within(mediumSection!).getByText("Album unavailable")).toBeInTheDocument();
     expect(within(lowSection!).getByText("Loose Cable.mp3")).toBeInTheDocument();
-    expect(within(lowSection!).getByText("Acoustic")).toBeInTheDocument();
+    expect(within(lowSection!).getByText("Tag")).toBeInTheDocument();
   });
 
   it("filters link proposals by confidence band", async () => {

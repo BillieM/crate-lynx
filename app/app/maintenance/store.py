@@ -32,7 +32,6 @@ class UnidentifiedTrackRecord:
     failed_at: str
     failure_reason: str
     filename: str
-    fingerprint: str | None
     local_track_id: int | None
     source_path: str
 
@@ -132,7 +131,6 @@ class MaintenanceStore:
                 failed_ingestion_attempts_table.c.failed_at,
                 failed_ingestion_attempts_table.c.failure_reason,
                 failed_ingestion_attempts_table.c.filename,
-                failed_ingestion_attempts_table.c.fingerprint,
                 failed_ingestion_attempts_table.c.local_track_id,
                 failed_ingestion_attempts_table.c.source_path,
             )
@@ -152,7 +150,6 @@ class MaintenanceStore:
                 failed_at=row["failed_at"].isoformat(),
                 failure_reason=row["failure_reason"],
                 filename=row["filename"],
-                fingerprint=row["fingerprint"],
                 local_track_id=row["local_track_id"],
                 source_path=row["source_path"],
             )

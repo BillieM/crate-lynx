@@ -27,7 +27,6 @@ def create_router(*, require_database_url: Callable[[], str]) -> APIRouter:
                         local_tracks_table.c.id,
                         local_tracks_table.c.file_path,
                         local_tracks_table.c.library_root_rel_path,
-                        local_tracks_table.c.fingerprint,
                         local_tracks_table.c.beets_id,
                     ).where(local_tracks_table.c.id == local_track_id)
                 )

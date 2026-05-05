@@ -19,7 +19,6 @@ export type UnidentifiedTrack = {
   failed_at: string;
   failure_reason: string;
   filename: string;
-  fingerprint: string | null;
   id: number;
   local_track_id: number | null;
   source_path: string;
@@ -32,7 +31,6 @@ export type UnidentifiedResponse = {
 export type RescuedLocalTrack = {
   beets_id: number | null;
   file_path: string;
-  fingerprint: string | null;
   id: number;
   library_root_rel_path: string | null;
 };

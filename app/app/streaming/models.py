@@ -7,7 +7,6 @@ from sqlalchemy import (
     Boolean,
     Column,
     DateTime,
-    Float,
     Integer,
     MetaData,
     String,
@@ -65,9 +64,6 @@ streaming_tracks_table = Table(
     Column("year", Integer, nullable=True),
     Column("isrc", String, nullable=True),
     Column("duration_ms", Integer, nullable=True),
-    Column("fingerprint", String, nullable=True),
-    Column("fingerprint_duration_seconds", Float, nullable=True),
-    Column("fingerprinted_at", DateTime(timezone=True), nullable=True),
 )
 
 playlist_membership_table = Table(
@@ -150,9 +146,6 @@ class StreamingTrackRecord:
     year: int | None
     isrc: str | None
     duration_ms: int | None
-    fingerprint: str | None
-    fingerprint_duration_seconds: float | None
-    fingerprinted_at: datetime | None
 
 
 @dataclass(frozen=True, slots=True)

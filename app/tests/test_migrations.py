@@ -83,47 +83,86 @@ def test_selected_for_sync_migration_backfills_playlists_with_memberships(
     }
 
 
-def test_streaming_track_fingerprint_migration_preserves_existing_tracks(
+def test_remove_streaming_fingerprints_migration_normalizes_acoustic_suggestions(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
-    database_url = f"sqlite:///{tmp_path / 'fingerprints.db'}"
+    database_url = f"sqlite:///{tmp_path / 'remove-fingerprints.db'}"
     monkeypatch.setenv("DATABASE_URL", database_url)
 
     alembic_config = Config("db/alembic.ini")
-    command.upgrade(alembic_config, "bc4c3e1785d7")
+    command.upgrade(alembic_config, "f8a3d2c1b0e4")
 
     engine = create_engine(database_url)
     with engine.begin() as connection:
-        track_id = connection.execute(
-            insert(streaming_tracks_table).values(
-                provider_track_id="track-1",
-                title="Track 1",
-                artist="Artist 1",
+        connection.execute(
+            text(
+                """
+                INSERT INTO local_tracks
+                    (id, file_path, library_root_rel_path, fingerprint, beets_id)
+                VALUES
+                    (1, 'one.mp3', 'one.mp3', 'local-fp', 1)
+                """
             )
-        ).inserted_primary_key[0]
+        )
+        connection.execute(
+            text(
+                """
+                INSERT INTO streaming_tracks
+                    (
+                        id, provider_track_id, title, artist, fingerprint,
+                        fingerprint_duration_seconds, fingerprinted_at
+                    )
+                VALUES
+                    (1, 'track-1', 'Track 1', 'Artist 1', 'stream-fp', 200.5, '2026-05-04 12:00:00'),
+                    (2, 'track-2', 'Track 2', 'Artist 2', NULL, NULL, NULL),
+                    (3, 'track-3', 'Track 3', 'Artist 3', NULL, NULL, NULL)
+                """
+            )
+        )
+        connection.execute(
+            text(
+                """
+                INSERT INTO suggested_links
+                    (local_track_id, streaming_track_id, match_method, score, status)
+                VALUES
+                    (1, 1, 'acoustic', 0.9, 'pending'),
+                    (1, 2, 'acoustic', 0.9, 'approved'),
+                    (1, 3, 'acoustic', 0.9, 'rejected')
+                """
+            )
+        )
 
     command.upgrade(alembic_config, "head")
 
     with engine.connect() as connection:
-        row = (
+        streaming_columns = {
+            row["name"]
+            for row in connection.execute(text("PRAGMA table_info(streaming_tracks)"))
+            .mappings()
+            .all()
+        }
+        suggestions = (
             connection.execute(
                 text(
                     """
-                    SELECT fingerprint, fingerprint_duration_seconds, fingerprinted_at
-                    FROM streaming_tracks
-                    WHERE id = :track_id
+                    SELECT streaming_track_id, match_method, status
+                    FROM suggested_links
+                    ORDER BY streaming_track_id
                     """
-                ),
-                {"track_id": track_id},
+                )
             )
             .mappings()
-            .one()
+            .all()
         )
 
-    assert row["fingerprint"] is None
-    assert row["fingerprint_duration_seconds"] is None
-    assert row["fingerprinted_at"] is None
+    assert "fingerprint" not in streaming_columns
+    assert "fingerprint_duration_seconds" not in streaming_columns
+    assert "fingerprinted_at" not in streaming_columns
+    assert [dict(row) for row in suggestions] == [
+        {"streaming_track_id": 2, "match_method": "manual", "status": "approved"},
+        {"streaming_track_id": 3, "match_method": "manual", "status": "rejected"},
+    ]
 
 
 def test_ingest_folders_migration_seeds_default_unique_paths(

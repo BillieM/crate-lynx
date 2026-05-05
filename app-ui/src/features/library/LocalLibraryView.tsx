@@ -21,7 +21,7 @@ import { playlistQueryKeys } from "../playlists/queries";
 
 type LibraryViewState = "ready" | "loading" | "error";
 type LibraryLinkStatusFilter = "all" | "linked" | "pending" | "unlinked";
-type LibraryMatchMethodFilter = "all" | "isrc" | "tag" | "acoustic" | "manual";
+type LibraryMatchMethodFilter = "all" | "isrc" | "tag" | "manual";
 type LibraryFileStatusFilter = "all" | "available" | "missing" | "beets_failed";
 
 type LibraryStat = {
@@ -92,7 +92,6 @@ const matchMethodFilters = [
   { label: "All methods", value: "all" },
   { label: "ISRC", value: "isrc" },
   { label: "Tag", value: "tag" },
-  { label: "Acoustic", value: "acoustic" },
   { label: "Manual", value: "manual" },
 ] satisfies { label: string; value: LibraryMatchMethodFilter }[];
 
@@ -116,7 +115,6 @@ const linkStatusTones = {
 } satisfies Record<LibraryLinkStatus, PillTone>;
 
 const matchMethodLabels = {
-  acoustic: "Acoustic",
   isrc: "ISRC",
   manual: "Manual",
   tag: "Tag",
