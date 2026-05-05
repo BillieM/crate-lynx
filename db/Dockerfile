@@ -16,6 +16,7 @@ RUN pip3 install --break-system-packages --upgrade pip \
     && pip3 install --break-system-packages -r /tmp/requirements.txt
 
 COPY db /srv/db
+COPY app/app /srv/app
 
 RUN chmod +x /srv/db/entrypoint.sh
 
