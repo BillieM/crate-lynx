@@ -103,7 +103,7 @@ Frontend:
 
 ---
 
-### Task 1.5 — Move `db/test_crypto.py` into the backend test tree
+### [x] Task 1.5 — Move `db/test_crypto.py` into the backend test tree
 
 **Severity:** Medium
 **Source:** Additional finding (Codex missed).
