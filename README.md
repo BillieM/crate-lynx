@@ -21,7 +21,8 @@ The `app` container runs two processes: the FastAPI server (`uvicorn`) and the R
 
 ```bash
 cp .env.example .env
-# fill in TOKEN_ENCRYPTION_KEY
+# Generate TOKEN_ENCRYPTION_KEY and add it to .env:
+python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())'
 docker compose up --build
 ```
 
@@ -57,7 +58,7 @@ docker-compose ps
 
 | Variable | Purpose |
 |---|---|
-| `TOKEN_ENCRYPTION_KEY` | Fernet key for encrypting streaming auth tokens |
+| `TOKEN_ENCRYPTION_KEY` | Fernet key for encrypting streaming auth tokens. Generate one with `python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())'` |
 | `LIBRARY_ROOT` | Container path where processed music is stored. Defaults to `/music` |
 | `BEETS_LIBRARY` | Container path for the Beets SQLite database. Defaults to `/data/beets/library.db` |
 

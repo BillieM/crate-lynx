@@ -41,7 +41,7 @@ Frontend:
 
 ---
 
-### Task 1.2 — Fix the `change-me` Fernet default
+### [x] Task 1.2 — Fix the `change-me` Fernet default
 
 **Severity:** High
 **Source:** Codex finding 2.

@@ -47,7 +47,7 @@ services:
     environment:
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-crate_lynx}:${POSTGRES_PASSWORD:-crate_lynx}@db:5432/${POSTGRES_DB:-crate_lynx}
       REDIS_URL: redis://redis:6379/0
-      TOKEN_ENCRYPTION_KEY: ${TOKEN_ENCRYPTION_KEY:-change-me}
+      TOKEN_ENCRYPTION_KEY: ${TOKEN_ENCRYPTION_KEY:?set TOKEN_ENCRYPTION_KEY in .env with a Fernet key}
       LIBRARY_ROOT: ${LIBRARY_ROOT:-/music}
       BEETS_LIBRARY: ${BEETS_LIBRARY:-/data/beets/library.db}
       INGESTION_ROOT: /ingestion
