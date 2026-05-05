@@ -1,5 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
+import { endpoints, fetchJson } from "../../lib/api";
+
 export type IngestFolder = {
   id: number;
   path: string;
@@ -19,23 +21,13 @@ export const settingsQueryKeys = {
   ingestFolders: () => ["settings", "ingest-folders"] as const,
 };
 
-async function fetchJson<T>(input: RequestInfo | URL): Promise<T> {
-  const response = await fetch(input);
-
-  if (!response.ok) {
-    throw new Error(`Request failed with status ${response.status}`);
-  }
-
-  return (await response.json()) as T;
-}
-
 function invalidateSettingsQueries(queryClient: ReturnType<typeof useQueryClient>) {
   void queryClient.invalidateQueries({ queryKey: settingsQueryKeys.general() });
   void queryClient.invalidateQueries({ queryKey: settingsQueryKeys.ingestFolders() });
 }
 
 export async function fetchGeneralSettings(): Promise<GeneralSettingsResponse> {
-  return fetchJson<GeneralSettingsResponse>("/api/settings/general");
+  return fetchJson<GeneralSettingsResponse>(endpoints.api("/settings/general"));
 }
 
 export async function createIngestFolder({ path }: CreateIngestFolderInput): Promise<IngestFolder> {

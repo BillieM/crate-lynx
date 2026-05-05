@@ -82,7 +82,7 @@ Frontend:
 
 ---
 
-### Task 1.4 — Centralize `fetchJson` into a shared API client
+### [x] Task 1.4 — Centralize `fetchJson` into a shared API client
 
 **Severity:** Low
 **Source:** Codex finding 7.

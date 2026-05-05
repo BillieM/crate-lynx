@@ -1,5 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 
+import { endpoints, fetchJson } from "../../lib/api";
+
 export type LibraryLinkStatus = "linked" | "pending" | "unlinked";
 export type LibraryFileStatus = "available" | "missing" | "beets_failed";
 export type LibraryMatchMethod = "isrc" | "tag" | "manual" | string;
@@ -34,18 +36,8 @@ export const libraryQueryKeys = {
   tracks: () => ["library", "tracks"] as const,
 };
 
-async function fetchJson<T>(input: RequestInfo | URL): Promise<T> {
-  const response = await fetch(input);
-
-  if (!response.ok) {
-    throw new Error(`Request failed with status ${response.status}`);
-  }
-
-  return (await response.json()) as T;
-}
-
 export async function fetchLibraryTracks(): Promise<LibraryTracksResponse> {
-  return fetchJson<LibraryTracksResponse>("/api/library/tracks");
+  return fetchJson<LibraryTracksResponse>(endpoints.api("/library/tracks"));
 }
 
 export function useLibraryTracksQuery() {

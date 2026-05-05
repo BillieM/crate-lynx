@@ -1,5 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 
+import { endpoints, fetchJson } from "../../lib/api";
+
 export type PlaylistTrackStatus = "linked" | "pending" | "unlinked";
 export type LinkProposalConfidenceBand = "high" | "medium" | "low";
 
@@ -136,16 +138,6 @@ function hasPlaylistId(playlistId: number | string | null | undefined): playlist
   return String(playlistId).trim().length > 0;
 }
 
-async function fetchJson<T>(input: RequestInfo | URL): Promise<T> {
-  const response = await fetch(input);
-
-  if (!response.ok) {
-    throw new Error(`Request failed with status ${response.status}`);
-  }
-
-  return (await response.json()) as T;
-}
-
 function getFilenameFromContentDisposition(contentDisposition: string | null) {
   const fallbackFilename = "playlist.m3u";
 
@@ -158,15 +150,15 @@ function getFilenameFromContentDisposition(contentDisposition: string | null) {
 }
 
 export async function fetchPlaylistDetail(playlistId: number | string): Promise<PlaylistDetailResponse> {
-  return fetchJson<PlaylistDetailResponse>(`/api/playlists/${encodeURIComponent(String(playlistId))}`);
+  return fetchJson<PlaylistDetailResponse>(endpoints.api(`/playlists/${encodeURIComponent(String(playlistId))}`));
 }
 
 export async function fetchStreamingPlaylists(): Promise<StreamingPlaylistsResponse> {
-  return fetchJson<StreamingPlaylistsResponse>("/api/streaming/playlists");
+  return fetchJson<StreamingPlaylistsResponse>(endpoints.api("/streaming/playlists"));
 }
 
 export async function fetchStreamingPlaylistConfig(): Promise<StreamingPlaylistConfigResponse> {
-  return fetchJson<StreamingPlaylistConfigResponse>("/api/streaming/playlists/config");
+  return fetchJson<StreamingPlaylistConfigResponse>(endpoints.api("/streaming/playlists/config"));
 }
 
 export async function updateStreamingPlaylistConfig({
@@ -225,7 +217,7 @@ export async function syncStreamingPlaylist(playlistId: number | string): Promis
 }
 
 export async function fetchPlaylistTracks(playlistId: number | string): Promise<PlaylistTracksResponse> {
-  return fetchJson<PlaylistTracksResponse>(`/api/playlists/${encodeURIComponent(String(playlistId))}/tracks`);
+  return fetchJson<PlaylistTracksResponse>(endpoints.api(`/playlists/${encodeURIComponent(String(playlistId))}/tracks`));
 }
 
 export async function fetchLinkProposals(filters: LinkProposalListFilters = {}): Promise<LinkProposalsResponse> {
@@ -236,7 +228,7 @@ export async function fetchLinkProposals(filters: LinkProposalListFilters = {}):
   }
 
   const queryString = params.toString();
-  return fetchJson<LinkProposalsResponse>(`/api/proposals${queryString ? `?${queryString}` : ""}`);
+  return fetchJson<LinkProposalsResponse>(endpoints.api(`/proposals${queryString ? `?${queryString}` : ""}`));
 }
 
 export async function approveLinkProposal(proposalId: number | string): Promise<ApproveLinkProposalResponse> {

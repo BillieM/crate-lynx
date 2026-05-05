@@ -1,5 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 
+import { endpoints, fetchJson } from "../../lib/api";
+
 export type MissingLocallyTrack = {
   album: string | null;
   artist: string;
@@ -41,22 +43,12 @@ export const maintenanceQueryKeys = {
   unidentified: () => ["maintenance", "unidentified"] as const,
 };
 
-async function fetchJson<T>(input: RequestInfo | URL): Promise<T> {
-  const response = await fetch(input);
-
-  if (!response.ok) {
-    throw new Error(`Request failed with status ${response.status}`);
-  }
-
-  return (await response.json()) as T;
-}
-
 export async function fetchMissingLocallyTracks(): Promise<MissingLocallyResponse> {
-  return fetchJson<MissingLocallyResponse>("/api/maintenance/missing-locally");
+  return fetchJson<MissingLocallyResponse>(endpoints.api("/maintenance/missing-locally"));
 }
 
 export async function fetchUnidentifiedTracks(): Promise<UnidentifiedResponse> {
-  return fetchJson<UnidentifiedResponse>("/api/maintenance/unidentified");
+  return fetchJson<UnidentifiedResponse>(endpoints.api("/maintenance/unidentified"));
 }
 
 export async function rescueLocalTrackMetadata(localTrackId: number | string): Promise<RescuedLocalTrack> {
