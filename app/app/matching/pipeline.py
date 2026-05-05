@@ -51,11 +51,17 @@ suggested_links_table = Table(
 
 @dataclass(slots=True)
 class SuggestedLinkStore:
-    database_url: str
+    database_url: str | None = None
+    engine: Engine | None = None
     _engine: Engine = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
-        self._engine = create_engine(self.database_url)
+        if self.engine is None:
+            if self.database_url is None:
+                raise ValueError("database_url or engine is required")
+            self._engine = create_engine(self.database_url)
+            return
+        self._engine = self.engine
 
     def clear_non_approved_for_track(self, local_track_id: int) -> None:
         with self._engine.begin() as connection:

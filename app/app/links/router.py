@@ -5,8 +5,9 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException
-from sqlalchemy import and_, create_engine, delete, insert, select, update
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import and_, delete, insert, select, update
+from sqlalchemy.engine import Engine
 from sqlalchemy.sql.elements import ColumnElement
 
 from app.links.models import ProposalListResponse, ProposalResponse
@@ -27,22 +28,38 @@ from app.m3u.generator import (
 from app.streaming.models import streaming_tracks_table
 
 
-def create_router(*, require_database_url: Callable[[], str]) -> APIRouter:
+def create_router(
+    *,
+    require_database_url: Callable[[], str],
+    require_database_engine: Callable[[], Engine] | None = None,
+) -> APIRouter:
     router = APIRouter()
 
-    def _regenerate_m3u_exports(streaming_track_id: int) -> None:
+    def _engine(engine: Engine) -> Engine:
+        if isinstance(engine, Engine):
+            return engine
+        if require_database_engine is not None:
+            return require_database_engine()
+        from sqlalchemy import create_engine
+
+        return create_engine(require_database_url())
+
+    def _regenerate_m3u_exports(streaming_track_id: int, engine: Engine) -> None:
         regenerate_m3us_for_streaming_track(
             streaming_track_id,
-            database_url=require_database_url(),
+            engine=engine,
             base_path=Path(os.environ.get("LIBRARY_ROOT", "/music")),
             output_dir=get_m3u_output_dir(),
         )
 
     @router.get("/proposals", response_model=ProposalListResponse)
-    async def list_proposals(
+    def list_proposals(
         band: ConfidenceBand | None = None,
+        engine: object = Depends(require_database_engine)
+        if require_database_engine is not None
+        else None,
     ) -> ProposalListResponse:
-        engine = create_engine(require_database_url())
+        engine = _engine(engine)
         query = (
             select(
                 suggested_links_table.c.id,
@@ -100,10 +117,14 @@ def create_router(*, require_database_url: Callable[[], str]) -> APIRouter:
         return ProposalListResponse(proposals=proposals)
 
     @router.post("/proposals/{proposal_id}/approve", status_code=201)
-    async def approve_proposal(proposal_id: int) -> dict[str, object]:
-        database_url = require_database_url()
-        engine = create_engine(database_url)
-        suggestion_store = SuggestedLinkStore(database_url)
+    def approve_proposal(
+        proposal_id: int,
+        engine: object = Depends(require_database_engine)
+        if require_database_engine is not None
+        else None,
+    ) -> dict[str, object]:
+        engine = _engine(engine)
+        suggestion_store = SuggestedLinkStore(engine=engine)
 
         with engine.begin() as connection:
             proposal = (
@@ -157,7 +178,7 @@ def create_router(*, require_database_url: Callable[[], str]) -> APIRouter:
                 .values(status=SUGGESTED_LINK_STATUS_APPROVED)
             )
 
-        _regenerate_m3u_exports(proposal["streaming_track_id"])
+        _regenerate_m3u_exports(proposal["streaming_track_id"], engine)
 
         final_link_id = result.inserted_primary_key[0]
         if not isinstance(final_link_id, int):
@@ -170,9 +191,13 @@ def create_router(*, require_database_url: Callable[[], str]) -> APIRouter:
         }
 
     @router.post("/proposals/{proposal_id}/reject")
-    async def reject_proposal(proposal_id: int) -> dict[str, object]:
-        database_url = require_database_url()
-        engine = create_engine(database_url)
+    def reject_proposal(
+        proposal_id: int,
+        engine: object = Depends(require_database_engine)
+        if require_database_engine is not None
+        else None,
+    ) -> dict[str, object]:
+        engine = _engine(engine)
         rejected_at = datetime.now(UTC)
 
         with engine.begin() as connection:
@@ -199,7 +224,7 @@ def create_router(*, require_database_url: Callable[[], str]) -> APIRouter:
                 )
             )
 
-        _regenerate_m3u_exports(proposal["streaming_track_id"])
+        _regenerate_m3u_exports(proposal["streaming_track_id"], engine)
 
         return {
             "proposal_id": proposal_id,
@@ -208,8 +233,13 @@ def create_router(*, require_database_url: Callable[[], str]) -> APIRouter:
         }
 
     @router.delete("/final-links/{final_link_id}")
-    async def break_final_link(final_link_id: int) -> dict[str, object]:
-        engine = create_engine(require_database_url())
+    def break_final_link(
+        final_link_id: int,
+        engine: object = Depends(require_database_engine)
+        if require_database_engine is not None
+        else None,
+    ) -> dict[str, object]:
+        engine = _engine(engine)
         rejected_at = datetime.now(UTC)
 
         with engine.begin() as connection:
@@ -242,7 +272,7 @@ def create_router(*, require_database_url: Callable[[], str]) -> APIRouter:
                 )
             )
 
-        _regenerate_m3u_exports(final_link["streaming_track_id"])
+        _regenerate_m3u_exports(final_link["streaming_track_id"], engine)
 
         rejected_suggestion_id = rejected_suggestion.inserted_primary_key[0]
         if not isinstance(rejected_suggestion_id, int):

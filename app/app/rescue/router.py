@@ -4,21 +4,40 @@ import os
 from collections.abc import Callable
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException
-from sqlalchemy import create_engine, select
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import select
+from sqlalchemy.engine import Engine
 
 from app.links.store import final_links_table
 from app.local_tracks.store import local_tracks_table
 from app.rescue.metadata import MetadataRescueError, rescue_metadata
 
 
-def create_router(*, require_database_url: Callable[[], str]) -> APIRouter:
+def create_router(
+    *,
+    require_database_url: Callable[[], str],
+    require_database_engine: Callable[[], Engine] | None = None,
+) -> APIRouter:
     router = APIRouter()
 
+    def _engine(engine: Engine | None) -> Engine:
+        if isinstance(engine, Engine):
+            return engine
+        if require_database_engine is not None:
+            return require_database_engine()
+        from sqlalchemy import create_engine
+
+        return create_engine(require_database_url())
+
     @router.post("/local-tracks/{local_track_id}/rescue")
-    async def rescue_local_track_metadata(local_track_id: int) -> dict[str, object]:
+    def rescue_local_track_metadata(
+        local_track_id: int,
+        engine: object = Depends(require_database_engine)
+        if require_database_engine is not None
+        else None,
+    ) -> dict[str, object]:
         database_url = require_database_url()
-        engine = create_engine(database_url)
+        engine = _engine(engine)
 
         with engine.connect() as connection:
             local_track = (
@@ -54,6 +73,7 @@ def create_router(*, require_database_url: Callable[[], str]) -> APIRouter:
             rescue_metadata(
                 local_track_id,
                 database_url=database_url,
+                engine=engine,
                 library_root=Path(os.environ.get("LIBRARY_ROOT", "/music")),
             )
         except MetadataRescueError as exc:

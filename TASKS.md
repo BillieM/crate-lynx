@@ -162,7 +162,7 @@ Then add a `conftest.py` fixture that creates a tmp SQLite engine and runs Alemb
 
 ---
 
-### Task 2.2 — Lifespan-scoped engine + dependency-injected stores
+### [x] Task 2.2 — Lifespan-scoped engine + dependency-injected stores
 
 **Severity:** Medium
 **Source:** Codex finding 3 + additional finding C (folds into the same refactor).

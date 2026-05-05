@@ -1,4 +1,5 @@
 import asyncio
+import inspect
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -22,6 +23,13 @@ from app.streaming.models import (
     streaming_playlists_table,
     streaming_tracks_table,
 )
+
+
+def _call_endpoint(endpoint, *args):
+    result = endpoint(*args)
+    if inspect.isawaitable(result):
+        return asyncio.run(result)
+    return result
 
 
 def test_list_proposals_returns_joined_pending_records(tmp_path: Path) -> None:
@@ -108,7 +116,7 @@ def test_list_proposals_returns_joined_pending_records(tmp_path: Path) -> None:
         if getattr(route, "path", None) == "/proposals"
         and "GET" in getattr(route, "methods", set())
     )
-    response = asyncio.run(route.endpoint())
+    response = _call_endpoint(route.endpoint)
 
     assert response.model_dump(mode="json") == {
         "proposals": [
@@ -237,9 +245,9 @@ def test_list_proposals_filters_by_confidence_band(tmp_path: Path) -> None:
         and "GET" in getattr(route, "methods", set())
     )
 
-    high_response = asyncio.run(route.endpoint(ConfidenceBand.HIGH))
-    medium_response = asyncio.run(route.endpoint(ConfidenceBand.MEDIUM))
-    low_response = asyncio.run(route.endpoint(ConfidenceBand.LOW))
+    high_response = _call_endpoint(route.endpoint, ConfidenceBand.HIGH)
+    medium_response = _call_endpoint(route.endpoint, ConfidenceBand.MEDIUM)
+    low_response = _call_endpoint(route.endpoint, ConfidenceBand.LOW)
 
     assert [proposal.id for proposal in high_response.proposals] == [21]
     assert [proposal.id for proposal in medium_response.proposals] == [22]
@@ -297,7 +305,7 @@ def test_approve_proposal_writes_final_link_and_marks_suggestion_approved(
         and "POST" in getattr(route, "methods", set())
     )
 
-    response = asyncio.run(route.endpoint(13))
+    response = _call_endpoint(route.endpoint, 13)
 
     assert response == {
         "proposal_id": 13,
@@ -391,7 +399,7 @@ def test_approve_proposal_regenerates_playlist_m3u(
         and "POST" in getattr(route, "methods", set())
     )
 
-    asyncio.run(route.endpoint(13))
+    _call_endpoint(route.endpoint, 13)
 
     assert (tmp_path / "m3u" / "Road-Trip-Mix.m3u").read_text(
         encoding="utf-8"
@@ -419,7 +427,7 @@ def test_approve_proposal_returns_404_when_missing(tmp_path: Path) -> None:
     )
 
     try:
-        asyncio.run(route.endpoint(999))
+        _call_endpoint(route.endpoint, 999)
     except StarletteHTTPException as exc:
         assert exc.status_code == 404
         assert exc.detail == "Proposal not found"
@@ -490,7 +498,7 @@ def test_approve_proposal_returns_409_for_rejected_pair(tmp_path: Path) -> None:
     )
 
     try:
-        asyncio.run(route.endpoint(13))
+        _call_endpoint(route.endpoint, 13)
     except StarletteHTTPException as exc:
         assert exc.status_code == 409
         assert exc.detail == "Rejected pair cannot be approved"
@@ -582,7 +590,7 @@ def test_approve_proposal_returns_409_when_track_already_has_final_link(
     )
 
     try:
-        asyncio.run(route.endpoint(13))
+        _call_endpoint(route.endpoint, 13)
     except StarletteHTTPException as exc:
         assert exc.status_code == 409
         assert exc.detail == "Track already has an approved link"
@@ -661,7 +669,7 @@ def test_reject_proposal_marks_suggestion_rejected(tmp_path: Path) -> None:
         and "POST" in getattr(route, "methods", set())
     )
 
-    response = asyncio.run(route.endpoint(13))
+    response = _call_endpoint(route.endpoint, 13)
 
     assert response["proposal_id"] == 13
     assert response["status"] == SUGGESTED_LINK_STATUS_REJECTED
@@ -754,7 +762,7 @@ def test_reject_proposal_regenerates_playlist_m3u(
         and "POST" in getattr(route, "methods", set())
     )
 
-    asyncio.run(route.endpoint(13))
+    _call_endpoint(route.endpoint, 13)
 
     assert output_path.read_text(encoding="utf-8") == "#EXTM3U"
 
@@ -775,7 +783,7 @@ def test_reject_proposal_returns_404_when_missing(tmp_path: Path) -> None:
     )
 
     try:
-        asyncio.run(route.endpoint(999))
+        _call_endpoint(route.endpoint, 999)
     except StarletteHTTPException as exc:
         assert exc.status_code == 404
         assert exc.detail == "Proposal not found"
@@ -833,7 +841,7 @@ def test_break_final_link_removes_final_link_and_writes_rejected_suggestion(
         and "DELETE" in getattr(route, "methods", set())
     )
 
-    response = asyncio.run(route.endpoint(7))
+    response = _call_endpoint(route.endpoint, 7)
 
     assert response["final_link_id"] == 7
     assert response["rejected_suggestion_id"] == 1
@@ -926,7 +934,7 @@ def test_break_final_link_regenerates_playlist_m3u(
         and "DELETE" in getattr(route, "methods", set())
     )
 
-    asyncio.run(route.endpoint(7))
+    _call_endpoint(route.endpoint, 7)
 
     assert output_path.read_text(encoding="utf-8") == "#EXTM3U"
 
@@ -948,7 +956,7 @@ def test_break_final_link_returns_404_when_missing(tmp_path: Path) -> None:
     )
 
     try:
-        asyncio.run(route.endpoint(999))
+        _call_endpoint(route.endpoint, 999)
     except StarletteHTTPException as exc:
         assert exc.status_code == 404
         assert exc.detail == "Final link not found"

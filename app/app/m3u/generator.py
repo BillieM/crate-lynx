@@ -5,6 +5,7 @@ import re
 from pathlib import Path
 
 from sqlalchemy import create_engine, select
+from sqlalchemy.engine import Engine
 
 from app.links.store import final_links_table
 from app.local_tracks.store import local_tracks_table
@@ -21,12 +22,15 @@ def get_m3u_output_dir() -> Path:
     return Path(os.environ.get("M3U_OUTPUT_DIR", str(DEFAULT_M3U_OUTPUT_DIR)))
 
 
-def generate_m3u(playlist_id: int, base_path: Path | str) -> str:
+def generate_m3u(
+    playlist_id: int,
+    base_path: Path | str,
+    *,
+    engine: Engine | None = None,
+) -> str:
     """Generate M3U contents for a playlist."""
-    database_url = _require_database_url()
-
     base_path = Path(base_path).resolve()
-    engine = create_engine(database_url)
+    engine = engine or create_engine(_require_database_url())
     query = (
         select(
             local_tracks_table.c.file_path,
@@ -79,22 +83,27 @@ def write_m3u(
     playlist_title: str,
     base_path: Path | str,
     output_dir: Path | str = DEFAULT_M3U_OUTPUT_DIR,
+    *,
+    engine: Engine | None = None,
 ) -> Path:
     resolved_output_dir = Path(output_dir).resolve()
     resolved_output_dir.mkdir(parents=True, exist_ok=True)
     output_path = resolved_output_dir / build_m3u_filename(playlist_title)
-    output_path.write_text(generate_m3u(playlist_id, base_path), encoding="utf-8")
+    output_path.write_text(
+        generate_m3u(playlist_id, base_path, engine=engine),
+        encoding="utf-8",
+    )
     return output_path
 
 
 def regenerate_m3us_for_streaming_track(
     streaming_track_id: int,
     *,
-    database_url: str | None = None,
+    engine: Engine | None = None,
     base_path: Path | str,
     output_dir: Path | str = DEFAULT_M3U_OUTPUT_DIR,
 ) -> list[Path]:
-    engine = create_engine(database_url or _require_database_url())
+    engine = engine or create_engine(_require_database_url())
     query = (
         select(
             streaming_playlists_table.c.id,
@@ -121,6 +130,7 @@ def regenerate_m3us_for_streaming_track(
             playlist["title"],
             base_path=base_path,
             output_dir=output_dir,
+            engine=engine,
         )
         for playlist in playlists
     ]

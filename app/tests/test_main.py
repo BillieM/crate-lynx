@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -225,6 +226,13 @@ def _route(method: str, path: str, app):
     )
 
 
+def _call_endpoint(endpoint, *args):
+    result = endpoint(*args)
+    if inspect.isawaitable(result):
+        return asyncio.run(result)
+    return result
+
+
 def test_streaming_accounts_endpoint_lists_persisted_accounts(
     monkeypatch,
     tmp_path: Path,
@@ -251,7 +259,7 @@ def test_streaming_accounts_endpoint_lists_persisted_accounts(
         if getattr(route, "path", None) == "/api/streaming/accounts"
         and "GET" in getattr(route, "methods", set())
     )
-    response = asyncio.run(route.endpoint())
+    response = _call_endpoint(route.endpoint)
 
     assert len(response["accounts"]) == 1
     account = response["accounts"][0]
@@ -335,7 +343,7 @@ def test_streaming_playlists_endpoint_lists_synced_playlists(
         if getattr(route, "path", None) == "/api/streaming/playlists"
         and "GET" in getattr(route, "methods", set())
     )
-    response = asyncio.run(route.endpoint())
+    response = _call_endpoint(route.endpoint)
 
     assert len(response["playlists"]) == 1
     playlist = response["playlists"][0]
@@ -407,7 +415,7 @@ def test_streaming_playlists_config_endpoint_lists_all_discovered_playlists(
         if getattr(route, "path", None) == "/api/streaming/playlists/config"
         and "GET" in getattr(route, "methods", set())
     )
-    response = asyncio.run(route.endpoint())
+    response = _call_endpoint(route.endpoint)
 
     assert [playlist.provider_playlist_id for playlist in response["playlists"]] == [
         "PL1",
@@ -477,11 +485,10 @@ def test_streaming_playlist_patch_endpoint_toggles_selection(
         if getattr(route, "path", None) == "/api/streaming/playlists/{playlist_id}"
         and "PATCH" in getattr(route, "methods", set())
     )
-    response = asyncio.run(
-        route.endpoint(
-            playlist.id,
-            UpdateStreamingPlaylistRequest(selected_for_sync=False),
-        )
+    response = _call_endpoint(
+        route.endpoint,
+        playlist.id,
+        UpdateStreamingPlaylistRequest(selected_for_sync=False),
     )
 
     assert response.id == playlist.id
@@ -511,11 +518,10 @@ def test_streaming_playlist_patch_endpoint_returns_404_for_missing_playlist(
     )
 
     try:
-        asyncio.run(
-            route.endpoint(
-                999,
-                UpdateStreamingPlaylistRequest(selected_for_sync=True),
-            )
+        _call_endpoint(
+            route.endpoint,
+            999,
+            UpdateStreamingPlaylistRequest(selected_for_sync=True),
         )
     except StarletteHTTPException as exc:
         assert exc.status_code == 404
@@ -549,7 +555,7 @@ def test_streaming_accounts_endpoint_creates_youtube_music_account(
         },
     )
 
-    response = asyncio.run(route.endpoint(payload))
+    response = _call_endpoint(route.endpoint, payload)
 
     assert response.id == 1
     assert response.provider == "youtube_music"
@@ -661,7 +667,7 @@ def test_playlist_detail_endpoint_returns_real_link_counts(
         and "GET" in getattr(route, "methods", set())
     )
 
-    response = asyncio.run(route.endpoint(7))
+    response = _call_endpoint(route.endpoint, 7)
 
     assert response.playlist.id == 7
     assert response.playlist.name == "Road Trip Mix"
@@ -772,7 +778,7 @@ def test_playlist_tracks_endpoint_returns_rows_with_link_status(
         and "GET" in getattr(route, "methods", set())
     )
 
-    response = asyncio.run(route.endpoint(7))
+    response = _call_endpoint(route.endpoint, 7)
 
     assert [track.title for track in response.tracks] == [
         "Linked Song",
@@ -912,7 +918,7 @@ def test_library_tracks_endpoint_returns_linked_pending_unlinked_and_no_match_ro
         and "GET" in getattr(route, "methods", set())
     )
 
-    response = asyncio.run(route.endpoint())
+    response = _call_endpoint(route.endpoint)
 
     assert [track.id for track in response.tracks] == [5, 6, 7, 8]
     assert response.stats.model_dump(mode="json") == {
@@ -1088,7 +1094,7 @@ def test_missing_locally_endpoint_aggregates_playlist_usage_and_excludes_links(
         and "GET" in getattr(route, "methods", set())
     )
 
-    response = asyncio.run(route.endpoint())
+    response = _call_endpoint(route.endpoint)
 
     assert response.model_dump(mode="json") == {
         "tracks": [
@@ -1186,7 +1192,7 @@ def test_unidentified_endpoint_lists_durable_failed_ingestion_attempts(
         and "GET" in getattr(route, "methods", set())
     )
 
-    response = asyncio.run(route.endpoint())
+    response = _call_endpoint(route.endpoint)
 
     assert response.model_dump(mode="json") == {
         "tracks": [
@@ -1275,7 +1281,7 @@ def test_playlist_m3u_export_endpoint_returns_attachment(
         and "GET" in getattr(route, "methods", set())
     )
 
-    response = asyncio.run(route.endpoint(7))
+    response = _call_endpoint(route.endpoint, 7)
 
     assert response.media_type == "audio/x-mpegurl"
     assert response.headers["content-disposition"] == (
@@ -1334,7 +1340,7 @@ def test_streaming_account_sync_endpoint_enqueues_job(
         if getattr(route, "path", None) == "/api/streaming/accounts/{account_id}/sync"
         and "POST" in getattr(route, "methods", set())
     )
-    response = asyncio.run(route.endpoint(1))
+    response = _call_endpoint(route.endpoint, 1)
 
     assert response.account_id == 1
     assert response.job_id == "sync-job-999"
@@ -1391,7 +1397,7 @@ def test_streaming_refresh_metadata_endpoint_enqueues_job(
         == "/api/streaming/accounts/{account_id}/refresh-metadata"
         and "POST" in getattr(route, "methods", set())
     )
-    response = asyncio.run(route.endpoint(1))
+    response = _call_endpoint(route.endpoint, 1)
 
     assert response.account_id == 1
     assert response.job_id == "metadata-refresh-job-999"
@@ -1447,7 +1453,7 @@ def test_streaming_playlist_sync_endpoint_enqueues_job(
         if getattr(route, "path", None) == "/api/streaming/playlists/{playlist_id}/sync"
         and "POST" in getattr(route, "methods", set())
     )
-    response = asyncio.run(route.endpoint(playlist.id))
+    response = _call_endpoint(route.endpoint, playlist.id)
 
     assert response.playlist_id == playlist.id
     assert response.job_id == "playlist-sync-job-999"
@@ -1524,7 +1530,7 @@ def test_local_track_rematch_endpoint_clears_non_final_suggestions_and_enqueues_
         if getattr(route, "path", None) == "/api/local-tracks/{local_track_id}/rematch"
         and "POST" in getattr(route, "methods", set())
     )
-    response = asyncio.run(route.endpoint(15))
+    response = _call_endpoint(route.endpoint, 15)
 
     assert response == {
         "local_track_id": 15,
@@ -1579,7 +1585,7 @@ def test_local_track_rematch_endpoint_returns_404_for_unknown_track(
     )
 
     try:
-        asyncio.run(route.endpoint(999))
+        _call_endpoint(route.endpoint, 999)
     except StarletteHTTPException as exc:
         assert exc.status_code == 404
         assert exc.detail == "Local track not found"
@@ -1621,10 +1627,12 @@ def test_local_track_rescue_endpoint_returns_updated_track_record(
         local_track_id: int,
         *,
         database_url: str | None = None,
+        engine=None,
         library_root: Path | str | None = None,
     ) -> None:
         seen["local_track_id"] = local_track_id
         seen["database_url"] = database_url
+        seen["engine"] = engine
         seen["library_root"] = str(library_root) if library_root is not None else None
 
     monkeypatch.setattr("app.rescue.router.rescue_metadata", fake_rescue_metadata)
@@ -1636,7 +1644,7 @@ def test_local_track_rescue_endpoint_returns_updated_track_record(
         if getattr(route, "path", None) == "/api/local-tracks/{local_track_id}/rescue"
         and "POST" in getattr(route, "methods", set())
     )
-    response = asyncio.run(route.endpoint(21))
+    response = _call_endpoint(route.endpoint, 21)
 
     assert response == {
         "id": 21,
@@ -1644,9 +1652,11 @@ def test_local_track_rescue_endpoint_returns_updated_track_record(
         "library_root_rel_path": "Artist/rescue.mp3",
         "beets_id": 21,
     }
+    assert seen["engine"] is not None
     assert seen == {
         "local_track_id": 21,
         "database_url": database_url,
+        "engine": seen["engine"],
         "library_root": str(tmp_path / "library"),
     }
 
@@ -1681,7 +1691,7 @@ def test_local_track_rescue_endpoint_returns_409_without_final_link(
     )
 
     try:
-        asyncio.run(route.endpoint(22))
+        _call_endpoint(route.endpoint, 22)
     except StarletteHTTPException as exc:
         assert exc.status_code == 409
         assert exc.detail == "No final link exists for local track 22"

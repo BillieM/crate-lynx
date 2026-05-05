@@ -4,6 +4,8 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
+from sqlalchemy import create_engine
+from sqlalchemy.engine import Engine
 
 from app.ingestion import BeetsImporter, IngestionProcessor, IngestionWatcher
 from app.ingestion.failures import FailedIngestionAttemptStore
@@ -34,6 +36,8 @@ def create_app() -> FastAPI:
         library_root = Path(os.environ.get("LIBRARY_ROOT", "/music"))
         database_url = os.environ.get("DATABASE_URL")
         redis_url = os.environ.get("REDIS_URL")
+        database_engine = create_engine(database_url) if database_url else None
+        app.state.database_engine = database_engine
         ingest_roots = _resolve_ingest_roots(database_url)
         processor = IngestionProcessor(
             staging_root=staging_root,
@@ -68,6 +72,9 @@ def create_app() -> FastAPI:
         finally:
             watcher.stop()
             app.state.ingestion_watcher = None
+            if database_engine is not None:
+                database_engine.dispose()
+            app.state.database_engine = None
 
     app = FastAPI(title="crate-lynx", lifespan=lifespan)
 
@@ -79,6 +86,13 @@ def create_app() -> FastAPI:
                 detail="DATABASE_URL must be configured for streaming account access",
             )
         return database_url
+
+    def require_database_engine() -> Engine:
+        database_url = require_database_url()
+        engine = getattr(app.state, "database_engine", None)
+        if engine is None:
+            return create_engine(database_url)
+        return engine
 
     def require_redis_url() -> str:
         redis_url = os.environ.get("REDIS_URL")
@@ -93,6 +107,7 @@ def create_app() -> FastAPI:
     app.include_router(
         create_streaming_router(
             require_database_url=require_database_url,
+            require_database_engine=require_database_engine,
             require_redis_url=require_redis_url,
         ),
         prefix="/api",
@@ -100,12 +115,16 @@ def create_app() -> FastAPI:
     app.include_router(
         create_matching_router(
             require_database_url=require_database_url,
+            require_database_engine=require_database_engine,
             require_redis_url=require_redis_url,
         ),
         prefix="/api",
     )
     app.include_router(
-        create_rescue_router(require_database_url=require_database_url),
+        create_rescue_router(
+            require_database_url=require_database_url,
+            require_database_engine=require_database_engine,
+        ),
         prefix="/api",
     )
     app.include_router(
@@ -117,7 +136,10 @@ def create_app() -> FastAPI:
         prefix="/api",
     )
     app.include_router(
-        create_links_router(require_database_url=require_database_url),
+        create_links_router(
+            require_database_url=require_database_url,
+            require_database_engine=require_database_engine,
+        ),
         prefix="/api",
     )
     app.include_router(

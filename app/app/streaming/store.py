@@ -15,6 +15,7 @@ from sqlalchemy import (
     table,
     update,
 )
+from sqlalchemy.engine import Engine
 from ytmusicapi.exceptions import YTMusicError
 
 from app.streaming.adapters.youtube_music import (
@@ -62,8 +63,14 @@ suggested_links_view = table(
 
 
 class StreamingAccountStore:
-    def __init__(self, database_url: str) -> None:
-        self._engine = create_engine(database_url)
+    def __init__(
+        self, database_url: str | None = None, *, engine: Engine | None = None
+    ) -> None:
+        if engine is None:
+            if database_url is None:
+                raise ValueError("database_url or engine is required")
+            engine = create_engine(database_url)
+        self._engine = engine
 
     def create_youtube_music_account(
         self,
