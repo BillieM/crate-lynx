@@ -16,7 +16,7 @@
   - Preserve rejected suggestions.
   - Add backend tests covering sibling pending cleanup.
 
-- [ ] Group proposal candidates in the UI.
+- [x] Group proposal candidates in the UI.
   - Keep the existing `/api/proposals` response shape.
   - Group client-side by `local_track_id`.
   - Show one review item per local track with ranked candidate choices.

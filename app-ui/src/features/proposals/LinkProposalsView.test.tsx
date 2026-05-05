@@ -23,6 +23,20 @@ const proposalsResponse: LinkProposalsResponse = {
     },
     {
       confidence_band: "medium",
+      id: 47,
+      local_file_path: "Frame Delay/Night Runner.mp3",
+      local_track_id: 501,
+      match_method: "tag",
+      rejected_at: null,
+      score: 0.82,
+      status: "pending",
+      streaming_album: "Late Night Drive",
+      streaming_artist: "Frame Delay",
+      streaming_title: "Night Runner Alternate",
+      streaming_track_id: 907,
+    },
+    {
+      confidence_band: "medium",
       id: 45,
       local_file_path: "Static Gate/Pending Signal.mp3",
       local_track_id: 502,
@@ -90,14 +104,16 @@ function mockProposalFetch({ approveHandler, rejectHandler, response = proposals
       } as Response;
     }
 
-    if (url === "/api/proposals/45/reject" && init?.method === "POST") {
+    if ((url === "/api/proposals/45/reject" || url === "/api/proposals/47/reject") && init?.method === "POST") {
       if (rejectHandler) {
         return rejectHandler();
       }
 
+      const proposalId = Number(url.match(/\/api\/proposals\/(\d+)\/reject/)?.[1]);
+
       return {
         ok: true,
-        json: async () => ({ proposal_id: 45, rejected_at: "2026-05-04T10:00:00Z", status: "rejected" }),
+        json: async () => ({ proposal_id: proposalId, rejected_at: "2026-05-04T10:00:00Z", status: "rejected" }),
       } as Response;
     }
 
@@ -110,7 +126,7 @@ describe("LinkProposalsView", () => {
     vi.restoreAllMocks();
   });
 
-  it("groups proposal cards by confidence band and renders reusable confidence filters", async () => {
+  it("groups proposal cards by local track within confidence bands and renders reusable confidence filters", async () => {
     mockProposalFetch();
 
     renderLinkProposalsView();
@@ -124,8 +140,10 @@ describe("LinkProposalsView", () => {
     expect(highSection).not.toBeNull();
     expect(mediumSection).not.toBeNull();
     expect(within(highSection!).getByText("Night Runner.mp3")).toBeInTheDocument();
-    expect(within(highSection!).getByText("Tag")).toBeInTheDocument();
+    expect(within(highSection!).getByText("Night Runner Alternate")).toBeInTheDocument();
+    expect(within(highSection!).getAllByText("Tag")).toHaveLength(2);
     expect(within(highSection!).getByText("92%")).toBeInTheDocument();
+    expect(within(highSection!).getByText("82%")).toBeInTheDocument();
     expect(within(mediumSection!).getByText("Pending Signal.mp3")).toBeInTheDocument();
     expect(within(mediumSection!).getByText("ISRC")).toBeInTheDocument();
     expect(within(mediumSection!).getByText("Album unavailable")).toBeInTheDocument();
@@ -149,7 +167,7 @@ describe("LinkProposalsView", () => {
     expect(screen.getByRole("button", { name: "Medium" })).toHaveAttribute("aria-pressed", "true");
   });
 
-  it("optimistically removes proposals after approve and reject actions", async () => {
+  it("optimistically removes whole local-track groups on approve and only selected candidates on reject", async () => {
     let resolveApprove: (response: Response) => void = () => {};
     let resolveReject: (response: Response) => void = () => {};
     const approvePromise = new Promise<Response>((resolve) => {
@@ -166,6 +184,15 @@ describe("LinkProposalsView", () => {
     renderLinkProposalsView();
 
     expect(await screen.findByText("Night Runner.mp3")).toBeInTheDocument();
+    expect(screen.getByText("Night Runner Alternate")).toBeInTheDocument();
+    fireEvent.click(screen.getAllByRole("button", { name: "Reject" })[1]);
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith("/api/proposals/47/reject", { method: "POST" });
+      expect(screen.queryByText("Night Runner Alternate")).not.toBeInTheDocument();
+    });
+    expect(screen.getByText("Night Runner.mp3")).toBeInTheDocument();
+
     fireEvent.click(screen.getAllByRole("button", { name: "Approve" })[0]);
 
     await waitFor(() => {

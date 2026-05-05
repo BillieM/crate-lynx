@@ -16,7 +16,11 @@ import {
   useLinkProposalsQuery,
 } from "../playlists/queries";
 
-type GroupedLinkProposals = Record<LinkProposalConfidenceBand, LinkProposal[]>;
+type LinkProposalGroup = {
+  candidates: LinkProposal[];
+  localTrackId: number;
+};
+type GroupedLinkProposalGroups = Record<LinkProposalConfidenceBand, LinkProposalGroup[]>;
 type LinkProposalConfidenceBandFilter = LinkProposalConfidenceBand | "all";
 type OptimisticProposalMutationContext = {
   previousProposalQueries: [readonly unknown[], LinkProposalsResponse | undefined][];
@@ -55,7 +59,7 @@ function clampPercentage(matchPercentage: number) {
   return Math.max(0, Math.min(100, matchPercentage));
 }
 
-function getEmptyProposalGroups(): GroupedLinkProposals {
+function getEmptyProposalGroupBuckets(): GroupedLinkProposalGroups {
   return {
     high: [],
     low: [],
@@ -63,22 +67,55 @@ function getEmptyProposalGroups(): GroupedLinkProposals {
   };
 }
 
-function groupLinkProposalsByBand(proposals: LinkProposal[]): GroupedLinkProposals {
-  return proposals.reduce<GroupedLinkProposals>((groups, proposal) => {
-    groups[proposal.confidence_band].push(proposal);
-    return groups;
-  }, getEmptyProposalGroups());
+function sortProposalCandidates(proposals: LinkProposal[]) {
+  return [...proposals].sort((left, right) => {
+    if (right.score !== left.score) {
+      return right.score - left.score;
+    }
+
+    return left.id - right.id;
+  });
 }
 
-async function removeProposalFromCache(
+function groupLinkProposalsByBand(proposals: LinkProposal[]): GroupedLinkProposalGroups {
+  const proposalsByTrack = proposals.reduce<Map<number, LinkProposal[]>>((groups, proposal) => {
+    const existingGroup = groups.get(proposal.local_track_id) ?? [];
+    existingGroup.push(proposal);
+    groups.set(proposal.local_track_id, existingGroup);
+    return groups;
+  }, new Map());
+  const groupedByBand = getEmptyProposalGroupBuckets();
+
+  Array.from(proposalsByTrack.entries())
+    .map(([localTrackId, trackProposals]) => ({
+      candidates: sortProposalCandidates(trackProposals),
+      localTrackId,
+    }))
+    .sort((left, right) => right.candidates[0].score - left.candidates[0].score)
+    .forEach((proposalGroup) => {
+      groupedByBand[proposalGroup.candidates[0].confidence_band].push(proposalGroup);
+    });
+
+  return groupedByBand;
+}
+
+async function removeProposalCandidateFromCache(
   queryClient: ReturnType<typeof useQueryClient>,
   proposalId: number | string,
+  options: { removeLocalTrackGroup: boolean },
 ): Promise<OptimisticProposalMutationContext> {
   await queryClient.cancelQueries({ queryKey: ["playlists", "proposals"] });
 
   const previousProposalQueries = queryClient.getQueriesData<LinkProposalsResponse>({
     queryKey: ["playlists", "proposals"],
   });
+  const targetLocalTrackIds = new Set(
+    previousProposalQueries.flatMap(([, data]) =>
+      data?.proposals
+        .filter((proposal) => String(proposal.id) === String(proposalId))
+        .map((proposal) => proposal.local_track_id) ?? [],
+    ),
+  );
 
   queryClient.setQueriesData<LinkProposalsResponse>({ queryKey: ["playlists", "proposals"] }, (current) => {
     if (!current) {
@@ -86,7 +123,13 @@ async function removeProposalFromCache(
     }
 
     return {
-      proposals: current.proposals.filter((proposal) => String(proposal.id) !== String(proposalId)),
+      proposals: current.proposals.filter((proposal) => {
+        if (String(proposal.id) === String(proposalId)) {
+          return false;
+        }
+
+        return !options.removeLocalTrackGroup || !targetLocalTrackIds.has(proposal.local_track_id);
+      }),
     };
   });
 
@@ -166,7 +209,7 @@ export function LinkProposalsView() {
   const proposalsQuery = useLinkProposalsQuery({ confidenceBand: activeConfidenceBand });
   const approveMutation = useMutation({
     mutationFn: approveLinkProposal,
-    onMutate: (proposalId) => removeProposalFromCache(queryClient, proposalId),
+    onMutate: (proposalId) => removeProposalCandidateFromCache(queryClient, proposalId, { removeLocalTrackGroup: true }),
     onError: (_error, _proposalId, context) => {
       restoreProposalCache(queryClient, context);
     },
@@ -176,7 +219,7 @@ export function LinkProposalsView() {
   });
   const rejectMutation = useMutation({
     mutationFn: rejectLinkProposal,
-    onMutate: (proposalId) => removeProposalFromCache(queryClient, proposalId),
+    onMutate: (proposalId) => removeProposalCandidateFromCache(queryClient, proposalId, { removeLocalTrackGroup: false }),
     onError: (_error, _proposalId, context) => {
       restoreProposalCache(queryClient, context);
     },
@@ -270,7 +313,7 @@ export function LinkProposalsView() {
     <div className="min-h-0 flex-1 overflow-y-auto pr-1">
       <div className="grid gap-4">
         {proposalBandOrder.map((band) => {
-          const bandProposals = groupedProposals[band];
+          const bandProposalGroups = groupedProposals[band];
           const label = proposalBandLabels[band];
 
           return (
@@ -280,26 +323,21 @@ export function LinkProposalsView() {
                   {label}
                 </h3>
                 <span className={controlClasses.countBadge}>
-                  {bandProposals.length}
+                  {bandProposalGroups.length}
                 </span>
               </header>
-              {bandProposals.length > 0 ? (
+              {bandProposalGroups.length > 0 ? (
                 <ul className="grid gap-3">
-                  {bandProposals.map((proposal) => (
-                    <ProposalCard
-                      actionError={
-                        failedApproveProposalId === String(proposal.id)
-                          ? "Approve failed."
-                          : failedRejectProposalId === String(proposal.id)
-                            ? "Reject failed."
-                            : null
-                      }
-                      isApproving={activeApproveProposalId === String(proposal.id)}
-                      isRejecting={activeRejectProposalId === String(proposal.id)}
-                      key={proposal.id}
-                      onApprove={() => approveMutation.mutate(proposal.id)}
-                      onReject={() => rejectMutation.mutate(proposal.id)}
-                      proposal={proposal}
+                  {bandProposalGroups.map((proposalGroup) => (
+                    <ProposalGroupCard
+                      activeApproveProposalId={activeApproveProposalId}
+                      activeRejectProposalId={activeRejectProposalId}
+                      failedApproveProposalId={failedApproveProposalId}
+                      failedRejectProposalId={failedRejectProposalId}
+                      key={proposalGroup.localTrackId}
+                      onApprove={(proposalId) => approveMutation.mutate(proposalId)}
+                      onReject={(proposalId) => rejectMutation.mutate(proposalId)}
+                      proposalGroup={proposalGroup}
                     />
                   ))}
                 </ul>
@@ -316,71 +354,122 @@ export function LinkProposalsView() {
   );
 }
 
-function ProposalCard({
+function ProposalGroupCard({
+  activeApproveProposalId,
+  activeRejectProposalId,
+  failedApproveProposalId,
+  failedRejectProposalId,
+  onApprove,
+  onReject,
+  proposalGroup,
+}: {
+  activeApproveProposalId: string | null;
+  activeRejectProposalId: string | null;
+  failedApproveProposalId: string | null;
+  failedRejectProposalId: string | null;
+  onApprove: (proposalId: number) => void;
+  onReject: (proposalId: number) => void;
+  proposalGroup: LinkProposalGroup;
+}) {
+  const topProposal = proposalGroup.candidates[0];
+  const activeProposalId = activeApproveProposalId ?? activeRejectProposalId;
+  const isGroupActionPending = proposalGroup.candidates.some((proposal) => String(proposal.id) === activeProposalId);
+
+  return (
+    <li className={surfaceClasses.rowCardCompact}>
+      <div className="grid gap-3 xl:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
+        <div className="min-w-0">
+          <p className={`${textClasses.eyebrow} tracking-normal text-ctp-subtext0`}>Local track</p>
+          <p className={`mt-1 truncate ${textClasses.proposalTitle}`}>{getLocalTrackLabel(topProposal)}</p>
+          <p className={`mt-1 truncate ${textClasses.caption}`}>{topProposal.local_file_path}</p>
+          <p className={`mt-2 ${textClasses.detail}`}>Track #{topProposal.local_track_id}</p>
+        </div>
+        <div className="grid gap-2">
+          <p className={`${textClasses.eyebrow} tracking-normal text-ctp-subtext0`}>Ranked candidates</p>
+          <ul className="grid gap-2">
+            {proposalGroup.candidates.map((proposal, index) => (
+              <ProposalCandidateRow
+                actionError={
+                  failedApproveProposalId === String(proposal.id)
+                    ? "Approve failed."
+                    : failedRejectProposalId === String(proposal.id)
+                      ? "Reject failed."
+                      : null
+                }
+                isApproving={activeApproveProposalId === String(proposal.id)}
+                isRejecting={activeRejectProposalId === String(proposal.id)}
+                isGroupActionPending={isGroupActionPending}
+                key={proposal.id}
+                onApprove={() => onApprove(proposal.id)}
+                onReject={() => onReject(proposal.id)}
+                proposal={proposal}
+                rank={index + 1}
+              />
+            ))}
+          </ul>
+        </div>
+      </div>
+    </li>
+  );
+}
+
+function ProposalCandidateRow({
   actionError,
   isApproving,
+  isGroupActionPending,
   isRejecting,
   onApprove,
   onReject,
   proposal,
+  rank,
 }: {
   actionError: string | null;
   isApproving: boolean;
+  isGroupActionPending: boolean;
   isRejecting: boolean;
   onApprove: () => void;
   onReject: () => void;
   proposal: LinkProposal;
+  rank: number;
 }) {
   const scorePercentage = getProposalScorePercentage(proposal.score);
-  const isActionPending = isApproving || isRejecting;
   const scoreMeterStyle: CSSProperties & Record<"--proposal-score-width", string> = {
     "--proposal-score-width": `${scorePercentage}%`,
   };
 
   return (
-    <li className={surfaceClasses.rowCardCompact}>
-      <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_190px]">
+    <li className={`${surfaceClasses.insetPanel} px-3 py-2.5`}>
+      <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_170px]">
         <div className="min-w-0">
-          <p className={`${textClasses.eyebrow} tracking-normal text-ctp-subtext0`}>Local track</p>
-          <p className={`mt-1 truncate ${textClasses.proposalTitle}`}>{getLocalTrackLabel(proposal)}</p>
-          <p className={`mt-1 truncate ${textClasses.caption}`}>{proposal.local_file_path}</p>
-          <p className={`mt-2 ${textClasses.detail}`}>Track #{proposal.local_track_id}</p>
-        </div>
-        <div className="min-w-0">
-          <p className={`${textClasses.eyebrow} tracking-normal text-ctp-subtext0`}>Streaming track</p>
-          <p className={`mt-1 truncate ${textClasses.proposalTitle}`}>{proposal.streaming_title}</p>
-          <p className={`mt-1 truncate ${textClasses.caption}`}>{proposal.streaming_artist}</p>
-          <p className={`mt-2 truncate ${textClasses.detail}`}>
-            {proposal.streaming_album ?? "Album unavailable"}
-          </p>
-        </div>
-        <div className="grid content-between gap-3">
-          <div className="flex flex-wrap items-center gap-2 xl:justify-end">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className={controlClasses.countBadgeCompact}>{rank}</span>
             <Pill tone={getMatchMethodTone(proposal.match_method)}>
               {getMatchMethodLabel(proposal.match_method)}
             </Pill>
             <span className={textClasses.score}>{formatProposalScore(proposal.score)}</span>
           </div>
-          <div>
-            <div className="h-2 overflow-hidden rounded-full bg-ctp-surface0" aria-hidden="true">
-              <div
-                className={`h-full rounded-full [width:var(--proposal-score-width)] ${getProposalScoreColorClass(scorePercentage)}`}
-                style={scoreMeterStyle}
-              />
-            </div>
-            <p className={`mt-2 text-ctp-subtext0 ${textClasses.status}`}>Confidence score</p>
+          <p className={`mt-2 truncate ${textClasses.proposalTitle}`}>{proposal.streaming_title}</p>
+          <p className={`mt-1 truncate ${textClasses.caption}`}>{proposal.streaming_artist}</p>
+          <p className={`mt-2 truncate ${textClasses.detail}`}>{proposal.streaming_album ?? "Album unavailable"}</p>
+          <div className="mt-3 h-2 overflow-hidden rounded-full bg-ctp-surface0" aria-hidden="true">
+            <div
+              className={`h-full rounded-full [width:var(--proposal-score-width)] ${getProposalScoreColorClass(scorePercentage)}`}
+              style={scoreMeterStyle}
+            />
           </div>
-          <div className="flex flex-wrap items-center gap-2 xl:justify-end">
-            <ActionButton disabled={isActionPending} onClick={onApprove} tone="success">
+        </div>
+        <div className="grid content-end gap-2">
+          <div className="flex flex-wrap items-center gap-2 lg:justify-end">
+            <ActionButton disabled={isGroupActionPending} onClick={onApprove} tone="success">
               {isApproving ? "Approving..." : "Approve"}
             </ActionButton>
-            <ActionButton disabled={isActionPending} onClick={onReject} tone="danger">
+            <ActionButton disabled={isGroupActionPending} onClick={onReject} tone="danger">
               {isRejecting ? "Rejecting..." : "Reject"}
             </ActionButton>
-            {actionError ? (
-              <p className={`basis-full text-right font-medium text-ctp-red ${textClasses.finePrint}`}>{actionError}</p>
-            ) : null}
           </div>
+          {actionError ? (
+            <p className={`text-right font-medium text-ctp-red ${textClasses.finePrint}`}>{actionError}</p>
+          ) : null}
         </div>
       </div>
     </li>

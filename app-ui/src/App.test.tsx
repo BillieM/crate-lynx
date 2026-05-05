@@ -622,7 +622,7 @@ describe("App", () => {
     expect(highSection).not.toBeNull();
     expect(mediumSection).not.toBeNull();
     expect(lowSection).not.toBeNull();
-    expect(within(highSection!).getByText("1")).toBeInTheDocument();
+    expect(within(highSection!).getAllByText("1")).toHaveLength(2);
     expect(within(highSection!).getByText("Night Runner.mp3")).toBeInTheDocument();
     expect(within(highSection!).getByText("Night Runner")).toBeInTheDocument();
     expect(within(highSection!).getByText("Frame Delay")).toBeInTheDocument();
