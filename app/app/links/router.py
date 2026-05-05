@@ -177,6 +177,14 @@ def create_router(
                 .where(suggested_links_table.c.id == proposal_id)
                 .values(status=SUGGESTED_LINK_STATUS_APPROVED)
             )
+            connection.execute(
+                delete(suggested_links_table).where(
+                    suggested_links_table.c.local_track_id
+                    == proposal["local_track_id"],
+                    suggested_links_table.c.status == SUGGESTED_LINK_STATUS_PENDING,
+                    suggested_links_table.c.id != proposal_id,
+                )
+            )
 
         _regenerate_m3u_exports(proposal["streaming_track_id"], engine)
 

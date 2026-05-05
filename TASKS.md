@@ -11,7 +11,7 @@
   - Persist only plausible candidates above the chosen threshold.
   - If all candidates are low confidence, keep only the top fallback candidates so review remains possible without flooding the queue.
 
-- [ ] Clear stale sibling suggestions when approving a proposal.
+- [x] Clear stale sibling suggestions when approving a proposal.
   - On approve, create the final link, mark the chosen suggestion approved, and delete other pending suggestions for the same `local_track_id`.
   - Preserve rejected suggestions.
   - Add backend tests covering sibling pending cleanup.

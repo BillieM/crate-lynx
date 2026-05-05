@@ -227,7 +227,7 @@ def test_list_proposals_filters_by_confidence_band(tmp_path: Path) -> None:
     assert [proposal.id for proposal in low_response.proposals] == [23]
 
 
-def test_approve_proposal_writes_final_link_and_marks_suggestion_approved(
+def test_approve_proposal_writes_final_link_and_clears_pending_siblings(
     tmp_path: Path,
 ) -> None:
     database_url = f"sqlite:///{tmp_path / 'approve-proposal.db'}"
@@ -240,34 +240,105 @@ def test_approve_proposal_writes_final_link_and_marks_suggestion_approved(
     with engine.begin() as connection:
         connection.execute(
             insert(local_tracks_table).values(
-                id=4,
-                file_path="Artist/approved.mp3",
-                library_root_rel_path="Artist/approved.mp3",
-                fingerprint="fp-4",
-                beets_id=4,
+                [
+                    {
+                        "id": 4,
+                        "file_path": "Artist/approved.mp3",
+                        "library_root_rel_path": "Artist/approved.mp3",
+                        "fingerprint": "fp-4",
+                        "beets_id": 4,
+                    },
+                    {
+                        "id": 5,
+                        "file_path": "Artist/other.mp3",
+                        "library_root_rel_path": "Artist/other.mp3",
+                        "fingerprint": "fp-5",
+                        "beets_id": 5,
+                    },
+                ]
             )
         )
         connection.execute(
-            insert(streaming_tracks_table).values(
-                id=9,
-                provider_track_id="ytm-9",
-                title="Approved Track",
-                artist="Artist",
-                album="Album",
-                year=2024,
-                isrc="ABC123456789",
-                duration_ms=123000,
-            )
+            insert(streaming_tracks_table),
+            [
+                {
+                    "id": 9,
+                    "provider_track_id": "ytm-9",
+                    "title": "Approved Track",
+                    "artist": "Artist",
+                    "album": "Album",
+                    "year": 2024,
+                    "isrc": "ABC123456789",
+                    "duration_ms": 123000,
+                },
+                {
+                    "id": 10,
+                    "provider_track_id": "ytm-10",
+                    "title": "Pending Sibling",
+                    "artist": "Artist",
+                    "album": "Album",
+                    "year": 2024,
+                    "isrc": "DEF123456789",
+                    "duration_ms": 123000,
+                },
+                {
+                    "id": 11,
+                    "provider_track_id": "ytm-11",
+                    "title": "Rejected Sibling",
+                    "artist": "Artist",
+                    "album": "Album",
+                    "year": 2024,
+                    "isrc": "GHI123456789",
+                    "duration_ms": 123000,
+                },
+                {
+                    "id": 12,
+                    "provider_track_id": "ytm-12",
+                    "title": "Other Track",
+                    "artist": "Artist",
+                    "album": "Album",
+                    "year": 2024,
+                    "isrc": "JKL123456789",
+                    "duration_ms": 123000,
+                },
+            ],
         )
         connection.execute(
-            insert(suggested_links_table).values(
-                id=13,
-                local_track_id=4,
-                streaming_track_id=9,
-                match_method="tags",
-                score=0.82,
-                status="pending",
-            )
+            insert(suggested_links_table),
+            [
+                {
+                    "id": 13,
+                    "local_track_id": 4,
+                    "streaming_track_id": 9,
+                    "match_method": "tags",
+                    "score": 0.82,
+                    "status": "pending",
+                },
+                {
+                    "id": 14,
+                    "local_track_id": 4,
+                    "streaming_track_id": 10,
+                    "match_method": "tags",
+                    "score": 0.76,
+                    "status": "pending",
+                },
+                {
+                    "id": 15,
+                    "local_track_id": 4,
+                    "streaming_track_id": 11,
+                    "match_method": "manual_break",
+                    "score": 0.0,
+                    "status": "rejected",
+                },
+                {
+                    "id": 16,
+                    "local_track_id": 5,
+                    "streaming_track_id": 12,
+                    "match_method": "tags",
+                    "score": 0.74,
+                    "status": "pending",
+                },
+            ],
         )
 
     router = create_router(require_database_url=lambda: database_url)
@@ -288,18 +359,42 @@ def test_approve_proposal_writes_final_link_and_marks_suggestion_approved(
 
     with engine.connect() as connection:
         final_link = connection.execute(select(final_links_table)).mappings().one()
-        suggestion = (
+        suggestions = (
             connection.execute(
-                select(suggested_links_table).where(suggested_links_table.c.id == 13)
+                select(
+                    suggested_links_table.c.id,
+                    suggested_links_table.c.local_track_id,
+                    suggested_links_table.c.streaming_track_id,
+                    suggested_links_table.c.status,
+                ).order_by(suggested_links_table.c.id.asc())
             )
             .mappings()
-            .one()
+            .all()
         )
 
     assert final_link["local_track_id"] == 4
     assert final_link["streaming_track_id"] == 9
     assert final_link["approved_at"] is not None
-    assert suggestion["status"] == SUGGESTED_LINK_STATUS_APPROVED
+    assert [dict(suggestion) for suggestion in suggestions] == [
+        {
+            "id": 13,
+            "local_track_id": 4,
+            "streaming_track_id": 9,
+            "status": SUGGESTED_LINK_STATUS_APPROVED,
+        },
+        {
+            "id": 15,
+            "local_track_id": 4,
+            "streaming_track_id": 11,
+            "status": SUGGESTED_LINK_STATUS_REJECTED,
+        },
+        {
+            "id": 16,
+            "local_track_id": 5,
+            "streaming_track_id": 12,
+            "status": SUGGESTED_LINK_STATUS_PENDING,
+        },
+    ]
 
 
 def test_approve_proposal_regenerates_playlist_m3u(
