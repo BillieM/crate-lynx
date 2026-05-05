@@ -122,7 +122,7 @@ Do these before further feature work. They unblock cleaner future development an
 
 ---
 
-### Task 2.1 — Consolidate schema authority + add Alembic-driven test fixture
+### [x] Task 2.1 — Consolidate schema authority + add Alembic-driven test fixture
 
 **Severity:** High
 **Source:** Codex findings 1 + 6 + additional finding A — these are one structural problem and should land together.

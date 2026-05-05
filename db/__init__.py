@@ -1,14 +1,9 @@
-"""Database schema package shared by Alembic and the app runtime."""
+"""Database helpers shared by Alembic and the app runtime."""
 
-__all__ = ["Base", "decrypt_token", "encrypt_token"]
+__all__ = ["decrypt_token", "encrypt_token"]
 
 
 def __getattr__(name: str):
-    if name == "Base":
-        from .models import Base
-
-        return Base
-
     if name == "encrypt_token":
         from .crypto import encrypt_token
 

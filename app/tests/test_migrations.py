@@ -3,16 +3,32 @@ from __future__ import annotations
 from pathlib import Path
 
 from alembic import command
+from alembic.autogenerate import compare_metadata
 from alembic.config import Config
+from alembic.migration import MigrationContext
 from sqlalchemy import create_engine, insert, select, text
+from sqlalchemy.engine import Engine
 from sqlalchemy.exc import IntegrityError
 
+from app.schema import build_app_metadata
 from app.streaming.models import (
     playlist_membership_table,
     streaming_accounts_table,
     streaming_playlists_table,
     streaming_tracks_table,
 )
+
+
+def test_app_metadata_matches_migrated_schema(
+    migrated_database: tuple[str, Engine],
+) -> None:
+    _, engine = migrated_database
+
+    with engine.connect() as connection:
+        migration_context = MigrationContext.configure(connection)
+        diff = compare_metadata(migration_context, build_app_metadata())
+
+    assert diff == []
 
 
 def test_selected_for_sync_migration_backfills_playlists_with_memberships(
