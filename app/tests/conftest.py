@@ -33,3 +33,11 @@ def migrated_database(
         yield database_url, engine
     finally:
         engine.dispose()
+
+
+@pytest.fixture
+def test_data(migrated_database: tuple[str, Engine]):
+    from tests.factories import TestDataFactory
+
+    _, engine = migrated_database
+    return TestDataFactory(engine)

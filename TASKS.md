@@ -214,7 +214,7 @@ Bigger surface area. Tackle once Phase 2 is stable.
 
 ---
 
-### Task 3.2 — Frontend mock-API helper + reusable backend builders
+### [x] Task 3.2 — Frontend mock-API helper + reusable backend builders
 
 **Severity:** Medium
 **Source:** Codex finding 6 (second half — frontend portion + reusable backend builders not covered by Task 2.1's Alembic fixture).
@@ -239,7 +239,7 @@ Trivial; can be folded into any unrelated PR touching the file.
 
 ---
 
-### Task M.1 — Remove unused imports in `streaming/router.py`
+### [x] Task M.1 — Remove unused imports in `streaming/router.py`
 
 **Severity:** Low
 **Source:** Additional finding D (Codex missed).

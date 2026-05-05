@@ -11,6 +11,7 @@ import type {
   StreamingPlaylistConfigResponse,
   StreamingPlaylistsResponse,
 } from "./features/playlists/queries";
+import { blobResponse, createMockApi, emptyResponse, failUnexpectedFetch, jsonResponse } from "./test/mockApi";
 
 const playlistDetailResponse: PlaylistDetailResponse = {
   playlist: {
@@ -240,10 +241,6 @@ type MockPlaylistFetchOptions = {
   selectedSyncHandler?: () => Promise<Response> | Response;
 };
 
-function failUnexpectedFetch(url: string, init?: RequestInit): never {
-  throw new Error(`Unexpected fetch request: ${init?.method ?? "GET"} ${url}`);
-}
-
 function buildPlaylistDetail(id: number, name: string): PlaylistDetailResponse {
   return {
     playlist: {
@@ -295,206 +292,78 @@ function mockPlaylistFetch({
     ...secondaryPlaylistFixtures.map(({ id, trackTitle }) => [String(id), buildPlaylistTracks(id, trackTitle)] as const),
   ]);
 
-  return vi.spyOn(globalThis, "fetch").mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
-    const url = String(input);
-    const playlistEndpointMatch = url.match(/^\/api\/playlists\/(\d+)(\/tracks|\/m3u)?$/);
-
-    if (url === "/api/streaming/playlists") {
-      return {
-        ok: true,
-        json: async () => streamingPlaylistsResponse,
-      } as Response;
-    }
-
-    if (url === "/api/streaming/playlists/config") {
-      return {
-        ok: true,
-        json: async () => streamingPlaylistConfigResponse,
-      } as Response;
-    }
-
-    if (/^\/api\/proposals(?:\?|$)/.test(url)) {
-      if (linkProposalsHandler) {
-        return linkProposalsHandler(url);
-      }
-
-      return {
-        ok: true,
-        json: async () => linkProposalsResponse,
-      } as Response;
-    }
-
-    if (url === "/api/library/tracks") {
-      return {
-        ok: true,
-        json: async () => libraryTracksResponse,
-      } as Response;
-    }
-
-    if (url === "/api/maintenance/missing-locally") {
-      return {
-        ok: true,
-        json: async () => missingLocallyResponse,
-      } as Response;
-    }
-
-    if (url === "/api/maintenance/unidentified") {
-      return {
-        ok: true,
-        json: async () => unidentifiedResponse,
-      } as Response;
-    }
-
-    if (url === "/api/settings/general") {
-      if (generalSettingsHandler) {
-        return generalSettingsHandler();
-      }
-
-      return {
-        ok: true,
-        json: async () => generalSettingsResponse,
-      } as Response;
-    }
-
-    if (url === "/api/settings/ingest-folders" && init?.method === "POST") {
-      if (createIngestFolderHandler) {
-        return createIngestFolderHandler(init);
-      }
-
-      return {
-        ok: true,
-        json: async () => ({ id: 3, path: "/downloads" }),
-      } as Response;
-    }
-
-    const deleteIngestFolderMatch = url.match(/^\/api\/settings\/ingest-folders\/(\d+)$/);
-    if (deleteIngestFolderMatch && init?.method === "DELETE") {
-      if (deleteIngestFolderHandler) {
-        return deleteIngestFolderHandler(deleteIngestFolderMatch[1]);
-      }
-
-      return {
-        ok: true,
-      } as Response;
-    }
-
-    const approveProposalMatch = url.match(/^\/api\/proposals\/(\d+)\/approve$/);
-    if (approveProposalMatch && init?.method === "POST") {
-      if (approveProposalHandler) {
-        return approveProposalHandler(approveProposalMatch[1]);
-      }
-
-      return {
-        ok: true,
-        json: async () => ({
-          final_link_id: 9000 + Number(approveProposalMatch[1]),
-          proposal_id: Number(approveProposalMatch[1]),
-          status: "approved",
-        }),
-      } as Response;
-    }
-
-    const rejectProposalMatch = url.match(/^\/api\/proposals\/(\d+)\/reject$/);
-    if (rejectProposalMatch && init?.method === "POST") {
-      if (rejectProposalHandler) {
-        return rejectProposalHandler(rejectProposalMatch[1]);
-      }
-
-      return {
-        ok: true,
-        json: async () => ({
-          proposal_id: Number(rejectProposalMatch[1]),
-          rejected_at: "2026-05-04T10:00:00Z",
-          status: "rejected",
-        }),
-      } as Response;
-    }
-
-    if (url === "/api/streaming/playlists/31" && init?.method === "PATCH") {
-      return {
-        ok: true,
-        json: async () => ({
-          ...streamingPlaylistConfigResponse.playlists[1],
-          selected_for_sync: true,
-        }),
-      } as Response;
-    }
-
-    if (url === "/api/streaming/playlists/12" && init?.method === "PATCH") {
-      return {
-        ok: true,
-        json: async () => ({
-          ...streamingPlaylistConfigResponse.playlists[0],
-          selected_for_sync: false,
-        }),
-      } as Response;
-    }
-
-    if (playlistEndpointMatch) {
-      const [, playlistId, suffix] = playlistEndpointMatch;
+  return createMockApi()
+    .get("/api/streaming/playlists", () => jsonResponse(streamingPlaylistsResponse))
+    .get("/api/streaming/playlists/config", () => jsonResponse(streamingPlaylistConfigResponse))
+    .get(/^\/api\/proposals(?:\?|$)/, ({ url }) => linkProposalsHandler?.(url) ?? jsonResponse(linkProposalsResponse))
+    .get("/api/library/tracks", () => jsonResponse(libraryTracksResponse))
+    .get("/api/maintenance/missing-locally", () => jsonResponse(missingLocallyResponse))
+    .get("/api/maintenance/unidentified", () => jsonResponse(unidentifiedResponse))
+    .get("/api/settings/general", () => generalSettingsHandler?.() ?? jsonResponse(generalSettingsResponse))
+    .post("/api/settings/ingest-folders", ({ init }) =>
+      createIngestFolderHandler?.(init) ?? jsonResponse({ id: 3, path: "/downloads" }),
+    )
+    .delete(/^\/api\/settings\/ingest-folders\/(\d+)$/, ({ match }) =>
+      deleteIngestFolderHandler?.(match![1]) ?? emptyResponse(),
+    )
+    .post(/^\/api\/proposals\/(\d+)\/approve$/, ({ match }) =>
+      approveProposalHandler?.(match![1]) ??
+      jsonResponse({
+        final_link_id: 9000 + Number(match![1]),
+        proposal_id: Number(match![1]),
+        status: "approved",
+      }),
+    )
+    .post(/^\/api\/proposals\/(\d+)\/reject$/, ({ match }) =>
+      rejectProposalHandler?.(match![1]) ??
+      jsonResponse({
+        proposal_id: Number(match![1]),
+        rejected_at: "2026-05-04T10:00:00Z",
+        status: "rejected",
+      }),
+    )
+    .patch("/api/streaming/playlists/31", () =>
+      jsonResponse({
+        ...streamingPlaylistConfigResponse.playlists[1],
+        selected_for_sync: true,
+      }),
+    )
+    .patch("/api/streaming/playlists/12", () =>
+      jsonResponse({
+        ...streamingPlaylistConfigResponse.playlists[0],
+        selected_for_sync: false,
+      }),
+    )
+    .get(/^\/api\/playlists\/(\d+)(\/tracks|\/m3u)?$/, ({ match }) => {
+      const [, playlistId, suffix] = match!;
 
       if (suffix === "/m3u") {
         const playlistName = playlistDetailsById.get(playlistId)?.playlist.name ?? "Playlist";
 
-        return {
-          ok: true,
-          blob: async () => new Blob(["#EXTM3U\n/library/night-runner.flac\n"], { type: "audio/x-mpegurl" }),
-          headers: new Headers({
+        return blobResponse(new Blob(["#EXTM3U\n/library/night-runner.flac\n"], { type: "audio/x-mpegurl" }), {
+          headers: {
             "Content-Disposition": `attachment; filename="${playlistName}.m3u"`,
-          }),
-        } as Response;
+          },
+        });
       }
 
       if (suffix === "/tracks") {
-        return {
-          ok: true,
-          json: async () => playlistTracksById.get(playlistId) ?? playlistTracksResponse,
-        } as Response;
+        return jsonResponse(playlistTracksById.get(playlistId) ?? playlistTracksResponse);
       }
 
-      return {
-        ok: true,
-        json: async () => playlistDetailsById.get(playlistId) ?? playlistDetailResponse,
-      } as Response;
-    }
-
-    if (url === selectedPlaylistSyncEndpoint && init?.method === "POST") {
-      if (selectedSyncHandler) {
-        return selectedSyncHandler();
-      }
-
-      return {
-        ok: true,
-        json: async () => selectedPlaylistSyncResponse,
-      } as Response;
-    }
-
-    const activePlaylistSyncMatch = url.match(/^\/api\/streaming\/playlists\/(\d+)\/sync$/);
-    if (activePlaylistSyncMatch && init?.method === "POST") {
+      return jsonResponse(playlistDetailsById.get(playlistId) ?? playlistDetailResponse);
+    })
+    .post(selectedPlaylistSyncEndpoint, () => selectedSyncHandler?.() ?? jsonResponse(selectedPlaylistSyncResponse))
+    .post(/^\/api\/streaming\/playlists\/(\d+)\/sync$/, ({ match }) => {
       if (activeSyncHandler) {
         return activeSyncHandler();
       }
 
-      const [, playlistId] = activePlaylistSyncMatch;
-      return {
-        ok: true,
-        json: async () => ({ playlist_id: Number(playlistId), job_id: `playlist-sync-job-${playlistId}` }),
-      } as Response;
-    }
-
-    if (url === metadataRefreshEndpoint && init?.method === "POST") {
-      if (metadataRefreshHandler) {
-        return metadataRefreshHandler();
-      }
-
-      return {
-        ok: true,
-        json: async () => metadataRefreshResponse,
-      } as Response;
-    }
-
-    failUnexpectedFetch(url, init);
-  });
+      const [, playlistId] = match!;
+      return jsonResponse({ playlist_id: Number(playlistId), job_id: `playlist-sync-job-${playlistId}` });
+    })
+    .post(metadataRefreshEndpoint, () => metadataRefreshHandler?.() ?? jsonResponse(metadataRefreshResponse))
+    .mockFetch();
 }
 
 function renderApp(initialEntries = ["/"]) {
@@ -1329,7 +1198,7 @@ describe("App", () => {
         } as Response;
       }
 
-      failUnexpectedFetch(url);
+      return failUnexpectedFetch(url);
     });
 
     renderApp();

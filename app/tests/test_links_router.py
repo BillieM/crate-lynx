@@ -32,82 +32,55 @@ def _call_endpoint(endpoint, *args):
     return result
 
 
-def test_list_proposals_returns_joined_pending_records(tmp_path: Path) -> None:
-    database_url = f"sqlite:///{tmp_path / 'proposals.db'}"
-    engine = create_engine(database_url)
-    local_tracks_metadata.create_all(engine)
-    streaming_metadata.create_all(engine)
-    suggested_links_metadata.create_all(engine)
-
+def test_list_proposals_returns_joined_pending_records(
+    migrated_database,
+    test_data,
+) -> None:
+    database_url, _ = migrated_database
     rejected_at = datetime(2026, 5, 3, 12, 0, tzinfo=UTC)
-
-    with engine.begin() as connection:
-        connection.execute(
-            insert(local_tracks_table),
-            [
-                {
-                    "id": 4,
-                    "file_path": "Artist/Track.mp3",
-                    "library_root_rel_path": "Artist/Track.mp3",
-                    "fingerprint": "fp-4",
-                    "beets_id": 4,
-                },
-                {
-                    "id": 5,
-                    "file_path": "Artist/Rejected.mp3",
-                    "library_root_rel_path": "Artist/Rejected.mp3",
-                    "fingerprint": "fp-5",
-                    "beets_id": 5,
-                },
-            ],
-        )
-        connection.execute(
-            insert(streaming_tracks_table),
-            [
-                {
-                    "id": 9,
-                    "provider_track_id": "ytm-9",
-                    "title": "Track",
-                    "artist": "Artist",
-                    "album": "Album",
-                    "year": 2024,
-                    "isrc": "ABC123456789",
-                    "duration_ms": 123000,
-                },
-                {
-                    "id": 10,
-                    "provider_track_id": "ytm-10",
-                    "title": "Rejected",
-                    "artist": "Artist",
-                    "album": "Album",
-                    "year": 2024,
-                    "isrc": "DEF123456789",
-                    "duration_ms": 124000,
-                },
-            ],
-        )
-        connection.execute(
-            insert(suggested_links_table),
-            [
-                {
-                    "id": 13,
-                    "local_track_id": 4,
-                    "streaming_track_id": 9,
-                    "match_method": "tags",
-                    "score": 0.82,
-                    "status": SUGGESTED_LINK_STATUS_PENDING,
-                },
-                {
-                    "id": 14,
-                    "local_track_id": 5,
-                    "streaming_track_id": 10,
-                    "match_method": "tags",
-                    "score": 0.72,
-                    "status": SUGGESTED_LINK_STATUS_REJECTED,
-                    "rejected_at": rejected_at,
-                },
-            ],
-        )
+    pending_local_id = test_data.local_track(
+        beets_id=4,
+        file_path="Artist/Track.mp3",
+        fingerprint="fp-4",
+    )
+    rejected_local_id = test_data.local_track(
+        beets_id=5,
+        file_path="Artist/Rejected.mp3",
+        fingerprint="fp-5",
+    )
+    pending_streaming_id = test_data.streaming_track(
+        album="Album",
+        artist="Artist",
+        duration_ms=123000,
+        isrc="ABC123456789",
+        provider_track_id="ytm-9",
+        title="Track",
+        year=2024,
+    )
+    rejected_streaming_id = test_data.streaming_track(
+        album="Album",
+        artist="Artist",
+        duration_ms=124000,
+        isrc="DEF123456789",
+        provider_track_id="ytm-10",
+        title="Rejected",
+        year=2024,
+    )
+    proposal_id = test_data.suggested_link(
+        local_track_id=pending_local_id,
+        match_method="tags",
+        score=0.82,
+        status=SUGGESTED_LINK_STATUS_PENDING,
+        streaming_track_id=pending_streaming_id,
+    )
+    test_data.suggested_link(
+        local_track_id=rejected_local_id,
+        match_method="tags",
+        rejected_at=rejected_at,
+        score=0.72,
+        status=SUGGESTED_LINK_STATUS_REJECTED,
+        streaming_track_id=rejected_streaming_id,
+    )
 
     router = create_router(require_database_url=lambda: database_url)
     route = next(
@@ -121,10 +94,10 @@ def test_list_proposals_returns_joined_pending_records(tmp_path: Path) -> None:
     assert response.model_dump(mode="json") == {
         "proposals": [
             {
-                "id": 13,
-                "local_track_id": 4,
+                "id": proposal_id,
+                "local_track_id": pending_local_id,
                 "local_file_path": "Artist/Track.mp3",
-                "streaming_track_id": 9,
+                "streaming_track_id": pending_streaming_id,
                 "streaming_title": "Track",
                 "streaming_artist": "Artist",
                 "streaming_album": "Album",

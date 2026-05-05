@@ -235,22 +235,17 @@ def _call_endpoint(endpoint, *args):
 
 def test_streaming_accounts_endpoint_lists_persisted_accounts(
     monkeypatch,
-    tmp_path: Path,
+    migrated_database,
+    test_data,
 ) -> None:
-    database_url = f"sqlite:///{tmp_path / 'streaming.db'}"
-    engine = create_engine(database_url)
-    metadata.create_all(engine)
+    database_url, _ = migrated_database
     monkeypatch.setenv("DATABASE_URL", database_url)
-
-    with engine.begin() as connection:
-        connection.execute(
-            insert(streaming_accounts_table).values(
-                provider="youtube_music",
-                display_name="Main Account",
-                auth_token_blob="encrypted-token",
-                auth_state="connected",
-            )
-        )
+    test_data.streaming_account(
+        provider="youtube_music",
+        display_name="Main Account",
+        auth_token_blob="encrypted-token",
+        auth_state="connected",
+    )
 
     app = create_app()
     route = next(
@@ -275,23 +270,13 @@ def test_streaming_accounts_endpoint_lists_persisted_accounts(
 
 def test_streaming_playlists_endpoint_lists_synced_playlists(
     monkeypatch,
-    tmp_path: Path,
+    migrated_database,
+    test_data,
 ) -> None:
-    database_url = f"sqlite:///{tmp_path / 'streaming-playlists.db'}"
-    engine = create_engine(database_url)
-    metadata.create_all(engine)
+    database_url, _ = migrated_database
     monkeypatch.setenv("DATABASE_URL", database_url)
     monkeypatch.setenv("TOKEN_ENCRYPTION_KEY", Fernet.generate_key().decode("utf-8"))
-
-    with engine.begin() as connection:
-        account_id = connection.execute(
-            insert(streaming_accounts_table).values(
-                provider="youtube_music",
-                display_name="Main Account",
-                auth_token_blob="encrypted-token",
-                auth_state="connected",
-            )
-        ).inserted_primary_key[0]
+    account_id = test_data.streaming_account()
 
     store = StreamingAccountStore(database_url)
     playlists = store.upsert_playlists(
@@ -356,23 +341,13 @@ def test_streaming_playlists_endpoint_lists_synced_playlists(
 
 def test_streaming_playlists_config_endpoint_lists_all_discovered_playlists(
     monkeypatch,
-    tmp_path: Path,
+    migrated_database,
+    test_data,
 ) -> None:
-    database_url = f"sqlite:///{tmp_path / 'streaming-playlists-config.db'}"
-    engine = create_engine(database_url)
-    metadata.create_all(engine)
+    database_url, _ = migrated_database
     monkeypatch.setenv("DATABASE_URL", database_url)
     monkeypatch.setenv("TOKEN_ENCRYPTION_KEY", Fernet.generate_key().decode("utf-8"))
-
-    with engine.begin() as connection:
-        account_id = connection.execute(
-            insert(streaming_accounts_table).values(
-                provider="youtube_music",
-                display_name="Main Account",
-                auth_token_blob="encrypted-token",
-                auth_state="connected",
-            )
-        ).inserted_primary_key[0]
+    account_id = test_data.streaming_account()
 
     store = StreamingAccountStore(database_url)
     playlists = store.upsert_playlists(
