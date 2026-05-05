@@ -197,7 +197,7 @@ Bigger surface area. Tackle once Phase 2 is stable.
 
 ---
 
-### Task 3.1 — Extract a route/view registry and split `App.tsx`
+### [x] Task 3.1 — Extract a route/view registry and split `App.tsx`
 
 **Severity:** Medium
 **Source:** Codex finding 5.
