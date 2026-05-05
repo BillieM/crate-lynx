@@ -98,13 +98,11 @@ export const shellClasses = {
   navSection: "space-y-2",
   navSectionTitle: "px-3.5 tracking-[0.18em]",
   navStack: "space-y-1",
-  searchField: "px-2.5 py-2",
   sidebar:
     "flex min-h-0 w-[208px] shrink-0 flex-col border-r border-ctp-surface0 bg-ctp-mantle max-md:max-h-[45vh] max-md:w-full max-md:border-b",
   sidebarBody: "flex-1 space-y-4 overflow-y-auto px-0 py-4",
   sidebarHeader: "border-b border-ctp-surface0 px-4 py-3.5",
   sidebarLogo: `flex h-8 w-8 items-center justify-center ${radiusClasses.control} bg-ctp-surface0 text-ctp-mauve`,
-  sidebarSearch: "border-b border-ctp-surface0 px-3.5 py-3",
   topbar:
     "flex h-10 min-h-10 shrink-0 items-center justify-between border-b border-ctp-surface0 bg-ctp-mantle px-4 max-md:h-auto max-md:flex-wrap max-md:gap-2 max-md:py-2",
   topbarIcon: "h-7 w-7",

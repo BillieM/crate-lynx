@@ -1,37 +1,10 @@
-import { useEffect, useState, type CSSProperties } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { Package, Search } from "lucide-react";
+import { type CSSProperties } from "react";
+import { Package } from "lucide-react";
 import { ActionButton } from "../../components/ActionButton";
-import { controlClasses, layoutClasses, shellClasses, surfaceClasses, textClasses } from "../../styles/componentClasses";
+import { controlClasses, layoutClasses, shellClasses, textClasses } from "../../styles/componentClasses";
 import { pillToneClasses } from "../../styles/toneClasses";
 import { getProgressColor } from "./progress";
-import type { NavItem, SearchResponse, SearchResult } from "./types";
-
-async function fetchSearchResults(query: string) {
-  const response = await fetch(`/api/search?q=${encodeURIComponent(query)}`);
-
-  if (!response.ok) {
-    throw new Error(`Search request failed with status ${response.status}`);
-  }
-
-  return (await response.json()) as SearchResponse;
-}
-
-function useDebouncedValue(value: string, delayMs: number) {
-  const [debouncedValue, setDebouncedValue] = useState(value);
-
-  useEffect(() => {
-    const timeoutId = window.setTimeout(() => {
-      setDebouncedValue(value);
-    }, delayMs);
-
-    return () => {
-      window.clearTimeout(timeoutId);
-    };
-  }, [delayMs, value]);
-
-  return debouncedValue;
-}
+import type { NavItem } from "./types";
 
 function getBadgeClasses(tone: NavItem["tone"]) {
   switch (tone) {
@@ -125,87 +98,6 @@ function SidebarSection({
   );
 }
 
-const searchKindLabels: Record<SearchResult["kind"], string> = {
-  playlist: "Playlist",
-  streaming_track: "Streaming",
-  local_track: "Local",
-};
-
-function SearchPanel() {
-  const [query, setQuery] = useState("");
-  const debouncedQuery = useDebouncedValue(query.trim(), 250);
-  const hasQuery = debouncedQuery.length > 0;
-  const { data, error, isFetching } = useQuery({
-    queryKey: ["sidebar-search", debouncedQuery],
-    queryFn: () => fetchSearchResults(debouncedQuery),
-    enabled: hasQuery,
-    retry: false,
-  });
-
-  const results = data?.results ?? [];
-  const isOpen = query.trim().length > 0;
-
-  return (
-    <div className="relative">
-      <label className="sr-only" htmlFor="sidebar-search">
-        Search library
-      </label>
-      <div className={`flex items-center gap-2 text-ctp-subtext0 ${shellClasses.searchField} ${controlClasses.searchFrame}`}>
-        <Search aria-hidden="true" className="h-4 w-4 shrink-0" strokeWidth={1.8} />
-        <input
-          autoComplete="off"
-          className={`w-full border-0 bg-transparent p-0 text-ctp-text outline-none placeholder:text-ctp-subtext0 ${textClasses.input}`}
-          id="sidebar-search"
-          onChange={(event) => setQuery(event.target.value)}
-          placeholder="Search tracks, artists, playlists"
-          type="search"
-          value={query}
-        />
-      </div>
-
-      {isOpen ? (
-        <div className={`absolute inset-x-0 ${controlClasses.popoverOffset} z-10 overflow-hidden ${surfaceClasses.popover}`}>
-          {isFetching ? (
-            <p className={`${surfaceClasses.popoverBody} ${textClasses.caption}`}>Searching library...</p>
-          ) : null}
-
-          {!isFetching && error ? (
-            <p className={`${surfaceClasses.popoverBody} text-ctp-red ${textClasses.status}`}>Search unavailable right now.</p>
-          ) : null}
-
-          {!isFetching && !error && hasQuery && results.length === 0 ? (
-            <p className={`${surfaceClasses.popoverBody} ${textClasses.caption}`}>No matching playlists or tracks.</p>
-          ) : null}
-
-          {!isFetching && !error && results.length > 0 ? (
-            <div className="py-1.5">
-              {results.map((result) => (
-                <button
-                  key={`${result.kind}-${result.id}`}
-                  className="flex w-full items-start gap-3 px-3 py-2.5 text-left transition-colors hover:bg-ctp-surface0/80"
-                  type="button"
-                >
-                  <span className={`mt-0.5 rounded-full bg-ctp-surface0 px-2 py-1 text-ctp-subtext0 ring-1 ring-inset ring-ctp-surface1/70 ${textClasses.microEyebrow}`}>
-                    {searchKindLabels[result.kind]}
-                  </span>
-                  <span className="min-w-0 flex-1">
-                    <span className={`block truncate ${textClasses.status} text-ctp-text`}>
-                      {result.title}
-                    </span>
-                    <span className={`mt-1 block truncate text-ctp-subtext0 ${textClasses.finePrint}`}>
-                      {result.subtitle}
-                    </span>
-                  </span>
-                </button>
-              ))}
-            </div>
-          ) : null}
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
 export function Sidebar({
   activeItemId,
   isSettingsMode,
@@ -250,12 +142,6 @@ export function Sidebar({
           </div>
         </button>
       </div>
-
-      {isSettingsMode ? null : (
-        <div className={shellClasses.sidebarSearch}>
-          <SearchPanel />
-        </div>
-      )}
 
       <div className={shellClasses.sidebarBody}>
         {isSettingsMode ? (

@@ -14,7 +14,6 @@ from app.maintenance.router import create_router as create_maintenance_router
 from app.matching.jobs import MatchingJobEnqueuer
 from app.matching.router import create_router as create_matching_router
 from app.rescue.router import create_router as create_rescue_router
-from app.search.router import create_router as create_search_router
 from app.settings.router import create_router as create_settings_router
 from app.settings.store import GeneralSettingsStore
 from app.streaming.router import create_router as create_streaming_router
@@ -109,7 +108,6 @@ def create_app() -> FastAPI:
         create_rescue_router(require_database_url=require_database_url),
         prefix="/api",
     )
-    app.include_router(create_search_router(require_database_url=require_database_url))
     app.include_router(
         create_library_router(require_database_url=require_database_url),
         prefix="/api",

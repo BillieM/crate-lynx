@@ -576,7 +576,6 @@ describe("App", () => {
       "max-md:py-2",
     );
     expect(screen.getByText("MUSEBRIDGE")).toBeInTheDocument();
-    expect(screen.getByPlaceholderText("Search tracks, artists, playlists")).toBeInTheDocument();
     expect(screen.getByText("Maintenance")).toBeInTheDocument();
     expect(screen.getAllByText("YouTube Music").length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText("Local Library")).toBeInTheDocument();
@@ -1007,7 +1006,6 @@ describe("App", () => {
     expect(screen.getByRole("heading", { level: 2, name: "Settings" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "General" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "YouTube Music sync" })).toBeInTheDocument();
-    expect(screen.queryByPlaceholderText("Search tracks, artists, playlists")).not.toBeInTheDocument();
     expect(screen.queryByText("Maintenance")).not.toBeInTheDocument();
     expect(screen.queryByText("Local Library")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /^Late Night Drive/ })).not.toBeInTheDocument();
@@ -1024,7 +1022,6 @@ describe("App", () => {
     fireEvent.click(screen.getByRole("button", { name: /MUSEBRIDGE/i }));
 
     expect(await screen.findByRole("heading", { level: 1, name: "Link proposals" })).toBeInTheDocument();
-    expect(screen.getByPlaceholderText("Search tracks, artists, playlists")).toBeInTheDocument();
     expect(screen.getByText("Maintenance")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Open app settings" }));
@@ -1466,70 +1463,6 @@ describe("App", () => {
     expect(screen.queryByText("Night Runner")).not.toBeInTheDocument();
     expect(screen.queryByText("Loose Cable")).not.toBeInTheDocument();
     expect(screen.getByText("Showing 1 of 3 tracks")).toBeInTheDocument();
-  });
-
-  it("debounces sidebar search requests and renders compact results", async () => {
-    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async (input: RequestInfo | URL) => {
-      const url = String(input);
-
-      if (url === "/api/streaming/playlists") {
-        return {
-          ok: true,
-          json: async () => ({ playlists: [] }),
-        } as Response;
-      }
-
-      if (url === "/api/streaming/playlists/config") {
-        return {
-          ok: true,
-          json: async () => ({ playlists: [] }),
-        } as Response;
-      }
-
-      if (url === "/api/search?q=mix") {
-        return {
-          ok: true,
-          json: async () => ({
-            query: "mix",
-            results: [
-              {
-                id: 1,
-                kind: "playlist",
-                title: "Morning Mix",
-                subtitle: "Playlist • 12 tracks",
-                route_path: "/youtube-music",
-              },
-              {
-                id: 2,
-                kind: "local_track",
-                title: "Mixdown.mp3",
-                subtitle: "Local file • Artist/Mixdown.mp3",
-                route_path: "/local-library",
-              },
-            ],
-          }),
-        } as Response;
-      }
-
-      failUnexpectedFetch(url);
-    });
-
-    renderApp(["/proposals"]);
-
-    fireEvent.change(screen.getByPlaceholderText("Search tracks, artists, playlists"), {
-      target: { value: "mix" },
-    });
-
-    expect(fetchMock).not.toHaveBeenCalledWith("/api/search?q=mix");
-
-    await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledWith("/api/search?q=mix");
-    });
-
-    expect(await screen.findByText("Morning Mix")).toBeInTheDocument();
-    expect(screen.getByText("Mixdown.mp3")).toBeInTheDocument();
-    expect(screen.getByText("Playlist")).toBeInTheDocument();
-    expect(screen.getByText("Local")).toBeInTheDocument();
   });
 
   it("fails playlist UI tests on unsupported playlist API routes", async () => {
