@@ -1,6 +1,7 @@
 from pathlib import Path
 import sqlite3
 
+import pytest
 from sqlalchemy import create_engine, insert
 
 from app.local_tracks.store import local_tracks_table, metadata as local_metadata
@@ -65,7 +66,7 @@ def test_tag_matcher_returns_best_high_confidence_match(tmp_path: Path) -> None:
     assert result.local_track_id == 1
     assert result.streaming_track_id == 1
     assert result.match_method == "tags"
-    assert result.score == 1.0
+    assert result.score == pytest.approx(0.98)
     assert result.confidence_band is ConfidenceBand.HIGH
 
 
@@ -113,7 +114,7 @@ def test_tag_matcher_returns_medium_confidence_when_score_hits_threshold(
 
     assert result is not None
     assert result.streaming_track_id == 1
-    assert result.score == 0.75
+    assert result.score == pytest.approx(0.705)
     assert result.confidence_band is ConfidenceBand.MEDIUM
 
 
@@ -165,7 +166,7 @@ def test_tag_matcher_returns_low_confidence_when_score_is_below_threshold(
     assert result.confidence_band is ConfidenceBand.LOW
 
 
-def test_tag_matcher_candidates_surface_alternates_for_noisy_metadata(
+def test_tag_matcher_candidates_rank_noisy_title_identity_above_false_positive(
     tmp_path: Path,
 ) -> None:
     database_url = f"sqlite:///{tmp_path / 'app.db'}"
@@ -229,7 +230,74 @@ def test_tag_matcher_candidates_surface_alternates_for_noisy_metadata(
         beets_library=beets_library,
     ).candidates(1, limit=2)
 
-    assert [candidate.streaming_track_id for candidate in candidates] == [230, 1]
+    assert [candidate.streaming_track_id for candidate in candidates] == [1, 230]
+    assert candidates[0].score > candidates[1].score
+
+
+def test_tag_matcher_uses_album_and_duration_only_as_positive_bonuses(
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite:///{tmp_path / 'app.db'}"
+    engine = create_engine(database_url)
+    local_metadata.create_all(engine)
+    streaming_metadata.create_all(engine)
+
+    with engine.begin() as connection:
+        connection.execute(
+            insert(local_tracks_table).values(
+                file_path="Artist/Track.mp3",
+                library_root_rel_path="Artist/Track.mp3",
+                fingerprint="abc123",
+                beets_id=9,
+            )
+        )
+        connection.execute(
+            insert(streaming_tracks_table),
+            [
+                {
+                    "id": 1,
+                    "provider_track_id": "yt-1",
+                    "title": "Track",
+                    "artist": "Artist",
+                    "album": "Album",
+                    "year": 2024,
+                    "isrc": None,
+                    "duration_ms": 183000,
+                },
+                {
+                    "id": 2,
+                    "provider_track_id": "yt-2",
+                    "title": "Track",
+                    "artist": "Artist",
+                    "album": "Different Album",
+                    "year": 2024,
+                    "isrc": None,
+                    "duration_ms": 260000,
+                },
+            ],
+        )
+
+    beets_library = tmp_path / "library.db"
+    with sqlite3.connect(beets_library) as connection:
+        connection.execute(
+            "CREATE TABLE items ("
+            "id INTEGER PRIMARY KEY, title TEXT, artist TEXT, album TEXT, length REAL"
+            ")"
+        )
+        connection.execute(
+            "INSERT INTO items (id, title, artist, album, length) VALUES (?, ?, ?, ?, ?)",
+            (9, "Track", "Artist", "Album", 180.0),
+        )
+        connection.commit()
+
+    candidates = TagMatcher(
+        database_url=database_url,
+        beets_library=beets_library,
+    ).candidates(1, limit=2)
+
+    assert [candidate.streaming_track_id for candidate in candidates] == [1, 2]
+    assert candidates[0].score == 1.0
+    assert candidates[1].score > 0.95
     assert candidates[0].score > candidates[1].score
 
 
