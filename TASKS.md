@@ -6,7 +6,7 @@
   - Weight score as title-first, artist-second; use album and duration only as small positive bonuses.
   - Do not penalize duration differences, because extended/radio/club versions can legitimately differ.
 
-- [ ] Reduce noisy candidate persistence.
+- [x] Reduce noisy candidate persistence.
   - Keep a smaller ranked shortlist per local track.
   - Persist only plausible candidates above the chosen threshold.
   - If all candidates are low confidence, keep only the top fallback candidates so review remains possible without flooding the queue.

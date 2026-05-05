@@ -25,7 +25,9 @@ from app.matching.models import MatchResult
 from app.matching.tags import TagMatcher
 
 
-TAG_SHORTLIST_LIMIT = 10
+TAG_SHORTLIST_LIMIT = 3
+TAG_PLAUSIBLE_SCORE_THRESHOLD = 0.5
+TAG_FALLBACK_LIMIT = 2
 
 SUGGESTED_LINK_STATUS_PENDING = "pending"
 SUGGESTED_LINK_STATUS_APPROVED = "approved"
@@ -199,7 +201,9 @@ class MatchingPipeline:
         if not candidates:
             return None
 
-        persisted = self.suggestion_store.persist_many(candidates)
+        persisted = self.suggestion_store.persist_many(
+            _persistable_tag_candidates(candidates)
+        )
         return persisted[0] if persisted else None
 
 
@@ -216,3 +220,15 @@ def fetch_suggested_links(database_url: str) -> list[dict[str, object]]:
             ).order_by(suggested_links_table.c.id.asc())
         ).mappings()
         return [dict(row) for row in rows]
+
+
+def _persistable_tag_candidates(candidates: list[MatchResult]) -> list[MatchResult]:
+    plausible = [
+        candidate
+        for candidate in candidates
+        if candidate.score >= TAG_PLAUSIBLE_SCORE_THRESHOLD
+    ]
+    if plausible:
+        return plausible
+
+    return candidates[:TAG_FALLBACK_LIMIT]

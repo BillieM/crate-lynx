@@ -45,6 +45,7 @@ class FakeCandidateMatcher:
     results: list[MatchResult]
     calls: list[int]
     seen_excluded_streaming_track_ids: set[int] | frozenset[int] | None = None
+    seen_limit: int | None = None
 
     def candidates(
         self,
@@ -55,6 +56,7 @@ class FakeCandidateMatcher:
     ) -> list[MatchResult]:
         self.calls.append(local_track_id)
         self.seen_excluded_streaming_track_ids = excluded_streaming_track_ids
+        self.seen_limit = limit
         excluded_ids = excluded_streaming_track_ids or frozenset()
         return [
             result
@@ -478,6 +480,132 @@ def test_matching_pipeline_persists_ranked_tag_shortlist(
             "streaming_track_id": 302,
             "match_method": "tags",
             "score": 0.45,
+            "status": "pending",
+        },
+    ]
+
+
+def test_matching_pipeline_persists_only_plausible_tag_candidates(tmp_path) -> None:
+    database_url = f"sqlite:///{tmp_path / 'plausible-tag-shortlist.db'}"
+    engine = create_engine(database_url)
+    suggested_links_metadata.create_all(engine)
+
+    tag_matcher = FakeCandidateMatcher(
+        results=[
+            MatchResult(
+                local_track_id=82,
+                streaming_track_id=401,
+                match_method="tags",
+                score=0.82,
+                confidence_band=ConfidenceBand.MEDIUM,
+            ),
+            MatchResult(
+                local_track_id=82,
+                streaming_track_id=402,
+                match_method="tags",
+                score=0.51,
+                confidence_band=ConfidenceBand.MEDIUM,
+            ),
+            MatchResult(
+                local_track_id=82,
+                streaming_track_id=403,
+                match_method="tags",
+                score=0.49,
+                confidence_band=ConfidenceBand.LOW,
+            ),
+            MatchResult(
+                local_track_id=82,
+                streaming_track_id=404,
+                match_method="tags",
+                score=0.48,
+                confidence_band=ConfidenceBand.LOW,
+            ),
+        ],
+        calls=[],
+    )
+
+    result = MatchingPipeline(
+        database_url=database_url,
+        beets_library=tmp_path / "library.db",
+        isrc_matcher=FakeMatcher(result=None, calls=[]),
+        tag_matcher=tag_matcher,
+    ).run(82)
+
+    assert result is not None
+    assert result.streaming_track_id == 401
+    assert tag_matcher.seen_limit == 3
+    assert fetch_suggested_links(database_url) == [
+        {
+            "local_track_id": 82,
+            "streaming_track_id": 401,
+            "match_method": "tags",
+            "score": 0.82,
+            "status": "pending",
+        },
+        {
+            "local_track_id": 82,
+            "streaming_track_id": 402,
+            "match_method": "tags",
+            "score": 0.51,
+            "status": "pending",
+        },
+    ]
+
+
+def test_matching_pipeline_keeps_top_low_confidence_fallback_candidates(
+    tmp_path,
+) -> None:
+    database_url = f"sqlite:///{tmp_path / 'fallback-tag-shortlist.db'}"
+    engine = create_engine(database_url)
+    suggested_links_metadata.create_all(engine)
+
+    result = MatchingPipeline(
+        database_url=database_url,
+        beets_library=tmp_path / "library.db",
+        isrc_matcher=FakeMatcher(result=None, calls=[]),
+        tag_matcher=FakeCandidateMatcher(
+            results=[
+                MatchResult(
+                    local_track_id=83,
+                    streaming_track_id=501,
+                    match_method="tags",
+                    score=0.49,
+                    confidence_band=ConfidenceBand.LOW,
+                ),
+                MatchResult(
+                    local_track_id=83,
+                    streaming_track_id=502,
+                    match_method="tags",
+                    score=0.42,
+                    confidence_band=ConfidenceBand.LOW,
+                ),
+                MatchResult(
+                    local_track_id=83,
+                    streaming_track_id=503,
+                    match_method="tags",
+                    score=0.31,
+                    confidence_band=ConfidenceBand.LOW,
+                ),
+            ],
+            calls=[],
+        ),
+    ).run(83)
+
+    assert result is not None
+    assert result.streaming_track_id == 501
+    assert fetch_suggested_links(database_url) == [
+        {
+            "local_track_id": 83,
+            "streaming_track_id": 501,
+            "match_method": "tags",
+            "score": 0.49,
+            "status": "pending",
+        },
+        {
+            "local_track_id": 83,
+            "streaming_track_id": 502,
+            "match_method": "tags",
+            "score": 0.42,
             "status": "pending",
         },
     ]
