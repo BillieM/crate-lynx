@@ -52,19 +52,19 @@ Non-goals (v1):
 
 ## T2. Migrate PlaylistView to DataTable filters
 
-- [ ] Files: `app-ui/src/features/playlists/PlaylistView.tsx`, `app-ui/src/features/playlists/FilterChips.test.tsx` (only if assertions change).
-- [ ] Drop `filteredTracks` / `filterPlaylistTracks` import and usage at `PlaylistView.tsx:14,98`. Pass full `tracks` array as `data` (`PlaylistView.tsx:324`).
-- [ ] Add `const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([])`.
-- [ ] `handleFilterChange(nextFilter)` becomes:
+- [x] Files: `app-ui/src/features/playlists/PlaylistView.tsx`, `app-ui/src/features/playlists/FilterChips.test.tsx` (only if assertions change).
+- [x] Drop `filteredTracks` / `filterPlaylistTracks` import and usage at `PlaylistView.tsx:14,98`. Pass full `tracks` array as `data` (`PlaylistView.tsx:324`).
+- [x] Add `const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([])`.
+- [x] `handleFilterChange(nextFilter)` becomes:
   - if `nextFilter === "all"` → `setColumnFilters([])`
   - else → `setColumnFilters([{ id: "status", value: nextFilter }])`
   - drop the manual `setRowSelection({})` (DataTable handles it).
-- [ ] Extend the `useEffect` keyed on `playlistResourceId` (`PlaylistView.tsx:211`) to also clear `columnFilters`.
-- [ ] Pass `columnFilters` and `onColumnFiltersChange={setColumnFilters}` to `<DataTable>`.
-- [ ] Derive `FilterChips`'s `activeFilter` from `columnFilters` (`(columnFilters[0]?.value as PlaylistTrackFilter) ?? "all"`).
-- [ ] Replace the `Showing X of Y tracks` paragraph (`PlaylistView.tsx:305–307`) with a `headerSlot` render prop on `<DataTable>`. `getPlaylistTrackFilterCounts` continues to feed chip badges from the unfiltered `tracks`.
-- [ ] Keep `filterPlaylistTracks` in `filterTracks.ts`; `FilterChips.test.tsx:51–61` still exercises it as a unit.
-- [ ] Existing `PlaylistView.test.tsx` assertions (filter clicks, bulk unlink success / partial failure, account auth error, drawer-open on linked row) must continue to pass.
+- [x] Extend the `useEffect` keyed on `playlistResourceId` (`PlaylistView.tsx:211`) to also clear `columnFilters`.
+- [x] Pass `columnFilters` and `onColumnFiltersChange={setColumnFilters}` to `<DataTable>`.
+- [x] Derive `FilterChips`'s `activeFilter` from `columnFilters` (`(columnFilters[0]?.value as PlaylistTrackFilter) ?? "all"`).
+- [x] Replace the `Showing X of Y tracks` paragraph (`PlaylistView.tsx:305–307`) with a `headerSlot` render prop on `<DataTable>`. `getPlaylistTrackFilterCounts` continues to feed chip badges from the unfiltered `tracks`.
+- [x] Keep `filterPlaylistTracks` in `filterTracks.ts`; `FilterChips.test.tsx:51–61` still exercises it as a unit.
+- [x] Existing `PlaylistView.test.tsx` assertions (filter clicks, bulk unlink success / partial failure, account auth error, drawer-open on linked row) must continue to pass.
 
 **Definition of done:**
 - `cd app-ui && npm run lint && npm test -- playlists/PlaylistView playlists/FilterChips && npm run build`

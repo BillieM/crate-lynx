@@ -1,4 +1,4 @@
-import { createColumnHelper, type RowSelectionState, type SortingState } from "@tanstack/react-table";
+import { createColumnHelper, type ColumnFiltersState, type RowSelectionState, type SortingState } from "@tanstack/react-table";
 import { useQueryClient } from "@tanstack/react-query";
 import { Unlink } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -11,7 +11,7 @@ import { textClasses } from "../../styles/componentClasses";
 import { LocalTrackDetailDrawer } from "../localTracks/LocalTrackDetailDrawer";
 import { useStreamingAccountsQuery } from "../streamingAccounts/queries";
 import { FilterChips } from "./FilterChips";
-import { filterPlaylistTracks, getPlaylistTrackFilterCounts, type PlaylistTrackFilter } from "./filterTracks";
+import { getPlaylistTrackFilterCounts, type PlaylistTrackFilter } from "./filterTracks";
 import { PlaylistHeader } from "./PlaylistHeader";
 import { PlaylistTrackActions } from "./PlaylistTrackActions";
 import { TrackStatusDot } from "./TrackStatusDot";
@@ -85,7 +85,7 @@ export function PlaylistView({
 }) {
   const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
-  const [activeFilter, setActiveFilter] = useState<PlaylistTrackFilter>("all");
+  const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
   const [sorting, setSorting] = useState<SortingState>([]);
   const [bulkUnlinkStatus, setBulkUnlinkStatus] = useState<BulkUnlinkStatus | null>(null);
@@ -95,7 +95,7 @@ export function PlaylistView({
   const accountsQuery = useStreamingAccountsQuery();
   const tracks = useMemo(() => playlistTracksQuery.data?.tracks ?? [], [playlistTracksQuery.data?.tracks]);
   const filterCounts = useMemo(() => getPlaylistTrackFilterCounts(tracks), [tracks]);
-  const filteredTracks = useMemo(() => filterPlaylistTracks(tracks, activeFilter), [activeFilter, tracks]);
+  const activeFilter = (columnFilters[0]?.value as PlaylistTrackFilter | undefined) ?? "all";
   const selectedTracks = useMemo(() => tracks.filter((track) => rowSelection[String(track.id)]), [rowSelection, tracks]);
   const selectedLinkedTracks = useMemo(
     () => selectedTracks.filter((track) => track.status === "linked"),
@@ -209,14 +209,13 @@ export function PlaylistView({
   );
 
   useEffect(() => {
-    setActiveFilter("all");
+    setColumnFilters([]);
     setRowSelection({});
     setBulkUnlinkStatus(null);
   }, [playlistResourceId]);
 
   function handleFilterChange(nextFilter: PlaylistTrackFilter) {
-    setActiveFilter(nextFilter);
-    setRowSelection({});
+    setColumnFilters(nextFilter === "all" ? [] : [{ id: "status", value: nextFilter }]);
   }
 
   async function handleBulkUnlink() {
@@ -300,14 +299,11 @@ export function PlaylistView({
         <StatusMessage body={bulkUnlinkStatus.body} status={bulkUnlinkStatus.status} title={bulkUnlinkStatus.title} />
       ) : null}
       <PlaylistHeader playlist={playlistDetailQuery.data.playlist} />
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="flex flex-wrap items-center gap-3">
         <FilterChips activeFilter={activeFilter} counts={filterCounts} onFilterChange={handleFilterChange} />
-        <p className={`${textClasses.status} text-ctp-subtext0`}>
-          Showing {filteredTracks.length} of {tracks.length} tracks
-        </p>
       </div>
       <div aria-label="Playlist tracks" className="min-h-0 flex-1 overflow-y-auto pb-1 pr-1" role="region">
-        {filteredTracks.length > 0 ? (
+        {tracks.length > 0 ? (
           <DataTable
             bulkActionSlot={
               <ActionButton
@@ -320,13 +316,20 @@ export function PlaylistView({
                 {isUnlinking ? "Unlinking..." : "Unlink"}
               </ActionButton>
             }
+            columnFilters={columnFilters}
             columns={columns}
-            data={filteredTracks}
+            data={tracks}
+            headerSlot={({ filteredRowCount, totalRowCount }) => (
+              <p className={`${textClasses.status} text-ctp-subtext0`}>
+                Showing {filteredRowCount} of {totalRowCount} tracks
+              </p>
+            )}
             rowId={(track) => String(track.id)}
             rowSelection={rowSelection}
             sorting={sorting}
             stickyHeader
             onActivate={openTrackDetail}
+            onColumnFiltersChange={setColumnFilters}
             onRowSelectionChange={setRowSelection}
             onSortingChange={setSorting}
           />

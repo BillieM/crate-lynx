@@ -175,6 +175,31 @@ describe("PlaylistView", () => {
     expect(within(trackRegion).getByRole("button", { name: "Review" })).toBeInTheDocument();
   });
 
+  it("filters playlist rows through the table and clears selected rows", async () => {
+    mockPlaylistApi();
+
+    renderWithProviders(<PlaylistView isActive playlistResourceId={12} />);
+
+    expect(await screen.findByText("Showing 3 of 3 tracks")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select row 1" }));
+    expect(screen.getByText("1 row selected")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Pending 1" }));
+
+    expect(await screen.findByText("Showing 1 of 3 tracks")).toBeInTheDocument();
+    expect(screen.getByText("Pending Signal")).toBeInTheDocument();
+    expect(screen.queryByText("Night Runner")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "All 3" }));
+
+    expect(await screen.findByText("Night Runner")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.queryByText("1 row selected")).not.toBeInTheDocument();
+    });
+    expect(screen.getByRole("checkbox", { name: "Select row 1" })).not.toBeChecked();
+  });
+
   it("opens the local track drawer for a linked row action", async () => {
     mockPlaylistApi();
 
