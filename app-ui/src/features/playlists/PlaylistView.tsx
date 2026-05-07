@@ -9,6 +9,7 @@ import { EmptyStateCard } from "../../components/EmptyStateCard";
 import { StatusMessage } from "../../components/StatusMessage";
 import { textClasses } from "../../styles/componentClasses";
 import { LocalTrackDetailDrawer } from "../localTracks/LocalTrackDetailDrawer";
+import { useStreamingAccountsQuery } from "../streamingAccounts/queries";
 import { FilterChips } from "./FilterChips";
 import { filterPlaylistTracks, getPlaylistTrackFilterCounts, type PlaylistTrackFilter } from "./filterTracks";
 import { PlaylistHeader } from "./PlaylistHeader";
@@ -51,6 +52,14 @@ function getAlbumLabel(album: string | null) {
   return album;
 }
 
+function formatAuthErrorTimestamp(timestamp: string | null) {
+  if (!timestamp) {
+    return "Unknown";
+  }
+
+  return timestamp.replace("T", " ").replace(/(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?$/, "");
+}
+
 async function settleInChunks<TItem, TResult>(
   items: TItem[],
   chunkSize: number,
@@ -83,6 +92,7 @@ export function PlaylistView({
   const [isUnlinking, setIsUnlinking] = useState(false);
   const playlistDetailQuery = usePlaylistDetailQuery(isActive ? playlistResourceId : null);
   const playlistTracksQuery = usePlaylistTracksQuery(isActive ? playlistResourceId : null);
+  const accountsQuery = useStreamingAccountsQuery();
   const tracks = useMemo(() => playlistTracksQuery.data?.tracks ?? [], [playlistTracksQuery.data?.tracks]);
   const filterCounts = useMemo(() => getPlaylistTrackFilterCounts(tracks), [tracks]);
   const filteredTracks = useMemo(() => filterPlaylistTracks(tracks, activeFilter), [activeFilter, tracks]);
@@ -91,6 +101,23 @@ export function PlaylistView({
     () => selectedTracks.filter((track) => track.status === "linked"),
     [selectedTracks],
   );
+  const playlist = playlistDetailQuery.data?.playlist ?? null;
+  const accounts = accountsQuery.data?.accounts ?? [];
+  const activeAccount =
+    playlist !== null
+      ? (accounts.find((account) => account.id === playlist.account_id) ??
+        accounts.find((account) => account.provider === "youtube_music") ??
+        null)
+      : null;
+  const accountAuthError =
+    activeAccount && (activeAccount.auth_state === "error" || activeAccount.auth_error !== null)
+      ? {
+          body: activeAccount.auth_error_at
+            ? `${activeAccount.auth_error ?? "Authentication needs attention."} Reported ${formatAuthErrorTimestamp(activeAccount.auth_error_at)}.`
+            : (activeAccount.auth_error ?? "Authentication needs attention before sync can run."),
+          title: "YouTube Music authentication needs attention",
+        }
+      : null;
   const openTrackDetail = useCallback(
     (track: PlaylistTrack) => {
       if (track.status !== "linked" || track.local_track_id === null) {
@@ -265,6 +292,9 @@ export function PlaylistView({
           status="error"
           title="Playlist sync failed"
         />
+      ) : null}
+      {accountAuthError ? (
+        <StatusMessage body={accountAuthError.body} status="error" title={accountAuthError.title} />
       ) : null}
       {bulkUnlinkStatus ? (
         <StatusMessage body={bulkUnlinkStatus.body} status={bulkUnlinkStatus.status} title={bulkUnlinkStatus.title} />

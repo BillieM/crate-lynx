@@ -214,7 +214,7 @@ Context from investigation:
 ## A4b. Surface `auth_error` and `last_sync_error` near sync controls
 
 - [x] In `app-ui/src/features/playlists/PlaylistSyncConfiguration.tsx` toolbar (around line 374): if `useStreamingAccountsQuery()` returns an account with `auth_state === "error"` or non-null `auth_error`, render a prominent `<StatusMessage status="error">` above the table with the error text + timestamp and disable `Sync enabled`, `Sync rows`, and `Refresh playlist metadata` while in error state. Include a CTA → `/settings/authentication`.
-- [ ] In `app-ui/src/features/playlists/PlaylistView.tsx` (around line 263 where `last_sync_error` is already shown): also render the active account's `auth_error` from `useStreamingAccountsQuery()` so a header-level auth failure is visible during a single-playlist view.
+- [x] In `app-ui/src/features/playlists/PlaylistView.tsx` (around line 263 where `last_sync_error` is already shown): also render the active account's `auth_error` from `useStreamingAccountsQuery()` so a header-level auth failure is visible during a single-playlist view.
 - [ ] Tests:
   - `PlaylistSyncConfiguration.test.tsx`: mock accounts with `auth_state="error"` → assert error message, timestamp, CTA visible; assert sync buttons disabled.
   - `PlaylistView.test.tsx`: mock accounts with non-null `auth_error` → assert it renders alongside `last_sync_error`.

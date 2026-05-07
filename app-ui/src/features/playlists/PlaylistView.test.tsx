@@ -99,6 +99,22 @@ function mockPlaylistApi({
     .get("/api/playlists/12", () => jsonResponse(playlistDetailResponse))
     .get("/api/playlists/12/tracks", () => jsonResponse(tracksResponse))
     .get("/api/streaming/playlists", () => jsonResponse({ playlists: [] }))
+    .get("/api/streaming/accounts", () =>
+      jsonResponse({
+        accounts: [
+          {
+            auth_error: null,
+            auth_error_at: null,
+            auth_state: "connected",
+            created_at: "2026-05-01T09:00:00Z",
+            display_name: "YouTube Music",
+            id: 4,
+            provider: "youtube_music",
+            updated_at: "2026-05-01T09:00:00Z",
+          },
+        ],
+      }),
+    )
     .delete("/api/final-links/9001", deleteHandler)
     .get("/api/local-tracks/501", () =>
       jsonResponse({
