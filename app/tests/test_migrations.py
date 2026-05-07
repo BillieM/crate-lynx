@@ -6,7 +6,8 @@ from alembic import command
 from alembic.autogenerate import compare_metadata
 from alembic.config import Config
 from alembic.migration import MigrationContext
-from sqlalchemy import create_engine, insert, select, text
+from beets.library import Album, Item
+from sqlalchemy import create_engine, insert, inspect, select, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.exc import IntegrityError
 
@@ -29,6 +30,29 @@ def test_app_metadata_matches_migrated_schema(
         diff = compare_metadata(migration_context, build_app_metadata())
 
     assert diff == []
+
+
+def test_beets_mirror_migration_matches_beets_field_set(
+    migrated_database: tuple[str, Engine],
+) -> None:
+    _, engine = migrated_database
+
+    inspector = inspect(engine)
+
+    item_columns = {column["name"] for column in inspector.get_columns("beets_items")}
+    album_columns = {column["name"] for column in inspector.get_columns("beets_albums")}
+
+    assert item_columns == _beets_column_names(Item._fields, id_column_name="beets_id")
+    assert album_columns == _beets_column_names(
+        Album._fields,
+        id_column_name="beets_album_id",
+    )
+
+
+def _beets_column_names(fields: dict[str, object], *, id_column_name: str) -> set[str]:
+    return {
+        id_column_name if field_name == "id" else field_name for field_name in fields
+    }
 
 
 def test_selected_for_sync_migration_backfills_playlists_with_memberships(

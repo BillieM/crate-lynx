@@ -33,17 +33,17 @@ Non-goals:
 - [x] New module `app/app/ingestion/beets_mirror.py` exporting a `metadata: MetaData` and four tables: `beets_items_table`, `beets_albums_table`, `beets_item_attributes_table`, `beets_album_attributes_table`.
 - [x] Wire the new metadata into `app/app/schema.py:34` `_app_tables()`.
 - [x] New Alembic revision under `db/versions/` (e.g. `b9c2f4a8e7d1_add_beets_mirror_tables.py`) with `down_revision = "9b7e3c2d1a4f"`.
-- [ ] `beets_items_table`: keyed by `beets_id` (PK, integer), with typed columns enumerated literally from `beets.library.Item._fields` in the pinned `beets==2.2.0`.
-- [ ] `beets_albums_table`: keyed by `beets_album_id` (PK, integer), with typed columns enumerated literally from `beets.library.Album._fields`.
-- [ ] `beets_item_attributes_table` and `beets_album_attributes_table`: `(id PK, entity_id INT NOT NULL, key TEXT NOT NULL, value TEXT, created_at, updated_at)` with `UNIQUE(entity_id, key)` and FK `entity_id → beets_items.beets_id` / `beets_albums.beets_album_id`.
-- [ ] Type mapping helper that maps `beets.dbcore.types.*` → SQLAlchemy column type via one switch:
+- [x] `beets_items_table`: keyed by `beets_id` (PK, integer), with typed columns enumerated literally from `beets.library.Item._fields` in the pinned `beets==2.2.0`.
+- [x] `beets_albums_table`: keyed by `beets_album_id` (PK, integer), with typed columns enumerated literally from `beets.library.Album._fields`.
+- [x] `beets_item_attributes_table` and `beets_album_attributes_table`: `(id PK, entity_id INT NOT NULL, key TEXT NOT NULL, value TEXT, created_at, updated_at)` with `UNIQUE(entity_id, key)` and FK `entity_id → beets_items.beets_id` / `beets_albums.beets_album_id`.
+- [x] Type mapping helper that maps `beets.dbcore.types.*` → SQLAlchemy column type via one switch:
   - string/path fields -> text
   - id/integer/padded integer fields -> integer
   - booleans -> boolean
   - duration/float/gain (`NULL_FLOAT`) fields -> float
   - Beets `DateType` fields -> timezone-aware timestamp
-- [ ] Preserve the existing `local_tracks.beets_id` column unchanged. Do not move app-owned state into the mirror tables.
-- [ ] Add a `test_beets_mirror_migration_matches_beets_field_set` test in `app/tests/test_migrations.py` that imports `beets.library.Item._fields` / `Album._fields` and asserts each fixed field name has a column in the migrated DB.
+- [x] Preserve the existing `local_tracks.beets_id` column unchanged. Do not move app-owned state into the mirror tables.
+- [x] Add a `test_beets_mirror_migration_matches_beets_field_set` test in `app/tests/test_migrations.py` that imports `beets.library.Item._fields` / `Album._fields` and asserts each fixed field name has a column in the migrated DB.
 
 **Definition of done:**
 - `source .venv/bin/activate && ruff check . && ruff format --check . && pytest app/tests/test_migrations.py`
