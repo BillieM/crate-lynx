@@ -23,6 +23,7 @@ class MissingLocallyTrackRecord:
     album: str | None
     duration_ms: int | None
     playlist_count: int
+    playlist_ids: list[int]
     playlist_titles: list[str]
 
 
@@ -55,6 +56,7 @@ class _MissingLocallyAccumulator:
             album=self.album,
             duration_ms=self.duration_ms,
             playlist_count=len(self.playlist_titles_by_id),
+            playlist_ids=list(self.playlist_titles_by_id.keys()),
             playlist_titles=list(self.playlist_titles_by_id.values()),
         )
 

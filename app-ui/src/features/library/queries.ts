@@ -19,6 +19,7 @@ export type LibraryTrack = {
   duration_ms: number | null;
   file_path: string;
   file_status: LibraryFileStatus;
+  final_link_id: number | null;
   id: number;
   library_root_rel_path: string;
   link_status: LibraryLinkStatus;

@@ -9,6 +9,7 @@ class MissingLocallyTrackResponse(BaseModel):
     album: str | None
     duration_ms: int | None
     playlist_count: int
+    playlist_ids: list[int]
     playlist_titles: list[str]
 
 

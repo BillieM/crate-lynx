@@ -3,6 +3,7 @@ from pydantic import BaseModel
 
 class LibraryTrackResponse(BaseModel):
     id: int
+    final_link_id: int | None
     title: str
     artist: str | None
     album: str | None

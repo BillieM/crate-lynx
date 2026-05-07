@@ -1,9 +1,7 @@
 import { useMemo, type CSSProperties, type ReactNode } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useLocation, useNavigate } from "react-router-dom";
 import { ActionButton } from "../../components/ActionButton";
 import { EmptyStateCard } from "../../components/EmptyStateCard";
-import { FilterChipGroup, type FilterChipOption } from "../../components/FilterChipGroup";
 import { Pill, type PillTone } from "../../components/Pill";
 import { controlClasses, layoutClasses, surfaceClasses, textClasses } from "../../styles/componentClasses";
 import {
@@ -11,7 +9,6 @@ import {
   playlistQueryKeys,
   rejectLinkProposal,
   type LinkProposal,
-  type LinkProposalConfidenceBand,
   type LinkProposalsResponse,
   useLinkProposalsQuery,
 } from "../playlists/queries";
@@ -20,51 +17,12 @@ type LinkProposalGroup = {
   candidates: LinkProposal[];
   localTrackId: number;
 };
-type GroupedLinkProposalGroups = Record<LinkProposalConfidenceBand, LinkProposalGroup[]>;
-type LinkProposalConfidenceBandFilter = LinkProposalConfidenceBand | "all";
 type OptimisticProposalMutationContext = {
   previousProposalQueries: [readonly unknown[], LinkProposalsResponse | undefined][];
 };
 
-const proposalBandOrder = ["high", "medium", "low"] satisfies LinkProposalConfidenceBand[];
-const proposalBandLabels = {
-  high: "High",
-  low: "Low",
-  medium: "Medium",
-} satisfies Record<LinkProposalConfidenceBand, string>;
-const proposalBandFilterChips = [
-  {
-    label: "All",
-    tone: "all",
-    value: "all",
-  },
-  {
-    label: "High",
-    tone: "linked",
-    value: "high",
-  },
-  {
-    label: "Medium",
-    tone: "pending",
-    value: "medium",
-  },
-  {
-    label: "Low",
-    tone: "unlinked",
-    value: "low",
-  },
-] satisfies FilterChipOption<LinkProposalConfidenceBandFilter>[];
-
 function clampPercentage(matchPercentage: number) {
   return Math.max(0, Math.min(100, matchPercentage));
-}
-
-function getEmptyProposalGroupBuckets(): GroupedLinkProposalGroups {
-  return {
-    high: [],
-    low: [],
-    medium: [],
-  };
 }
 
 function sortProposalCandidates(proposals: LinkProposal[]) {
@@ -77,26 +35,28 @@ function sortProposalCandidates(proposals: LinkProposal[]) {
   });
 }
 
-function groupLinkProposalsByBand(proposals: LinkProposal[]): GroupedLinkProposalGroups {
+function groupLinkProposalsByLocalTrack(proposals: LinkProposal[]): LinkProposalGroup[] {
   const proposalsByTrack = proposals.reduce<Map<number, LinkProposal[]>>((groups, proposal) => {
     const existingGroup = groups.get(proposal.local_track_id) ?? [];
     existingGroup.push(proposal);
     groups.set(proposal.local_track_id, existingGroup);
     return groups;
   }, new Map());
-  const groupedByBand = getEmptyProposalGroupBuckets();
 
-  Array.from(proposalsByTrack.entries())
+  return Array.from(proposalsByTrack.entries())
     .map(([localTrackId, trackProposals]) => ({
       candidates: sortProposalCandidates(trackProposals),
       localTrackId,
     }))
-    .sort((left, right) => right.candidates[0].score - left.candidates[0].score)
-    .forEach((proposalGroup) => {
-      groupedByBand[proposalGroup.candidates[0].confidence_band].push(proposalGroup);
-    });
+    .sort((left, right) => {
+      const scoreDifference = right.candidates[0].score - left.candidates[0].score;
 
-  return groupedByBand;
+      if (scoreDifference !== 0) {
+        return scoreDifference;
+      }
+
+      return left.localTrackId - right.localTrackId;
+    });
 }
 
 async function removeProposalCandidateFromCache(
@@ -143,10 +103,6 @@ function restoreProposalCache(
   context?.previousProposalQueries.forEach(([queryKey, data]) => {
     queryClient.setQueryData(queryKey, data);
   });
-}
-
-function isProposalConfidenceBand(value: string | null): value is LinkProposalConfidenceBand {
-  return value === "high" || value === "medium" || value === "low";
 }
 
 function getLocalTrackLabel(proposal: LinkProposal) {
@@ -198,15 +154,8 @@ function getProposalScoreColorClass(scorePercentage: number) {
 }
 
 export function LinkProposalsView() {
-  const location = useLocation();
-  const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const activeConfidenceBand = useMemo(() => {
-    const band = new URLSearchParams(location.search).get("band");
-    return isProposalConfidenceBand(band) ? band : null;
-  }, [location.search]);
-  const activeFilter: LinkProposalConfidenceBandFilter = activeConfidenceBand ?? "all";
-  const proposalsQuery = useLinkProposalsQuery({ confidenceBand: activeConfidenceBand });
+  const proposalsQuery = useLinkProposalsQuery();
   const approveMutation = useMutation({
     mutationFn: approveLinkProposal,
     onMutate: (proposalId) => removeProposalCandidateFromCache(queryClient, proposalId, { removeLocalTrackGroup: true }),
@@ -229,23 +178,11 @@ export function LinkProposalsView() {
   });
   const proposals = proposalsQuery.data?.proposals;
   const proposalCount = proposals?.length ?? 0;
-  const groupedProposals = useMemo(() => groupLinkProposalsByBand(proposals ?? []), [proposals]);
+  const proposalGroups = useMemo(() => groupLinkProposalsByLocalTrack(proposals ?? []), [proposals]);
   const activeApproveProposalId = approveMutation.isPending ? String(approveMutation.variables) : null;
   const activeRejectProposalId = rejectMutation.isPending ? String(rejectMutation.variables) : null;
   const failedApproveProposalId = approveMutation.isError ? String(approveMutation.variables) : null;
   const failedRejectProposalId = rejectMutation.isError ? String(rejectMutation.variables) : null;
-  const updateConfidenceBandFilter = (filter: LinkProposalConfidenceBandFilter) => {
-    const params = new URLSearchParams(location.search);
-
-    if (filter === "all") {
-      params.delete("band");
-    } else {
-      params.set("band", filter);
-    }
-
-    const search = params.toString();
-    navigate({ pathname: location.pathname, search: search ? `?${search}` : "" });
-  };
   const renderProposalFrame = (children: ReactNode) => (
     <section className="flex min-h-0 flex-1 flex-col gap-4">
       <div className="flex flex-wrap items-end justify-between gap-3">
@@ -253,17 +190,10 @@ export function LinkProposalsView() {
           <h2 className={textClasses.sectionTitle}>Proposal queue</h2>
           <p className={`mt-1 ${textClasses.bodyMuted}`}>
             {proposalsQuery.isSuccess
-              ? `${proposalCount} pending suggestions grouped by confidence.`
-              : "Pending suggestions grouped by confidence."}
+              ? `${proposalCount} pending suggestions sorted by confidence.`
+              : "Pending suggestions sorted by confidence."}
           </p>
         </div>
-        <FilterChipGroup
-          activeValue={activeFilter}
-          ariaLabel="Confidence band filters"
-          density="compact"
-          onValueChange={updateConfidenceBandFilter}
-          options={proposalBandFilterChips}
-        />
       </div>
       {children}
     </section>
@@ -295,61 +225,33 @@ export function LinkProposalsView() {
   }
 
   if (proposalCount === 0) {
-    const emptyTitle = activeConfidenceBand
-      ? `No ${proposalBandLabels[activeConfidenceBand].toLowerCase()} confidence proposals`
-      : "Proposal queue";
-    const emptyBody = activeConfidenceBand
-      ? "Switch confidence bands or clear the filter to review other pending suggestions."
-      : "Pending local-to-streaming match suggestions will appear here as matching jobs finish.";
-
     return renderProposalFrame(
       <div className="flex min-h-0 flex-1 items-center justify-center">
-        <EmptyStateCard body={emptyBody} className={`${layoutClasses.emptyStateNarrow} text-left`} title={emptyTitle} />
+        <EmptyStateCard
+          body="Pending local-to-streaming match suggestions will appear here as matching jobs finish."
+          className={`${layoutClasses.emptyStateNarrow} text-left`}
+          title="Proposal queue"
+        />
       </div>,
     );
   }
 
   return renderProposalFrame(
     <div className="min-h-0 flex-1 overflow-y-auto pr-1">
-      <div className="grid gap-4">
-        {proposalBandOrder.map((band) => {
-          const bandProposalGroups = groupedProposals[band];
-          const label = proposalBandLabels[band];
-
-          return (
-            <section aria-labelledby={`proposal-band-${band}`} className="grid gap-3" key={band}>
-              <header className="flex items-center justify-between gap-3">
-                <h3 className={textClasses.proposalTitle} id={`proposal-band-${band}`}>
-                  {label}
-                </h3>
-                <span className={controlClasses.countBadge}>
-                  {bandProposalGroups.length}
-                </span>
-              </header>
-              {bandProposalGroups.length > 0 ? (
-                <ul className="grid gap-3">
-                  {bandProposalGroups.map((proposalGroup) => (
-                    <ProposalGroupCard
-                      activeApproveProposalId={activeApproveProposalId}
-                      activeRejectProposalId={activeRejectProposalId}
-                      failedApproveProposalId={failedApproveProposalId}
-                      failedRejectProposalId={failedRejectProposalId}
-                      key={proposalGroup.localTrackId}
-                      onApprove={(proposalId) => approveMutation.mutate(proposalId)}
-                      onReject={(proposalId) => rejectMutation.mutate(proposalId)}
-                      proposalGroup={proposalGroup}
-                    />
-                  ))}
-                </ul>
-              ) : (
-                <p className={`${surfaceClasses.dashedPlaceholder} ${textClasses.bodyMuted}`}>
-                  No {label.toLowerCase()} confidence proposals.
-                </p>
-              )}
-            </section>
-          );
-        })}
-      </div>
+      <ul className="grid gap-3">
+        {proposalGroups.map((proposalGroup) => (
+          <ProposalGroupCard
+            activeApproveProposalId={activeApproveProposalId}
+            activeRejectProposalId={activeRejectProposalId}
+            failedApproveProposalId={failedApproveProposalId}
+            failedRejectProposalId={failedRejectProposalId}
+            key={proposalGroup.localTrackId}
+            onApprove={(proposalId) => approveMutation.mutate(proposalId)}
+            onReject={(proposalId) => rejectMutation.mutate(proposalId)}
+            proposalGroup={proposalGroup}
+          />
+        ))}
+      </ul>
     </div>,
   );
 }
@@ -377,7 +279,7 @@ function ProposalGroupCard({
 
   return (
     <li className={surfaceClasses.rowCardCompact}>
-      <div className="grid gap-3 xl:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
+      <div className="grid gap-4">
         <div className="min-w-0">
           <p className={`${textClasses.eyebrow} tracking-normal text-ctp-subtext0`}>Local track</p>
           <p className={`mt-1 truncate ${textClasses.proposalTitle}`}>{getLocalTrackLabel(topProposal)}</p>

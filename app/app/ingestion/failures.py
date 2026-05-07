@@ -12,6 +12,7 @@ from sqlalchemy import (
     String,
     Table,
     create_engine,
+    delete,
     func,
     insert,
 )
@@ -70,3 +71,14 @@ class FailedIngestionAttemptStore:
                     local_track_id=local_track_id,
                 )
             )
+
+    def clear_for_source_path(self, source_path: Path | str) -> int:
+        path = Path(source_path)
+        with self._engine.begin() as connection:
+            result = connection.execute(
+                delete(failed_ingestion_attempts_table).where(
+                    failed_ingestion_attempts_table.c.source_path == str(path)
+                )
+            )
+
+        return result.rowcount or 0

@@ -18,6 +18,7 @@ from app.streaming.models import streaming_tracks_table
 @dataclass(frozen=True, slots=True)
 class LibraryTrackRecord:
     id: int
+    final_link_id: int | None
     title: str
     artist: str | None
     album: str | None
@@ -140,6 +141,7 @@ class LibraryStore:
             tracks = [
                 LibraryTrackRecord(
                     id=row["id"],
+                    final_link_id=row["final_link_id"],
                     title=(
                         row["final_title"]
                         or row["pending_title"]

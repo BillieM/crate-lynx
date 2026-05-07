@@ -188,6 +188,7 @@ const libraryTracksResponse: LibraryTracksResponse = {
       duration_ms: 245000,
       file_path: "/library/Synthwave/The Midnight/Nocturnal/Night Shift.mp3",
       file_status: "available",
+      final_link_id: 9001,
       id: 1001,
       library_root_rel_path: "Synthwave/The Midnight/Nocturnal/Night Shift.mp3",
       link_status: "linked",
@@ -204,6 +205,7 @@ const missingLocallyResponse: MissingLocallyResponse = {
       duration_ms: 270000,
       id: 5001,
       playlist_count: 2,
+      playlist_ids: [11, 12],
       playlist_titles: ["Late Night Drive", "Focus Queue"],
       provider_track_id: "ytm:VLPL_missing_018",
       title: "Open Eye Signal",
@@ -525,10 +527,10 @@ describe("App", () => {
 
     expect(screen.getByRole("heading", { level: 1, name: "Link proposals" })).toBeInTheDocument();
     expect(await screen.findByRole("heading", { level: 2, name: "Proposal queue" })).toBeInTheDocument();
-    expect(await screen.findByRole("heading", { level: 3, name: "High" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { level: 3, name: "Medium" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { level: 3, name: "Low" })).toBeInTheDocument();
-    expect(screen.getByText("Night Runner.mp3")).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { level: 3, name: "High" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { level: 3, name: "Medium" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { level: 3, name: "Low" })).not.toBeInTheDocument();
+    expect(await screen.findByText("Night Runner.mp3")).toBeInTheDocument();
     expect(screen.getByText("Pending Signal.mp3")).toBeInTheDocument();
     expect(screen.getByText("Loose Cable.mp3")).toBeInTheDocument();
     expect(document.getElementById("proposals")).toHaveAttribute("data-view-active", "true");
@@ -608,60 +610,59 @@ describe("App", () => {
     expect(document.getElementById("playlists")).toHaveAttribute("data-view-active", "false");
   });
 
-  it("renders link proposals grouped by confidence band with proposal details", async () => {
+  it("renders link proposals together in score order with proposal details", async () => {
     mockPlaylistFetch();
 
     renderApp(["/proposals"]);
 
     expect(await screen.findByRole("heading", { level: 2, name: "Proposal queue" })).toBeInTheDocument();
 
-    const highSection = (await screen.findByRole("heading", { level: 3, name: "High" })).closest("section");
-    const mediumSection = screen.getByRole("heading", { level: 3, name: "Medium" }).closest("section");
-    const lowSection = screen.getByRole("heading", { level: 3, name: "Low" }).closest("section");
+    expect(screen.queryByRole("heading", { level: 3, name: "High" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { level: 3, name: "Medium" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { level: 3, name: "Low" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("group", { name: "Confidence band filters" })).not.toBeInTheDocument();
 
-    expect(highSection).not.toBeNull();
-    expect(mediumSection).not.toBeNull();
-    expect(lowSection).not.toBeNull();
-    expect(within(highSection!).getAllByText("1")).toHaveLength(2);
-    expect(within(highSection!).getByText("Night Runner.mp3")).toBeInTheDocument();
-    expect(within(highSection!).getByText("Night Runner")).toBeInTheDocument();
-    expect(within(highSection!).getByText("Frame Delay")).toBeInTheDocument();
-    expect(within(highSection!).getByText("Tag")).toBeInTheDocument();
-    expect(within(highSection!).getByText("92%")).toBeInTheDocument();
-    expect(within(mediumSection!).getByText("Pending Signal.mp3")).toBeInTheDocument();
-    expect(within(mediumSection!).getByText("Album unavailable")).toBeInTheDocument();
-    expect(within(lowSection!).getByText("Loose Cable.mp3")).toBeInTheDocument();
-    expect(within(lowSection!).getByText("Tag")).toBeInTheDocument();
+    const nightRunnerCard = (await screen.findByText("Night Runner.mp3")).closest("li");
+    const pendingSignalCard = screen.getByText("Pending Signal.mp3").closest("li");
+    const looseCableCard = screen.getByText("Loose Cable.mp3").closest("li");
+
+    expect(nightRunnerCard).not.toBeNull();
+    expect(pendingSignalCard).not.toBeNull();
+    expect(looseCableCard).not.toBeNull();
+    expect(nightRunnerCard!.compareDocumentPosition(pendingSignalCard!)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(pendingSignalCard!.compareDocumentPosition(looseCableCard!)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(within(nightRunnerCard!).getByText("1")).toBeInTheDocument();
+    expect(within(nightRunnerCard!).getByText("Night Runner")).toBeInTheDocument();
+    expect(within(nightRunnerCard!).getByText("Frame Delay")).toBeInTheDocument();
+    expect(within(nightRunnerCard!).getByText("Tag")).toBeInTheDocument();
+    expect(within(nightRunnerCard!).getByText("92%")).toBeInTheDocument();
+    expect(within(pendingSignalCard!).getByText("Album unavailable")).toBeInTheDocument();
+    expect(within(looseCableCard!).getByText("Tag")).toBeInTheDocument();
+    expect(
+      within(nightRunnerCard!)
+        .getByText("Local track")
+        .compareDocumentPosition(within(nightRunnerCard!).getByText("Ranked candidates")),
+    ).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
   });
 
-  it("filters link proposals by confidence band", async () => {
+  it("ignores legacy proposal confidence-band URL state", async () => {
     const fetchMock = mockPlaylistFetch({
-      linkProposalsHandler: (url) => {
-        const [, queryString = ""] = url.split("?");
-        const band = new URLSearchParams(queryString).get("band");
-        const proposals = band
-          ? linkProposalsResponse.proposals.filter((proposal) => proposal.confidence_band === band)
-          : linkProposalsResponse.proposals;
-
+      linkProposalsHandler: () => {
         return {
           ok: true,
-          json: async () => ({ proposals }),
+          json: async () => linkProposalsResponse,
         } as Response;
       },
     });
 
-    renderApp(["/proposals"]);
+    renderApp(["/proposals?band=high"]);
 
     expect(await screen.findByText("Night Runner.mp3")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Medium" }));
-
-    expect(await screen.findByText("Pending Signal.mp3")).toBeInTheDocument();
-    await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledWith("/api/proposals?band=medium");
-      expect(screen.queryByText("Night Runner.mp3")).not.toBeInTheDocument();
-      expect(screen.queryByText("Loose Cable.mp3")).not.toBeInTheDocument();
-    });
-    expect(screen.getByRole("button", { name: "Medium" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByText("Pending Signal.mp3")).toBeInTheDocument();
+    expect(screen.getByText("Loose Cable.mp3")).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledWith("/api/proposals");
+    expect(fetchMock).not.toHaveBeenCalledWith("/api/proposals?band=high");
+    expect(screen.queryByRole("group", { name: "Confidence band filters" })).not.toBeInTheDocument();
   });
 
   it("optimistically removes approved and rejected link proposals", async () => {
@@ -708,7 +709,7 @@ describe("App", () => {
     } as Response);
   });
 
-  it("keeps proposal filters visible while proposals are loading", async () => {
+  it("renders proposal loading state without confidence filters", async () => {
     mockPlaylistFetch({
       linkProposalsHandler: () => new Promise<Response>(() => {}),
     });
@@ -716,11 +717,10 @@ describe("App", () => {
     renderApp(["/proposals"]);
 
     expect(await screen.findByRole("status")).toHaveTextContent("Loading proposals");
-    expect(screen.getByRole("group", { name: "Confidence band filters" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "All" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.queryByRole("group", { name: "Confidence band filters" })).not.toBeInTheDocument();
   });
 
-  it("keeps proposal filters visible when proposal loading fails", async () => {
+  it("renders proposal loading errors without confidence filters", async () => {
     mockPlaylistFetch({
       linkProposalsHandler: () =>
         ({
@@ -732,10 +732,10 @@ describe("App", () => {
     renderApp(["/proposals"]);
 
     expect(await screen.findByRole("alert")).toHaveTextContent("Proposals unavailable");
-    expect(screen.getByRole("group", { name: "Confidence band filters" })).toBeInTheDocument();
+    expect(screen.queryByRole("group", { name: "Confidence band filters" })).not.toBeInTheDocument();
   });
 
-  it("keeps proposal filters visible for an empty filtered proposal result", async () => {
+  it("renders an empty proposal result without confidence filters", async () => {
     const fetchMock = mockPlaylistFetch({
       linkProposalsHandler: () =>
         ({
@@ -746,13 +746,9 @@ describe("App", () => {
 
     renderApp(["/proposals?band=high"]);
 
-    expect(await screen.findByRole("heading", { level: 2, name: "No high confidence proposals" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "High" })).toHaveAttribute("aria-pressed", "true");
-    fireEvent.click(screen.getByRole("button", { name: "All" }));
-
-    await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledWith("/api/proposals");
-    });
+    expect(await screen.findByRole("heading", { level: 2, name: "Proposal queue" })).toBeInTheDocument();
+    expect(screen.queryByRole("group", { name: "Confidence band filters" })).not.toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledWith("/api/proposals");
   });
 
   it("opens General settings from the topbar and renders ingest folders", async () => {

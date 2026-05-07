@@ -26,6 +26,7 @@ def create_router(*, require_database_url: Callable[[], str]) -> APIRouter:
             tracks=[
                 LibraryTrackResponse(
                     id=track.id,
+                    final_link_id=track.final_link_id,
                     title=track.title,
                     artist=track.artist,
                     album=track.album,

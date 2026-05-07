@@ -8,6 +8,7 @@ export type MissingLocallyTrack = {
   duration_ms: number | null;
   id: number;
   playlist_count: number;
+  playlist_ids: number[];
   playlist_titles: string[];
   provider_track_id: string;
   title: string;

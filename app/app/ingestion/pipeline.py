@@ -6,6 +6,7 @@ from pathlib import Path
 import shutil
 import sqlite3
 import subprocess
+import threading
 import uuid
 
 from app.local_tracks.store import LocalTrackStore
@@ -75,7 +76,8 @@ class AudioPreparer:
         )
 
     def _transcode_to_mp3(self, source_path: Path, output_path: Path) -> None:
-        subprocess.run(
+        _run_checked(
+            "FFmpeg transcode",
             [
                 self.ffmpeg_binary,
                 "-y",
@@ -85,9 +87,6 @@ class AudioPreparer:
                 "libmp3lame",
                 str(output_path),
             ],
-            check=True,
-            capture_output=True,
-            text=True,
         )
 
 
@@ -96,6 +95,9 @@ class BeetsImporter:
     beet_binary: str = "beet"
     library_root: Path | str = "/music"
     library_database: Path | str = "/data/beets/library.db"
+    _import_lock: threading.Lock = field(
+        default_factory=threading.Lock, init=False, repr=False
+    )
 
     def import_file(self, prepared_path: Path | str) -> ImportedTrack:
         library_root = Path(self.library_root)
@@ -103,27 +105,26 @@ class BeetsImporter:
 
         library_database = Path(self.library_database)
         library_database.parent.mkdir(parents=True, exist_ok=True)
-        previous_item_id = self._latest_item_id(library_database)
+        with self._import_lock:
+            previous_item_id = self._latest_item_id(library_database)
 
-        subprocess.run(
-            [
-                self.beet_binary,
-                "-l",
-                str(library_database),
-                "-d",
-                str(library_root),
-                "import",
-                "-q",
-                "--quiet-fallback=asis",
-                "-m",
-                "-s",
-                str(prepared_path),
-            ],
-            check=True,
-            capture_output=True,
-            text=True,
-        )
-        return self._fetch_imported_track(library_database, previous_item_id)
+            _run_checked(
+                "Beets import",
+                [
+                    self.beet_binary,
+                    "-l",
+                    str(library_database),
+                    "-d",
+                    str(library_root),
+                    "import",
+                    "-q",
+                    "--quiet-fallback=asis",
+                    "-m",
+                    "-s",
+                    str(prepared_path),
+                ],
+            )
+            return self._fetch_imported_track(library_database, previous_item_id)
 
     def _latest_item_id(self, library_database: Path) -> int:
         if not library_database.exists():
@@ -165,15 +166,13 @@ class FingerprintGenerator:
     fpcalc_binary: str = "fpcalc"
 
     def generate(self, audio_path: Path | str) -> str:
-        completed = subprocess.run(
+        completed = _run_checked(
+            "Chromaprint fingerprint",
             [
                 self.fpcalc_binary,
                 "-json",
                 str(audio_path),
             ],
-            check=True,
-            capture_output=True,
-            text=True,
         )
         return self._parse_fingerprint(completed.stdout)
 
@@ -224,9 +223,13 @@ class IngestionProcessor:
                 prepared.matching_job_id = self.matching_job_enqueuer.enqueue(
                     prepared.local_track_id
                 )
+            if self.failed_attempt_store is not None:
+                self.failed_attempt_store.clear_for_source_path(prepared.source_path)
             self._cleanup_source(prepared.source_path)
             return prepared
         except Exception as exc:
+            if prepared is not None:
+                self._cleanup_prepared(prepared.prepared_path)
             if self.failed_attempt_store is not None:
                 self.failed_attempt_store.persist(
                     source_path=source_path,
@@ -241,3 +244,34 @@ class IngestionProcessor:
     def _cleanup_source(self, source_path: Path) -> None:
         if source_path.exists():
             source_path.unlink()
+
+    def _cleanup_prepared(self, prepared_path: Path) -> None:
+        if prepared_path.exists():
+            prepared_path.unlink()
+
+
+def _run_checked(
+    operation: str, command: list[str]
+) -> subprocess.CompletedProcess[str]:
+    try:
+        return subprocess.run(
+            command,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except subprocess.CalledProcessError as exc:
+        detail = _format_process_output(exc)
+        raise RuntimeError(
+            f"{operation} failed with exit status {exc.returncode}: {detail}"
+        ) from exc
+
+
+def _format_process_output(exc: subprocess.CalledProcessError) -> str:
+    stderr = (exc.stderr or "").strip()
+    stdout = (exc.stdout or "").strip()
+    if stderr:
+        return stderr
+    if stdout:
+        return stdout
+    return "no output captured"

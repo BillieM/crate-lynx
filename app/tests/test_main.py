@@ -916,6 +916,7 @@ def test_library_tracks_endpoint_returns_linked_pending_unlinked_and_no_match_ro
         "tracks": [
             {
                 "id": 5,
+                "final_link_id": 3,
                 "title": "Linked Song",
                 "artist": "Artist A",
                 "album": "Album A",
@@ -928,6 +929,7 @@ def test_library_tracks_endpoint_returns_linked_pending_unlinked_and_no_match_ro
             },
             {
                 "id": 6,
+                "final_link_id": None,
                 "title": "Pending Song",
                 "artist": "Artist B",
                 "album": None,
@@ -940,6 +942,7 @@ def test_library_tracks_endpoint_returns_linked_pending_unlinked_and_no_match_ro
             },
             {
                 "id": 7,
+                "final_link_id": None,
                 "title": "rejected-only.mp3",
                 "artist": None,
                 "album": None,
@@ -952,6 +955,7 @@ def test_library_tracks_endpoint_returns_linked_pending_unlinked_and_no_match_ro
             },
             {
                 "id": 8,
+                "final_link_id": None,
                 "title": "no-match.flac",
                 "artist": None,
                 "album": None,
@@ -1081,6 +1085,7 @@ def test_missing_locally_endpoint_aggregates_playlist_usage_and_excludes_links(
                 "album": "Album A",
                 "duration_ms": 181000,
                 "playlist_count": 1,
+                "playlist_ids": [1],
                 "playlist_titles": ["Morning Mix"],
             },
             {
@@ -1091,6 +1096,7 @@ def test_missing_locally_endpoint_aggregates_playlist_usage_and_excludes_links(
                 "album": None,
                 "duration_ms": None,
                 "playlist_count": 1,
+                "playlist_ids": [1],
                 "playlist_titles": ["Morning Mix"],
             },
         ]

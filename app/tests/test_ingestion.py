@@ -1,4 +1,5 @@
 from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor
 import sqlite3
 import subprocess
 import time
@@ -549,6 +550,24 @@ def test_ingestion_watcher_skips_files_changing_during_stability_check(
     assert seen == []
 
 
+def test_ingestion_watcher_skips_zero_byte_audio_until_later_scan(
+    tmp_path: Path,
+) -> None:
+    seen: list[Path] = []
+    watcher, _ = _started_watcher(tmp_path, seen)
+    track_path = tmp_path / "ingestion" / "track.mp3"
+    track_path.write_bytes(b"")
+
+    watcher._ingest_candidate(track_path)
+
+    assert seen == []
+
+    track_path.write_bytes(b"mp3")
+    watcher._ingest_candidate(track_path)
+
+    assert seen == [track_path]
+
+
 def test_audio_preparer_passes_mp3_through_unchanged(
     tmp_path: Path, monkeypatch
 ) -> None:
@@ -748,6 +767,56 @@ def test_beets_importer_creates_library_database_parent(
     assert library_database.parent.is_dir()
 
 
+def test_beets_importer_serializes_library_lookup_and_import(
+    tmp_path: Path, monkeypatch
+) -> None:
+    library_root = tmp_path / "library"
+    library_database = tmp_path / "data" / "beets" / "library.db"
+    prepared_path = tmp_path / "staging" / "track.mp3"
+    prepared_path.parent.mkdir()
+    prepared_path.write_bytes(b"mp3")
+    importer = BeetsImporter(
+        library_root=library_root,
+        library_database=library_database,
+    )
+    state = {"active": False, "next_previous_id": 0}
+
+    def fake_latest_item_id(self: BeetsImporter, library_database: Path) -> int:
+        assert not state["active"]
+        state["active"] = True
+        previous_id = state["next_previous_id"]
+        state["next_previous_id"] += 1
+        return previous_id
+
+    def fake_run(
+        command: list[str], *, check: bool, capture_output: bool, text: bool
+    ) -> subprocess.CompletedProcess[str]:
+        time.sleep(0.05)
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    def fake_fetch_imported_track(
+        self: BeetsImporter, library_database: Path, previous_item_id: int
+    ) -> ImportedTrack:
+        state["active"] = False
+        return ImportedTrack(
+            library_path=library_root / "Artist" / f"track-{previous_item_id + 1}.mp3",
+            beets_id=previous_item_id + 1,
+        )
+
+    monkeypatch.setattr(BeetsImporter, "_latest_item_id", fake_latest_item_id)
+    monkeypatch.setattr(
+        BeetsImporter, "_fetch_imported_track", fake_fetch_imported_track
+    )
+    monkeypatch.setattr("app.ingestion.pipeline.subprocess.run", fake_run)
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        imported = list(
+            executor.map(importer.import_file, [prepared_path, prepared_path])
+        )
+
+    assert sorted(track.beets_id for track in imported) == [1, 2]
+
+
 def test_fingerprint_generator_runs_fpcalc_and_parses_json(
     tmp_path: Path, monkeypatch
 ) -> None:
@@ -797,6 +866,34 @@ def test_fingerprint_generator_rejects_missing_fingerprint(
         assert "fingerprint" in str(exc)
     else:
         raise AssertionError("Expected ValueError")
+
+
+def test_fingerprint_generator_includes_subprocess_output_in_failure(
+    tmp_path: Path, monkeypatch
+) -> None:
+    prepared_path = tmp_path / "staging" / "track.mp3"
+    prepared_path.parent.mkdir()
+    prepared_path.write_bytes(b"mp3")
+
+    def fake_run(
+        command: list[str], *, check: bool, capture_output: bool, text: bool
+    ) -> subprocess.CompletedProcess[str]:
+        raise subprocess.CalledProcessError(
+            2,
+            command,
+            output="",
+            stderr="empty or unreadable audio file",
+        )
+
+    monkeypatch.setattr("app.ingestion.pipeline.subprocess.run", fake_run)
+
+    try:
+        FingerprintGenerator().generate(prepared_path)
+    except RuntimeError as exc:
+        assert "Chromaprint fingerprint failed with exit status 2" in str(exc)
+        assert "empty or unreadable audio file" in str(exc)
+    else:
+        raise AssertionError("Expected RuntimeError")
 
 
 def test_ingestion_processor_prepares_imports_and_deletes_source(
@@ -967,6 +1064,93 @@ def test_ingestion_processor_persists_failed_attempt_with_fingerprint(
     assert row["fingerprint"] == "fp_failed"
     assert row["failure_reason"] == "Beets could not identify metadata"
     assert row["local_track_id"] is None
+
+
+def test_ingestion_processor_clears_prior_failure_after_success(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "ingestion" / "track.mp3"
+    source.parent.mkdir()
+    source.write_bytes(b"mp3")
+    prepared = PreparedTrack(
+        source_path=source,
+        prepared_path=tmp_path / "staging" / "track.mp3",
+        transcoded=False,
+    )
+    prepared.prepared_path.parent.mkdir()
+    prepared.prepared_path.write_bytes(b"mp3")
+    preparer = Mock(spec=AudioPreparer)
+    preparer.prepare.return_value = prepared
+    importer = Mock(spec=BeetsImporter)
+    importer.library_root = tmp_path / "library"
+    importer.import_file.return_value = ImportedTrack(
+        library_path=tmp_path / "library" / "Artist" / "track.mp3",
+        beets_id=42,
+    )
+    fingerprint_generator = Mock(spec=FingerprintGenerator)
+    fingerprint_generator.generate.return_value = "fp-42"
+
+    database_url = f"sqlite:///{tmp_path / 'app.db'}"
+    engine = create_engine(database_url)
+    metadata.create_all(engine)
+    failed_ingestion_attempts_metadata.create_all(engine)
+    failed_store = FailedIngestionAttemptStore(database_url)
+    failed_store.persist(
+        source_path=source,
+        fingerprint=None,
+        failure_reason="Chromaprint fingerprint failed",
+    )
+
+    IngestionProcessor(
+        staging_root=tmp_path / "staging",
+        audio_preparer=preparer,
+        beets_importer=importer,
+        fingerprint_generator=fingerprint_generator,
+        track_store=LocalTrackStore(database_url),
+        failed_attempt_store=failed_store,
+    ).process(source)
+
+    with engine.connect() as connection:
+        rows = connection.execute(select(failed_ingestion_attempts_table)).all()
+
+    assert rows == []
+
+
+def test_ingestion_processor_deletes_prepared_file_after_failure(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "ingestion" / "unknown.mp3"
+    source.parent.mkdir()
+    source.write_bytes(b"mp3")
+    prepared_path = tmp_path / "staging" / "unknown.mp3"
+    prepared_path.parent.mkdir()
+    prepared_path.write_bytes(b"mp3")
+    prepared = PreparedTrack(
+        source_path=source,
+        prepared_path=prepared_path,
+        transcoded=False,
+    )
+    preparer = Mock(spec=AudioPreparer)
+    preparer.prepare.return_value = prepared
+    importer = Mock(spec=BeetsImporter)
+    importer.import_file.side_effect = RuntimeError("Beets could not identify metadata")
+    fingerprint_generator = Mock(spec=FingerprintGenerator)
+    fingerprint_generator.generate.return_value = "fp_failed"
+
+    try:
+        IngestionProcessor(
+            staging_root=tmp_path / "staging",
+            audio_preparer=preparer,
+            beets_importer=importer,
+            fingerprint_generator=fingerprint_generator,
+        ).process(source)
+    except RuntimeError:
+        pass
+    else:
+        raise AssertionError("Expected failed import")
+
+    assert not prepared_path.exists()
+    assert source.exists()
 
 
 def test_ingestion_processor_smoke_ingests_flac_and_mp3_with_fingerprints(

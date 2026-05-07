@@ -81,15 +81,9 @@ function mockProposalFetch({ approveHandler, rejectHandler, response = proposals
     const url = String(input);
 
     if (/^\/api\/proposals(?:\?|$)/.test(url) && init?.method === undefined) {
-      const [, queryString = ""] = url.split("?");
-      const band = new URLSearchParams(queryString).get("band");
-      const proposals = band
-        ? response.proposals.filter((proposal) => proposal.confidence_band === band)
-        : response.proposals;
-
       return {
         ok: true,
-        json: async () => ({ proposals }),
+        json: async () => response,
       } as Response;
     }
 
@@ -126,45 +120,47 @@ describe("LinkProposalsView", () => {
     vi.restoreAllMocks();
   });
 
-  it("groups proposal cards by local track within confidence bands and renders reusable confidence filters", async () => {
-    mockProposalFetch();
+  it("renders local-track proposal cards together in score order without confidence band filters", async () => {
+    const fetchMock = mockProposalFetch();
 
     renderLinkProposalsView();
 
     expect(await screen.findByRole("heading", { level: 2, name: "Proposal queue" })).toBeInTheDocument();
     expect(await screen.findByText("Night Runner.mp3")).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledWith("/api/proposals");
 
-    const highSection = screen.getByRole("heading", { level: 3, name: "High" }).closest("section");
-    const mediumSection = screen.getByRole("heading", { level: 3, name: "Medium" }).closest("section");
+    expect(screen.queryByRole("heading", { level: 3, name: "High" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { level: 3, name: "Medium" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { level: 3, name: "Low" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("group", { name: "Confidence band filters" })).not.toBeInTheDocument();
 
-    expect(highSection).not.toBeNull();
-    expect(mediumSection).not.toBeNull();
-    expect(within(highSection!).getByText("Night Runner.mp3")).toBeInTheDocument();
-    expect(within(highSection!).getByText("Night Runner Alternate")).toBeInTheDocument();
-    expect(within(highSection!).getAllByText("Tag")).toHaveLength(2);
-    expect(within(highSection!).getByText("92%")).toBeInTheDocument();
-    expect(within(highSection!).getByText("82%")).toBeInTheDocument();
-    expect(within(mediumSection!).getByText("Pending Signal.mp3")).toBeInTheDocument();
-    expect(within(mediumSection!).getByText("ISRC")).toBeInTheDocument();
-    expect(within(mediumSection!).getByText("Album unavailable")).toBeInTheDocument();
-    expect(screen.getByRole("group", { name: "Confidence band filters" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "All" })).toHaveAttribute("aria-pressed", "true");
+    const nightRunnerCard = screen.getByText("Night Runner.mp3").closest("li");
+    const pendingSignalCard = screen.getByText("Pending Signal.mp3").closest("li");
+    expect(nightRunnerCard).not.toBeNull();
+    expect(pendingSignalCard).not.toBeNull();
+    expect(nightRunnerCard!.compareDocumentPosition(pendingSignalCard!)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(within(nightRunnerCard!).getByText("Night Runner Alternate")).toBeInTheDocument();
+    expect(within(nightRunnerCard!).getAllByText("Tag")).toHaveLength(2);
+    expect(within(nightRunnerCard!).getByText("92%")).toBeInTheDocument();
+    expect(within(nightRunnerCard!).getByText("82%")).toBeInTheDocument();
+    expect(within(pendingSignalCard!).getByText("ISRC")).toBeInTheDocument();
+    expect(within(pendingSignalCard!).getByText("Album unavailable")).toBeInTheDocument();
+
+    expect(
+      within(nightRunnerCard!).getByText("Local track").compareDocumentPosition(within(nightRunnerCard!).getByText("Ranked candidates")),
+    ).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
   });
 
-  it("updates the query when a confidence filter chip is selected", async () => {
+  it("ignores legacy confidence band URL state and fetches all proposals", async () => {
     const fetchMock = mockProposalFetch();
 
-    renderLinkProposalsView();
+    renderLinkProposalsView("/proposals?band=high");
 
     expect(await screen.findByText("Night Runner.mp3")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Medium" }));
-
-    await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledWith("/api/proposals?band=medium");
-      expect(screen.queryByText("Night Runner.mp3")).not.toBeInTheDocument();
-    });
-    expect(await screen.findByText("Pending Signal.mp3")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Medium" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByText("Pending Signal.mp3")).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledWith("/api/proposals");
+    expect(fetchMock).not.toHaveBeenCalledWith("/api/proposals?band=high");
+    expect(screen.queryByRole("group", { name: "Confidence band filters" })).not.toBeInTheDocument();
   });
 
   it("optimistically removes whole local-track groups on approve and only selected candidates on reject", async () => {

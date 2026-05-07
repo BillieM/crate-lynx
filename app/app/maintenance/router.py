@@ -27,6 +27,7 @@ def create_router(*, require_database_url: Callable[[], str]) -> APIRouter:
                     album=track.album,
                     duration_ms=track.duration_ms,
                     playlist_count=track.playlist_count,
+                    playlist_ids=track.playlist_ids,
                     playlist_titles=track.playlist_titles,
                 )
                 for track in tracks

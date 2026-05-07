@@ -239,6 +239,8 @@ def _is_stable_file(
     previous_snapshot = _snapshot_file(path)
     if previous_snapshot is None:
         return False
+    if previous_snapshot.size == 0:
+        return False
 
     for _ in range(max(1, observations) - 1):
         sleep(interval_seconds)
