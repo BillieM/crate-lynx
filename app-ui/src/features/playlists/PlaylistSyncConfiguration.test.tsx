@@ -74,10 +74,22 @@ function mockConfigFetch(response: StreamingPlaylistConfigResponse = playlistCon
       } as Response;
     }
 
-    if (url === "/api/streaming/playlists/31" && init?.method === "PATCH") {
+    if ((url === "/api/streaming/playlists/12" || url === "/api/streaming/playlists/31") && init?.method === "PATCH") {
+      const requestBody = JSON.parse(String(init.body)) as { selected_for_sync: boolean };
+      const playlist = response.playlists.find((candidate) => url.endsWith(`/${candidate.id}`));
+
       return {
         ok: true,
-        json: async () => ({ ...response.playlists[1], selected_for_sync: true }),
+        json: async () => ({ ...playlist, selected_for_sync: requestBody.selected_for_sync }),
+      } as Response;
+    }
+
+    if ((url === "/api/streaming/playlists/12/sync" || url === "/api/streaming/playlists/31/sync") && init?.method === "POST") {
+      const playlistId = Number(url.split("/").at(-2));
+
+      return {
+        ok: true,
+        json: async () => ({ job_id: `playlist-sync-${playlistId}`, playlist_id: playlistId }),
       } as Response;
     }
 
@@ -113,7 +125,8 @@ describe("PlaylistSyncConfiguration", () => {
     expect(screen.getByText("1 of 2 discovered playlists selected for sync.")).toBeInTheDocument();
     expect(screen.getByRole("checkbox", { name: "Select Late Night Drive for sync" })).toBeChecked();
     expect(screen.getByRole("checkbox", { name: "Select Fresh Discoveries for sync" })).not.toBeChecked();
-    expect(screen.getByText("Provider ID PL31 / Account 4")).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: /Provider ID/ })).toBeInTheDocument();
+    expect(screen.getByText("PL31")).toBeInTheDocument();
     expect(screen.getByText("Malformed playlist payload")).toBeInTheDocument();
   });
 
@@ -147,17 +160,17 @@ describe("PlaylistSyncConfiguration", () => {
     });
   });
 
-  it("queues selected sync and metadata refresh actions with visible status", async () => {
+  it("queues enabled sync and metadata refresh actions with visible status", async () => {
     const fetchMock = mockConfigFetch();
 
     renderPlaylistSyncConfiguration();
 
-    fireEvent.click(await screen.findByRole("button", { name: "Sync selected" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Sync enabled" }));
 
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith("/api/streaming/accounts/4/sync", { method: "POST" });
     });
-    expect(await screen.findByText("Selected playlist sync queued.")).toBeInTheDocument();
+    expect(await screen.findByText("Enabled playlist sync queued.")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Refresh playlist metadata" }));
 
@@ -165,5 +178,55 @@ describe("PlaylistSyncConfiguration", () => {
       expect(fetchMock).toHaveBeenCalledWith("/api/streaming/accounts/4/refresh-metadata", { method: "POST" });
     });
     expect(await screen.findByText("Metadata refresh queued.")).toBeInTheDocument();
+  });
+
+  it("runs bulk enable, disable, and row sync actions for selected rows", async () => {
+    const fetchMock = mockConfigFetch();
+
+    renderPlaylistSyncConfiguration();
+
+    await screen.findByRole("cell", { name: "Fresh Discoveries" });
+    expect(screen.queryByRole("button", { name: /Enable sync/ })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getAllByRole("checkbox", { name: /^Select row/ })[1]);
+
+    expect(screen.getByRole("button", { name: /Enable sync/ })).toBeEnabled();
+    expect(screen.getByRole("button", { name: /Disable sync/ })).toBeEnabled();
+    expect(screen.getByRole("button", { name: /Sync rows/ })).toBeEnabled();
+
+    fireEvent.click(screen.getByRole("button", { name: /Enable sync/ }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith("/api/streaming/playlists/31", {
+        body: JSON.stringify({ selected_for_sync: true }),
+        headers: {
+          "Content-Type": "application/json",
+        },
+        method: "PATCH",
+      });
+    });
+    expect(await screen.findByText("1 playlist was enabled.")).toBeInTheDocument();
+
+    fireEvent.click(screen.getAllByRole("checkbox", { name: /^Select row/ })[0]);
+    fireEvent.click(screen.getByRole("button", { name: /Disable sync/ }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith("/api/streaming/playlists/12", {
+        body: JSON.stringify({ selected_for_sync: false }),
+        headers: {
+          "Content-Type": "application/json",
+        },
+        method: "PATCH",
+      });
+    });
+    expect(await screen.findByText("1 playlist was disabled.")).toBeInTheDocument();
+
+    fireEvent.click(screen.getAllByRole("checkbox", { name: /^Select row/ })[0]);
+    fireEvent.click(screen.getByRole("button", { name: /Sync rows/ }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith("/api/streaming/playlists/12/sync", { method: "POST" });
+    });
+    expect(await screen.findByText("1 playlist was queued for sync.")).toBeInTheDocument();
   });
 });

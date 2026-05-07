@@ -795,12 +795,13 @@ describe("App", () => {
 
     expect(await screen.findByRole("heading", { level: 2, name: "Playlist sync configuration" })).toBeInTheDocument();
     expect(await screen.findByText("1 of 2 discovered playlists selected for sync.")).toBeInTheDocument();
-    expect(screen.getByRole("heading", { level: 3, name: "Late Night Drive" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { level: 3, name: "Fresh Discoveries" })).toBeInTheDocument();
+    expect(screen.getByRole("cell", { name: "Late Night Drive" })).toBeInTheDocument();
+    expect(screen.getByRole("cell", { name: "Fresh Discoveries" })).toBeInTheDocument();
     expect(screen.getByRole("checkbox", { name: "Select Late Night Drive for sync" })).toBeChecked();
     expect(screen.getByRole("checkbox", { name: "Select Fresh Discoveries for sync" })).not.toBeChecked();
     expect(screen.getByRole("button", { name: "Refresh playlist metadata" })).toBeInTheDocument();
-    expect(screen.getByText("Provider ID PL31 / Account 4")).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: /Provider ID/ })).toBeInTheDocument();
+    expect(screen.getByText("PL31")).toBeInTheDocument();
     expect(screen.getByText("Malformed playlist payload")).toBeInTheDocument();
     expect(document.getElementById("settings-general")).toHaveAttribute("data-view-active", "false");
     expect(document.getElementById("settings-sync-youtube-music")).toHaveAttribute("data-view-active", "true");
@@ -995,24 +996,24 @@ describe("App", () => {
     });
   });
 
-  it("shows success state when selected playlist sync is queued", async () => {
+  it("shows success state when enabled playlist sync is queued", async () => {
     const fetchMock = mockPlaylistFetch();
 
     renderApp();
 
     expect(await screen.findByRole("heading", { level: 1, name: "Late Night Drive" })).toBeInTheDocument();
     await openYoutubeMusicSettings();
-    fireEvent.click(await screen.findByRole("button", { name: "Sync selected" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Sync enabled" }));
 
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith(selectedPlaylistSyncEndpoint, {
         method: "POST",
       });
     });
-    expect(await screen.findByText("Selected playlist sync queued.")).toBeInTheDocument();
+    expect(await screen.findByText("Enabled playlist sync queued.")).toBeInTheDocument();
   });
 
-  it("shows pending state while selected playlist sync is running", async () => {
+  it("shows pending state while enabled playlist sync is running", async () => {
     let resolveSync: (response: Response) => void = () => {};
     const syncPromise = new Promise<Response>((resolve) => {
       resolveSync = resolve;
@@ -1025,20 +1026,20 @@ describe("App", () => {
 
     expect(await screen.findByRole("heading", { level: 1, name: "Late Night Drive" })).toBeInTheDocument();
     await openYoutubeMusicSettings();
-    fireEvent.click(await screen.findByRole("button", { name: "Sync selected" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Sync enabled" }));
 
-    expect(await screen.findByRole("button", { name: "Syncing selected..." })).toBeDisabled();
-    expect(screen.getByRole("status")).toHaveTextContent("Syncing selected playlists...");
+    expect(await screen.findByRole("button", { name: "Syncing enabled..." })).toBeDisabled();
+    expect(screen.getByRole("status")).toHaveTextContent("Syncing enabled playlists...");
 
     resolveSync({
       ok: true,
       json: async () => selectedPlaylistSyncResponse,
     } as Response);
 
-    expect(await screen.findByText("Selected playlist sync queued.")).toBeInTheDocument();
+    expect(await screen.findByText("Enabled playlist sync queued.")).toBeInTheDocument();
   });
 
-  it("shows an error state when selected playlist sync fails", async () => {
+  it("shows an error state when enabled playlist sync fails", async () => {
     mockPlaylistFetch({
       selectedSyncHandler: () =>
         ({
@@ -1051,10 +1052,10 @@ describe("App", () => {
 
     expect(await screen.findByRole("heading", { level: 1, name: "Late Night Drive" })).toBeInTheDocument();
     await openYoutubeMusicSettings();
-    fireEvent.click(await screen.findByRole("button", { name: "Sync selected" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Sync enabled" }));
 
-    expect(await screen.findByRole("alert")).toHaveTextContent("Selected playlist sync failed.");
-    expect(screen.getByRole("button", { name: "Sync selected" })).toBeEnabled();
+    expect(await screen.findByRole("alert")).toHaveTextContent("Enabled playlist sync failed.");
+    expect(screen.getByRole("button", { name: "Sync enabled" })).toBeEnabled();
   });
 
   it("shows pending state while playlist metadata refresh is running", async () => {
@@ -1155,9 +1156,9 @@ describe("App", () => {
       "overflow-y-auto",
       "pb-1",
     );
-    expect(screen.getByRole("button", { name: "Sync selected" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { level: 3, name: "Late Night Drive" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { level: 3, name: "Fresh Discoveries" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Sync enabled" })).toBeInTheDocument();
+    expect(screen.getByRole("cell", { name: "Late Night Drive" })).toBeInTheDocument();
+    expect(screen.getByRole("cell", { name: "Fresh Discoveries" })).toBeInTheDocument();
   });
 
   it("renders secondary playlist shells with their configured playlist resources", async () => {

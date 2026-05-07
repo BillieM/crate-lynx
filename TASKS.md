@@ -91,14 +91,14 @@
 
 ## T7. Convert PlaylistSyncConfiguration to dense table
 
-- Replace `PlaylistConfigRow` cards in `app-ui/src/features/playlists/PlaylistSyncConfiguration.tsx`.
-- Columns: select, playlist title, sync enabled (toggle / status), track count, last metadata sync, last sync error, provider playlist id, account id, row actions.
-- Rename: the existing toolbar button `Sync selected` → `Sync enabled` (PlaylistSyncConfiguration.tsx:218). It still calls account-wide `syncStreamingAccount` — only the label and status copy at lines 232–238 change.
-- Bulk actions on selected rows:
+- [x] Replace `PlaylistConfigRow` cards in `app-ui/src/features/playlists/PlaylistSyncConfiguration.tsx`.
+- [x] Columns: select, playlist title, sync enabled (toggle / status), track count, last metadata sync, last sync error, provider playlist id, account id, row actions.
+- [x] Rename: the existing toolbar button `Sync selected` → `Sync enabled` (PlaylistSyncConfiguration.tsx:218). It still calls account-wide `syncStreamingAccount` — only the label and status copy at lines 232–238 change.
+- [x] Bulk actions on selected rows:
   - `Enable sync` / `Disable sync` — PATCH `/api/streaming/playlists/{playlist_id}` with `selected_for_sync`, fan out concurrency 5.
   - `Sync rows` — fan out `POST /api/streaming/playlists/{playlist_id}/sync` per selected row (distinct from the account-wide `Sync enabled` button on the toolbar).
-- Tests: rename surfaces in DOM; bulk enable / disable / sync wire the right endpoints; selection-aware bulk button states.
-- **Definition of done:** lint / test / build pass.
+- [x] Tests: rename surfaces in DOM; bulk enable / disable / sync wire the right endpoints; selection-aware bulk button states.
+- [x] **Definition of done:** lint / test / build pass.
 
 ## T8. Cross-cutting close-out
 
