@@ -4,8 +4,28 @@ import type { PropsWithChildren, ReactElement } from "react";
 import { MemoryRouter } from "react-router-dom";
 
 import { createMockApi, jsonResponse } from "../../test/mockApi";
+import type { StreamingAccount } from "../streamingAccounts/queries";
 import { PlaylistView } from "./PlaylistView";
 import type { PlaylistDetailResponse, PlaylistTracksResponse } from "./queries";
+
+const connectedStreamingAccount: StreamingAccount = {
+  auth_error: null,
+  auth_error_at: null,
+  auth_state: "connected",
+  created_at: "2026-05-01T09:00:00Z",
+  display_name: "YouTube Music",
+  id: 4,
+  provider: "youtube_music",
+  updated_at: "2026-05-01T09:00:00Z",
+};
+
+const authErrorStreamingAccount: StreamingAccount = {
+  ...connectedStreamingAccount,
+  auth_error: "Browser headers expired.",
+  auth_error_at: "2026-05-02T10:30:00+00:00",
+  auth_state: "connected",
+  updated_at: "2026-05-02T10:30:00Z",
+};
 
 const playlistDetailResponse: PlaylistDetailResponse = {
   playlist: {
@@ -90,31 +110,20 @@ function renderWithProviders(ui: ReactElement) {
 
 function mockPlaylistApi({
   deleteHandler = () => jsonResponse({ final_link_id: 9001, status: "deleted" }),
+  detailResponse = playlistDetailResponse,
+  accounts = [connectedStreamingAccount],
   tracksResponse = playlistTracksResponse,
 }: {
+  accounts?: StreamingAccount[];
   deleteHandler?: () => Response;
+  detailResponse?: PlaylistDetailResponse;
   tracksResponse?: PlaylistTracksResponse;
 } = {}) {
   return createMockApi()
-    .get("/api/playlists/12", () => jsonResponse(playlistDetailResponse))
+    .get("/api/playlists/12", () => jsonResponse(detailResponse))
     .get("/api/playlists/12/tracks", () => jsonResponse(tracksResponse))
     .get("/api/streaming/playlists", () => jsonResponse({ playlists: [] }))
-    .get("/api/streaming/accounts", () =>
-      jsonResponse({
-        accounts: [
-          {
-            auth_error: null,
-            auth_error_at: null,
-            auth_state: "connected",
-            created_at: "2026-05-01T09:00:00Z",
-            display_name: "YouTube Music",
-            id: 4,
-            provider: "youtube_music",
-            updated_at: "2026-05-01T09:00:00Z",
-          },
-        ],
-      }),
-    )
+    .get("/api/streaming/accounts", () => jsonResponse({ accounts }))
     .delete("/api/final-links/9001", deleteHandler)
     .get("/api/local-tracks/501", () =>
       jsonResponse({
@@ -137,6 +146,7 @@ function mockPlaylistApi({
 describe("PlaylistView", () => {
   afterEach(() => {
     vi.restoreAllMocks();
+    vi.useRealTimers();
   });
 
   it("renders playlist tracks as a responsive dense table with the compact toolbar", async () => {
@@ -174,6 +184,26 @@ describe("PlaylistView", () => {
 
     expect(await screen.findByRole("dialog", { name: "Track #501" })).toBeInTheDocument();
     expect(await screen.findByText(/Frame Delay\/Night Runner\.mp3/)).toBeInTheDocument();
+  });
+
+  it("renders account auth errors alongside playlist sync errors", async () => {
+    mockPlaylistApi({
+      accounts: [authErrorStreamingAccount],
+      detailResponse: {
+        playlist: {
+          ...playlistDetailResponse.playlist,
+          last_sync_error: "Playlist response reported logged_in: 0",
+          last_sync_error_at: "2026-05-02T10:31:00Z",
+        },
+      },
+    });
+
+    renderWithProviders(<PlaylistView isActive playlistResourceId={12} />);
+
+    expect(await screen.findByText("YouTube Music authentication needs attention")).toBeInTheDocument();
+    expect(screen.getByText("Browser headers expired. Reported 2026-05-02 10:30:00.")).toBeInTheDocument();
+    expect(screen.getByText("Last sync error")).toBeInTheDocument();
+    expect(screen.getByText("Playlist response reported logged_in: 0")).toBeInTheDocument();
   });
 
   it("unlinks selected linked rows and renders aggregate success feedback", async () => {

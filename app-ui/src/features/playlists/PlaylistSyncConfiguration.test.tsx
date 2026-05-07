@@ -2,9 +2,32 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 
 import { maintenanceQueryKeys } from "../maintenance/queries";
-import { useStreamingAccountsQuery } from "../streamingAccounts/queries";
+import {
+  streamingAccountQueryKeys,
+  useStreamingAccountsQuery,
+  type StreamingAccount,
+} from "../streamingAccounts/queries";
 import { PlaylistSyncConfiguration } from "./PlaylistSyncConfiguration";
 import { playlistQueryKeys, type StreamingPlaylistConfigResponse, useStreamingPlaylistsQuery } from "./queries";
+
+const connectedStreamingAccount: StreamingAccount = {
+  auth_error: null,
+  auth_error_at: null,
+  auth_state: "connected",
+  created_at: "2026-05-01T09:00:00Z",
+  display_name: "YouTube Music",
+  id: 4,
+  provider: "youtube_music",
+  updated_at: "2026-05-01T09:00:00Z",
+};
+
+const authErrorStreamingAccount: StreamingAccount = {
+  ...connectedStreamingAccount,
+  auth_error: "Browser headers expired.",
+  auth_error_at: "2026-05-02T10:30:00+00:00",
+  auth_state: "error",
+  updated_at: "2026-05-02T10:30:00Z",
+};
 
 const playlistConfigResponse: StreamingPlaylistConfigResponse = {
   playlists: [
@@ -63,7 +86,12 @@ function renderPlaylistSyncConfiguration({ includeSyncRefreshObservers = false }
   return { queryClient, ...result };
 }
 
-function mockConfigFetch(response: StreamingPlaylistConfigResponse = playlistConfigResponse) {
+function mockConfigFetch(
+  response: StreamingPlaylistConfigResponse = playlistConfigResponse,
+  {
+    accounts = [connectedStreamingAccount],
+  }: { accounts?: StreamingAccount[] | (() => StreamingAccount[]) } = {},
+) {
   return vi.spyOn(globalThis, "fetch").mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
 
@@ -84,22 +112,11 @@ function mockConfigFetch(response: StreamingPlaylistConfigResponse = playlistCon
     }
 
     if (url === "/api/streaming/accounts" && init?.method === undefined) {
+      const accountRows = typeof accounts === "function" ? accounts() : accounts;
+
       return {
         ok: true,
-        json: async () => ({
-          accounts: [
-            {
-              auth_error: null,
-              auth_error_at: null,
-              auth_state: "connected",
-              created_at: "2026-05-01T09:00:00Z",
-              display_name: "YouTube Music",
-              id: 4,
-              provider: "youtube_music",
-              updated_at: "2026-05-01T09:00:00Z",
-            },
-          ],
-        }),
+        json: async () => ({ accounts: accountRows }),
       } as Response;
     }
 
@@ -235,6 +252,25 @@ describe("PlaylistSyncConfiguration", () => {
     expect(await screen.findByText("Metadata refresh queued.")).toBeInTheDocument();
   });
 
+  it("surfaces account auth errors and disables sync controls", async () => {
+    mockConfigFetch(playlistConfigResponse, { accounts: [authErrorStreamingAccount] });
+
+    renderPlaylistSyncConfiguration();
+
+    expect(await screen.findByText("YouTube Music authentication needs attention")).toBeInTheDocument();
+    expect(screen.getByText("Browser headers expired. Reported 2026-05-02 10:30:00+00:00.")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Refresh authentication" })).toHaveAttribute(
+      "href",
+      "/settings/authentication",
+    );
+    expect(screen.getByRole("button", { name: "Sync enabled" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Refresh playlist metadata" })).toBeDisabled();
+
+    fireEvent.click(screen.getAllByRole("checkbox", { name: /^Select row/ })[0]);
+
+    expect(screen.getByRole("button", { name: /Sync rows/ })).toBeDisabled();
+  });
+
   it("delays sidebar and config refetches after enabled sync and metadata refresh queue", async () => {
     const fetchMock = mockConfigFetch();
 
@@ -290,6 +326,37 @@ describe("PlaylistSyncConfiguration", () => {
     expect(countFetches(fetchMock, "/api/streaming/playlists")).toBeGreaterThan(listFetchesAfterRefreshFirstDelay);
     expect(countFetches(fetchMock, "/api/streaming/playlists/config")).toBeGreaterThan(configFetchesAfterRefreshFirstDelay);
     expect(countFetches(fetchMock, "/api/streaming/accounts")).toBeGreaterThan(accountFetchesAfterRefreshFirstDelay);
+  });
+
+  it("shows refetched account auth errors after delayed sync invalidation", async () => {
+    let hasAuthError = false;
+    const fetchMock = mockConfigFetch(playlistConfigResponse, {
+      accounts: () => [hasAuthError ? authErrorStreamingAccount : connectedStreamingAccount],
+    });
+
+    const { queryClient } = renderPlaylistSyncConfiguration();
+
+    await screen.findByRole("button", { name: "Sync enabled" });
+    vi.useFakeTimers();
+
+    fireEvent.click(screen.getByRole("button", { name: "Sync enabled" }));
+    await flushAsyncWork();
+
+    expect(screen.getByText("Enabled playlist sync queued.")).toBeInTheDocument();
+    expect(screen.queryByText("YouTube Music authentication needs attention")).not.toBeInTheDocument();
+    const accountFetchesAfterQueued = countFetches(fetchMock, "/api/streaming/accounts");
+
+    hasAuthError = true;
+    await advanceTimers(3000);
+    await flushAsyncWork();
+
+    expect(countFetches(fetchMock, "/api/streaming/accounts")).toBeGreaterThan(accountFetchesAfterQueued);
+    expect(queryClient.getQueryData(streamingAccountQueryKeys.list())).toEqual({ accounts: [authErrorStreamingAccount] });
+    await flushAsyncWork();
+    await advanceTimers(1);
+    vi.useRealTimers();
+    expect(await screen.findByText("YouTube Music authentication needs attention")).toBeInTheDocument();
+    expect(screen.getByText("Browser headers expired. Reported 2026-05-02 10:30:00+00:00.")).toBeInTheDocument();
   });
 
   it("runs bulk enable, disable, and row sync actions for selected rows", async () => {
