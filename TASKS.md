@@ -149,7 +149,7 @@ Context from investigation:
 
 ## A2. Frontend streaming-accounts queries module
 
-- [ ] New file `app-ui/src/features/streamingAccounts/queries.ts` exporting:
+- [x] New file `app-ui/src/features/streamingAccounts/queries.ts` exporting:
   - `StreamingAccount` type: `{ id; provider; display_name; auth_state; auth_error: string | null; auth_error_at: string | null; created_at; updated_at; }`.
   - `StreamingAccountsResponse = { accounts: StreamingAccount[] }`.
   - `streamingAccountQueryKeys = { all: ["streaming-accounts"] as const, list: () => ["streaming-accounts", "list"] as const }`.
@@ -158,13 +158,13 @@ Context from investigation:
   - `refreshStreamingAccountAuth({ accountId, browser_headers })` → `PATCH /api/streaming/accounts/{accountId}/auth`.
   - `useStreamingAccountsQuery()`.
   - `useCreateStreamingAccountMutation()` and `useRefreshStreamingAccountAuthMutation()` — both throw on non-2xx responses; both invalidate `streamingAccountQueryKeys.list()` AND `playlistQueryKeys.list()` AND `playlistQueryKeys.config()` on success.
-- [ ] Keep account query keys disjoint from `playlistQueryKeys` (`app-ui/src/features/playlists/queries.ts:128`).
-- [ ] Tests in `app-ui/src/features/streamingAccounts/queries.test.tsx` (follow `app-ui/src/features/playlists/queries.test.tsx` patterns):
+- [x] Keep account query keys disjoint from `playlistQueryKeys` (`app-ui/src/features/playlists/queries.ts:128`).
+- [x] Tests in `app-ui/src/features/streamingAccounts/queries.test.tsx` (follow `app-ui/src/features/playlists/queries.test.tsx` patterns):
   - list endpoint URL is `/api/streaming/accounts`.
   - create mutation posts `{ display_name, browser_headers }`.
   - refresh mutation patches `/api/streaming/accounts/{accountId}/auth` with `{ browser_headers }`.
   - failed responses throw.
-- **Definition of done:** `cd app-ui && npm run lint && npm test && npm run build` pass.
+- [x] **Definition of done:** `cd app-ui && npm run lint && npm test && npm run build` pass.
 
 ## A3. Settings → Authentication page
 
