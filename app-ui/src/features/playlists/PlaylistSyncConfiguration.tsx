@@ -11,7 +11,7 @@ import { controlClasses, layoutClasses, textClasses } from "../../styles/compone
 import { actionButtonToneClasses } from "../../styles/toneClasses";
 import { maintenanceQueryKeys } from "../maintenance/queries";
 import { PlaylistActionStatus } from "../shell/Topbar";
-import { streamingAccountQueryKeys } from "../streamingAccounts/queries";
+import { streamingAccountQueryKeys, useStreamingAccountsQuery } from "../streamingAccounts/queries";
 import {
   playlistQueryKeys,
   refreshStreamingAccountMetadata,
@@ -124,6 +124,7 @@ export function PlaylistSyncConfiguration() {
   const queryClient = useQueryClient();
   const delayedInvalidate = useDelayedInvalidate();
   const configQuery = useStreamingPlaylistConfigQuery();
+  const accountsQuery = useStreamingAccountsQuery();
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
   const [sorting, setSorting] = useState<SortingState>([]);
   const [bulkStatus, setBulkStatus] = useState<BulkPlaylistConfigStatus | null>(null);
@@ -162,6 +163,21 @@ export function PlaylistSyncConfiguration() {
   const playlists = configQuery.data?.playlists ?? emptyPlaylistConfigs;
   const selectedCount = getSelectedPlaylistCount(playlists);
   const accountId = playlists[0]?.account_id;
+  const accounts = accountsQuery.data?.accounts ?? [];
+  const activeAccount =
+    accounts.find((account) => account.id === accountId) ??
+    accounts.find((account) => account.provider === "youtube_music") ??
+    null;
+  const accountAuthError =
+    activeAccount && (activeAccount.auth_state === "error" || activeAccount.auth_error !== null)
+      ? {
+          body: activeAccount.auth_error_at
+            ? `${activeAccount.auth_error ?? "Authentication needs attention."} Reported ${formatPlaylistTimestamp(activeAccount.auth_error_at)}.`
+            : (activeAccount.auth_error ?? "Authentication needs attention before sync can run."),
+          title: "YouTube Music authentication needs attention",
+        }
+      : null;
+  const hasAccountAuthError = accountAuthError !== null;
   const selectedRows = useMemo(
     () => playlists.filter((playlist) => rowSelection[String(playlist.id)]),
     [playlists, rowSelection],
@@ -399,7 +415,7 @@ export function PlaylistSyncConfiguration() {
         <div className="flex flex-col items-start gap-2 sm:items-end">
           <div className="flex flex-wrap justify-start gap-2 sm:justify-end">
             <ActionButton
-              disabled={accountId === undefined || selectedCount === 0 || selectedSyncMutation.isPending}
+              disabled={hasAccountAuthError || accountId === undefined || selectedCount === 0 || selectedSyncMutation.isPending}
               onClick={() => {
                 if (accountId !== undefined) {
                   selectedSyncMutation.mutate(accountId);
@@ -409,7 +425,7 @@ export function PlaylistSyncConfiguration() {
               {selectedSyncMutation.isPending ? "Syncing enabled..." : "Sync enabled"}
             </ActionButton>
             <ActionButton
-              disabled={accountId === undefined || metadataRefreshMutation.isPending}
+              disabled={hasAccountAuthError || accountId === undefined || metadataRefreshMutation.isPending}
               onClick={() => {
                 if (accountId !== undefined) {
                   metadataRefreshMutation.mutate(accountId);
@@ -447,6 +463,17 @@ export function PlaylistSyncConfiguration() {
               title={operationMessage.title}
             />
           ) : null}
+          {accountAuthError ? (
+            <div className="grid gap-2">
+              <StatusMessage body={accountAuthError.body} status="error" title={accountAuthError.title} />
+              <a
+                className={`${controlClasses.actionButton} ${actionButtonToneClasses.danger} w-fit`}
+                href="/settings/authentication"
+              >
+                Refresh authentication
+              </a>
+            </div>
+          ) : null}
           {bulkStatus ? <StatusMessage body={bulkStatus.body} status={bulkStatus.status} title={bulkStatus.title} /> : null}
           <div className="grid gap-2.5">
             <div className="flex items-center justify-between gap-3 px-1">
@@ -477,7 +504,7 @@ export function PlaylistSyncConfiguration() {
                   </ActionButton>
                   <ActionButton
                     className="inline-flex items-center gap-1.5"
-                    disabled={selectedRows.length === 0 || isBulkSyncingRows}
+                    disabled={hasAccountAuthError || selectedRows.length === 0 || isBulkSyncingRows}
                     onClick={() => void handleBulkRowSync()}
                   >
                     <RefreshCw aria-hidden="true" className="h-3.5 w-3.5" strokeWidth={1.9} />
