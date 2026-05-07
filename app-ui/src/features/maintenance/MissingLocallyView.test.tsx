@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { PropsWithChildren, ReactElement } from "react";
 
 import { MissingLocallyView } from "./MissingLocallyView";
@@ -100,9 +100,9 @@ describe("MissingLocallyView", () => {
     expect(within(trackList).getByText("Open Eye Signal")).toBeInTheDocument();
     expect(within(trackList).getByText("Jon Hopkins")).toBeInTheDocument();
     expect(within(trackList).getByText("Immunity")).toBeInTheDocument();
-    expect(within(trackList).getByText("Late Night Drive")).toBeInTheDocument();
+    expect(within(trackList).getByTitle("Late Night Drive")).toHaveTextContent("1 playlist");
     expect(within(trackList).getByText("ytm:VLPL_missing_018")).toBeInTheDocument();
-    expect(within(trackList).getByText("2 playlists: Focus Queue, Late Night Drive")).toBeInTheDocument();
+    expect(within(trackList).getByTitle("2 playlists: Focus Queue, Late Night Drive")).toHaveTextContent("2 playlists");
     expect(within(trackList).queryByText("High gap")).not.toBeInTheDocument();
     expect(within(trackList).queryByText("Streaming only")).not.toBeInTheDocument();
     expect(within(trackList).queryByText("No local match")).not.toBeInTheDocument();
@@ -110,6 +110,43 @@ describe("MissingLocallyView", () => {
     expect(within(trackList).getByText("Bonobo feat. Nick Murphy")).toBeInTheDocument();
     expect(within(trackList).getByText("Melt!")).toBeInTheDocument();
     expect(within(trackList).getByText("Album unavailable")).toBeInTheDocument();
+  });
+
+  it("dedupes affected playlist ids when bulk syncing selected rows", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async (url, init) => {
+      if (url === "/api/maintenance/missing-locally") {
+        return {
+          ok: true,
+          json: async () => missingLocallyResponse,
+        } as Response;
+      }
+
+      if (typeof url === "string" && /^\/api\/streaming\/playlists\/\d+\/sync$/.test(url) && init?.method === "POST") {
+        return {
+          ok: true,
+          json: async () => ({ job_id: "job-sync", playlist_id: Number(url.match(/\d+/)?.[0] ?? 0) }),
+        } as Response;
+      }
+
+      throw new Error(`Unexpected request: ${String(url)}`);
+    });
+
+    renderWithQueryClient(<MissingLocallyView />);
+
+    const trackList = screen.getByRole("region", { name: "Missing local tracks" });
+    await within(trackList).findByRole("heading", { name: "Streaming tracks without local matches" });
+
+    fireEvent.click(within(trackList).getByRole("checkbox", { name: "Select all visible rows" }));
+    fireEvent.click(screen.getByRole("button", { name: "Sync affected playlists" }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith("/api/streaming/playlists/11/sync", { method: "POST" });
+      expect(fetchMock).toHaveBeenCalledWith("/api/streaming/playlists/12/sync", { method: "POST" });
+      expect(fetchMock).toHaveBeenCalledWith("/api/streaming/playlists/13/sync", { method: "POST" });
+    });
+    expect(fetchMock.mock.calls.filter(([url]) => String(url).includes("/api/streaming/playlists/11/sync"))).toHaveLength(1);
+    expect(await screen.findByText("Playlist sync queued")).toBeInTheDocument();
+    expect(screen.getByText("3 playlists were queued for sync.")).toBeInTheDocument();
   });
 
   it("renders a pending status while missing-local matching is running", () => {

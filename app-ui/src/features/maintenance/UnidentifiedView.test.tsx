@@ -119,6 +119,51 @@ describe("UnidentifiedView", () => {
     expect(unavailableRescue).toBeDisabled();
     expect(unavailableRescue).toHaveTextContent("Unavailable");
     expect(screen.getAllByText("No persisted local track available for rescue")).toHaveLength(2);
+    expect(screen.getByRole("checkbox", { name: "Select row 1" })).toBeDisabled();
+    expect(screen.getByRole("checkbox", { name: "Select row 3" })).toBeDisabled();
+  });
+
+  it("bulk rescues only selected rows with local track ids", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      json: async () => ({
+        beets_id: 91,
+        file_path: "Artist/rescue.mp3",
+        id: 1004,
+        library_root_rel_path: "Artist/rescue.mp3",
+      }),
+      ok: true,
+    } as Response);
+
+    renderUnidentifiedView({ tracksResponse: unidentifiedResponse });
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select all visible rows" }));
+    expect(screen.getByRole("button", { name: "Rescue" })).toBeEnabled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Rescue" }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith("/api/local-tracks/1004/rescue", {
+        method: "POST",
+      });
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(await screen.findByText("Bulk rescue complete")).toBeInTheDocument();
+    expect(screen.getByText("1 track was rescued.")).toBeInTheDocument();
+  });
+
+  it("surfaces aggregated bulk rescue failures", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: false,
+      status: 409,
+    } as Response);
+
+    renderUnidentifiedView({ tracksResponse: unidentifiedResponse });
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select row 2" }));
+    fireEvent.click(screen.getByRole("button", { name: "Rescue" }));
+
+    expect(await screen.findByText("Bulk rescue partially failed")).toBeInTheDocument();
+    expect(screen.getByText("0 tracks were rescued, 1 failed, and 0 rows were skipped.")).toBeInTheDocument();
   });
 
   it("disables rescue actions while unidentified review is pending", () => {

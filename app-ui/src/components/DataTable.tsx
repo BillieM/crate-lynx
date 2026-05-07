@@ -36,6 +36,7 @@ export type DataTableProps<TRow> = {
   onActivate?: (row: TRow) => void;
   onRowSelectionChange: OnChangeFn<RowSelectionState>;
   onSortingChange: OnChangeFn<SortingState>;
+  rowCanSelect?: (row: TRow) => boolean;
   rowId: (row: TRow) => string;
   rowSelection: RowSelectionState;
   sorting: SortingState;
@@ -106,6 +107,7 @@ export function DataTable<TRow>({
   onActivate,
   onRowSelectionChange,
   onSortingChange,
+  rowCanSelect,
   rowId,
   rowSelection,
   sorting,
@@ -114,7 +116,7 @@ export function DataTable<TRow>({
   const table = useReactTable({
     columns,
     data,
-    enableRowSelection: true,
+    enableRowSelection: rowCanSelect ? (row) => rowCanSelect(row.original) : true,
     getCoreRowModel: getCoreRowModel(),
     getRowId: rowId,
     getSortedRowModel: getSortedRowModel(),
@@ -127,7 +129,8 @@ export function DataTable<TRow>({
   });
   const lastSelectedIndexRef = useRef<number | null>(null);
   const visibleRows = table.getRowModel().rows;
-  const visibleRowIds = useMemo(() => visibleRows.map((row) => row.id), [visibleRows]);
+  const selectableVisibleRows = useMemo(() => visibleRows.filter((row) => row.getCanSelect()), [visibleRows]);
+  const visibleRowIds = useMemo(() => selectableVisibleRows.map((row) => row.id), [selectableVisibleRows]);
   const selectedVisibleCount = visibleRowIds.filter((rowIdValue) => rowSelection[rowIdValue]).length;
   const headerSelectionState = getRowSelectionState(visibleRowIds, rowSelection);
   const tableDensity = densityClasses[density];
@@ -141,14 +144,16 @@ export function DataTable<TRow>({
       const rangeEnd = Math.max(lastSelectedIndex, rowIndex);
 
       for (let index = rangeStart; index <= rangeEnd; index += 1) {
-        const selectedRowId = visibleRows[index]?.id;
+        const visibleRow = visibleRows[index];
+        const selectedRowId = visibleRow?.getCanSelect() ? visibleRow.id : null;
 
         if (selectedRowId) {
           nextSelection[selectedRowId] = checked;
         }
       }
     } else {
-      const selectedRowId = visibleRows[rowIndex]?.id;
+      const visibleRow = visibleRows[rowIndex];
+      const selectedRowId = visibleRow?.getCanSelect() ? visibleRow.id : null;
 
       if (selectedRowId) {
         nextSelection[selectedRowId] = checked;
@@ -176,7 +181,8 @@ export function DataTable<TRow>({
   }
 
   function toggleRowFromKeyboard(rowIndex: number) {
-    const selectedRowId = visibleRows[rowIndex]?.id;
+    const visibleRow = visibleRows[rowIndex];
+    const selectedRowId = visibleRow?.getCanSelect() ? visibleRow.id : null;
 
     if (!selectedRowId) {
       return;
@@ -288,6 +294,7 @@ export function DataTable<TRow>({
                     aria-label={`Select row ${rowIndex + 1}`}
                     checked={row.getIsSelected()}
                     className="h-4 w-4 accent-ctp-mauve"
+                    disabled={!row.getCanSelect()}
                     type="checkbox"
                     onChange={(event) => {
                       const nativeEvent = event.nativeEvent;

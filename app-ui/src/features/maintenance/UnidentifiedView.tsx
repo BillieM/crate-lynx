@@ -1,11 +1,14 @@
+import { createColumnHelper, type RowSelectionState, type SortingState } from "@tanstack/react-table";
 import { FileQuestion, HardDrive, WandSparkles, XCircle } from "lucide-react";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMemo, useState } from "react";
 import { ActionButton } from "../../components/ActionButton";
+import { DataTable } from "../../components/DataTable";
 import { EmptyStateCard } from "../../components/EmptyStateCard";
-import { Pill } from "../../components/Pill";
 import { StatusMessage } from "../../components/StatusMessage";
-import { controlClasses, surfaceClasses, textClasses } from "../../styles/componentClasses";
+import { surfaceClasses, textClasses } from "../../styles/componentClasses";
 import {
+  maintenanceQueryKeys,
   rescueLocalTrackMetadata,
   type UnidentifiedResponse,
   type UnidentifiedTrack,
@@ -15,12 +18,33 @@ import {
 type MaintenanceViewState = "ready" | "loading" | "error";
 
 const emptyUnidentifiedTracks: UnidentifiedTrack[] = [];
+const columnHelper = createColumnHelper<UnidentifiedTrack>();
+
+type BulkRescueStatus = {
+  body: string;
+  status: "error" | "success";
+  title: string;
+};
 
 function formatFailedAt(failedAt: string) {
   return failedAt.replace("T", " ").replace("Z", "").slice(0, 16);
 }
 
-function UnidentifiedTrackRow({ rescueDisabled = false, track }: { rescueDisabled?: boolean; track: UnidentifiedTrack }) {
+async function settleInChunks<TItem, TResult>(
+  items: TItem[],
+  chunkSize: number,
+  worker: (item: TItem) => Promise<TResult>,
+): Promise<PromiseSettledResult<TResult>[]> {
+  const settledResults: PromiseSettledResult<TResult>[] = [];
+
+  for (let index = 0; index < items.length; index += chunkSize) {
+    settledResults.push(...(await Promise.allSettled(items.slice(index, index + chunkSize).map(worker))));
+  }
+
+  return settledResults;
+}
+
+function RescueAction({ rescueDisabled = false, track }: { rescueDisabled?: boolean; track: UnidentifiedTrack }) {
   const rescueMutation = useMutation({
     mutationFn: rescueLocalTrackMetadata,
   });
@@ -36,44 +60,10 @@ function UnidentifiedTrackRow({ rescueDisabled = false, track }: { rescueDisable
         : null;
 
   return (
-    <article className={`${surfaceClasses.rowCardCompact} sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center`}>
-      <div className="grid min-w-0 gap-1.5">
-        <div className="flex min-w-0 items-center gap-3">
-          <span
-            aria-label="Beets failed track"
-            className="inline-flex h-2.5 w-2.5 shrink-0 rounded-full bg-ctp-red shadow-[0_0_0_4px_color-mix(in_srgb,var(--color-ctp-red)_16%,transparent)]"
-            role="status"
-          />
-          <FileQuestion aria-hidden="true" className="h-4 w-4 shrink-0 text-ctp-red" strokeWidth={1.8} />
-          <p className={`min-w-0 flex-1 truncate ${textClasses.title}`}>{track.filename}</p>
-          <Pill className="hidden shrink-0 sm:inline-flex" tone="danger">
-            Beets failed
-          </Pill>
-        </div>
-
-        <dl className={`grid min-w-0 gap-x-3 gap-y-1 pl-9 text-ctp-subtext0 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)_auto] ${textClasses.bodyRelaxed}`}>
-          <div className="flex min-w-0 items-baseline gap-1.5">
-            <dt className="shrink-0 font-medium text-ctp-overlay1">File</dt>
-            <dd className="truncate text-ctp-text">{track.source_path}</dd>
-          </div>
-          <div className="flex min-w-0 items-baseline gap-1.5 lg:justify-end">
-            <dt className="shrink-0 font-medium text-ctp-overlay1">Failed</dt>
-            <dd className="font-medium tabular-nums text-ctp-text">{formatFailedAt(track.failed_at)}</dd>
-          </div>
-          <div className="flex min-w-0 items-baseline gap-1.5 lg:col-span-3">
-            <dt className="shrink-0 font-medium text-ctp-overlay1">Reason</dt>
-            <dd className="truncate text-ctp-text">{track.failure_reason}</dd>
-          </div>
-        </dl>
-      </div>
-
-      <div className="flex flex-wrap items-center gap-1.5 pl-9 sm:justify-end sm:pl-0">
-        <Pill className="sm:hidden" tone="danger">
-          Beets failed
-        </Pill>
+      <div className="flex flex-wrap items-center justify-end gap-1.5">
         <ActionButton
           aria-label={`Rescue ${track.filename}`}
-          className={`${controlClasses.actionButtonCompact} inline-flex items-center gap-1.5`}
+          className="inline-flex items-center gap-1.5"
           disabled={!canRescue || rescueDisabled || rescueMutation.isPending}
           onClick={() => {
             if (track.local_track_id !== null) {
@@ -94,7 +84,6 @@ function UnidentifiedTrackRow({ rescueDisabled = false, track }: { rescueDisable
           </span>
         ) : null}
       </div>
-    </article>
   );
 }
 
@@ -129,7 +118,12 @@ type UnidentifiedViewProps = {
 };
 
 export function UnidentifiedView({ isPending = false, state, tracksResponse }: UnidentifiedViewProps = {}) {
+  const queryClient = useQueryClient();
   const unidentifiedQuery = useUnidentifiedTracksQuery({ enabled: tracksResponse === undefined });
+  const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
+  const [sorting, setSorting] = useState<SortingState>([]);
+  const [bulkRescueStatus, setBulkRescueStatus] = useState<BulkRescueStatus | null>(null);
+  const [isBulkRescuing, setIsBulkRescuing] = useState(false);
   const resolvedState =
     state ??
     (tracksResponse
@@ -141,6 +135,107 @@ export function UnidentifiedView({ isPending = false, state, tracksResponse }: U
           : "ready");
   const tracks = tracksResponse?.tracks ?? unidentifiedQuery.data?.tracks ?? emptyUnidentifiedTracks;
   const actionsDisabled = resolvedState !== "ready" || isPending;
+  const selectedTracks = useMemo(() => tracks.filter((track) => rowSelection[String(track.id)]), [rowSelection, tracks]);
+  const selectedRescuableTracks = useMemo(
+    () => selectedTracks.filter((track) => track.local_track_id !== null),
+    [selectedTracks],
+  );
+  const columns = useMemo(
+    () => [
+      columnHelper.display({
+        cell: () => (
+          <span
+            aria-label="Beets failed track"
+            className="inline-flex h-2.5 w-2.5 rounded-full bg-ctp-red shadow-[0_0_0_4px_color-mix(in_srgb,var(--color-ctp-red)_16%,transparent)]"
+            role="status"
+          />
+        ),
+        enableSorting: false,
+        header: "Status",
+        meta: {
+          widthClass: "w-20",
+        },
+      }),
+      columnHelper.accessor("filename", {
+        cell: (info) => <span className="block max-w-[18rem] truncate font-semibold">{info.getValue()}</span>,
+        header: "Filename",
+        meta: {
+          widthClass: "min-w-[12rem]",
+        },
+      }),
+      columnHelper.accessor("source_path", {
+        cell: (info) => <span className="block max-w-[18rem] truncate">{info.getValue()}</span>,
+        header: "Source path",
+        meta: {
+          widthClass: "min-w-[14rem]",
+        },
+      }),
+      columnHelper.accessor("failed_at", {
+        cell: (info) => <span className="tabular-nums">{formatFailedAt(info.getValue())}</span>,
+        header: "Failed",
+        meta: {
+          hideBelow: "md",
+          widthClass: "w-36",
+        },
+      }),
+      columnHelper.accessor("failure_reason", {
+        cell: (info) => <span className="block max-w-[18rem] truncate">{info.getValue()}</span>,
+        header: "Reason",
+        meta: {
+          hideBelow: "lg",
+          widthClass: "min-w-[14rem]",
+        },
+      }),
+      columnHelper.accessor("local_track_id", {
+        cell: (info) => <span className="font-mono text-[11px]">{info.getValue() ?? "Unavailable"}</span>,
+        header: "Local track ID",
+        meta: {
+          align: "end",
+          hideBelow: "md",
+          widthClass: "w-32",
+        },
+      }),
+      columnHelper.display({
+        cell: (info) => <RescueAction rescueDisabled={actionsDisabled || isBulkRescuing} track={info.row.original} />,
+        enableSorting: false,
+        header: "Actions",
+        meta: {
+          align: "end",
+          widthClass: "w-44",
+        },
+      }),
+    ],
+    [actionsDisabled, isBulkRescuing],
+  );
+
+  async function handleBulkRescue() {
+    if (selectedTracks.length === 0 || isBulkRescuing) {
+      return;
+    }
+
+    setIsBulkRescuing(true);
+    setBulkRescueStatus(null);
+
+    const results = await settleInChunks(selectedRescuableTracks, 5, (track) =>
+      rescueLocalTrackMetadata(track.local_track_id as number),
+    );
+    const skippedCount = selectedTracks.length - selectedRescuableTracks.length;
+    const successCount = results.filter((result) => result.status === "fulfilled").length;
+    const failureCount = results.filter((result) => result.status === "rejected").length;
+
+    await queryClient.invalidateQueries({ queryKey: maintenanceQueryKeys.unidentified() });
+
+    setRowSelection({});
+    setIsBulkRescuing(false);
+    setBulkRescueStatus({
+      body:
+        failureCount > 0 || skippedCount > 0
+          ? `${successCount} ${successCount === 1 ? "track was" : "tracks were"} rescued, ${failureCount} ${failureCount === 1 ? "failed" : "failed"}, and ${skippedCount} ${skippedCount === 1 ? "row was" : "rows were"} skipped.`
+          : `${successCount} ${successCount === 1 ? "track was" : "tracks were"} rescued.`,
+      status: failureCount > 0 ? "error" : "success",
+      title: failureCount > 0 ? "Bulk rescue partially failed" : "Bulk rescue complete",
+    });
+  }
 
   return (
     <section className="flex min-h-0 flex-1 flex-col gap-4">
@@ -159,6 +254,9 @@ export function UnidentifiedView({ isPending = false, state, tracksResponse }: U
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto pb-1 pr-1" aria-label="Unidentified tracks" role="region">
+        {bulkRescueStatus ? (
+          <StatusMessage body={bulkRescueStatus.body} status={bulkRescueStatus.status} title={bulkRescueStatus.title} />
+        ) : null}
         {resolvedState === "loading" ? (
           <EmptyStateCard
             body="Checking Beets-failed imports."
@@ -180,9 +278,27 @@ export function UnidentifiedView({ isPending = false, state, tracksResponse }: U
               <h2 className={textClasses.label}>Beets failed track list</h2>
               <p className={`${textClasses.caption} tabular-nums`}>{tracks.length} rows</p>
             </div>
-            {tracks.map((track) => (
-              <UnidentifiedTrackRow key={track.id} rescueDisabled={actionsDisabled} track={track} />
-            ))}
+            <DataTable
+              bulkActionSlot={
+                <ActionButton
+                  className="inline-flex items-center gap-1.5"
+                  disabled={selectedRescuableTracks.length === 0 || actionsDisabled || isBulkRescuing}
+                  onClick={handleBulkRescue}
+                >
+                  <WandSparkles aria-hidden="true" className="h-3.5 w-3.5" strokeWidth={1.9} />
+                  {isBulkRescuing ? "Rescuing..." : "Rescue"}
+                </ActionButton>
+              }
+              columns={columns}
+              data={tracks}
+              rowCanSelect={(track) => track.local_track_id !== null}
+              rowId={(track) => String(track.id)}
+              rowSelection={rowSelection}
+              sorting={sorting}
+              stickyHeader
+              onRowSelectionChange={setRowSelection}
+              onSortingChange={setSorting}
+            />
           </div>
         ) : (
           <EmptyStateCard body="No failed Beets imports need review." className="text-left" title="No unidentified tracks" />

@@ -1,12 +1,30 @@
-import { ListMusic, Music2, RadioTower, SearchX } from "lucide-react";
+import { createColumnHelper, type RowSelectionState, type SortingState } from "@tanstack/react-table";
+import { useQueryClient } from "@tanstack/react-query";
+import { ListMusic, Music2, RadioTower, RefreshCw, SearchX } from "lucide-react";
+import { useMemo, useState } from "react";
+import { ActionButton } from "../../components/ActionButton";
+import { DataTable } from "../../components/DataTable";
 import { EmptyStateCard } from "../../components/EmptyStateCard";
 import { StatusMessage } from "../../components/StatusMessage";
 import { surfaceClasses, textClasses } from "../../styles/componentClasses";
-import { type MissingLocallyResponse, type MissingLocallyTrack, useMissingLocallyTracksQuery } from "./queries";
+import { syncStreamingPlaylist } from "../playlists/queries";
+import {
+  maintenanceQueryKeys,
+  type MissingLocallyResponse,
+  type MissingLocallyTrack,
+  useMissingLocallyTracksQuery,
+} from "./queries";
 
 type MaintenanceViewState = "ready" | "loading" | "error";
 
 const emptyMissingLocallyTracks: MissingLocallyTrack[] = [];
+const columnHelper = createColumnHelper<MissingLocallyTrack>();
+
+type BulkMissingStatus = {
+  body: string;
+  status: "error" | "success";
+  title: string;
+};
 
 function formatDuration(durationMs: number | null) {
   if (durationMs === null || durationMs < 0) {
@@ -28,6 +46,24 @@ function formatPlaylistUsage(track: MissingLocallyTrack) {
   }
 
   return `${track.playlist_count} playlists: ${playlistNames || "titles unavailable"}`;
+}
+
+function getPlaylistCountLabel(track: MissingLocallyTrack) {
+  return `${track.playlist_count} ${track.playlist_count === 1 ? "playlist" : "playlists"}`;
+}
+
+async function settleInChunks<TItem, TResult>(
+  items: TItem[],
+  chunkSize: number,
+  worker: (item: TItem) => Promise<TResult>,
+): Promise<PromiseSettledResult<TResult>[]> {
+  const settledResults: PromiseSettledResult<TResult>[] = [];
+
+  for (let index = 0; index < items.length; index += chunkSize) {
+    settledResults.push(...(await Promise.allSettled(items.slice(index, index + chunkSize).map(worker))));
+  }
+
+  return settledResults;
 }
 
 function MissingSummaryCard({
@@ -56,50 +92,6 @@ function MissingSummaryCard({
   );
 }
 
-function MissingTrackRow({ track }: { track: MissingLocallyTrack }) {
-  return (
-    <article className={surfaceClasses.rowCardCompact}>
-      <div className="grid min-w-0 gap-1.5">
-        <div className="flex min-w-0 items-center gap-3">
-          <span
-            aria-label="Streaming track missing local match"
-            className="inline-flex h-2.5 w-2.5 shrink-0 rounded-full bg-ctp-yellow shadow-[0_0_0_4px_color-mix(in_srgb,var(--color-ctp-yellow)_16%,transparent)]"
-            role="status"
-          />
-          <SearchX aria-hidden="true" className="h-4 w-4 shrink-0 text-ctp-yellow" strokeWidth={1.8} />
-          <p className={`min-w-0 flex-1 truncate ${textClasses.title}`}>{track.title}</p>
-          <span className={`${textClasses.metric} hidden shrink-0 sm:inline`}>{formatDuration(track.duration_ms)}</span>
-        </div>
-
-        <dl
-          className={`grid min-w-0 gap-x-3 gap-y-1 pl-9 text-ctp-subtext0 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] ${textClasses.bodyRelaxed}`}
-        >
-          <div className="flex min-w-0 items-baseline gap-1.5">
-            <dt className="shrink-0 font-medium text-ctp-overlay1">Artist</dt>
-            <dd className="truncate text-ctp-text">{track.artist}</dd>
-          </div>
-          <div className="flex min-w-0 items-baseline gap-1.5">
-            <dt className="shrink-0 font-medium text-ctp-overlay1">Album</dt>
-            <dd className="truncate text-ctp-text">{track.album ?? "Album unavailable"}</dd>
-          </div>
-          <div className="flex min-w-0 items-baseline gap-1.5 lg:justify-end">
-            <dt className="shrink-0 font-medium text-ctp-overlay1">Affected playlists</dt>
-            <dd className="truncate font-medium text-ctp-text lg:max-w-[18rem]">{formatPlaylistUsage(track)}</dd>
-          </div>
-          <div className="flex min-w-0 items-baseline gap-1.5">
-            <dt className="shrink-0 font-medium text-ctp-overlay1">Streaming ID</dt>
-            <dd className="truncate font-mono text-[11px] font-semibold text-ctp-text">{track.provider_track_id}</dd>
-          </div>
-          <div className="flex items-baseline gap-1.5 sm:hidden">
-            <dt className="shrink-0 font-medium text-ctp-overlay1">Duration</dt>
-            <dd className="font-medium tabular-nums text-ctp-text">{formatDuration(track.duration_ms)}</dd>
-          </div>
-        </dl>
-      </div>
-    </article>
-  );
-}
-
 type MissingLocallyViewProps = {
   isPending?: boolean;
   state?: MaintenanceViewState;
@@ -107,11 +99,115 @@ type MissingLocallyViewProps = {
 };
 
 export function MissingLocallyView({ isPending = false, state, tracksResponse }: MissingLocallyViewProps = {}) {
+  const queryClient = useQueryClient();
   const missingLocallyQuery = useMissingLocallyTracksQuery();
+  const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
+  const [sorting, setSorting] = useState<SortingState>([]);
+  const [bulkSyncStatus, setBulkSyncStatus] = useState<BulkMissingStatus | null>(null);
+  const [isSyncing, setIsSyncing] = useState(false);
   const resolvedState =
     state ?? (missingLocallyQuery.isPending ? "loading" : missingLocallyQuery.isError ? "error" : "ready");
   const tracks = tracksResponse?.tracks ?? missingLocallyQuery.data?.tracks ?? emptyMissingLocallyTracks;
   const playlistCount = new Set(tracks.flatMap((track) => track.playlist_titles)).size;
+  const selectedTracks = useMemo(() => tracks.filter((track) => rowSelection[String(track.id)]), [rowSelection, tracks]);
+  const selectedPlaylistIds = useMemo(
+    () => Array.from(new Set(selectedTracks.flatMap((track) => track.playlist_ids))),
+    [selectedTracks],
+  );
+  const columns = useMemo(
+    () => [
+      columnHelper.display({
+        cell: () => (
+          <span
+            aria-label="Streaming track missing local match"
+            className="inline-flex h-2.5 w-2.5 rounded-full bg-ctp-yellow shadow-[0_0_0_4px_color-mix(in_srgb,var(--color-ctp-yellow)_16%,transparent)]"
+            role="status"
+          />
+        ),
+        enableSorting: false,
+        header: "Status",
+        meta: {
+          widthClass: "w-20",
+        },
+      }),
+      columnHelper.accessor("title", {
+        cell: (info) => <span className="block max-w-[18rem] truncate font-semibold">{info.getValue()}</span>,
+        header: "Title",
+        meta: {
+          widthClass: "min-w-[12rem]",
+        },
+      }),
+      columnHelper.accessor("artist", {
+        cell: (info) => <span className="block max-w-[14rem] truncate">{info.getValue()}</span>,
+        header: "Artist",
+        meta: {
+          widthClass: "min-w-[10rem]",
+        },
+      }),
+      columnHelper.accessor("album", {
+        cell: (info) => <span className="block max-w-[14rem] truncate">{info.getValue() ?? "Album unavailable"}</span>,
+        header: "Album",
+        meta: {
+          hideBelow: "md",
+          widthClass: "min-w-[11rem]",
+        },
+      }),
+      columnHelper.accessor("duration_ms", {
+        cell: (info) => <span className="tabular-nums">{formatDuration(info.getValue())}</span>,
+        header: "Duration",
+        meta: {
+          align: "end",
+          widthClass: "w-24",
+        },
+      }),
+      columnHelper.display({
+        cell: (info) => (
+          <span className="block max-w-[16rem] truncate" title={formatPlaylistUsage(info.row.original)}>
+            {getPlaylistCountLabel(info.row.original)}
+          </span>
+        ),
+        header: "Affected playlists",
+        meta: {
+          widthClass: "min-w-[10rem]",
+        },
+      }),
+      columnHelper.accessor("provider_track_id", {
+        cell: (info) => <span className="block max-w-[14rem] truncate font-mono text-[11px]">{info.getValue()}</span>,
+        header: "Provider ID",
+        meta: {
+          hideBelow: "lg",
+          widthClass: "min-w-[10rem]",
+        },
+      }),
+    ],
+    [],
+  );
+
+  async function handleBulkSync() {
+    if (selectedPlaylistIds.length === 0 || isSyncing) {
+      return;
+    }
+
+    setIsSyncing(true);
+    setBulkSyncStatus(null);
+
+    const results = await settleInChunks(selectedPlaylistIds, 5, syncStreamingPlaylist);
+    const successCount = results.filter((result) => result.status === "fulfilled").length;
+    const failureCount = results.filter((result) => result.status === "rejected").length;
+
+    await queryClient.invalidateQueries({ queryKey: maintenanceQueryKeys.missingLocally() });
+
+    setRowSelection({});
+    setIsSyncing(false);
+    setBulkSyncStatus({
+      body:
+        failureCount > 0
+          ? `${successCount} ${successCount === 1 ? "playlist was" : "playlists were"} queued and ${failureCount} ${failureCount === 1 ? "playlist failed" : "playlists failed"}.`
+          : `${successCount} ${successCount === 1 ? "playlist was" : "playlists were"} queued for sync.`,
+      status: failureCount > 0 ? "error" : "success",
+      title: failureCount > 0 ? "Playlist sync partially failed" : "Playlist sync queued",
+    });
+  }
 
   return (
     <section className="flex min-h-0 flex-1 flex-col gap-4">
@@ -139,6 +235,9 @@ export function MissingLocallyView({ isPending = false, state, tracksResponse }:
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto pb-1 pr-1" aria-label="Missing local tracks" role="region">
+        {bulkSyncStatus ? (
+          <StatusMessage body={bulkSyncStatus.body} status={bulkSyncStatus.status} title={bulkSyncStatus.title} />
+        ) : null}
         {resolvedState === "loading" ? (
           <EmptyStateCard
             body="Checking synced streaming tracks against the local library."
@@ -163,9 +262,26 @@ export function MissingLocallyView({ isPending = false, state, tracksResponse }:
               </div>
               <p className={`${textClasses.caption} tabular-nums`}>{tracks.length} rows</p>
             </div>
-            {tracks.map((track) => (
-              <MissingTrackRow key={track.id} track={track} />
-            ))}
+            <DataTable
+              bulkActionSlot={
+                <ActionButton
+                  className="inline-flex items-center gap-1.5"
+                  disabled={selectedPlaylistIds.length === 0 || isSyncing}
+                  onClick={handleBulkSync}
+                >
+                  <RefreshCw aria-hidden="true" className="h-3.5 w-3.5" strokeWidth={1.9} />
+                  {isSyncing ? "Syncing..." : "Sync affected playlists"}
+                </ActionButton>
+              }
+              columns={columns}
+              data={tracks}
+              rowId={(track) => String(track.id)}
+              rowSelection={rowSelection}
+              sorting={sorting}
+              stickyHeader
+              onRowSelectionChange={setRowSelection}
+              onSortingChange={setSorting}
+            />
           </div>
         ) : (
           <EmptyStateCard body="Every synced streaming track has a local match." className="text-left" title="No missing tracks" />
