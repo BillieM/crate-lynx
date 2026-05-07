@@ -31,7 +31,7 @@ Non-goals:
 ## T1. Add Beets mirror schema
 
 - [x] New module `app/app/ingestion/beets_mirror.py` exporting a `metadata: MetaData` and four tables: `beets_items_table`, `beets_albums_table`, `beets_item_attributes_table`, `beets_album_attributes_table`.
-- [ ] Wire the new metadata into `app/app/schema.py:34` `_app_tables()`.
+- [x] Wire the new metadata into `app/app/schema.py:34` `_app_tables()`.
 - [ ] New Alembic revision under `db/versions/` (e.g. `b9c2f4a8e7d1_add_beets_mirror_tables.py`) with `down_revision = "9b7e3c2d1a4f"`.
 - [ ] `beets_items_table`: keyed by `beets_id` (PK, integer), with typed columns enumerated literally from `beets.library.Item._fields` in the pinned `beets==2.2.0`.
 - [ ] `beets_albums_table`: keyed by `beets_album_id` (PK, integer), with typed columns enumerated literally from `beets.library.Album._fields`.

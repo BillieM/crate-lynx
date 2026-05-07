@@ -5,6 +5,7 @@ from collections.abc import Iterable
 from sqlalchemy import ForeignKeyConstraint, MetaData, Table
 
 from app.ingestion.failures import metadata as failed_ingestion_attempts_metadata
+from app.ingestion.beets_mirror import metadata as beets_mirror_metadata
 from app.links.store import metadata as links_metadata
 from app.local_tracks.store import metadata as local_tracks_metadata
 from app.matching.pipeline import metadata as suggested_links_metadata
@@ -34,6 +35,7 @@ def build_app_metadata() -> MetaData:
 def _app_tables() -> Iterable[Table]:
     metadatas = (
         local_tracks_metadata,
+        beets_mirror_metadata,
         streaming_metadata,
         links_metadata,
         suggested_links_metadata,
