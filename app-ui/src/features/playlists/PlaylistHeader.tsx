@@ -1,19 +1,11 @@
-import { AlertTriangle, ListMusic } from "lucide-react";
+import { AlertTriangle } from "lucide-react";
 import { Pill } from "../../components/Pill";
-import { layoutClasses, surfaceClasses, textClasses } from "../../styles/componentClasses";
+import { surfaceClasses, textClasses } from "../../styles/componentClasses";
 import type { PlaylistDetail } from "./queries";
 
 type PlaylistHeaderProps = {
   playlist: PlaylistDetail;
 };
-
-function getProgressPercentage(playlist: PlaylistDetail) {
-  if (playlist.track_count <= 0) {
-    return 0;
-  }
-
-  return Math.max(0, Math.min(100, (playlist.linked_count / playlist.track_count) * 100));
-}
 
 function formatRelativeSyncTime(timestamp: string | null) {
   if (timestamp === null) {
@@ -57,51 +49,6 @@ function formatSyncErrorTime(timestamp: string | null) {
   return formatter.format(failedAt);
 }
 
-function CoverArt({ playlist }: { playlist: PlaylistDetail }) {
-  if (playlist.cover_art_url) {
-    return (
-      <img
-        alt={`${playlist.name} cover art`}
-        className={`${layoutClasses.artworkCompact} object-cover ${surfaceClasses.raisedArtwork}`}
-        src={playlist.cover_art_url}
-      />
-    );
-  }
-
-  return (
-    <div
-      className={`flex ${layoutClasses.artworkCompact} items-center justify-center bg-ctp-surface0 text-ctp-blue ${surfaceClasses.raisedArtwork}`}
-    >
-      <ListMusic aria-hidden="true" className="h-7 w-7" strokeWidth={1.7} />
-    </div>
-  );
-}
-
-function CoverageMeter({ playlist }: { playlist: PlaylistDetail }) {
-  const percentage = getProgressPercentage(playlist);
-
-  return (
-    <div className={`${layoutClasses.coverageMeter} space-y-2`}>
-      <div className="flex items-center justify-between gap-3">
-        <span className={`${textClasses.eyebrow} text-ctp-subtext0`}>Coverage</span>
-        <span className={textClasses.metric}>
-          {playlist.linked_count} / {playlist.track_count}
-        </span>
-      </div>
-      <div
-        aria-label={`Coverage ${Math.round(percentage)}%`}
-        aria-valuemax={100}
-        aria-valuemin={0}
-        aria-valuenow={Math.round(percentage)}
-        className="h-2 rounded-full bg-ctp-surface0 ring-1 ring-inset ring-ctp-surface1"
-        role="progressbar"
-      >
-        <div className="h-full rounded-full bg-ctp-green" style={{ width: `${percentage}%` }} />
-      </div>
-    </div>
-  );
-}
-
 function CountPill({
   label,
   tone,
@@ -140,31 +87,23 @@ function PlaylistSyncError({ playlist }: { playlist: PlaylistDetail }) {
 
 export function PlaylistHeader({ playlist }: PlaylistHeaderProps) {
   return (
-    <section className={`${surfaceClasses.elevatedPanel} py-4`}>
-      <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-        <div className="flex min-w-0 gap-3 sm:gap-4">
-          <div className="shrink-0">
-            <CoverArt playlist={playlist} />
-          </div>
-          <div className="min-w-0 space-y-2">
-            <div className="min-w-0">
-              <p className={`${textClasses.eyebrow} text-ctp-lavender`}>Playlist overview</p>
-              <h2 className={`mt-1 truncate ${textClasses.playlistTitle}`}>{playlist.name}</h2>
-              <p className={textClasses.bodyMuted}>{formatRelativeSyncTime(playlist.synced_at)}</p>
-            </div>
+    <section
+      aria-label="Playlist toolbar"
+      className={`${surfaceClasses.compactCard} flex flex-wrap items-center justify-between gap-3`}
+    >
+      <div className="min-w-0">
+        <h2 className={`truncate ${textClasses.playlistTitle}`}>{playlist.name}</h2>
+        <p className={textClasses.bodyMuted}>{formatRelativeSyncTime(playlist.synced_at)}</p>
+      </div>
 
-            <div className="flex flex-wrap gap-2">
-              <CountPill label="Linked" tone="success" value={playlist.linked_count} />
-              <CountPill label="Pending" tone="pending" value={playlist.pending_count} />
-              <CountPill label="Unlinked" tone="danger" value={playlist.unlinked_count} />
-            </div>
-          </div>
+      <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
+        <div className="flex flex-wrap gap-2">
+          <CountPill label="Linked" tone="success" value={playlist.linked_count} />
+          <CountPill label="Pending" tone="pending" value={playlist.pending_count} />
+          <CountPill label="Unlinked" tone="danger" value={playlist.unlinked_count} />
         </div>
 
-        <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between xl:items-center">
-          <CoverageMeter playlist={playlist} />
-          <PlaylistSyncError playlist={playlist} />
-        </div>
+        <PlaylistSyncError playlist={playlist} />
       </div>
     </section>
   );

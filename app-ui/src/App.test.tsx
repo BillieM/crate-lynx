@@ -1108,7 +1108,7 @@ describe("App", () => {
     renderApp();
 
     expect(await screen.findByRole("heading", { level: 1, name: "Late Night Drive" })).toBeInTheDocument();
-    expect(await screen.findByRole("img", { name: "Late Night Drive cover art" })).toBeInTheDocument();
+    expect(await screen.findByRole("region", { name: "Playlist toolbar" })).toBeInTheDocument();
     expect(document.getElementById("playlist-12")).toHaveAttribute("data-view-active", "true");
     expect(fetchMock).toHaveBeenCalledWith("/api/playlists/12");
     expect(fetchMock).toHaveBeenCalledWith("/api/playlists/12/tracks");
@@ -1119,9 +1119,11 @@ describe("App", () => {
 
     renderApp();
 
-    expect(await screen.findByRole("img", { name: "Late Night Drive cover art" })).toBeInTheDocument();
-    expect(screen.getByText("Playlist overview")).toBeInTheDocument();
-    expect(screen.getByText("58 / 62")).toBeInTheDocument();
+    const playlistToolbar = await screen.findByRole("region", { name: "Playlist toolbar" });
+    expect(playlistToolbar).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 2, name: "Late Night Drive" })).toBeInTheDocument();
+    expect(within(playlistToolbar).getByText("58")).toBeInTheDocument();
+    expect(within(playlistToolbar).getByText("Linked")).toBeInTheDocument();
     expect(screen.getByText("Night Runner")).toBeInTheDocument();
     expect(screen.getByText("Pending Signal")).toBeInTheDocument();
     expect(screen.getByText("Loose Cable")).toBeInTheDocument();
@@ -1166,7 +1168,7 @@ describe("App", () => {
     for (const playlist of secondaryPlaylistFixtures) {
       fireEvent.click(await screen.findByRole("button", { name: new RegExp(playlist.name, "i") }));
 
-      expect(await screen.findByRole("img", { name: `${playlist.name} cover art` })).toBeInTheDocument();
+      expect(await screen.findByRole("region", { name: "Playlist toolbar" })).toBeInTheDocument();
       expect(screen.getByRole("heading", { level: 2, name: playlist.name })).toBeInTheDocument();
       expect(screen.getByText(playlist.trackTitle)).toBeInTheDocument();
       expect(screen.getByText("Showing 1 of 1 tracks")).toBeInTheDocument();

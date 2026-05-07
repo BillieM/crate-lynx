@@ -5,6 +5,7 @@ import { controlClasses, surfaceClasses, textClasses } from "../../styles/compon
 import type { PlaylistTrack } from "./queries";
 
 type PlaylistTrackActionsProps = {
+  onOpenTrackDetail?: (track: PlaylistTrack) => void;
   onReviewTrack?: (track: PlaylistTrack) => void;
   playlistId?: number | string;
   track: PlaylistTrack;
@@ -20,13 +21,22 @@ function buildProposalTrackUrl(track: PlaylistTrack) {
   return `/proposals?${params.toString()}`;
 }
 
-export function PlaylistTrackActions({ onReviewTrack, track }: PlaylistTrackActionsProps) {
+export function PlaylistTrackActions({ onOpenTrackDetail, onReviewTrack, track }: PlaylistTrackActionsProps) {
   const [isLinkInfoOpen, setIsLinkInfoOpen] = useState(false);
 
   if (track.status === "linked") {
+    const handleLinkedAction = () => {
+      if (onOpenTrackDetail && track.local_track_id !== null) {
+        onOpenTrackDetail(track);
+        return;
+      }
+
+      setIsLinkInfoOpen((current) => !current);
+    };
+
     return (
       <div className="relative">
-        <ActionButton onClick={() => setIsLinkInfoOpen((current) => !current)}>Linked</ActionButton>
+        <ActionButton onClick={handleLinkedAction}>Linked</ActionButton>
         {isLinkInfoOpen ? (
           <div
             className={`absolute right-0 ${controlClasses.popoverOffset} z-10 w-56 text-left ${surfaceClasses.popover} ${surfaceClasses.popoverBody} border-ctp-green/30`}

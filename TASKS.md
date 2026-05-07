@@ -49,7 +49,7 @@
 - [x] Tests: drawer open/close, ESC, focus return; backend endpoint shape + 404 path.
 - [x] **Definition of done:** `ruff check . && ruff format --check . && pytest` pass for the new endpoint; `npm run lint && npm test` pass for the drawer.
 
-## T4. Convert PlaylistView to dense table + replace overview card with a toolbar
+## T4. Convert PlaylistView to dense table + replace overview card with a toolbar (done)
 
 - Same file (`app-ui/src/features/playlists/PlaylistView.tsx` + `PlaylistHeader.tsx`); must ship together to avoid merge conflict between the two pieces.
 - Replace `PlaylistHeader`'s large overview card with a single compact toolbar: playlist name, linked / pending / unlinked count pills, sync timestamp, sync-error chip rendered only when present. Drop cover art and the coverage meter in this pass.

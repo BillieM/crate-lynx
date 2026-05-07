@@ -22,23 +22,25 @@ function buildPlaylist(overrides: Partial<PlaylistDetail> = {}): PlaylistDetail 
 }
 
 describe("PlaylistHeader", () => {
-  it("renders cover art, title, progress, and status counts", () => {
+  it("renders the compact toolbar with title, sync time, and status counts", () => {
     render(<PlaylistHeader playlist={buildPlaylist()} />);
 
-    expect(screen.getByRole("img", { name: "Late Night Drive cover art" })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Playlist toolbar" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Late Night Drive" })).toBeInTheDocument();
-    expect(screen.getByText("58 / 62")).toBeInTheDocument();
+    expect(screen.getByText(/Synced/)).toHaveTextContent(/May 1/);
     expect(screen.getByText("Linked")).toBeInTheDocument();
     expect(screen.getByText("Pending")).toBeInTheDocument();
     expect(screen.getByText("Unlinked")).toBeInTheDocument();
+    expect(screen.getByText("58")).toBeInTheDocument();
     expect(screen.getByText("3")).toBeInTheDocument();
     expect(screen.getByText("1")).toBeInTheDocument();
   });
 
-  it("falls back to the playlist glyph when cover art is missing", () => {
+  it("renders the first sync fallback without cover art", () => {
     render(<PlaylistHeader playlist={buildPlaylist({ cover_art_url: null, synced_at: null })} />);
 
     expect(screen.queryByRole("img")).not.toBeInTheDocument();
+    expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
     expect(screen.getByText("Awaiting first sync")).toBeInTheDocument();
   });
 

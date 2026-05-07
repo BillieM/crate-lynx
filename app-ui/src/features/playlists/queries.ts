@@ -120,6 +120,11 @@ export type PlaylistSyncResponse = {
   job_id: string;
 };
 
+export type DeleteFinalLinkResponse = {
+  final_link_id: number;
+  status: "deleted";
+};
+
 export const playlistQueryKeys = {
   all: ["playlists"] as const,
   config: () => ["playlists", "config"] as const,
@@ -214,6 +219,18 @@ export async function syncStreamingPlaylist(playlistId: number | string): Promis
   }
 
   return (await response.json()) as PlaylistSyncResponse;
+}
+
+export async function deleteFinalLink(finalLinkId: number | string): Promise<DeleteFinalLinkResponse> {
+  const response = await fetch(`/api/final-links/${encodeURIComponent(String(finalLinkId))}`, {
+    method: "DELETE",
+  });
+
+  if (!response.ok) {
+    throw new Error(`Final link delete request failed with status ${response.status}`);
+  }
+
+  return (await response.json()) as DeleteFinalLinkResponse;
 }
 
 export async function fetchPlaylistTracks(playlistId: number | string): Promise<PlaylistTracksResponse> {

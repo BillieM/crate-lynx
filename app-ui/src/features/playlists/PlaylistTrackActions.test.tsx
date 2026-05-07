@@ -52,6 +52,32 @@ describe("PlaylistTrackActions", () => {
     expect(screen.getByRole("dialog")).toHaveTextContent("local track #22");
   });
 
+  it("calls the detail callback for linked tracks when supplied", () => {
+    const onOpenTrackDetail = vi.fn();
+    const track = buildTrack({ status: "linked" });
+
+    render(<PlaylistTrackActions onOpenTrackDetail={onOpenTrackDetail} track={track} />, {
+      wrapper: createWrapper(),
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Linked" }));
+
+    expect(onOpenTrackDetail).toHaveBeenCalledWith(track);
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("falls back to final link info when linked rows do not have a local track id", () => {
+    render(<PlaylistTrackActions onOpenTrackDetail={vi.fn()} track={buildTrack({ local_track_id: null, status: "linked" })} />, {
+      wrapper: createWrapper(),
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Linked" }));
+
+    expect(screen.getByRole("dialog")).toHaveTextContent("Final link #88");
+    expect(screen.getByRole("dialog")).toHaveTextContent("local track #unknown");
+  });
+
+
   it("calls the review navigation callback for pending tracks", () => {
     const onReviewTrack = vi.fn();
     const track = buildTrack({ status: "pending", proposal_id: 54 });
