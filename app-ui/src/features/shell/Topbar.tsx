@@ -1,12 +1,15 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, BookOpenText, Cog, ListMusic, Sparkles, type LucideIcon } from "lucide-react";
 import { ActionButton } from "../../components/ActionButton";
+import { useDelayedInvalidate } from "../../lib/useDelayedInvalidate";
 import { controlClasses, shellClasses, textClasses } from "../../styles/componentClasses";
 import {
   exportPlaylistM3u,
+  playlistQueryKeys,
   syncStreamingPlaylist,
   usePlaylistDetailQuery,
 } from "../playlists/queries";
+import { streamingAccountQueryKeys } from "../streamingAccounts/queries";
 import type { PlaylistSyncViewState, ViewConfig } from "./types";
 
 function downloadBlob(blob: Blob, filename: string) {
@@ -90,6 +93,7 @@ export function Topbar({
   view: ViewConfig;
 }) {
   const queryClient = useQueryClient();
+  const delayedInvalidate = useDelayedInvalidate();
   const playlistDetailQuery = usePlaylistDetailQuery(view.playlistResourceId ?? null);
   const playlist = playlistDetailQuery.data?.playlist;
   const exportMutation = useMutation({
@@ -108,10 +112,17 @@ export function Topbar({
     },
     onSuccess: async (_data, playlistId) => {
       onPlaylistSyncStateChange({ playlistId: Number(playlistId), status: "success" });
-      await queryClient.invalidateQueries({ queryKey: ["playlists"] });
-      if (view.playlistResourceId !== undefined) {
-        await queryClient.invalidateQueries({ queryKey: ["playlists", view.playlistResourceId] });
-      }
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: playlistQueryKeys.detail(playlistId) }),
+        queryClient.invalidateQueries({ queryKey: playlistQueryKeys.tracks(playlistId) }),
+        queryClient.invalidateQueries({ queryKey: playlistQueryKeys.list() }),
+      ]);
+      delayedInvalidate([
+        playlistQueryKeys.detail(playlistId),
+        playlistQueryKeys.tracks(playlistId),
+        playlistQueryKeys.list(),
+        streamingAccountQueryKeys.list(),
+      ]);
     },
   });
 

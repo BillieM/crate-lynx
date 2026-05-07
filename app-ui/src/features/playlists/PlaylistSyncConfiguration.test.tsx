@@ -1,9 +1,10 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 
 import { maintenanceQueryKeys } from "../maintenance/queries";
+import { useStreamingAccountsQuery } from "../streamingAccounts/queries";
 import { PlaylistSyncConfiguration } from "./PlaylistSyncConfiguration";
-import { playlistQueryKeys, type StreamingPlaylistConfigResponse } from "./queries";
+import { playlistQueryKeys, type StreamingPlaylistConfigResponse, useStreamingPlaylistsQuery } from "./queries";
 
 const playlistConfigResponse: StreamingPlaylistConfigResponse = {
   playlists: [
@@ -32,7 +33,14 @@ const playlistConfigResponse: StreamingPlaylistConfigResponse = {
   ],
 };
 
-function renderPlaylistSyncConfiguration() {
+function SyncRefreshObservers() {
+  useStreamingAccountsQuery();
+  useStreamingPlaylistsQuery();
+
+  return null;
+}
+
+function renderPlaylistSyncConfiguration({ includeSyncRefreshObservers = false } = {}) {
   const queryClient = new QueryClient({
     defaultOptions: {
       queries: {
@@ -47,6 +55,7 @@ function renderPlaylistSyncConfiguration() {
 
   const result = render(
     <QueryClientProvider client={queryClient}>
+      {includeSyncRefreshObservers ? <SyncRefreshObservers /> : null}
       <PlaylistSyncConfiguration />
     </QueryClientProvider>,
   );
@@ -70,6 +79,26 @@ function mockConfigFetch(response: StreamingPlaylistConfigResponse = playlistCon
         ok: true,
         json: async () => ({
           playlists: response.playlists.filter((playlist) => playlist.selected_for_sync),
+        }),
+      } as Response;
+    }
+
+    if (url === "/api/streaming/accounts" && init?.method === undefined) {
+      return {
+        ok: true,
+        json: async () => ({
+          accounts: [
+            {
+              auth_error: null,
+              auth_error_at: null,
+              auth_state: "connected",
+              created_at: "2026-05-01T09:00:00Z",
+              display_name: "YouTube Music",
+              id: 4,
+              provider: "youtube_music",
+              updated_at: "2026-05-01T09:00:00Z",
+            },
+          ],
         }),
       } as Response;
     }
@@ -111,9 +140,26 @@ function mockConfigFetch(response: StreamingPlaylistConfigResponse = playlistCon
   });
 }
 
+function countFetches(fetchMock: ReturnType<typeof mockConfigFetch>, url: string) {
+  return fetchMock.mock.calls.filter(([input]) => String(input) === url).length;
+}
+
+async function flushAsyncWork() {
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(0);
+  });
+}
+
+async function advanceTimers(ms: number) {
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(ms);
+  });
+}
+
 describe("PlaylistSyncConfiguration", () => {
   afterEach(() => {
     vi.restoreAllMocks();
+    vi.useRealTimers();
   });
 
   it("renders discovered playlists with selection state and last sync errors", async () => {
@@ -189,6 +235,63 @@ describe("PlaylistSyncConfiguration", () => {
     expect(await screen.findByText("Metadata refresh queued.")).toBeInTheDocument();
   });
 
+  it("delays sidebar and config refetches after enabled sync and metadata refresh queue", async () => {
+    const fetchMock = mockConfigFetch();
+
+    renderPlaylistSyncConfiguration({ includeSyncRefreshObservers: true });
+
+    await screen.findByRole("button", { name: "Sync enabled" });
+    vi.useFakeTimers();
+
+    fireEvent.click(screen.getByRole("button", { name: "Sync enabled" }));
+    await flushAsyncWork();
+
+    expect(screen.getByText("Enabled playlist sync queued.")).toBeInTheDocument();
+    const listFetchesAfterSyncQueued = countFetches(fetchMock, "/api/streaming/playlists");
+    const configFetchesAfterSyncQueued = countFetches(fetchMock, "/api/streaming/playlists/config");
+    const accountFetchesAfterSyncQueued = countFetches(fetchMock, "/api/streaming/accounts");
+
+    await advanceTimers(3000);
+
+    expect(countFetches(fetchMock, "/api/streaming/playlists")).toBeGreaterThan(listFetchesAfterSyncQueued);
+    expect(countFetches(fetchMock, "/api/streaming/playlists/config")).toBeGreaterThan(configFetchesAfterSyncQueued);
+    expect(countFetches(fetchMock, "/api/streaming/accounts")).toBeGreaterThan(accountFetchesAfterSyncQueued);
+
+    const listFetchesAfterFirstDelay = countFetches(fetchMock, "/api/streaming/playlists");
+    const configFetchesAfterFirstDelay = countFetches(fetchMock, "/api/streaming/playlists/config");
+    const accountFetchesAfterFirstDelay = countFetches(fetchMock, "/api/streaming/accounts");
+
+    await advanceTimers(7000);
+
+    expect(countFetches(fetchMock, "/api/streaming/playlists")).toBeGreaterThan(listFetchesAfterFirstDelay);
+    expect(countFetches(fetchMock, "/api/streaming/playlists/config")).toBeGreaterThan(configFetchesAfterFirstDelay);
+    expect(countFetches(fetchMock, "/api/streaming/accounts")).toBeGreaterThan(accountFetchesAfterFirstDelay);
+
+    fireEvent.click(screen.getByRole("button", { name: "Refresh playlist metadata" }));
+    await flushAsyncWork();
+
+    expect(screen.getByText("Metadata refresh queued.")).toBeInTheDocument();
+    const listFetchesAfterRefreshQueued = countFetches(fetchMock, "/api/streaming/playlists");
+    const configFetchesAfterRefreshQueued = countFetches(fetchMock, "/api/streaming/playlists/config");
+    const accountFetchesAfterRefreshQueued = countFetches(fetchMock, "/api/streaming/accounts");
+
+    await advanceTimers(3000);
+
+    expect(countFetches(fetchMock, "/api/streaming/playlists")).toBeGreaterThan(listFetchesAfterRefreshQueued);
+    expect(countFetches(fetchMock, "/api/streaming/playlists/config")).toBeGreaterThan(configFetchesAfterRefreshQueued);
+    expect(countFetches(fetchMock, "/api/streaming/accounts")).toBeGreaterThan(accountFetchesAfterRefreshQueued);
+
+    const listFetchesAfterRefreshFirstDelay = countFetches(fetchMock, "/api/streaming/playlists");
+    const configFetchesAfterRefreshFirstDelay = countFetches(fetchMock, "/api/streaming/playlists/config");
+    const accountFetchesAfterRefreshFirstDelay = countFetches(fetchMock, "/api/streaming/accounts");
+
+    await advanceTimers(7000);
+
+    expect(countFetches(fetchMock, "/api/streaming/playlists")).toBeGreaterThan(listFetchesAfterRefreshFirstDelay);
+    expect(countFetches(fetchMock, "/api/streaming/playlists/config")).toBeGreaterThan(configFetchesAfterRefreshFirstDelay);
+    expect(countFetches(fetchMock, "/api/streaming/accounts")).toBeGreaterThan(accountFetchesAfterRefreshFirstDelay);
+  });
+
   it("runs bulk enable, disable, and row sync actions for selected rows", async () => {
     const fetchMock = mockConfigFetch();
 
@@ -237,5 +340,39 @@ describe("PlaylistSyncConfiguration", () => {
       expect(fetchMock).toHaveBeenCalledWith("/api/streaming/playlists/12/sync", { method: "POST" });
     });
     expect(await screen.findByText("1 playlist was queued for sync.")).toBeInTheDocument();
+  });
+
+  it("delays sidebar and config refetches after row sync queues", async () => {
+    const fetchMock = mockConfigFetch();
+
+    renderPlaylistSyncConfiguration({ includeSyncRefreshObservers: true });
+
+    await screen.findByRole("cell", { name: "Fresh Discoveries" });
+    vi.useFakeTimers();
+
+    fireEvent.click(screen.getAllByRole("checkbox", { name: /^Select row/ })[0]);
+    fireEvent.click(screen.getByRole("button", { name: /Sync rows/ }));
+    await flushAsyncWork();
+
+    expect(screen.getByText("1 playlist was queued for sync.")).toBeInTheDocument();
+    const listFetchesAfterQueued = countFetches(fetchMock, "/api/streaming/playlists");
+    const configFetchesAfterQueued = countFetches(fetchMock, "/api/streaming/playlists/config");
+    const accountFetchesAfterQueued = countFetches(fetchMock, "/api/streaming/accounts");
+
+    await advanceTimers(3000);
+
+    expect(countFetches(fetchMock, "/api/streaming/playlists")).toBeGreaterThan(listFetchesAfterQueued);
+    expect(countFetches(fetchMock, "/api/streaming/playlists/config")).toBeGreaterThan(configFetchesAfterQueued);
+    expect(countFetches(fetchMock, "/api/streaming/accounts")).toBeGreaterThan(accountFetchesAfterQueued);
+
+    const listFetchesAfterFirstDelay = countFetches(fetchMock, "/api/streaming/playlists");
+    const configFetchesAfterFirstDelay = countFetches(fetchMock, "/api/streaming/playlists/config");
+    const accountFetchesAfterFirstDelay = countFetches(fetchMock, "/api/streaming/accounts");
+
+    await advanceTimers(7000);
+
+    expect(countFetches(fetchMock, "/api/streaming/playlists")).toBeGreaterThan(listFetchesAfterFirstDelay);
+    expect(countFetches(fetchMock, "/api/streaming/playlists/config")).toBeGreaterThan(configFetchesAfterFirstDelay);
+    expect(countFetches(fetchMock, "/api/streaming/accounts")).toBeGreaterThan(accountFetchesAfterFirstDelay);
   });
 });

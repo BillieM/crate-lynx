@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import App, { getProgressColor } from "./App";
 import type { LibraryTracksResponse } from "./features/library/queries";
@@ -391,6 +391,22 @@ async function openYoutubeMusicSettings() {
   expect(await screen.findByRole("heading", { level: 1, name: "Settings" })).toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "YouTube Music sync" }));
   expect(await screen.findByRole("heading", { level: 2, name: "Playlist sync configuration" })).toBeInTheDocument();
+}
+
+function countFetches(fetchMock: ReturnType<typeof mockPlaylistFetch>, url: string) {
+  return fetchMock.mock.calls.filter(([input]) => String(input) === url).length;
+}
+
+async function flushAsyncWork() {
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(0);
+  });
+}
+
+async function advanceTimers(ms: number) {
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(ms);
+  });
 }
 
 describe("App", () => {
@@ -1229,6 +1245,43 @@ describe("App", () => {
     });
     expect(fetchMock).not.toHaveBeenCalledWith(selectedPlaylistSyncEndpoint, { method: "POST" });
     expect(await screen.findByText("Playlist sync queued.")).toBeInTheDocument();
+  });
+
+  it("delays playlist refetches after the active playlist sync queues", async () => {
+    const fetchMock = mockPlaylistFetch();
+
+    renderApp();
+    fireEvent.click(await screen.findByRole("button", { name: /Static Bloom/i }));
+
+    const syncButton = await screen.findByRole("button", { name: "Sync" });
+    await waitFor(() => {
+      expect(syncButton).toBeEnabled();
+    });
+    vi.useFakeTimers();
+
+    fireEvent.click(syncButton);
+    await flushAsyncWork();
+
+    expect(screen.getByText("Playlist sync queued.")).toBeInTheDocument();
+    const playlistListFetchesAfterQueued = countFetches(fetchMock, "/api/streaming/playlists");
+    const playlistDetailFetchesAfterQueued = countFetches(fetchMock, "/api/playlists/9");
+    const playlistTrackFetchesAfterQueued = countFetches(fetchMock, "/api/playlists/9/tracks");
+
+    await advanceTimers(3000);
+
+    expect(countFetches(fetchMock, "/api/streaming/playlists")).toBeGreaterThan(playlistListFetchesAfterQueued);
+    expect(countFetches(fetchMock, "/api/playlists/9")).toBeGreaterThan(playlistDetailFetchesAfterQueued);
+    expect(countFetches(fetchMock, "/api/playlists/9/tracks")).toBeGreaterThan(playlistTrackFetchesAfterQueued);
+
+    const playlistListFetchesAfterFirstDelay = countFetches(fetchMock, "/api/streaming/playlists");
+    const playlistDetailFetchesAfterFirstDelay = countFetches(fetchMock, "/api/playlists/9");
+    const playlistTrackFetchesAfterFirstDelay = countFetches(fetchMock, "/api/playlists/9/tracks");
+
+    await advanceTimers(7000);
+
+    expect(countFetches(fetchMock, "/api/streaming/playlists")).toBeGreaterThan(playlistListFetchesAfterFirstDelay);
+    expect(countFetches(fetchMock, "/api/playlists/9")).toBeGreaterThan(playlistDetailFetchesAfterFirstDelay);
+    expect(countFetches(fetchMock, "/api/playlists/9/tracks")).toBeGreaterThan(playlistTrackFetchesAfterFirstDelay);
   });
 
   it("shows pending state while active playlist sync is running", async () => {

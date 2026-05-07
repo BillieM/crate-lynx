@@ -192,7 +192,7 @@ Context from investigation:
 
 ## A4a. Delayed-refetch helper + wire 4 sync mutation sites
 
-- [ ] New helper `app-ui/src/lib/useDelayedInvalidate.ts`:
+- [x] New helper `app-ui/src/lib/useDelayedInvalidate.ts`:
   ```
   export function useDelayedInvalidate(): (
     queryKeys: readonly QueryKey[],
@@ -200,12 +200,12 @@ Context from investigation:
   ) => void;
   ```
   Default delays `[3000, 10000]`. Returns a stable callback. Cleans up pending timeouts on unmount.
-- [ ] Wire it into the four mutation sites (preserve existing immediate "queued" status messages — schedule, don't replace):
+- [x] Wire it into the four mutation sites (preserve existing immediate "queued" status messages — schedule, don't replace):
   1. `app-ui/src/features/playlists/PlaylistView.tsx` topbar Sync trigger — schedule delayed invalidation of `playlistQueryKeys.detail(id)`, `playlistQueryKeys.tracks(id)`, `playlistQueryKeys.list()`, `streamingAccountQueryKeys.list()`.
   2. `PlaylistSyncConfiguration.tsx:118` `selectedSyncMutation` (`Sync enabled`) — schedule `playlistQueryKeys.list()`, `playlistQueryKeys.config()`, `streamingAccountQueryKeys.list()`.
   3. `PlaylistSyncConfiguration.tsx:327 handleBulkRowSync` (`Sync rows`) — schedule the same three keys after the chunked settle resolves.
   4. `PlaylistSyncConfiguration.tsx:127 metadataRefreshMutation` — schedule the same three keys.
-- [ ] Tests (extend `PlaylistView.test.tsx`, `PlaylistSyncConfiguration.test.tsx`, mock timers via `vi.useFakeTimers()`):
+- [x] Tests (extend `PlaylistView.test.tsx`, `PlaylistSyncConfiguration.test.tsx`, mock timers via `vi.useFakeTimers()`):
   - immediate queued status still renders on POST success.
   - each mutation schedules invalidation at both delay ticks.
   - advancing timers triggers a refetch of the expected keys.

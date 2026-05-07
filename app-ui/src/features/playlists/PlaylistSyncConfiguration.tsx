@@ -6,10 +6,12 @@ import { ActionButton } from "../../components/ActionButton";
 import { DataTable } from "../../components/DataTable";
 import { EmptyStateCard } from "../../components/EmptyStateCard";
 import { StatusMessage, type OperationStatus } from "../../components/StatusMessage";
+import { useDelayedInvalidate } from "../../lib/useDelayedInvalidate";
 import { controlClasses, layoutClasses, textClasses } from "../../styles/componentClasses";
 import { actionButtonToneClasses } from "../../styles/toneClasses";
 import { maintenanceQueryKeys } from "../maintenance/queries";
 import { PlaylistActionStatus } from "../shell/Topbar";
+import { streamingAccountQueryKeys } from "../streamingAccounts/queries";
 import {
   playlistQueryKeys,
   refreshStreamingAccountMetadata,
@@ -120,6 +122,7 @@ function PlaylistSyncToggle({
 
 export function PlaylistSyncConfiguration() {
   const queryClient = useQueryClient();
+  const delayedInvalidate = useDelayedInvalidate();
   const configQuery = useStreamingPlaylistConfigQuery();
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
   const [sorting, setSorting] = useState<SortingState>([]);
@@ -133,6 +136,7 @@ export function PlaylistSyncConfiguration() {
         queryClient.invalidateQueries({ queryKey: playlistQueryKeys.list() }),
         queryClient.invalidateQueries({ queryKey: playlistQueryKeys.config() }),
       ]);
+      scheduleStreamingSyncRefresh();
     },
   });
   const metadataRefreshMutation = useMutation({
@@ -142,6 +146,7 @@ export function PlaylistSyncConfiguration() {
         queryClient.invalidateQueries({ queryKey: playlistQueryKeys.list() }),
         queryClient.invalidateQueries({ queryKey: playlistQueryKeys.config() }),
       ]);
+      scheduleStreamingSyncRefresh();
     },
   });
   const toggleMutation = useMutation({
@@ -303,6 +308,14 @@ export function PlaylistSyncConfiguration() {
     ]);
   }
 
+  function scheduleStreamingSyncRefresh() {
+    delayedInvalidate([
+      playlistQueryKeys.list(),
+      playlistQueryKeys.config(),
+      streamingAccountQueryKeys.list(),
+    ]);
+  }
+
   async function handleBulkSelectionUpdate(selectedForSync: boolean) {
     if (selectedRows.length === 0 || isBulkUpdating) {
       return;
@@ -348,6 +361,7 @@ export function PlaylistSyncConfiguration() {
     const failureCount = results.filter((result) => result.status === "rejected").length;
 
     await refreshPlaylistQueries();
+    scheduleStreamingSyncRefresh();
 
     setRowSelection({});
     setIsBulkSyncingRows(false);
