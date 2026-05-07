@@ -206,8 +206,8 @@ export function LocalLibraryView({ isPending = false, state, tracksResponse }: L
   const hasMatchingTracks =
     activeLinkStatusFilter === "all" ? tracks.length > 0 : tracks.some((track) => track.link_status === activeLinkStatusFilter);
   const selectedTracks = useMemo(() => tracks.filter((track) => rowSelection[String(track.id)]), [rowSelection, tracks]);
-  const selectedUnlinkedTracks = useMemo(
-    () => selectedTracks.filter((track) => track.link_status === "unlinked"),
+  const selectedRematchableTracks = useMemo(
+    () => selectedTracks.filter((track) => track.link_status !== "linked"),
     [selectedTracks],
   );
   const selectedLinkedTracks = useMemo(
@@ -302,14 +302,16 @@ export function LocalLibraryView({ isPending = false, state, tracksResponse }: L
   }
 
   async function handleBulkRematch() {
-    if (selectedUnlinkedTracks.length === 0 || isBulkBusy) {
+    const rematchableTracks = selectedRematchableTracks.filter((track) => track.link_status !== "linked");
+
+    if (rematchableTracks.length === 0 || isBulkBusy) {
       return;
     }
 
     setIsBulkRematching(true);
     setBulkStatus(null);
 
-    const results = await settleInChunks(selectedUnlinkedTracks, 5, (track) => rematchLocalTrack(track.id));
+    const results = await settleInChunks(rematchableTracks, 5, (track) => rematchLocalTrack(track.id));
     const successCount = results.filter((result) => result.status === "fulfilled").length;
     const failureCount = results.filter((result) => result.status === "rejected").length;
 
@@ -399,7 +401,7 @@ export function LocalLibraryView({ isPending = false, state, tracksResponse }: L
                   <>
                     <ActionButton
                       className="inline-flex items-center gap-1.5"
-                      disabled={selectedUnlinkedTracks.length === 0 || isBulkBusy}
+                      disabled={selectedRematchableTracks.length === 0 || isBulkBusy}
                       onClick={handleBulkRematch}
                     >
                       <RotateCcw aria-hidden="true" className="h-3.5 w-3.5" strokeWidth={1.9} />

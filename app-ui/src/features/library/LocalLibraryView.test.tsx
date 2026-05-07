@@ -242,12 +242,35 @@ describe("LocalLibraryView", () => {
     expect(within(bulkBar as HTMLElement).getByRole("button", { name: "Unlink" })).toBeEnabled();
 
     fireEvent.click(screen.getByRole("button", { name: "Clear selection" }));
-    fireEvent.click(screen.getByRole("checkbox", { name: "Select row 4" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select row 2" }));
 
     bulkBar = screen.getByText("1 row selected").closest("div");
     expect(bulkBar).not.toBeNull();
     expect(within(bulkBar as HTMLElement).getByRole("button", { name: "Re-match" })).toBeEnabled();
     expect(within(bulkBar as HTMLElement).getByRole("button", { name: "Unlink" })).toBeDisabled();
+  });
+
+  it("bulk re-matches a selected pending row and renders aggregate feedback", async () => {
+    const fetchMock = mockLibraryFetchWithRematch({
+      rematchResponse: {
+        ok: true,
+        json: async () => ({ job_id: "match-job-1002", local_track_id: 1002 }),
+      } as Response,
+    });
+
+    renderWithQueryClient(<LocalLibraryView />);
+
+    fireEvent.click(await screen.findByRole("checkbox", { name: "Select row 2" }));
+    const bulkBar = screen.getByText("1 row selected").closest("div") as HTMLElement;
+
+    expect(within(bulkBar).getByRole("button", { name: "Re-match" })).toBeEnabled();
+    expect(within(bulkBar).getByRole("button", { name: "Unlink" })).toBeDisabled();
+
+    fireEvent.click(within(bulkBar).getByRole("button", { name: "Re-match" }));
+
+    expect(await screen.findByText("Bulk re-match queued")).toBeInTheDocument();
+    expect(screen.getByText("1 row was queued for matching.")).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledWith("/api/local-tracks/1002/rematch", { method: "POST" });
   });
 
   it("bulk re-matches selected unlinked rows and renders aggregate feedback", async () => {
@@ -267,6 +290,48 @@ describe("LocalLibraryView", () => {
     expect(await screen.findByText("Bulk re-match queued")).toBeInTheDocument();
     expect(screen.getByText("1 row was queued for matching.")).toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledWith("/api/local-tracks/1004/rematch", { method: "POST" });
+  });
+
+  it("runs mixed linked and pending selections through only the eligible bulk rows", async () => {
+    const fetchMock = mockLibraryFetchWithRematch({
+      rematchResponse: {
+        ok: true,
+        json: async () => ({ job_id: "match-job-1002", local_track_id: 1002 }),
+      } as Response,
+    });
+
+    renderWithQueryClient(<LocalLibraryView />);
+
+    fireEvent.click(await screen.findByRole("checkbox", { name: "Select row 1" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select row 2" }));
+
+    let bulkBar = screen.getByText("2 rows selected").closest("div") as HTMLElement;
+    expect(within(bulkBar).getByRole("button", { name: "Re-match" })).toBeEnabled();
+    expect(within(bulkBar).getByRole("button", { name: "Unlink" })).toBeEnabled();
+
+    fireEvent.click(within(bulkBar).getByRole("button", { name: "Re-match" }));
+
+    expect(await screen.findByText("Bulk re-match queued")).toBeInTheDocument();
+
+    const rematchCalls = fetchMock.mock.calls.filter(
+      ([input, init]) => String(input).includes("/rematch") && init?.method === "POST",
+    );
+    expect(rematchCalls).toHaveLength(1);
+    expect(rematchCalls[0]).toEqual(["/api/local-tracks/1002/rematch", { method: "POST" }]);
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select row 1" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select row 2" }));
+
+    bulkBar = screen.getByText("2 rows selected").closest("div") as HTMLElement;
+    fireEvent.click(within(bulkBar).getByRole("button", { name: "Unlink" }));
+
+    expect(await screen.findByText("Bulk unlink complete")).toBeInTheDocument();
+
+    const unlinkCalls = fetchMock.mock.calls.filter(
+      ([input, init]) => String(input).includes("/api/final-links/") && init?.method === "DELETE",
+    );
+    expect(unlinkCalls).toHaveLength(1);
+    expect(unlinkCalls[0]).toEqual(["/api/final-links/9001", { method: "DELETE" }]);
   });
 
   it("bulk unlinks selected linked rows and renders aggregate feedback", async () => {
