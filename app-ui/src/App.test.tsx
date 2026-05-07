@@ -563,17 +563,8 @@ describe("App", () => {
 
     expect(screen.getByRole("heading", { level: 1, name: "All tracks" })).toBeInTheDocument();
     expect(screen.getByRole("region", { name: "Local library tracks" })).toBeInTheDocument();
-    const stats = screen.getByLabelText("Library stats");
-    await waitFor(() => {
-      expect(within(stats).getByLabelText("Total tracks")).toHaveTextContent("321");
-    });
-    expect(within(stats).getByLabelText("Linked tracks")).toHaveTextContent("244");
-    expect(within(stats).getByLabelText("Pending tracks")).toHaveTextContent("43");
-    expect(within(stats).getByLabelText("Unlinked tracks")).toHaveTextContent("25");
-    expect(screen.getByRole("region", { name: "Library filters" })).toBeInTheDocument();
-    expect(screen.getByRole("group", { name: "Library link status filters" })).toBeInTheDocument();
-    expect(screen.getByLabelText("Match method")).toBeInTheDocument();
-    expect(screen.getByLabelText("File status")).toBeInTheDocument();
+    const filters = await screen.findByRole("region", { name: "Library filters" });
+    expect(within(filters).getByRole("group", { name: "Library link status filters" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Open app settings" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Configure sync" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Sync" })).not.toBeInTheDocument();
@@ -593,7 +584,7 @@ describe("App", () => {
     renderApp(["/library"]);
 
     expect(screen.getByRole("heading", { level: 1, name: "All tracks" })).toBeInTheDocument();
-    expect(screen.getByLabelText("Library stats")).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Library filters" })).toBeInTheDocument();
     expect(screen.getByRole("region", { name: "Local library tracks" })).toBeInTheDocument();
     expect(document.getElementById("library")).toHaveAttribute("data-view-active", "true");
     expect(document.getElementById("playlists")).toHaveAttribute("data-view-active", "false");

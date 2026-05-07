@@ -148,8 +148,6 @@ describe("LocalLibraryView", () => {
     expect(within(filters).getByRole("button", { name: "Linked 2" })).toHaveAttribute("aria-pressed", "false");
     expect(within(filters).getByRole("button", { name: "Pending 2" })).toHaveAttribute("aria-pressed", "false");
     expect(within(filters).getByRole("button", { name: "Unlinked 1" })).toHaveAttribute("aria-pressed", "false");
-    expect(within(filters).getByLabelText("Match method")).toHaveValue("all");
-    expect(within(filters).getByLabelText("File status")).toHaveValue("all");
     expect(within(filters).getByRole("button", { name: "Reset library filters" })).toBeDisabled();
     expect(fetchMock).toHaveBeenCalledWith("/api/library/tracks");
   });
@@ -163,20 +161,14 @@ describe("LocalLibraryView", () => {
     const pendingButton = await within(filters).findByRole("button", { name: "Pending 2" });
 
     fireEvent.click(pendingButton);
-    fireEvent.change(within(filters).getByLabelText("Match method"), { target: { value: "tag" } });
-    fireEvent.change(within(filters).getByLabelText("File status"), { target: { value: "missing" } });
 
     expect(within(filters).getByRole("button", { name: "Pending 2" })).toHaveAttribute("aria-pressed", "true");
-    expect(within(filters).getByLabelText("Match method")).toHaveValue("tag");
-    expect(within(filters).getByLabelText("File status")).toHaveValue("missing");
 
     const resetButton = within(filters).getByRole("button", { name: "Reset library filters" });
     expect(resetButton).toBeEnabled();
     fireEvent.click(resetButton);
 
     expect(within(filters).getByRole("button", { name: "All 5" })).toHaveAttribute("aria-pressed", "true");
-    expect(within(filters).getByLabelText("Match method")).toHaveValue("all");
-    expect(within(filters).getByLabelText("File status")).toHaveValue("all");
     expect(resetButton).toBeDisabled();
   });
 
@@ -195,82 +187,32 @@ describe("LocalLibraryView", () => {
     expect(within(trackList).getByText("Nocturnal")).toBeInTheDocument();
     expect(within(trackList).getByText("Synthwave/The Midnight/Nocturnal/Night Shift.mp3")).toBeInTheDocument();
     expect(within(trackList).getAllByText("4:05")).toHaveLength(1);
-    expect(within(trackList).getAllByText("ISRC")).toHaveLength(1);
-    expect(within(trackList).getAllByText("Available")).toHaveLength(3);
     expect(within(trackList).getByText("Artist unavailable")).toBeInTheDocument();
     expect(within(trackList).getByText("Album unavailable")).toBeInTheDocument();
   });
 
-  it("shows re-match only for unlinked local rows", async () => {
+  it("omits per-row detail and re-match actions", async () => {
     mockLibraryFetch();
 
-    const { unmount } = renderWithQueryClient(<LocalLibraryView />);
-
-    const trackList = await screen.findByRole("region", { name: "Local library tracks" });
-
-    expect(await within(trackList).findByRole("button", { name: "Re-match" })).toBeInTheDocument();
-
-    const linkedAndPendingTracks: LibraryTracksResponse = {
-      stats: {
-        linked: 1,
-        pending: 1,
-        total: 2,
-        unlinked: 0,
-      },
-      tracks: libraryTracksResponse.tracks.filter((track) => track.link_status !== "unlinked").slice(0, 2),
-    };
-
-    unmount();
-    vi.restoreAllMocks();
-    mockLibraryFetch(linkedAndPendingTracks);
     renderWithQueryClient(<LocalLibraryView />);
 
-    expect(await screen.findByText("Showing 2 of 2 rows")).toBeInTheDocument();
+    await screen.findByText("Showing 5 of 5 rows");
+
+    expect(screen.queryByRole("button", { name: "Details" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Re-match" })).not.toBeInTheDocument();
   });
 
-  it("posts a re-match request for unlinked local rows and renders success feedback", async () => {
-    let resolveRematch: (response: Response) => void = () => undefined;
-    const rematchResponse = new Promise<Response>((resolve) => {
-      resolveRematch = resolve;
-    });
-    const fetchMock = mockLibraryFetchWithRematch({ rematchResponse });
+  it("opens the local track drawer when a body row is clicked", async () => {
+    mockLibraryFetch();
 
     renderWithQueryClient(<LocalLibraryView />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "Re-match" }));
+    fireEvent.click(await screen.findByText("Night Shift"));
 
-    expect(await screen.findByText("Matching...")).toBeInTheDocument();
-    expect(fetchMock).toHaveBeenCalledWith("/api/local-tracks/1004/rematch", { method: "POST" });
-
-    resolveRematch({
-      ok: true,
-      json: async () => ({ job_id: "match-job-1004", local_track_id: 1004 }),
-    } as Response);
-
-    expect(await screen.findByText("Re-match queued.")).toBeInTheDocument();
-    await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledWith("/api/library/tracks");
-    });
+    expect(await screen.findByRole("dialog", { name: "Track #1001" })).toBeInTheDocument();
   });
 
-  it("renders re-match error feedback for unlinked local rows", async () => {
-    mockLibraryFetchWithRematch({
-      rematchResponse: {
-        ok: false,
-        status: 500,
-        json: async () => ({ detail: "failed" }),
-      } as Response,
-    });
-
-    renderWithQueryClient(<LocalLibraryView />);
-
-    fireEvent.click(await screen.findByRole("button", { name: "Re-match" }));
-
-    expect(await screen.findByText("Re-match failed.")).toBeInTheDocument();
-  });
-
-  it("filters the rendered library track rows by selected facets", async () => {
+  it("filters the rendered library track rows by selected link status", async () => {
     mockLibraryFetch();
 
     renderWithQueryClient(<LocalLibraryView />);
@@ -279,13 +221,11 @@ describe("LocalLibraryView", () => {
     const pendingButton = await within(filters).findByRole("button", { name: "Pending 2" });
 
     fireEvent.click(pendingButton);
-    fireEvent.change(within(filters).getByLabelText("Match method"), { target: { value: "manual" } });
-    fireEvent.change(within(filters).getByLabelText("File status"), { target: { value: "missing" } });
 
     const trackList = screen.getByRole("region", { name: "Local library tracks" });
-    expect(within(trackList).getByText("Showing 1 of 5 rows")).toBeInTheDocument();
+    expect(within(trackList).getByText("Showing 2 of 5 rows")).toBeInTheDocument();
+    expect(within(trackList).getByText("A Real Hero")).toBeInTheDocument();
     expect(within(trackList).getByText("Open Eye Signal")).toBeInTheDocument();
-    expect(within(trackList).getByText("Jon Hopkins")).toBeInTheDocument();
     expect(within(trackList).queryByText("Night Shift")).not.toBeInTheDocument();
   });
 
@@ -382,7 +322,9 @@ describe("LocalLibraryView", () => {
     const filters = screen.getByRole("region", { name: "Library filters" });
     fireEvent.click(within(filters).getByRole("button", { name: "Pending 2" }));
 
-    expect(screen.queryByText("1 row selected")).not.toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.queryByText("1 row selected")).not.toBeInTheDocument();
+    });
   });
 
   it("disables library filters while a refresh is pending", async () => {
@@ -394,8 +336,6 @@ describe("LocalLibraryView", () => {
 
     const filters = screen.getByRole("region", { name: "Library filters" });
     expect(await within(filters).findByRole("button", { name: "All 5" })).toBeDisabled();
-    expect(within(filters).getByLabelText("Match method")).toBeDisabled();
-    expect(within(filters).getByLabelText("File status")).toBeDisabled();
     expect(within(filters).getByRole("button", { name: "Reset library filters" })).toBeDisabled();
   });
 
@@ -423,5 +363,6 @@ describe("LocalLibraryView", () => {
     rerender(<LocalLibraryView tracksResponse={{ stats: libraryTracksResponse.stats, tracks: [] }} />);
 
     expect(await screen.findByRole("heading", { name: "No matching library tracks" })).toBeInTheDocument();
+    expect(screen.getByText("No tracks match the selected link-status filter.")).toBeInTheDocument();
   });
 });

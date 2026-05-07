@@ -71,8 +71,8 @@ Non-goals (v1):
 
 ## T3. Strip LocalLibrary stats, filters, columns, and row actions
 
-- [ ] Files: `app-ui/src/features/library/LocalLibraryView.tsx`, `app-ui/src/features/library/LocalLibraryView.test.tsx`, `app-ui/src/App.test.tsx` (lines ~566–576, ~596).
-- [ ] Remove from `LocalLibraryView.tsx`:
+- [x] Files: `app-ui/src/features/library/LocalLibraryView.tsx`, `app-ui/src/features/library/LocalLibraryView.test.tsx`, `app-ui/src/App.test.tsx` (lines ~566–576, ~596).
+- [x] Remove from `LocalLibraryView.tsx`:
   - 4 stat cards block (`LocalLibraryView.tsx:640–644`).
   - `LibraryStat` type, `libraryStatConfigs`, `LibraryStatCard`, `libraryStats` derivation (lines 31–37, 84–113, 220–239, 423–426).
   - `LibraryMatchMethodFilter`, `LibraryFileStatusFilter` types (28–29).
@@ -83,22 +83,22 @@ Non-goals (v1):
   - Columns: `match_method`, `file_status`, and the `display` Actions column (lines 495–534).
   - `LibraryTrackActions` component (358–399) and the now-unused `useMutation` / per-row `rematchLocalTrack` wiring it depended on.
   - Now-unused imports: `Pill`, `PillTone`, `Clock3`, `Link2`, `Music2`, `LibraryFileStatus`. Keep `Unlink`, `RotateCcw`, `RefreshCw` — still used by the bulk action bar.
-- [ ] Wire link-status to DataTable filtering:
+- [x] Wire link-status to DataTable filtering:
   - Add `const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([])`.
   - `handleLinkStatusFilterChange(value)`: `setColumnFilters(value === "all" ? [] : [{ id: "link_status", value }])`. Drop manual `setRowSelection({})`.
   - `resetFilters` clears `columnFilters` and `bulkStatus`. Selection clearing comes from DataTable.
   - Pass `data={tracks}`, `columnFilters`, `onColumnFiltersChange={setColumnFilters}` to `<DataTable>`.
-- [ ] Replace the inline "Showing X of Y rows" header (`LocalLibraryView.tsx:677–682`) with `headerSlot`. Keep the `<h2>Local library track list</h2>` heading inside the slot.
-- [ ] Empty-state copy (`LocalLibraryView.tsx:716–722`) body: **"No tracks match the selected link-status filter."**
-- [ ] Row activation already wired via `onActivate={openTrackDetail}` (`LocalLibraryView.tsx:711`) plus `?detail=` URL param in `openTrackDetail` (442–449); after T1 lands, click + Enter both open the drawer with no further changes.
-- [ ] Update `LocalLibraryView.test.tsx`:
+- [x] Replace the inline "Showing X of Y rows" header (`LocalLibraryView.tsx:677–682`) with `headerSlot`. Keep the `<h2>Local library track list</h2>` heading inside the slot.
+- [x] Empty-state copy (`LocalLibraryView.tsx:716–722`) body: **"No tracks match the selected link-status filter."**
+- [x] Row activation already wired via `onActivate={openTrackDetail}` (`LocalLibraryView.tsx:711`) plus `?detail=` URL param in `openTrackDetail` (442–449); after T1 lands, click + Enter both open the drawer with no further changes.
+- [x] Update `LocalLibraryView.test.tsx`:
   - Drop stat-card assertions. Keep link-status chip + count assertions.
   - Drop "updates and resets library filter selections" branches that touch match-method / file-status. Keep link-status reset behaviour.
   - Drop `Match method` / `File status` filter assertions and the column assertions for `ISRC`, `Available`, `Beets failed`.
   - Add: clicking a body row opens the `LocalTrackDetailDrawer` (mirrors PlaylistView's drawer-open test).
   - Confirm Details/per-row Re-match buttons are absent.
   - Keep the existing bulk re-match and bulk unlink tests (T4 will expand them).
-- [ ] Update `App.test.tsx`:
+- [x] Update `App.test.tsx`:
   - Lines 566–576: drop `Library stats`, `Total tracks`, `Linked tracks`, `Pending tracks`, `Unlinked tracks`, `Match method`, `File status` assertions.
   - Line 596: replace `getByLabelText("Library stats")` with an assertion on a surface that survives (e.g. `getByRole("region", { name: "Library filters" })`).
 
