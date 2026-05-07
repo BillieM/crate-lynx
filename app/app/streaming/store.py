@@ -131,6 +131,61 @@ class StreamingAccountStore:
                 for row in rows
             ]
 
+    def update_youtube_music_account_auth(
+        self,
+        *,
+        account_id: int,
+        browser_headers: dict[str, Any],
+    ) -> StreamingAccountRecord | None:
+        encrypted_token = encrypt_token(json.dumps(browser_headers, sort_keys=True))
+        updated_at = datetime.now(UTC)
+
+        with self._engine.begin() as connection:
+            result = connection.execute(
+                update(streaming_accounts_table)
+                .where(streaming_accounts_table.c.id == account_id)
+                .values(
+                    auth_token_blob=encrypted_token,
+                    auth_state=STREAMING_ACCOUNT_AUTH_STATE_CONNECTED,
+                    auth_error=None,
+                    auth_error_at=None,
+                    updated_at=updated_at,
+                )
+            )
+            if result.rowcount == 0:
+                return None
+
+            row = (
+                connection.execute(
+                    select(
+                        streaming_accounts_table.c.id,
+                        streaming_accounts_table.c.provider,
+                        streaming_accounts_table.c.display_name,
+                        streaming_accounts_table.c.auth_state,
+                        streaming_accounts_table.c.auth_error,
+                        streaming_accounts_table.c.auth_error_at,
+                        streaming_accounts_table.c.created_at,
+                        streaming_accounts_table.c.updated_at,
+                    ).where(streaming_accounts_table.c.id == account_id)
+                )
+                .mappings()
+                .one_or_none()
+            )
+
+        if row is None:
+            return None
+
+        return StreamingAccountRecord(
+            id=row["id"],
+            provider=row["provider"],
+            display_name=row["display_name"],
+            auth_state=row["auth_state"],
+            auth_error=row["auth_error"],
+            auth_error_at=row["auth_error_at"],
+            created_at=row["created_at"],
+            updated_at=row["updated_at"],
+        )
+
     def get_account(self, account_id: int) -> StoredStreamingAccount:
         with self._engine.connect() as connection:
             row = (

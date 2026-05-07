@@ -36,6 +36,7 @@ from app.streaming.schemas import (
     StreamingPlaylistConfigResponse,
     StreamingPlaylistResponse,
     StreamingSyncResponse,
+    UpdateStreamingAccountAuthRequest,
     UpdateStreamingPlaylistRequest,
 )
 from app.streaming.store import StreamingAccountStore
@@ -64,6 +65,7 @@ __all__ = [
     "StreamingPlaylistResponse",
     "YOUTUBE_MUSIC_PROVIDER",
     "StreamingSyncResponse",
+    "UpdateStreamingAccountAuthRequest",
     "UpdateStreamingPlaylistRequest",
     "create_router",
     "metadata",

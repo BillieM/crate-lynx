@@ -73,6 +73,10 @@ class CreateStreamingAccountRequest(BaseModel):
     browser_headers: dict[str, object]
 
 
+class UpdateStreamingAccountAuthRequest(BaseModel):
+    browser_headers: dict[str, object]
+
+
 class StreamingSyncResponse(BaseModel):
     account_id: int
     job_id: str

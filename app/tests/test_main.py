@@ -27,6 +27,7 @@ from app.settings.schemas import CreateIngestFolderRequest
 from app.settings.store import GeneralSettingsStore
 from app.streaming.schemas import (
     CreateStreamingAccountRequest,
+    UpdateStreamingAccountAuthRequest,
     UpdateStreamingPlaylistRequest,
 )
 from app.streaming.models import metadata, streaming_accounts_table
@@ -87,6 +88,7 @@ def test_links_routes_are_mounted_under_api_prefix() -> None:
     assert "/api/local-tracks/{local_track_id}" in route_paths
     assert "/api/maintenance/missing-locally" in route_paths
     assert "/api/maintenance/unidentified" in route_paths
+    assert "/api/streaming/accounts/{account_id}/auth" in route_paths
     assert "/api/streaming/accounts/{account_id}/sync" in route_paths
     assert "/api/streaming/accounts/{account_id}/refresh-metadata" in route_paths
     assert "/api/streaming/playlists/config" in route_paths
@@ -547,6 +549,91 @@ def test_streaming_accounts_endpoint_creates_youtube_music_account(
         "Authorization": "Bearer token",
         "X-Goog-AuthUser": "0",
     }
+
+
+def test_streaming_accounts_auth_endpoint_updates_youtube_music_account(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite:///{tmp_path / 'streaming-auth-patch.db'}"
+    engine = create_engine(database_url)
+    metadata.create_all(engine)
+    monkeypatch.setenv("DATABASE_URL", database_url)
+    monkeypatch.setenv("TOKEN_ENCRYPTION_KEY", Fernet.generate_key().decode("utf-8"))
+
+    store = StreamingAccountStore(database_url)
+    account = store.create_youtube_music_account(
+        display_name="Billie",
+        browser_headers={"Authorization": "Bearer old-token"},
+    )
+    store.mark_account_auth_error(
+        account_id=account.id,
+        error=ValueError("expired browser headers"),
+    )
+
+    app = create_app()
+    route = next(
+        route
+        for route in app.routes
+        if getattr(route, "path", None) == "/api/streaming/accounts/{account_id}/auth"
+        and "PATCH" in getattr(route, "methods", set())
+    )
+    payload = UpdateStreamingAccountAuthRequest(
+        browser_headers={
+            "Authorization": "Bearer sentinel-secret-token",
+            "X-Goog-AuthUser": "0",
+        },
+    )
+
+    response = _call_endpoint(route.endpoint, account.id, payload)
+
+    assert response.id == account.id
+    assert response.provider == "youtube_music"
+    assert response.display_name == "Billie"
+    assert response.auth_state == "connected"
+    assert response.auth_error is None
+    assert response.auth_error_at is None
+    assert response.created_at
+    assert response.updated_at
+
+    response_payload = response.model_dump(mode="json")
+    assert "auth_token_blob" not in response_payload
+    assert "browser_headers" not in response_payload
+    assert "sentinel-secret-token" not in str(response_payload)
+    assert store.get_account(account.id).browser_headers == {
+        "Authorization": "Bearer sentinel-secret-token",
+        "X-Goog-AuthUser": "0",
+    }
+
+
+def test_streaming_accounts_auth_endpoint_missing_account_returns_404(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite:///{tmp_path / 'streaming-auth-patch-missing.db'}"
+    engine = create_engine(database_url)
+    metadata.create_all(engine)
+    monkeypatch.setenv("DATABASE_URL", database_url)
+    monkeypatch.setenv("TOKEN_ENCRYPTION_KEY", Fernet.generate_key().decode("utf-8"))
+
+    app = create_app()
+    route = next(
+        route
+        for route in app.routes
+        if getattr(route, "path", None) == "/api/streaming/accounts/{account_id}/auth"
+        and "PATCH" in getattr(route, "methods", set())
+    )
+    payload = UpdateStreamingAccountAuthRequest(
+        browser_headers={"Authorization": "Bearer token"},
+    )
+
+    try:
+        _call_endpoint(route.endpoint, 404, payload)
+    except StarletteHTTPException as exc:
+        assert exc.status_code == 404
+        assert exc.detail == "Streaming account not found"
+    else:
+        raise AssertionError("Expected streaming account auth refresh to return 404")
 
 
 def test_playlist_detail_endpoint_returns_real_link_counts(

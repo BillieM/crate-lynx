@@ -17,6 +17,7 @@ from app.streaming.schemas import (
     StreamingPlaylistConfigResponse,
     StreamingPlaylistResponse,
     StreamingSyncResponse,
+    UpdateStreamingAccountAuthRequest,
     UpdateStreamingPlaylistRequest,
 )
 from app.streaming.store import StreamingAccountStore
@@ -262,6 +263,21 @@ def create_router(
             if account_record.id == account.id
         )
         return serialize_streaming_account(created_account)
+
+    @router.patch("/streaming/accounts/{account_id}/auth")
+    def update_streaming_account_auth(
+        account_id: int,
+        payload: UpdateStreamingAccountAuthRequest,
+        engine: Engine = Depends(require_database_engine),
+    ) -> StreamingAccountResponse:
+        account = _store(engine).update_youtube_music_account_auth(
+            account_id=account_id,
+            browser_headers=payload.browser_headers,
+        )
+        if account is None:
+            raise HTTPException(status_code=404, detail="Streaming account not found")
+
+        return serialize_streaming_account(account)
 
     @router.post("/streaming/accounts/{account_id}/sync", status_code=202)
     def sync_streaming_account(

@@ -115,6 +115,120 @@ def test_streaming_account_store_get_account_returns_browser_headers(
     )
 
 
+def test_streaming_account_store_updates_youtube_music_account_auth(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite:///{tmp_path / 'streaming-auth-refresh.db'}"
+    engine = create_engine(database_url)
+    metadata.create_all(engine)
+    monkeypatch.setenv("TOKEN_ENCRYPTION_KEY", Fernet.generate_key().decode("utf-8"))
+
+    store = StreamingAccountStore(database_url)
+    account = store.create_youtube_music_account(
+        display_name="Listener",
+        browser_headers={"Authorization": "Bearer old-token"},
+    )
+    original_account = store.list_accounts()[0]
+
+    with engine.connect() as connection:
+        previous_blob = connection.execute(
+            select(streaming_accounts_table.c.auth_token_blob)
+        ).scalar_one()
+
+    refreshed = store.update_youtube_music_account_auth(
+        account_id=account.id,
+        browser_headers={
+            "Authorization": "Bearer new-token",
+            "X-Goog-AuthUser": "0",
+        },
+    )
+
+    assert refreshed is not None
+    assert refreshed.id == account.id
+    assert refreshed.provider == YOUTUBE_MUSIC_PROVIDER
+    assert refreshed.display_name == "Listener"
+    assert refreshed.auth_state == "connected"
+    assert refreshed.auth_error is None
+    assert refreshed.auth_error_at is None
+    assert refreshed.updated_at > original_account.updated_at
+
+    with engine.connect() as connection:
+        stored_account = (
+            connection.execute(select(streaming_accounts_table)).mappings().one()
+        )
+
+    assert stored_account["auth_token_blob"] != previous_blob
+    assert stored_account["auth_token_blob"] != json.dumps(
+        {
+            "Authorization": "Bearer new-token",
+            "X-Goog-AuthUser": "0",
+        },
+        sort_keys=True,
+    )
+    assert json.loads(_decrypt_token(stored_account["auth_token_blob"])) == {
+        "Authorization": "Bearer new-token",
+        "X-Goog-AuthUser": "0",
+    }
+    assert store.get_account(account.id).browser_headers == {
+        "Authorization": "Bearer new-token",
+        "X-Goog-AuthUser": "0",
+    }
+
+
+def test_streaming_account_store_refresh_auth_clears_previous_auth_error(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite:///{tmp_path / 'streaming-auth-refresh-error.db'}"
+    engine = create_engine(database_url)
+    metadata.create_all(engine)
+    monkeypatch.setenv("TOKEN_ENCRYPTION_KEY", Fernet.generate_key().decode("utf-8"))
+
+    store = StreamingAccountStore(database_url)
+    account = store.create_youtube_music_account(
+        display_name="Listener",
+        browser_headers={"Authorization": "Bearer expired-token"},
+    )
+    store.mark_account_auth_error(
+        account_id=account.id,
+        error=YTMusicUserError("expired credentials"),
+    )
+
+    errored_account = store.list_accounts()[0]
+    assert errored_account.auth_state == "error"
+    assert errored_account.auth_error is not None
+    assert errored_account.auth_error_at is not None
+
+    refreshed = store.update_youtube_music_account_auth(
+        account_id=account.id,
+        browser_headers={"Authorization": "Bearer recovered-token"},
+    )
+
+    assert refreshed is not None
+    assert refreshed.auth_state == "connected"
+    assert refreshed.auth_error is None
+    assert refreshed.auth_error_at is None
+
+
+def test_streaming_account_store_update_auth_returns_none_for_missing_account(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite:///{tmp_path / 'streaming-auth-refresh-missing.db'}"
+    engine = create_engine(database_url)
+    metadata.create_all(engine)
+    monkeypatch.setenv("TOKEN_ENCRYPTION_KEY", Fernet.generate_key().decode("utf-8"))
+
+    assert (
+        StreamingAccountStore(database_url).update_youtube_music_account_auth(
+            account_id=404,
+            browser_headers={"Authorization": "Bearer new-token"},
+        )
+        is None
+    )
+
+
 def test_streaming_account_store_upserts_playlists(
     monkeypatch,
     tmp_path: Path,
