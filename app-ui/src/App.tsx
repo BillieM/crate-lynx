@@ -21,6 +21,7 @@ import {
   getViewIdFromPath,
   getViewPath,
   playlistCollectionViewId,
+  settingsAuthenticationViewId,
   settingsGeneralViewId,
   settingsSyncYoutubeMusicViewId,
   staticViewRoutes,
@@ -119,7 +120,10 @@ function App() {
     navigate(getViewPath(viewId));
   }
 
-  const isSettingsView = activeViewId === settingsGeneralViewId || activeViewId === settingsSyncYoutubeMusicViewId;
+  const isSettingsView =
+    activeViewId === settingsGeneralViewId ||
+    activeViewId === settingsAuthenticationViewId ||
+    activeViewId === settingsSyncYoutubeMusicViewId;
 
   return (
     <div className="flex min-h-0 flex-1 flex-row overflow-hidden bg-ctp-base text-ctp-text max-md:flex-col">

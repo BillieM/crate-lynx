@@ -6,10 +6,12 @@ import { PlaylistSyncConfiguration } from "../playlists/PlaylistSyncConfiguratio
 import { PlaylistView } from "../playlists/PlaylistView";
 import type { StreamingPlaylist } from "../playlists/queries";
 import { LinkProposalsView } from "../proposals/LinkProposalsView";
+import { AuthenticationSettingsView } from "../settings/AuthenticationSettingsView";
 import { GeneralSettingsView } from "../settings/GeneralSettingsView";
 import type { NavItem, PlaylistSyncViewState, ViewConfig } from "./types";
 
 export const playlistCollectionViewId = "playlists";
+export const settingsAuthenticationViewId = "settings-authentication";
 export const settingsGeneralViewId = "settings-general";
 export const settingsSyncYoutubeMusicViewId = "settings-sync-youtube-music";
 
@@ -70,6 +72,14 @@ const staticViewEntries = [
     icon: "settings",
     path: "/settings",
     render: () => <GeneralSettingsView />,
+  },
+  {
+    id: settingsAuthenticationViewId,
+    title: "Settings",
+    actionLabels: [],
+    icon: "settings",
+    path: "/settings/authentication",
+    render: () => <AuthenticationSettingsView />,
   },
   {
     id: settingsSyncYoutubeMusicViewId,
@@ -153,6 +163,7 @@ export function buildLibraryNavItems(totalTrackCount?: number): NavItem[] {
 export function buildSettingsNavItems(): NavItem[] {
   return [
     { id: settingsGeneralViewId, label: "General", tone: "accent" },
+    { id: settingsAuthenticationViewId, label: "Authentication", tone: "accent" },
     { id: settingsSyncYoutubeMusicViewId, label: "YouTube Music sync", tone: "accent" },
   ];
 }

@@ -6,7 +6,8 @@ import { ActionButton } from "../../components/ActionButton";
 import { DataTable } from "../../components/DataTable";
 import { EmptyStateCard } from "../../components/EmptyStateCard";
 import { StatusMessage, type OperationStatus } from "../../components/StatusMessage";
-import { layoutClasses, textClasses } from "../../styles/componentClasses";
+import { controlClasses, layoutClasses, textClasses } from "../../styles/componentClasses";
+import { actionButtonToneClasses } from "../../styles/toneClasses";
 import { maintenanceQueryKeys } from "../maintenance/queries";
 import { PlaylistActionStatus } from "../shell/Topbar";
 import {
@@ -78,7 +79,17 @@ function PlaylistCollectionState({ status }: { status: PlaylistCollectionStatus 
 
   return (
     <section className="flex min-h-0 flex-1 items-center justify-center">
-      <EmptyStateCard body={copy[status].body} className={layoutClasses.emptyStateNarrow} title={copy[status].title} />
+      <div className="grid justify-items-center gap-3">
+        <EmptyStateCard body={copy[status].body} className={layoutClasses.emptyStateNarrow} title={copy[status].title} />
+        {status === "empty" ? (
+          <a
+            className={`${controlClasses.actionButton} ${actionButtonToneClasses.neutral}`}
+            href="/settings/authentication"
+          >
+            Authentication
+          </a>
+        ) : null}
+      </div>
     </section>
   );
 }

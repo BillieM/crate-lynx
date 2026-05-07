@@ -130,6 +130,15 @@ describe("PlaylistSyncConfiguration", () => {
     expect(screen.getByText("Malformed playlist payload")).toBeInTheDocument();
   });
 
+  it("links empty playlist configuration to authentication settings", async () => {
+    mockConfigFetch({ playlists: [] });
+
+    renderPlaylistSyncConfiguration();
+
+    expect(await screen.findByRole("heading", { name: "No selected playlists" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Authentication" })).toHaveAttribute("href", "/settings/authentication");
+  });
+
   it("patches playlist selection and invalidates config, sidebar, and missing-locally queries", async () => {
     const fetchMock = mockConfigFetch();
 

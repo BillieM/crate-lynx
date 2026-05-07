@@ -168,27 +168,27 @@ Context from investigation:
 
 ## A3. Settings → Authentication page
 
-- [ ] In `app-ui/src/features/shell/viewRegistry.tsx`:
+- [x] In `app-ui/src/features/shell/viewRegistry.tsx`:
   - Add `settingsAuthenticationViewId = "settings-authentication"`.
   - Add a static view entry with `path: "/settings/authentication"` rendering `<AuthenticationSettingsView />`.
   - Add a nav item in `buildSettingsNavItems` (line 153) labelled `Authentication`, between General and YouTube Music sync.
-- [ ] In `app-ui/src/App.tsx:122`: include `settingsAuthenticationViewId` in the `isSettingsView` check.
-- [ ] New component `app-ui/src/features/settings/AuthenticationSettingsView.tsx` mirroring `GeneralSettingsView.tsx` layout (header + form + `StatusMessage`):
+- [x] In `app-ui/src/App.tsx:122`: include `settingsAuthenticationViewId` in the `isSettingsView` check.
+- [x] New component `app-ui/src/features/settings/AuthenticationSettingsView.tsx` mirroring `GeneralSettingsView.tsx` layout (header + form + `StatusMessage`):
   - Props: none. Reads via `useStreamingAccountsQuery()`; first YouTube Music account is the active account.
   - **No-account state:** "Not connected" status, `Display name` input defaulting to `YouTube Music`, `Browser headers` `<textarea>`, submit `Connect` → `useCreateStreamingAccountMutation`.
   - **Existing-account state:** "Connected" when `auth_state === "connected"`; "Authentication needs attention" when `auth_state === "error"` or `auth_error` is present; render `auth_error` + `auth_error_at`; `Browser headers` textarea; submit `Refresh authentication` → `useRefreshStreamingAccountAuthMutation`.
   - On success: clear textarea, render success `StatusMessage`, expose CTA "Configure playlists" → `navigate("/settings/sync/youtube-music")`.
   - Decision (locked): PATCH never updates `display_name` — only the create form sets it.
   - Never render `auth_token_blob` or any stored header value.
-- [ ] In `app-ui/src/features/playlists/PlaylistSyncConfiguration.tsx` `PlaylistCollectionState` (line 60–84): when `status="empty"`, append a CTA link/button → `/settings/authentication` so a fresh install has a path forward.
-- [ ] Tests in `app-ui/src/features/settings/AuthenticationSettingsView.test.tsx`:
+- [x] In `app-ui/src/features/playlists/PlaylistSyncConfiguration.tsx` `PlaylistCollectionState` (line 60–84): when `status="empty"`, append a CTA link/button → `/settings/authentication` so a fresh install has a path forward.
+- [x] Tests in `app-ui/src/features/settings/AuthenticationSettingsView.test.tsx`:
   - settings nav and route registry include `Authentication`.
   - no-account state submit calls POST with the expected body.
   - existing-account state submit calls PATCH with the expected body.
   - `auth_state="error"` renders error text and timestamp.
   - textarea clears after a successful mutation.
   - stored headers are not rendered (assert no element contains a sentinel header value after fetching the accounts response).
-- **Definition of done:** `cd app-ui && npm run lint && npm test && npm run build` pass.
+- [x] **Definition of done:** `cd app-ui && npm run lint && npm test && npm run build` pass.
 
 ## A4a. Delayed-refetch helper + wire 4 sync mutation sites
 
