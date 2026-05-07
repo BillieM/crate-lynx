@@ -7,6 +7,7 @@ import sqlite3
 
 from sqlalchemy import create_engine, delete, select, update
 
+from app.ingestion.beets_mirror_sync import decode_beets_path
 from app.ingestion.failures import failed_ingestion_attempts_table
 from app.ingestion.pipeline import FingerprintGenerator
 from app.links.store import final_links_table
@@ -220,7 +221,7 @@ def _iter_current_beets_items(
 
     items: list[tuple[int, Path]] = []
     for beets_id, raw_path in rows:
-        library_path = Path(_decode_beets_path(raw_path))
+        library_path = Path(decode_beets_path(raw_path))
         resolved_path = library_path.resolve()
         try:
             resolved_path.relative_to(library_root)
@@ -230,12 +231,6 @@ def _iter_current_beets_items(
             items.append((int(beets_id), resolved_path))
 
     return items
-
-
-def _decode_beets_path(raw_path: bytes | str) -> str:
-    if isinstance(raw_path, bytes):
-        return raw_path.decode("utf-8", errors="surrogateescape")
-    return raw_path
 
 
 def _fingerprint_or_none(library_path: Path) -> str | None:

@@ -11,6 +11,7 @@ import uuid
 
 from app.local_tracks.store import LocalTrackStore
 from app.matching.jobs import MatchingJobEnqueuer
+from app.ingestion.beets_mirror_sync import decode_beets_path
 from app.ingestion.failures import FailedIngestionAttemptStore
 
 
@@ -150,15 +151,9 @@ class BeetsImporter:
             raise ValueError("Beets import did not create a library item")
 
         return ImportedTrack(
-            library_path=Path(self._decode_beets_path(row[1])),
+            library_path=Path(decode_beets_path(row[1])),
             beets_id=int(row[0]),
         )
-
-    def _decode_beets_path(self, raw_path: bytes | str) -> str:
-        if isinstance(raw_path, bytes):
-            return raw_path.decode("utf-8", errors="surrogateescape")
-
-        return raw_path
 
 
 @dataclass(slots=True)

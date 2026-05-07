@@ -50,7 +50,7 @@ Non-goals:
 
 ## T2. Add Beets metadata extraction and Postgres upsert service
 
-- [ ] New module `app/app/ingestion/beets_mirror_sync.py`. Locked API:
+- [x] New module `app/app/ingestion/beets_mirror_sync.py`. Locked API:
   - `@dataclass(frozen=True) class BeetsMirrorRow: beets_id: int; album_id: int | None; fixed_fields: dict[str, Any]; flex_attributes: dict[str, str]` (only `Item._fields` keys allowed in `fixed_fields`).
   - `@dataclass(frozen=True) class BeetsMirrorAlbumRow: beets_album_id: int; fixed_fields: dict[str, Any]; flex_attributes: dict[str, str]`.
   - `@dataclass(frozen=True) class BeetsMirrorCounts: items_inserted: int; items_updated: int; items_skipped: int; albums_inserted: int; albums_updated: int; albums_skipped: int; missing_in_beets: int; stale_items: int`.
@@ -60,13 +60,13 @@ Non-goals:
   - `def iter_all_albums(sqlite_conn) -> Iterator[BeetsMirrorAlbumRow]`.
   - `def upsert_item(pg_conn, row: BeetsMirrorRow) -> Literal["inserted", "updated"]`.
   - `def upsert_album(pg_conn, row: BeetsMirrorAlbumRow) -> Literal["inserted", "updated"]`.
-- [ ] Move `_decode_beets_path` from `app/app/ingestion/repair.py:235` and `app/app/ingestion/pipeline.py:157` into this new module. Export as `decode_beets_path(raw_path: bytes | str) -> str` (drop the leading underscore — it's shared now).
-- [ ] Update both call sites in `repair.py` and `pipeline.py` to import from `app.ingestion.beets_mirror_sync` (one-line change each).
-- [ ] Read Beets SQLite `items`, `albums`, `item_attributes`, and `album_attributes` tables.
-- [ ] Map Beets fixed item/album fields into the typed Postgres mirror columns using the same type switch as T1.
-- [ ] Map flexible/plugin attributes into the key/value tables.
-- [ ] Idempotent upserts: `ON CONFLICT (beets_id) DO UPDATE` for items, `ON CONFLICT (beets_album_id) DO UPDATE` for albums; attributes replaced wholesale per entity (`DELETE WHERE entity_id = :id` then `INSERT`).
-- [ ] New tests file `app/tests/test_beets_mirror_sync.py`. Cover: round-trip read+write, attribute replacement on re-upsert, missing-row handling, type coercion for `DateType` / `PathType` / boolean / `PaddedInt`, bytes-with-surrogateescape and str path round-trips.
+- [x] Move `_decode_beets_path` from `app/app/ingestion/repair.py:235` and `app/app/ingestion/pipeline.py:157` into this new module. Export as `decode_beets_path(raw_path: bytes | str) -> str` (drop the leading underscore — it's shared now).
+- [x] Update both call sites in `repair.py` and `pipeline.py` to import from `app.ingestion.beets_mirror_sync` (one-line change each).
+- [x] Read Beets SQLite `items`, `albums`, `item_attributes`, and `album_attributes` tables.
+- [x] Map Beets fixed item/album fields into the typed Postgres mirror columns using the same type switch as T1.
+- [x] Map flexible/plugin attributes into the key/value tables.
+- [x] Idempotent upserts: `ON CONFLICT (beets_id) DO UPDATE` for items, `ON CONFLICT (beets_album_id) DO UPDATE` for albums; attributes replaced wholesale per entity (`DELETE WHERE entity_id = :id` then `INSERT`).
+- [x] New tests file `app/tests/test_beets_mirror_sync.py`. Cover: round-trip read+write, attribute replacement on re-upsert, missing-row handling, type coercion for `DateType` / `PathType` / boolean / `PaddedInt`, bytes-with-surrogateescape and str path round-trips.
 
 **Definition of done:**
 - `source .venv/bin/activate && ruff check . && ruff format --check . && pytest app/tests/test_beets_mirror_sync.py app/tests/test_ingestion.py`
