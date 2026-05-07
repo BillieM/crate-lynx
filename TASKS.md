@@ -62,7 +62,7 @@
 - Tests: column rendering at desktop + sm widths, bulk Unlink path (mocked fetch), pending-row review action still reachable, toolbar count pills.
 - **Definition of done:** `npm run lint && npm test && npm run build` pass; manual smoke in dev server confirms no text overlap at 360 px and 1440 px.
 
-## T5. Convert LocalLibraryView to dense table
+## T5. Convert LocalLibraryView to dense table (done)
 
 - Largest file (`app-ui/src/features/library/LocalLibraryView.tsx`, ~507 LOC); keep alone.
 - Preserve the four stat cards and the existing filter bar (link status / match method / file status / reset).

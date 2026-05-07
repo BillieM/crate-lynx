@@ -1,13 +1,18 @@
+import { createColumnHelper, type RowSelectionState, type SortingState } from "@tanstack/react-table";
 import { Clock3, FileAudio, Link2, Music2, RotateCcw, SlidersHorizontal, Unlink } from "lucide-react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { ActionButton } from "../../components/ActionButton";
+import { DataTable } from "../../components/DataTable";
 import { EmptyStateCard } from "../../components/EmptyStateCard";
 import { FilterChipGroup, type FilterChipOption } from "../../components/FilterChipGroup";
 import { Pill, type PillTone } from "../../components/Pill";
 import { StatusMessage } from "../../components/StatusMessage";
 import { controlClasses, surfaceClasses, textClasses } from "../../styles/componentClasses";
 import { trackStatusDotClasses } from "../../styles/toneClasses";
+import { LocalTrackDetailDrawer } from "../localTracks/LocalTrackDetailDrawer";
+import { deleteFinalLink, playlistQueryKeys } from "../playlists/queries";
 import {
   type LibraryFileStatus,
   type LibraryLinkStatus,
@@ -17,7 +22,6 @@ import {
   libraryQueryKeys,
   useLibraryTracksQuery,
 } from "./queries";
-import { playlistQueryKeys } from "../playlists/queries";
 
 type LibraryViewState = "ready" | "loading" | "error";
 type LibraryLinkStatusFilter = "all" | "linked" | "pending" | "unlinked";
@@ -45,6 +49,12 @@ type RematchResponse = {
   local_track_id: number;
 };
 
+type BulkLibraryStatus = {
+  body: string;
+  status: "error" | "success";
+  title: string;
+};
+
 async function rematchLocalTrack(localTrackId: number): Promise<RematchResponse> {
   const response = await fetch(`/api/local-tracks/${encodeURIComponent(String(localTrackId))}/rematch`, {
     method: "POST",
@@ -55,6 +65,20 @@ async function rematchLocalTrack(localTrackId: number): Promise<RematchResponse>
   }
 
   return (await response.json()) as RematchResponse;
+}
+
+async function settleInChunks<TItem, TResult>(
+  items: TItem[],
+  chunkSize: number,
+  worker: (item: TItem) => Promise<TResult>,
+): Promise<PromiseSettledResult<TResult>[]> {
+  const settledResults: PromiseSettledResult<TResult>[] = [];
+
+  for (let index = 0; index < items.length; index += chunkSize) {
+    settledResults.push(...(await Promise.allSettled(items.slice(index, index + chunkSize).map(worker))));
+  }
+
+  return settledResults;
 }
 
 const libraryStatConfigs = [
@@ -108,12 +132,6 @@ const linkStatusLabels = {
   unlinked: "Unlinked",
 } satisfies Record<LibraryLinkStatus, string>;
 
-const linkStatusTones = {
-  linked: "success",
-  pending: "pending",
-  unlinked: "danger",
-} satisfies Record<LibraryLinkStatus, PillTone>;
-
 const matchMethodLabels = {
   isrc: "ISRC",
   manual: "Manual",
@@ -131,6 +149,8 @@ const fileStatusTones = {
   beets_failed: "danger",
   missing: "pending",
 } satisfies Record<LibraryFileStatus, PillTone>;
+
+const columnHelper = createColumnHelper<LibraryTrack>();
 
 function buildLinkStatusFilters(stats: LibraryStats) {
   return [
@@ -325,13 +345,24 @@ function LibraryFilterBar({
   );
 }
 
-function LibraryTrackRow({ track }: { track: LibraryTrack }) {
+function TrackStatusDot({ status }: { status: LibraryLinkStatus }) {
+  return (
+    <span
+      aria-label={`${linkStatusLabels[status]} track`}
+      className={`inline-flex h-2.5 w-2.5 rounded-full ${trackStatusDotClasses[status]}`}
+      role="status"
+    />
+  );
+}
+
+function LibraryTrackActions({
+  onOpenTrackDetail,
+  track,
+}: {
+  onOpenTrackDetail: (track: LibraryTrack) => void;
+  track: LibraryTrack;
+}) {
   const queryClient = useQueryClient();
-  const matchLabel = formatMatchMethod(track.match_method);
-  const matchTone: PillTone = track.match_method === null ? "neutral" : "info";
-  const artist = track.artist ?? "Artist unavailable";
-  const album = track.album ?? "Album unavailable";
-  const filePath = track.library_root_rel_path || track.file_path;
   const rematchMutation = useMutation({
     mutationFn: rematchLocalTrack,
     onSuccess: async () => {
@@ -346,62 +377,24 @@ function LibraryTrackRow({ track }: { track: LibraryTrack }) {
   const canRematch = track.link_status === "unlinked";
 
   return (
-    <article className={`${surfaceClasses.rowCardCompact} sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center`}>
-      <div className="grid min-w-0 gap-1.5">
-        <div className="flex min-w-0 items-center gap-3">
-          <span
-            aria-label={`${linkStatusLabels[track.link_status]} track`}
-            className={`inline-flex h-2.5 w-2.5 shrink-0 rounded-full ${trackStatusDotClasses[track.link_status]}`}
-            role="status"
-          />
-          <FileAudio aria-hidden="true" className="h-4 w-4 shrink-0 text-ctp-subtext0" strokeWidth={1.8} />
-          <p className={`min-w-0 flex-1 truncate ${textClasses.title}`}>{track.title}</p>
-          <span className={`${textClasses.metric} hidden shrink-0 sm:inline`}>{formatDuration(track.duration_ms)}</span>
+    <div className="flex flex-col items-end gap-1">
+      <ActionButton className={controlClasses.actionButtonCompact} onClick={() => onOpenTrackDetail(track)}>
+        Details
+      </ActionButton>
+      {canRematch ? (
+        <div className="flex flex-col items-end gap-1">
+          <ActionButton
+            className={controlClasses.actionButtonCompact}
+            disabled={rematchMutation.isPending}
+            onClick={() => rematchMutation.mutate(track.id)}
+          >
+            {rematchMutation.isPending ? "Matching..." : "Re-match"}
+          </ActionButton>
+          {rematchMutation.isSuccess ? <p className={`${textClasses.finePrint} text-ctp-green`}>Re-match queued.</p> : null}
+          {rematchMutation.isError ? <p className={`${textClasses.finePrint} text-ctp-red`}>Re-match failed.</p> : null}
         </div>
-
-        <dl
-          className={`grid min-w-0 gap-x-3 gap-y-1 pl-9 text-ctp-subtext0 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] ${textClasses.bodyRelaxed}`}
-        >
-          <div className="flex min-w-0 items-baseline gap-1.5">
-            <dt className="shrink-0 font-medium text-ctp-overlay1">Artist</dt>
-            <dd className="truncate text-ctp-text">{artist}</dd>
-          </div>
-          <div className="flex min-w-0 items-baseline gap-1.5">
-            <dt className="shrink-0 font-medium text-ctp-overlay1">Album</dt>
-            <dd className="truncate text-ctp-text">{album}</dd>
-          </div>
-          <div className="flex min-w-0 items-baseline gap-1.5 md:justify-end">
-            <dt className="shrink-0 font-medium text-ctp-overlay1">File</dt>
-            <dd className="truncate font-medium text-ctp-text md:max-w-[18rem]">{filePath}</dd>
-          </div>
-          <div className="flex items-baseline gap-1.5 sm:hidden">
-            <dt className="shrink-0 font-medium text-ctp-overlay1">Duration</dt>
-            <dd className="font-medium tabular-nums text-ctp-text">{formatDuration(track.duration_ms)}</dd>
-          </div>
-        </dl>
-      </div>
-
-      <div className="flex flex-col items-start gap-1.5 pl-9 sm:items-end sm:pl-0">
-        <div className="flex flex-wrap items-center gap-1.5 sm:justify-end">
-          <Pill tone={linkStatusTones[track.link_status]}>{linkStatusLabels[track.link_status]}</Pill>
-          <Pill tone={matchTone}>{matchLabel}</Pill>
-          <Pill tone={fileStatusTones[track.file_status]}>{fileStatusLabels[track.file_status]}</Pill>
-        </div>
-        {canRematch ? (
-          <div className="flex flex-col items-start gap-1 sm:items-end">
-            <ActionButton
-              className={controlClasses.actionButtonCompact}
-              disabled={rematchMutation.isPending}
-              onClick={() => rematchMutation.mutate(track.id)}
-            >
-              {rematchMutation.isPending ? "Matching..." : "Re-match"}
-            </ActionButton>
-            {rematchMutation.isSuccess ? <p className={`${textClasses.finePrint} text-ctp-green`}>Re-match queued.</p> : null}
-            {rematchMutation.isError ? <p className={`${textClasses.finePrint} text-ctp-red`}>Re-match failed.</p> : null}
-          </div>
-        ) : null}
-      </div>
-    </article>
+      ) : null}
+    </div>
   );
 }
 
@@ -412,9 +405,16 @@ type LocalLibraryViewProps = {
 };
 
 export function LocalLibraryView({ isPending = false, state, tracksResponse }: LocalLibraryViewProps = {}) {
+  const queryClient = useQueryClient();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [linkStatusFilter, setLinkStatusFilter] = useState<LibraryLinkStatusFilter>("all");
   const [matchMethodFilter, setMatchMethodFilter] = useState<LibraryMatchMethodFilter>("all");
   const [fileStatusFilter, setFileStatusFilter] = useState<LibraryFileStatusFilter>("all");
+  const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
+  const [sorting, setSorting] = useState<SortingState>([]);
+  const [bulkStatus, setBulkStatus] = useState<BulkLibraryStatus | null>(null);
+  const [isBulkRematching, setIsBulkRematching] = useState(false);
+  const [isBulkUnlinking, setIsBulkUnlinking] = useState(false);
   const libraryTracksQuery = useLibraryTracksQuery();
   const resolvedState =
     state ?? (libraryTracksQuery.isPending ? "loading" : libraryTracksQuery.isError ? "error" : "ready");
@@ -428,13 +428,203 @@ export function LocalLibraryView({ isPending = false, state, tracksResponse }: L
     () => filterLibraryTracks([...tracks], linkStatusFilter, matchMethodFilter, fileStatusFilter),
     [fileStatusFilter, linkStatusFilter, matchMethodFilter, tracks],
   );
+  const selectedTracks = useMemo(() => tracks.filter((track) => rowSelection[String(track.id)]), [rowSelection, tracks]);
+  const selectedUnlinkedTracks = useMemo(
+    () => selectedTracks.filter((track) => track.link_status === "unlinked"),
+    [selectedTracks],
+  );
+  const selectedLinkedTracks = useMemo(
+    () => selectedTracks.filter((track) => track.link_status === "linked"),
+    [selectedTracks],
+  );
   const controlsDisabled = resolvedState !== "ready" || isPending;
+  const isBulkBusy = isBulkRematching || isBulkUnlinking;
+  const openTrackDetail = useCallback(
+    (track: LibraryTrack) => {
+      const nextParams = new URLSearchParams(searchParams);
+      nextParams.set("detail", String(track.id));
+      setSearchParams(nextParams, { replace: false });
+    },
+    [searchParams, setSearchParams],
+  );
+  const columns = useMemo(
+    () => [
+      columnHelper.accessor("link_status", {
+        cell: (info) => <TrackStatusDot status={info.getValue()} />,
+        enableSorting: false,
+        header: "Status",
+        meta: {
+          widthClass: "w-20",
+        },
+      }),
+      columnHelper.accessor("title", {
+        cell: (info) => (
+          <span className="flex max-w-[18rem] items-center gap-2 truncate font-semibold">
+            <FileAudio aria-hidden="true" className="h-4 w-4 shrink-0 text-ctp-subtext0" strokeWidth={1.8} />
+            <span className="truncate">{info.getValue()}</span>
+          </span>
+        ),
+        header: "Title",
+        meta: {
+          widthClass: "min-w-[12rem]",
+        },
+      }),
+      columnHelper.accessor("artist", {
+        cell: (info) => <span className="block max-w-[14rem] truncate">{info.getValue() ?? "Artist unavailable"}</span>,
+        header: "Artist",
+        meta: {
+          widthClass: "min-w-[10rem]",
+        },
+      }),
+      columnHelper.accessor("album", {
+        cell: (info) => <span className="block max-w-[14rem] truncate">{info.getValue() ?? "Album unavailable"}</span>,
+        header: "Album",
+        meta: {
+          hideBelow: "md",
+          widthClass: "min-w-[11rem]",
+        },
+      }),
+      columnHelper.accessor("duration_ms", {
+        cell: (info) => <span className="tabular-nums">{formatDuration(info.getValue())}</span>,
+        header: "Duration",
+        meta: {
+          align: "end",
+          widthClass: "w-24",
+        },
+      }),
+      columnHelper.accessor("match_method", {
+        cell: (info) => {
+          const value = info.getValue();
+          return <Pill tone={value === null ? "neutral" : "info"}>{formatMatchMethod(value)}</Pill>;
+        },
+        header: "Match method",
+        meta: {
+          hideBelow: "lg",
+          widthClass: "w-32",
+        },
+      }),
+      columnHelper.accessor("file_status", {
+        cell: (info) => <Pill tone={fileStatusTones[info.getValue()]}>{fileStatusLabels[info.getValue()]}</Pill>,
+        header: "File status",
+        meta: {
+          widthClass: "w-32",
+        },
+      }),
+      columnHelper.accessor((track) => track.library_root_rel_path || track.file_path, {
+        cell: (info) => <span className="block max-w-[20rem] truncate font-mono text-[11px]">{info.getValue()}</span>,
+        header: "File path",
+        id: "file_path",
+        meta: {
+          hideBelow: "lg",
+          widthClass: "min-w-[14rem]",
+        },
+      }),
+      columnHelper.display({
+        cell: (info) => (
+          <div className="flex justify-end">
+            <LibraryTrackActions track={info.row.original} onOpenTrackDetail={openTrackDetail} />
+          </div>
+        ),
+        enableSorting: false,
+        header: "Actions",
+        meta: {
+          align: "end",
+          widthClass: "w-28",
+        },
+      }),
+    ],
+    [openTrackDetail],
+  );
 
   const resetFilters = () => {
     setLinkStatusFilter("all");
     setMatchMethodFilter("all");
     setFileStatusFilter("all");
+    setRowSelection({});
+    setBulkStatus(null);
   };
+
+  function handleLinkStatusFilterChange(value: LibraryLinkStatusFilter) {
+    setLinkStatusFilter(value);
+    setRowSelection({});
+    setBulkStatus(null);
+  }
+
+  function handleMatchMethodFilterChange(value: LibraryMatchMethodFilter) {
+    setMatchMethodFilter(value);
+    setRowSelection({});
+    setBulkStatus(null);
+  }
+
+  function handleFileStatusFilterChange(value: LibraryFileStatusFilter) {
+    setFileStatusFilter(value);
+    setRowSelection({});
+    setBulkStatus(null);
+  }
+
+  async function invalidateLibraryTables() {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: libraryQueryKeys.all }),
+      queryClient.invalidateQueries({ queryKey: libraryQueryKeys.tracks() }),
+      queryClient.invalidateQueries({ queryKey: playlistQueryKeys.all }),
+      queryClient.invalidateQueries({ queryKey: playlistQueryKeys.proposals() }),
+    ]);
+  }
+
+  async function handleBulkRematch() {
+    if (selectedUnlinkedTracks.length === 0 || isBulkBusy) {
+      return;
+    }
+
+    setIsBulkRematching(true);
+    setBulkStatus(null);
+
+    const results = await settleInChunks(selectedUnlinkedTracks, 5, (track) => rematchLocalTrack(track.id));
+    const successCount = results.filter((result) => result.status === "fulfilled").length;
+    const failureCount = results.filter((result) => result.status === "rejected").length;
+
+    await invalidateLibraryTables();
+
+    setRowSelection({});
+    setIsBulkRematching(false);
+    setBulkStatus({
+      body:
+        failureCount > 0
+          ? `${successCount} ${successCount === 1 ? "row was" : "rows were"} queued and ${failureCount} ${failureCount === 1 ? "row failed" : "rows failed"}.`
+          : `${successCount} ${successCount === 1 ? "row was" : "rows were"} queued for matching.`,
+      status: failureCount > 0 ? "error" : "success",
+      title: failureCount > 0 ? "Bulk re-match partially failed" : "Bulk re-match queued",
+    });
+  }
+
+  async function handleBulkUnlink() {
+    const unlinkableTracks = selectedLinkedTracks.filter((track) => track.final_link_id !== null);
+    const missingFinalLinkCount = selectedLinkedTracks.length - unlinkableTracks.length;
+
+    if (selectedLinkedTracks.length === 0 || isBulkBusy) {
+      return;
+    }
+
+    setIsBulkUnlinking(true);
+    setBulkStatus(null);
+
+    const results = await settleInChunks(unlinkableTracks, 5, (track) => deleteFinalLink(track.final_link_id as number));
+    const successCount = results.filter((result) => result.status === "fulfilled").length;
+    const failureCount = results.filter((result) => result.status === "rejected").length + missingFinalLinkCount;
+
+    await invalidateLibraryTables();
+
+    setRowSelection({});
+    setIsBulkUnlinking(false);
+    setBulkStatus({
+      body:
+        failureCount > 0
+          ? `${successCount} ${successCount === 1 ? "link was" : "links were"} removed and ${failureCount} ${failureCount === 1 ? "row failed" : "rows failed"}.`
+          : `${successCount} ${successCount === 1 ? "link was" : "links were"} removed.`,
+      status: failureCount > 0 ? "error" : "success",
+      title: failureCount > 0 ? "Bulk unlink partially failed" : "Bulk unlink complete",
+    });
+  }
 
   return (
     <section className="flex min-h-0 flex-1 flex-col gap-4">
@@ -445,6 +635,7 @@ export function LocalLibraryView({ isPending = false, state, tracksResponse }: L
           title="Library refresh in progress"
         />
       ) : null}
+      {bulkStatus ? <StatusMessage body={bulkStatus.body} status={bulkStatus.status} title={bulkStatus.title} /> : null}
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4" aria-label="Library stats">
         {libraryStats.map((stat) => (
@@ -458,9 +649,9 @@ export function LocalLibraryView({ isPending = false, state, tracksResponse }: L
           fileStatusFilter={fileStatusFilter}
           linkStatusFilter={linkStatusFilter}
           matchMethodFilter={matchMethodFilter}
-          onFileStatusFilterChange={setFileStatusFilter}
-          onLinkStatusFilterChange={setLinkStatusFilter}
-          onMatchMethodFilterChange={setMatchMethodFilter}
+          onFileStatusFilterChange={handleFileStatusFilterChange}
+          onLinkStatusFilterChange={handleLinkStatusFilterChange}
+          onMatchMethodFilterChange={handleMatchMethodFilterChange}
           onResetFilters={resetFilters}
           stats={stats}
         />
@@ -489,9 +680,38 @@ export function LocalLibraryView({ isPending = false, state, tracksResponse }: L
                   Showing {visibleTracks.length} of {tracks.length} rows
                 </p>
               </div>
-              {visibleTracks.map((track) => (
-                <LibraryTrackRow key={track.id} track={track} />
-              ))}
+              <DataTable
+                bulkActionSlot={
+                  <>
+                    <ActionButton
+                      className="inline-flex items-center gap-1.5"
+                      disabled={selectedUnlinkedTracks.length === 0 || isBulkBusy}
+                      onClick={handleBulkRematch}
+                    >
+                      <RotateCcw aria-hidden="true" className="h-3.5 w-3.5" strokeWidth={1.9} />
+                      {isBulkRematching ? "Matching..." : "Re-match"}
+                    </ActionButton>
+                    <ActionButton
+                      className="inline-flex items-center gap-1.5"
+                      disabled={selectedLinkedTracks.length === 0 || isBulkBusy}
+                      tone="danger"
+                      onClick={handleBulkUnlink}
+                    >
+                      <Unlink aria-hidden="true" className="h-3.5 w-3.5" strokeWidth={1.9} />
+                      {isBulkUnlinking ? "Unlinking..." : "Unlink"}
+                    </ActionButton>
+                  </>
+                }
+                columns={columns}
+                data={visibleTracks}
+                rowId={(track) => String(track.id)}
+                rowSelection={rowSelection}
+                sorting={sorting}
+                stickyHeader
+                onActivate={openTrackDetail}
+                onRowSelectionChange={setRowSelection}
+                onSortingChange={setSorting}
+              />
             </div>
           ) : (
             <EmptyStateCard
@@ -502,6 +722,7 @@ export function LocalLibraryView({ isPending = false, state, tracksResponse }: L
           )}
         </div>
       </section>
+      <LocalTrackDetailDrawer localTrackId={null} open={false} syncUrl onClose={() => undefined} />
     </section>
   );
 }

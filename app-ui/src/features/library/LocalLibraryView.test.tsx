@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { PropsWithChildren, ReactElement } from "react";
+import { MemoryRouter } from "react-router-dom";
 
 import { LocalLibraryView } from "./LocalLibraryView";
 import type { LibraryTracksResponse } from "./queries";
@@ -119,7 +120,11 @@ function renderWithQueryClient(ui: ReactElement) {
   });
 
   function Wrapper({ children }: PropsWithChildren) {
-    return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
+    return (
+      <MemoryRouter>
+        <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+      </MemoryRouter>
+    );
   }
 
   return render(ui, { wrapper: Wrapper });
@@ -189,7 +194,7 @@ describe("LocalLibraryView", () => {
     expect(within(trackList).getByText("The Midnight")).toBeInTheDocument();
     expect(within(trackList).getByText("Nocturnal")).toBeInTheDocument();
     expect(within(trackList).getByText("Synthwave/The Midnight/Nocturnal/Night Shift.mp3")).toBeInTheDocument();
-    expect(within(trackList).getAllByText("4:05")).toHaveLength(2);
+    expect(within(trackList).getAllByText("4:05")).toHaveLength(1);
     expect(within(trackList).getAllByText("ISRC")).toHaveLength(1);
     expect(within(trackList).getAllByText("Available")).toHaveLength(3);
     expect(within(trackList).getByText("Artist unavailable")).toBeInTheDocument();
@@ -282,6 +287,102 @@ describe("LocalLibraryView", () => {
     expect(within(trackList).getByText("Open Eye Signal")).toBeInTheDocument();
     expect(within(trackList).getByText("Jon Hopkins")).toBeInTheDocument();
     expect(within(trackList).queryByText("Night Shift")).not.toBeInTheDocument();
+  });
+
+  it("enables bulk actions only for compatible selected local rows", async () => {
+    mockLibraryFetch();
+
+    renderWithQueryClient(<LocalLibraryView />);
+
+    fireEvent.click(await screen.findByRole("checkbox", { name: "Select row 1" }));
+
+    let bulkBar = screen.getByText("1 row selected").closest("div");
+    expect(bulkBar).not.toBeNull();
+    expect(within(bulkBar as HTMLElement).getByRole("button", { name: "Re-match" })).toBeDisabled();
+    expect(within(bulkBar as HTMLElement).getByRole("button", { name: "Unlink" })).toBeEnabled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Clear selection" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select row 4" }));
+
+    bulkBar = screen.getByText("1 row selected").closest("div");
+    expect(bulkBar).not.toBeNull();
+    expect(within(bulkBar as HTMLElement).getByRole("button", { name: "Re-match" })).toBeEnabled();
+    expect(within(bulkBar as HTMLElement).getByRole("button", { name: "Unlink" })).toBeDisabled();
+  });
+
+  it("bulk re-matches selected unlinked rows and renders aggregate feedback", async () => {
+    const fetchMock = mockLibraryFetchWithRematch({
+      rematchResponse: {
+        ok: true,
+        json: async () => ({ job_id: "match-job-1004", local_track_id: 1004 }),
+      } as Response,
+    });
+
+    renderWithQueryClient(<LocalLibraryView />);
+
+    fireEvent.click(await screen.findByRole("checkbox", { name: "Select row 4" }));
+    const bulkBar = screen.getByText("1 row selected").closest("div") as HTMLElement;
+    fireEvent.click(within(bulkBar).getByRole("button", { name: "Re-match" }));
+
+    expect(await screen.findByText("Bulk re-match queued")).toBeInTheDocument();
+    expect(screen.getByText("1 row was queued for matching.")).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledWith("/api/local-tracks/1004/rematch", { method: "POST" });
+  });
+
+  it("bulk unlinks selected linked rows and renders aggregate feedback", async () => {
+    const fetchMock = mockLibraryFetch();
+
+    renderWithQueryClient(<LocalLibraryView />);
+
+    fireEvent.click(await screen.findByRole("checkbox", { name: "Select row 1" }));
+    const bulkBar = screen.getByText("1 row selected").closest("div") as HTMLElement;
+    fireEvent.click(within(bulkBar).getByRole("button", { name: "Unlink" }));
+
+    expect(await screen.findByText("Bulk unlink complete")).toBeInTheDocument();
+    expect(screen.getByText("1 link was removed.")).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledWith("/api/final-links/9001", { method: "DELETE" });
+  });
+
+  it("renders partial failure feedback for bulk unlink errors", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+      const url = String(input);
+
+      if (url === "/api/final-links/9001" && init?.method === "DELETE") {
+        return {
+          ok: false,
+          status: 500,
+          json: async () => ({ detail: "failed" }),
+        } as Response;
+      }
+
+      return {
+        ok: true,
+        json: async () => libraryTracksResponse,
+      } as Response;
+    });
+
+    renderWithQueryClient(<LocalLibraryView />);
+
+    fireEvent.click(await screen.findByRole("checkbox", { name: "Select row 1" }));
+    const bulkBar = screen.getByText("1 row selected").closest("div") as HTMLElement;
+    fireEvent.click(within(bulkBar).getByRole("button", { name: "Unlink" }));
+
+    expect(await screen.findByText("Bulk unlink partially failed")).toBeInTheDocument();
+    expect(screen.getByText("0 links were removed and 1 row failed.")).toBeInTheDocument();
+  });
+
+  it("clears table selection when library filters change", async () => {
+    mockLibraryFetch();
+
+    renderWithQueryClient(<LocalLibraryView />);
+
+    fireEvent.click(await screen.findByRole("checkbox", { name: "Select row 1" }));
+    expect(screen.getByText("1 row selected")).toBeInTheDocument();
+
+    const filters = screen.getByRole("region", { name: "Library filters" });
+    fireEvent.click(within(filters).getByRole("button", { name: "Pending 2" }));
+
+    expect(screen.queryByText("1 row selected")).not.toBeInTheDocument();
   });
 
   it("disables library filters while a refresh is pending", async () => {
