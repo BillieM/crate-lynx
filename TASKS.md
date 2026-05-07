@@ -73,19 +73,19 @@ Non-goals:
 
 ## T4. Backfill existing records from Beets
 
-- [ ] Files: `app/app/ingestion/repair.py` (lines 30–62 wiring; existing `_iter_current_beets_items` at line 210 stays untouched). Add a new repair step `_repair_beets_mirror`.
-- [ ] Use `decode_beets_path` from `app.ingestion.beets_mirror_sync` (already moved there in T2) — do not re-add a local copy.
-- [ ] Add a dry-run / `--apply` backfill path that reads the current `BEETS_LIBRARY` SQLite database and mirrors all Beets item/album/attribute rows into Postgres via `beets_mirror_sync.upsert_item` / `upsert_album`.
-- [ ] All upserts run inside one `engine.begin()` block. Steps in order:
+- [x] Files: `app/app/ingestion/repair.py` (lines 30–62 wiring; existing `_iter_current_beets_items` at line 210 stays untouched). Add a new repair step `_repair_beets_mirror`.
+- [x] Use `decode_beets_path` from `app.ingestion.beets_mirror_sync` (already moved there in T2) — do not re-add a local copy.
+- [x] Add a dry-run / `--apply` backfill path that reads the current `BEETS_LIBRARY` SQLite database and mirrors all Beets item/album/attribute rows into Postgres via `beets_mirror_sync.upsert_item` / `upsert_album`.
+- [x] All upserts run inside one `engine.begin()` block. Steps in order:
   1. Iterate all Beets items via `iter_all_items` chunked at 500; call `upsert_item` per chunk.
   2. Iterate all Beets albums via `iter_all_albums` chunked at 500; call `upsert_album`.
   3. Compute mirror-vs-source diff: `beets_items.beets_id NOT IN (current sqlite ids)` → report as `stale_mirror_items` (do not delete in v1).
   4. Compute `local_tracks.beets_id NOT IN (current sqlite ids)` → report as `stale_local_track_beets_ids` (do not delete in v1).
   5. Existing missing-`local_tracks` insertion (lines 166–207) stays unchanged.
-- [ ] Concurrency cap: chunk size 500 for attribute writes; single connection (repair runs single-threaded today — do not introduce parallelism).
-- [ ] Report stale `local_tracks.beets_id` values that no longer exist in Beets; do not delete them automatically.
-- [ ] Keep existing duplicate-track, stale-failure, zero-byte staging, and optional `--enqueue-matching` repair behavior intact.
-- [ ] New tests in `app/tests/test_ingestion.py` covering: dry-run vs apply, partial mirror (some items already in Postgres), stale-mirror detection, stale-local-track detection.
+- [x] Concurrency cap: chunk size 500 for attribute writes; single connection (repair runs single-threaded today — do not introduce parallelism).
+- [x] Report stale `local_tracks.beets_id` values that no longer exist in Beets; do not delete them automatically.
+- [x] Keep existing duplicate-track, stale-failure, zero-byte staging, and optional `--enqueue-matching` repair behavior intact.
+- [x] New tests in `app/tests/test_ingestion.py` covering: dry-run vs apply, partial mirror (some items already in Postgres), stale-mirror detection, stale-local-track detection.
 
 **Definition of done:**
 - `source .venv/bin/activate && ruff check . && ruff format --check . && pytest app/tests/test_ingestion.py app/tests/test_main.py`
