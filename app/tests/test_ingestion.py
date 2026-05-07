@@ -949,6 +949,8 @@ def test_ingestion_processor_persists_relative_library_path(tmp_path: Path) -> N
     source = tmp_path / "ingestion" / "track.mp3"
     source.parent.mkdir()
     source.write_bytes(b"mp3")
+    library_root = tmp_path / "library"
+    library_database = tmp_path / "library.db"
     prepared = PreparedTrack(
         source_path=source,
         prepared_path=tmp_path / "staging" / "track.mp3",
@@ -957,9 +959,10 @@ def test_ingestion_processor_persists_relative_library_path(tmp_path: Path) -> N
     preparer = Mock(spec=AudioPreparer)
     preparer.prepare.return_value = prepared
     importer = Mock(spec=BeetsImporter)
-    importer.library_root = tmp_path / "library"
+    importer.library_root = library_root
+    importer.library_database = library_database
     importer.import_file.return_value = ImportedTrack(
-        library_path=tmp_path / "library" / "Artist" / "track.mp3",
+        library_path=library_root / "Artist" / "track.mp3",
         beets_id=42,
     )
     fingerprint_generator = Mock(spec=FingerprintGenerator)
@@ -968,6 +971,32 @@ def test_ingestion_processor_persists_relative_library_path(tmp_path: Path) -> N
     database_url = f"sqlite:///{tmp_path / 'app.db'}"
     engine = create_engine(database_url)
     metadata.create_all(engine)
+    beets_mirror_metadata.create_all(engine)
+    _create_repair_beets_library(
+        library_database,
+        items=[
+            {
+                "id": 42,
+                "path": str(library_root / "Artist" / "track.mp3").encode("utf-8"),
+                "album_id": 7,
+                "title": "Track",
+                "artist": "Artist",
+                "album": "Album",
+            }
+        ],
+        albums=[
+            {
+                "id": 7,
+                "album": "Album",
+                "albumartist": "Artist",
+            }
+        ],
+        item_attributes=[
+            (42, "mood", "bright"),
+            (42, "source", "import-test"),
+        ],
+        album_attributes=[(7, "review", "kept")],
+    )
 
     result = IngestionProcessor(
         staging_root=tmp_path / "staging",
@@ -975,16 +1004,148 @@ def test_ingestion_processor_persists_relative_library_path(tmp_path: Path) -> N
         beets_importer=importer,
         fingerprint_generator=fingerprint_generator,
         track_store=LocalTrackStore(database_url),
+        database_engine=engine,
     ).process(source)
 
     with engine.connect() as connection:
         row = connection.execute(select(local_tracks_table)).mappings().one()
+        item = connection.execute(select(beets_items_table)).mappings().one()
+        album = connection.execute(select(beets_albums_table)).mappings().one()
+        item_attributes = (
+            connection.execute(
+                select(beets_item_attributes_table).order_by(
+                    beets_item_attributes_table.c.key
+                )
+            )
+            .mappings()
+            .all()
+        )
+        album_attributes = (
+            connection.execute(select(beets_album_attributes_table)).mappings().all()
+        )
 
     assert result.local_track_id == row["id"]
     assert row["file_path"] == "Artist/track.mp3"
     assert row["library_root_rel_path"] == "Artist/track.mp3"
     assert row["fingerprint"] == "fp-42"
     assert row["beets_id"] == 42
+    assert item["beets_id"] == 42
+    assert item["path"] == str(library_root / "Artist" / "track.mp3")
+    assert item["album_id"] == 7
+    assert item["title"] == "Track"
+    assert item["artist"] == "Artist"
+    assert album["beets_album_id"] == 7
+    assert album["album"] == "Album"
+    assert [(row["key"], row["value"]) for row in item_attributes] == [
+        ("mood", "bright"),
+        ("source", "import-test"),
+    ]
+    assert [(row["key"], row["value"]) for row in album_attributes] == [
+        ("review", "kept")
+    ]
+
+
+def test_ingestion_processor_updates_existing_beets_mirror_row(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "ingestion" / "track.mp3"
+    source.parent.mkdir()
+    source.write_bytes(b"mp3")
+    library_root = tmp_path / "library"
+    library_database = tmp_path / "library.db"
+    library_path = library_root / "Artist" / "track.mp3"
+    prepared = PreparedTrack(
+        source_path=source,
+        prepared_path=tmp_path / "staging" / "track.mp3",
+        transcoded=False,
+    )
+    preparer = Mock(spec=AudioPreparer)
+    preparer.prepare.return_value = prepared
+    importer = Mock(spec=BeetsImporter)
+    importer.library_root = library_root
+    importer.library_database = library_database
+    importer.import_file.return_value = ImportedTrack(
+        library_path=library_path,
+        beets_id=42,
+    )
+    fingerprint_generator = Mock(spec=FingerprintGenerator)
+    fingerprint_generator.generate.return_value = "fp-42"
+
+    database_url = f"sqlite:///{tmp_path / 'app.db'}"
+    engine = create_engine(database_url)
+    beets_mirror_metadata.create_all(engine)
+    _create_repair_beets_library(
+        library_database,
+        items=[
+            {
+                "id": 42,
+                "path": str(library_path).encode("utf-8"),
+                "album_id": 7,
+                "title": "First Title",
+                "artist": "Artist",
+            }
+        ],
+        albums=[{"id": 7, "album": "First Album"}],
+        item_attributes=[(42, "mood", "bright")],
+        album_attributes=[(7, "source", "first")],
+    )
+
+    processor = IngestionProcessor(
+        staging_root=tmp_path / "staging",
+        audio_preparer=preparer,
+        beets_importer=importer,
+        fingerprint_generator=fingerprint_generator,
+        database_engine=engine,
+    )
+
+    processor.process(source)
+
+    source.write_bytes(b"mp3")
+    with sqlite3.connect(library_database) as connection:
+        connection.execute(
+            "UPDATE items SET title = ?, artist = ? WHERE id = ?",
+            ("Second Title", "Updated Artist", 42),
+        )
+        connection.execute(
+            "UPDATE albums SET album = ? WHERE id = ?",
+            ("Second Album", 7),
+        )
+        connection.execute(
+            "DELETE FROM item_attributes WHERE entity_id = ?",
+            (42,),
+        )
+        connection.execute(
+            "DELETE FROM album_attributes WHERE entity_id = ?",
+            (7,),
+        )
+        _insert_repair_attribute(connection, "item_attributes", 42, "mood", "dark")
+        _insert_repair_attribute(connection, "album_attributes", 7, "source", "second")
+        connection.commit()
+
+    processor.process(source)
+
+    with engine.connect() as connection:
+        items = connection.execute(select(beets_items_table)).mappings().all()
+        item_attributes = (
+            connection.execute(select(beets_item_attributes_table)).mappings().all()
+        )
+        albums = connection.execute(select(beets_albums_table)).mappings().all()
+        album_attributes = (
+            connection.execute(select(beets_album_attributes_table)).mappings().all()
+        )
+
+    assert [(row["beets_id"], row["title"], row["artist"]) for row in items] == [
+        (42, "Second Title", "Updated Artist")
+    ]
+    assert [
+        (row["entity_id"], row["key"], row["value"]) for row in item_attributes
+    ] == [(42, "mood", "dark")]
+    assert [(row["beets_album_id"], row["album"]) for row in albums] == [
+        (7, "Second Album")
+    ]
+    assert [
+        (row["entity_id"], row["key"], row["value"]) for row in album_attributes
+    ] == [(7, "source", "second")]
 
 
 def test_ingestion_processor_enqueues_matching_job_after_persisting(

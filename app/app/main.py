@@ -54,6 +54,7 @@ def create_app() -> FastAPI:
                 FailedIngestionAttemptStore(database_url) if database_url else None
             ),
             matching_job_enqueuer=MatchingJobEnqueuer(redis_url) if redis_url else None,
+            database_engine=database_engine,
         )
 
         def process_new_file(path: Path) -> None:

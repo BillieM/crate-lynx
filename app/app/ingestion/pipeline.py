@@ -9,9 +9,17 @@ import subprocess
 import threading
 import uuid
 
+from sqlalchemy.engine import Engine
+
 from app.local_tracks.store import LocalTrackStore
 from app.matching.jobs import MatchingJobEnqueuer
-from app.ingestion.beets_mirror_sync import decode_beets_path
+from app.ingestion.beets_mirror_sync import (
+    decode_beets_path,
+    read_album,
+    read_item,
+    upsert_album,
+    upsert_item,
+)
 from app.ingestion.failures import FailedIngestionAttemptStore
 
 
@@ -192,6 +200,7 @@ class IngestionProcessor:
     track_store: LocalTrackStore | None = None
     failed_attempt_store: FailedIngestionAttemptStore | None = None
     matching_job_enqueuer: MatchingJobEnqueuer | None = None
+    database_engine: Engine | None = None
 
     def process(self, source_path: Path | str) -> PreparedTrack:
         prepared: PreparedTrack | None = None
@@ -203,6 +212,7 @@ class IngestionProcessor:
             imported_track = self.beets_importer.import_file(prepared.prepared_path)
             prepared.library_path = imported_track.library_path
             prepared.beets_id = imported_track.beets_id
+            self._mirror_imported_track(imported_track)
             if self.track_store is not None:
                 persisted = self.track_store.persist(
                     library_root=self.beets_importer.library_root,
@@ -235,6 +245,36 @@ class IngestionProcessor:
                     ),
                 )
             raise
+
+    def _mirror_imported_track(self, imported_track: ImportedTrack) -> None:
+        if self.database_engine is None or imported_track.beets_id is None:
+            return
+
+        with sqlite3.connect(self.beets_importer.library_database) as sqlite_conn:
+            item_row = read_item(
+                sqlite_conn,
+                imported_track.beets_id,
+            )
+            if item_row is None:
+                raise ValueError(
+                    "Beets mirror item "
+                    f"beets_id={imported_track.beets_id} was not found after import"
+                )
+            album_row = (
+                read_album(sqlite_conn, item_row.album_id)
+                if item_row.album_id is not None
+                else None
+            )
+            if item_row.album_id is not None and album_row is None:
+                raise ValueError(
+                    "Beets mirror album "
+                    f"beets_album_id={item_row.album_id} was not found after import"
+                )
+
+        with self.database_engine.begin() as pg_conn:
+            upsert_item(pg_conn, item_row)
+            if album_row is not None:
+                upsert_album(pg_conn, album_row)
 
     def _cleanup_source(self, source_path: Path) -> None:
         if source_path.exists():

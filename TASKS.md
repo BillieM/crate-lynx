@@ -92,15 +92,15 @@ Non-goals:
 
 ## T3. Mirror metadata during import
 
-- [ ] Files: `app/app/ingestion/pipeline.py` (`IngestionProcessor.process` at lines 201–242), `app/tests/test_ingestion.py`.
-- [ ] After `BeetsImporter.import_file` returns at `pipeline.py:208`, open a sqlite read on `self.beets_importer.library_database` and call `beets_mirror_sync.read_item` / `read_album` then `upsert_item` / `upsert_album` against the Postgres engine.
-- [ ] Order: mirror upsert **before** `track_store.persist`, so the FK chain `local_tracks.beets_id → beets_items.beets_id` is always satisfied.
-- [ ] Wrap the new step in the same try/except as the existing import path, so failure paths still record `failed_ingestion_attempts`.
-- [ ] `BeetsImporter._fetch_imported_track` continues to read sqlite locally — only the post-import mirror upsert uses the new module.
-- [ ] Keep `local_tracks` schema unchanged. Do not duplicate the full Beets field set on `local_tracks`.
-- [ ] Preserve existing staging cleanup, failure recording, and matching enqueue behavior.
-- [ ] Extend existing successful-import tests in `test_ingestion.py` to assert one `beets_items` row + N `beets_item_attributes` exist and the album row exists.
-- [ ] Add a regression test: re-importing the same path updates the existing mirror row instead of creating a duplicate.
+- [x] Files: `app/app/ingestion/pipeline.py` (`IngestionProcessor.process` at lines 201–242), `app/tests/test_ingestion.py`.
+- [x] After `BeetsImporter.import_file` returns at `pipeline.py:208`, open a sqlite read on `self.beets_importer.library_database` and call `beets_mirror_sync.read_item` / `read_album` then `upsert_item` / `upsert_album` against the Postgres engine.
+- [x] Order: mirror upsert **before** `track_store.persist`, so the FK chain `local_tracks.beets_id → beets_items.beets_id` is always satisfied.
+- [x] Wrap the new step in the same try/except as the existing import path, so failure paths still record `failed_ingestion_attempts`.
+- [x] `BeetsImporter._fetch_imported_track` continues to read sqlite locally — only the post-import mirror upsert uses the new module.
+- [x] Keep `local_tracks` schema unchanged. Do not duplicate the full Beets field set on `local_tracks`.
+- [x] Preserve existing staging cleanup, failure recording, and matching enqueue behavior.
+- [x] Extend existing successful-import tests in `test_ingestion.py` to assert one `beets_items` row + N `beets_item_attributes` exist and the album row exists.
+- [x] Add a regression test: re-importing the same path updates the existing mirror row instead of creating a duplicate.
 
 **Definition of done:**
 - `source .venv/bin/activate && ruff check . && ruff format --check . && pytest app/tests/test_ingestion.py`
