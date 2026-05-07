@@ -1,14 +1,16 @@
 import {
   flexRender,
+  getFilteredRowModel,
   getCoreRowModel,
   getSortedRowModel,
+  type ColumnFiltersState,
   type ColumnDef,
   type OnChangeFn,
   type RowSelectionState,
   type SortingState,
   useReactTable,
 } from "@tanstack/react-table";
-import { type KeyboardEvent, type ReactNode, useMemo, useRef } from "react";
+import { type KeyboardEvent, type MouseEvent, type ReactNode, useEffect, useMemo, useRef } from "react";
 
 import { controlClasses, surfaceClasses, textClasses } from "../styles/componentClasses";
 
@@ -30,10 +32,13 @@ type DataTableColumn<TRow> = ColumnDef<TRow, any>;
 
 export type DataTableProps<TRow> = {
   bulkActionSlot?: ReactNode;
+  columnFilters?: ColumnFiltersState;
   columns: Array<DataTableColumn<TRow>>;
   data: TRow[];
   density?: Density;
+  headerSlot?: (state: { filteredRowCount: number; totalRowCount: number }) => ReactNode;
   onActivate?: (row: TRow) => void;
+  onColumnFiltersChange?: OnChangeFn<ColumnFiltersState>;
   onRowSelectionChange: OnChangeFn<RowSelectionState>;
   onSortingChange: OnChangeFn<SortingState>;
   rowCanSelect?: (row: TRow) => boolean;
@@ -61,6 +66,19 @@ const densityClasses = {
     row: "min-h-10",
   },
 };
+
+const interactiveRowTargetSelector = [
+  "button",
+  "a",
+  "input",
+  "select",
+  "textarea",
+  '[role="button"]',
+  '[role="link"]',
+  '[role="checkbox"]',
+  '[role="menuitem"]',
+  '[role="option"]',
+].join(", ");
 
 function getRowSelectionState(rowIds: string[], rowSelection: RowSelectionState): "all" | "some" | "none" {
   const selectedCount = rowIds.filter((rowId) => rowSelection[rowId]).length;
@@ -101,10 +119,13 @@ export function BulkActionBar({ children, onClearSelection, selectedCount }: Bul
 
 export function DataTable<TRow>({
   bulkActionSlot,
+  columnFilters,
   columns,
   data,
   density = "compact",
+  headerSlot,
   onActivate,
+  onColumnFiltersChange,
   onRowSelectionChange,
   onSortingChange,
   rowCanSelect,
@@ -113,27 +134,51 @@ export function DataTable<TRow>({
   sorting,
   stickyHeader = false,
 }: DataTableProps<TRow>) {
+  const hasColumnFiltering = columnFilters !== undefined && onColumnFiltersChange !== undefined;
   const table = useReactTable({
     columns,
     data,
     enableRowSelection: rowCanSelect ? (row) => rowCanSelect(row.original) : true,
     getCoreRowModel: getCoreRowModel(),
+    getFilteredRowModel: getFilteredRowModel(),
     getRowId: rowId,
     getSortedRowModel: getSortedRowModel(),
+    ...(hasColumnFiltering ? { onColumnFiltersChange } : {}),
     onRowSelectionChange,
     onSortingChange,
     state: {
+      ...(hasColumnFiltering ? { columnFilters } : {}),
       rowSelection,
       sorting,
     },
   });
   const lastSelectedIndexRef = useRef<number | null>(null);
+  const hasCommittedColumnFiltersRef = useRef(false);
+  const columnFiltersKey = useMemo(
+    () => (columnFilters === undefined ? undefined : JSON.stringify(columnFilters)),
+    [columnFilters],
+  );
   const visibleRows = table.getRowModel().rows;
   const selectableVisibleRows = useMemo(() => visibleRows.filter((row) => row.getCanSelect()), [visibleRows]);
   const visibleRowIds = useMemo(() => selectableVisibleRows.map((row) => row.id), [selectableVisibleRows]);
   const selectedVisibleCount = visibleRowIds.filter((rowIdValue) => rowSelection[rowIdValue]).length;
   const headerSelectionState = getRowSelectionState(visibleRowIds, rowSelection);
   const tableDensity = densityClasses[density];
+  const filteredRowCount = table.getFilteredRowModel().rows.length;
+  const totalRowCount = table.getCoreRowModel().rows.length;
+
+  useEffect(() => {
+    if (columnFiltersKey === undefined) {
+      return;
+    }
+
+    if (!hasCommittedColumnFiltersRef.current) {
+      hasCommittedColumnFiltersRef.current = true;
+      return;
+    }
+
+    onRowSelectionChange({});
+  }, [columnFiltersKey, onRowSelectionChange]);
 
   function setRowSelected(rowIndex: number, checked: boolean, shiftKey = false) {
     const nextSelection = { ...rowSelection };
@@ -221,11 +266,28 @@ export function DataTable<TRow>({
     }
   }
 
+  function handleRowClick(event: MouseEvent<HTMLTableRowElement>, rowOriginal: TRow) {
+    if (!onActivate) {
+      return;
+    }
+
+    if (!(event.target instanceof Element)) {
+      return;
+    }
+
+    if (event.target.closest(interactiveRowTargetSelector)) {
+      return;
+    }
+
+    onActivate(rowOriginal);
+  }
+
   return (
     <div className="space-y-2">
       <BulkActionBar selectedCount={selectedVisibleCount} onClearSelection={clearSelection}>
         {bulkActionSlot}
       </BulkActionBar>
+      {headerSlot ? headerSlot({ filteredRowCount, totalRowCount }) : null}
       <div
         className={`${surfaceClasses.panelRadius} overflow-x-auto border border-ctp-surface1/80 bg-ctp-mantle/75 shadow-sm shadow-ctp-crust/20`}
       >
@@ -287,6 +349,7 @@ export function DataTable<TRow>({
                 className={`${tableDensity.row} border-b border-ctp-surface0/80 outline-none transition-colors last:border-b-0 hover:bg-ctp-surface0/70 focus-visible:bg-ctp-surface0 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ctp-mauve`}
                 data-row-id={row.id}
                 tabIndex={0}
+                onClick={(event) => handleRowClick(event, row.original)}
                 onKeyDown={(event) => handleRowKeyDown(event, rowIndex, row.original)}
               >
                 <td className="w-10 px-3 py-2">

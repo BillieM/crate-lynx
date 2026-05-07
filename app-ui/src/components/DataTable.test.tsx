@@ -1,6 +1,6 @@
-import { createColumnHelper, type RowSelectionState, type SortingState } from "@tanstack/react-table";
+import { createColumnHelper, type ColumnFiltersState, type RowSelectionState, type SortingState } from "@tanstack/react-table";
 import { fireEvent, render, screen, within } from "@testing-library/react";
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { vi } from "vitest";
 
 import { DataTable } from "./DataTable";
@@ -36,6 +36,11 @@ const columns = [
     cell: (info) => info.getValue(),
     header: "Status",
   }),
+  columnHelper.display({
+    cell: () => <button type="button">Inspect</button>,
+    header: "Actions",
+    id: "actions",
+  }),
 ];
 
 function TestDataTable({
@@ -70,30 +75,37 @@ function TestDataTable({
 }
 
 function FilterableDataTable() {
-  const [filter, setFilter] = useState("");
+  const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
   const [sorting, setSorting] = useState<SortingState>([]);
-  const filteredTracks = useMemo(
-    () => tracks.filter((track) => track.title.toLowerCase().includes(filter.toLowerCase())),
-    [filter],
-  );
+  const activeFilter = (columnFilters[0]?.value as TestTrack["status"] | undefined) ?? "all";
 
   function updateFilter(value: string) {
-    setFilter(value);
-    setRowSelection({});
+    setColumnFilters(value === "all" ? [] : [{ id: "status", value }]);
   }
 
   return (
     <>
       <label htmlFor="track-filter">Filter</label>
-      <input id="track-filter" value={filter} onChange={(event) => updateFilter(event.currentTarget.value)} />
+      <select id="track-filter" value={activeFilter} onChange={(event) => updateFilter(event.currentTarget.value)}>
+        <option value="all">All</option>
+        <option value="linked">Linked</option>
+        <option value="unlinked">Unlinked</option>
+      </select>
       <DataTable
+        columnFilters={columnFilters}
         columns={columns}
-        data={filteredTracks}
+        data={tracks}
+        headerSlot={({ filteredRowCount, totalRowCount }) => (
+          <p>
+            Showing {filteredRowCount} of {totalRowCount} tracks
+          </p>
+        )}
         rowId={(track) => track.id}
         rowSelection={rowSelection}
         sorting={sorting}
         onActivate={vi.fn()}
+        onColumnFiltersChange={setColumnFilters}
         onRowSelectionChange={setRowSelection}
         onSortingChange={setSorting}
       />
@@ -178,16 +190,48 @@ describe("DataTable", () => {
     expect(screen.getByRole("button", { name: "Re-match" })).toBeEnabled();
   });
 
-  it("supports caller-driven selection clearing when filters change", () => {
+  it("supports controlled column filters, header counts, and selection clearing when filters change", () => {
     render(<FilterableDataTable />);
+
+    expect(screen.getByText("Showing 3 of 3 tracks")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("checkbox", { name: "Select row 2" }));
 
     expect(screen.getByText("1 row selected")).toBeInTheDocument();
 
-    fireEvent.change(screen.getByLabelText("Filter"), { target: { value: "Latch" } });
+    fireEvent.change(screen.getByLabelText("Filter"), { target: { value: "unlinked" } });
 
     expect(screen.queryByText("1 row selected")).not.toBeInTheDocument();
+    expect(screen.getByText("Showing 2 of 3 tracks")).toBeInTheDocument();
+    expect(screen.queryByText("La femme d'argent")).not.toBeInTheDocument();
+    expect(screen.getByText("Digital Love")).toBeInTheDocument();
     expect(screen.getByText("Latch")).toBeInTheDocument();
+  });
+
+  it("activates rows on plain cell clicks and ignores interactive row targets", () => {
+    const onActivate = vi.fn();
+    render(<TestDataTable onActivate={onActivate} />);
+
+    const firstBodyRow = screen.getAllByRole("row")[1];
+
+    fireEvent.click(within(firstBodyRow).getByText("La femme d'argent"));
+
+    expect(onActivate).toHaveBeenCalledWith(tracks[0]);
+
+    onActivate.mockClear();
+    fireEvent.click(within(firstBodyRow).getByRole("checkbox", { name: "Select row 1" }));
+
+    expect(onActivate).not.toHaveBeenCalled();
+
+    fireEvent.click(within(firstBodyRow).getByRole("button", { name: "Inspect" }));
+
+    expect(onActivate).not.toHaveBeenCalled();
+  });
+
+  it("does not render a header slot wrapper when headerSlot is omitted", () => {
+    const { container } = render(<TestDataTable />);
+
+    expect(container.firstElementChild?.children).toHaveLength(1);
+    expect(screen.queryByText(/Showing \d+ of \d+ tracks/)).not.toBeInTheDocument();
   });
 });

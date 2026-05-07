@@ -8,125 +8,117 @@ Context:
 - Existing domain filter controls can stay in their views, but they should drive table `columnFilters` instead of pre-filtering arrays before passing rows to `DataTable`.
 - No backend schema, endpoint, or migration changes are expected.
 
-## T1. Add shared DataTable filtering support
+Locked decisions:
 
-- [ ] Extend `app-ui/src/components/DataTable.tsx` to use TanStack `getFilteredRowModel`.
-- [ ] Add controlled filter props to `DataTableProps`:
+- "No filter for column X" is signalled by **omitting** that column entry from `columnFilters` (push `[]` to clear). Do not register custom `filterFns` — TanStack's default equality covers `link_status` and `status`.
+- DataTable owns selection-clearing on `columnFilters` change. Consumers stop clearing selection manually.
+- Mixed bulk selections (T4): `Re-match` filters out linked rows in the chunk loop; `Unlink` filters out non-linked rows. Aggregate counts only what was actually attempted.
+
+Non-goals (v1):
+
+- No backend schema, endpoints, or migrations.
+- No pagination, virtualization, column visibility menus, or column resizing.
+- No removal of `filterPlaylistTracks` / `filterTracks.ts` (still unit-tested).
+- No changes to `LocalTrackDetailDrawer` placeholder wiring.
+- No URL persistence of `columnFilters`.
+- No changes to `MissingLocallyView`, `UnidentifiedView`, `PlaylistSyncConfiguration` other than confirming their existing tests still pass.
+- No edits to unrelated dirty files in the worktree (settings/auth).
+
+## T1. DataTable filtering & row-click activation
+
+- [x] Files: `app-ui/src/components/DataTable.tsx`, `app-ui/src/components/DataTable.test.tsx`.
+- [x] Add `getFilteredRowModel()` to the `useReactTable` config.
+- [x] Extend `DataTableProps<TRow>`:
   - `columnFilters?: ColumnFiltersState`
   - `onColumnFiltersChange?: OnChangeFn<ColumnFiltersState>`
-  - optional `filterFns` if needed for non-default filter semantics.
-- [ ] Keep filtering optional so current table consumers can omit filter props without behavior changes.
-- [ ] Add a render prop such as `headerSlot?: (state: { filteredRowCount: number; totalRowCount: number }) => ReactNode`.
-- [ ] Render `headerSlot` above the table but below `BulkActionBar`, so callers can render "Showing X of Y" using the table filtered row model.
-- [ ] Clear row selection when controlled `columnFilters` changes after initial mount.
-- [ ] Keep existing sorting, row selection, select-all-visible, sticky header, responsive column metadata, and keyboard behavior unchanged.
-- [ ] Update `app-ui/src/components/DataTable.test.tsx` to cover:
-  - filtering through `columnFilters`,
-  - `headerSlot` receiving filtered and total row counts,
-  - selection clearing after filter changes,
-  - unchanged sorting and selection behavior.
+  - `headerSlot?: (state: { filteredRowCount: number; totalRowCount: number }) => ReactNode`
+- [x] Wire `state.columnFilters` and `onColumnFiltersChange` into `useReactTable` only when both are defined; keep filtering optional so existing consumers (`MissingLocallyView`, `UnidentifiedView`, `PlaylistSyncConfiguration`) keep working with no prop changes.
+- [x] Render `headerSlot` between `BulkActionBar` and the `<table>` wrapper (around `DataTable.tsx:226–229`). Counts come from `table.getFilteredRowModel().rows.length` (filtered) and `table.getCoreRowModel().rows.length` (total).
+- [x] Selection clearing on filter change: `useEffect` keyed on a stable serialization of `columnFilters` with a `useRef` first-commit guard, then `onRowSelectionChange({})`. No-op when `columnFilters` is undefined.
+- [x] Row-click activation:
+  - Add `onClick` to `<tr>`. If `event.target.closest('button, a, input, select, textarea, [role="button"], [role="link"], [role="checkbox"], [role="menuitem"], [role="option"]')` is non-null, bail out.
+  - Otherwise call `onActivate?.(row.original)`.
+  - Keep existing Enter-key activation (`DataTable.tsx:218`) and the bulk-select checkbox `event.stopPropagation()` (`DataTable.tsx:305`).
+- [x] Keep existing sorting, row selection, select-all-visible, sticky header, responsive column metadata (`hideBelow`, `align`, `widthClass`), shift-click ranges, and ArrowUp/ArrowDown focus movement unchanged.
+- [x] Update `DataTable.test.tsx`:
+  - Replace the existing `FilterableDataTable` external-filter test with controlled `columnFilters` state. Assert filtering applies, `headerSlot` receives `{ filteredRowCount, totalRowCount }`, and selection clears after filter changes.
+  - Add: row-click on a plain cell calls `onActivate`; row-click on the row checkbox does not; row-click on a `<button>` inside a row does not (add a button to the test column).
+  - Assert `headerSlot` does not render when omitted (no empty wrapper).
+  - Keep all existing sorting / selection / bulk-action / shift-click / keyboard tests intact.
 
-## T2. Add row-click activation to shared tables
+**Definition of done:**
+- `cd app-ui && npm run lint && npm test -- DataTable && npm run build`
+- `MissingLocallyView`, `UnidentifiedView`, `PlaylistSyncConfiguration` test files pass without modification.
 
-- [ ] Make clicking a body row call `onActivate(row.original)` when `onActivate` is supplied.
-- [ ] Preserve existing `Enter` row activation.
-- [ ] Do not activate the row when the click starts from interactive controls:
-  - row checkbox,
-  - header checkbox,
-  - buttons,
-  - links,
-  - inputs,
-  - selects,
-  - textareas,
-  - elements with `role="button"` or another interactive role.
-- [ ] Keep checkbox click behavior isolated from row activation.
-- [ ] Add `DataTable.test.tsx` coverage for row-click activation and interactive-control isolation.
+## T2. Migrate PlaylistView to DataTable filters
 
-## T3. Migrate PlaylistView filters to DataTable filters
+- [ ] Files: `app-ui/src/features/playlists/PlaylistView.tsx`, `app-ui/src/features/playlists/FilterChips.test.tsx` (only if assertions change).
+- [ ] Drop `filteredTracks` / `filterPlaylistTracks` import and usage at `PlaylistView.tsx:14,98`. Pass full `tracks` array as `data` (`PlaylistView.tsx:324`).
+- [ ] Add `const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([])`.
+- [ ] `handleFilterChange(nextFilter)` becomes:
+  - if `nextFilter === "all"` → `setColumnFilters([])`
+  - else → `setColumnFilters([{ id: "status", value: nextFilter }])`
+  - drop the manual `setRowSelection({})` (DataTable handles it).
+- [ ] Extend the `useEffect` keyed on `playlistResourceId` (`PlaylistView.tsx:211`) to also clear `columnFilters`.
+- [ ] Pass `columnFilters` and `onColumnFiltersChange={setColumnFilters}` to `<DataTable>`.
+- [ ] Derive `FilterChips`'s `activeFilter` from `columnFilters` (`(columnFilters[0]?.value as PlaylistTrackFilter) ?? "all"`).
+- [ ] Replace the `Showing X of Y tracks` paragraph (`PlaylistView.tsx:305–307`) with a `headerSlot` render prop on `<DataTable>`. `getPlaylistTrackFilterCounts` continues to feed chip badges from the unfiltered `tracks`.
+- [ ] Keep `filterPlaylistTracks` in `filterTracks.ts`; `FilterChips.test.tsx:51–61` still exercises it as a unit.
+- [ ] Existing `PlaylistView.test.tsx` assertions (filter clicks, bulk unlink success / partial failure, account auth error, drawer-open on linked row) must continue to pass.
 
-- [ ] Replace custom pre-filtering in `app-ui/src/features/playlists/PlaylistView.tsx`.
-- [ ] Stop passing `filteredTracks` as `data`; pass the full playlist `tracks` array to `DataTable`.
-- [ ] Store the active playlist status filter as TanStack `columnFilters`, targeting the `status` column.
-- [ ] Keep existing `FilterChips` UI and counts, but make chips update the table filter state.
-- [ ] Use the new `headerSlot` state for "Showing X of Y tracks".
-- [ ] Remove or simplify `filterPlaylistTracks(...)` usage where it is no longer needed by the view.
-- [ ] Keep selected linked-row bulk unlink behavior unchanged.
-- [ ] Keep selection clearing on filter change through the shared `DataTable` behavior.
-- [ ] Update playlist/filter tests to assert the same visible behavior through table-owned filtering.
+**Definition of done:**
+- `cd app-ui && npm run lint && npm test -- playlists/PlaylistView playlists/FilterChips && npm run build`
 
-## T4. Clean up LocalLibraryView filters and layout
+## T3. Strip LocalLibrary stats, filters, columns, and row actions
 
-- [ ] Remove the four top stat cards from `app-ui/src/features/library/LocalLibraryView.tsx`.
-- [ ] Remove `Match method` and `File status` filters.
-- [ ] Remove related filter state/types/options/helpers:
-  - `LibraryMatchMethodFilter`,
-  - `LibraryFileStatusFilter`,
-  - `matchMethodFilters`,
-  - `fileStatusFilters`,
-  - `LibrarySelectFilter`,
-  - match/file filter branches in reset/change handlers.
-- [ ] Keep only the link-status chip filter with backend counts.
-- [ ] Wire link-status chips to the DataTable `link_status` column filter.
-- [ ] Remove custom `filterLibraryTracks(...)` pre-filtering and pass all local library rows to `DataTable`.
-- [ ] Use `headerSlot` for "Showing X of Y rows".
-- [ ] Keep reset behavior, but reset only the link-status filter, row selection, and bulk status.
-- [ ] Update empty-state copy so it refers to the selected link-status filter, not generic "facets".
+- [ ] Files: `app-ui/src/features/library/LocalLibraryView.tsx`, `app-ui/src/features/library/LocalLibraryView.test.tsx`, `app-ui/src/App.test.tsx` (lines ~566–576, ~596).
+- [ ] Remove from `LocalLibraryView.tsx`:
+  - 4 stat cards block (`LocalLibraryView.tsx:640–644`).
+  - `LibraryStat` type, `libraryStatConfigs`, `LibraryStatCard`, `libraryStats` derivation (lines 31–37, 84–113, 220–239, 423–426).
+  - `LibraryMatchMethodFilter`, `LibraryFileStatusFilter` types (28–29).
+  - `matchMethodFilter` / `fileStatusFilter` state and handlers (411–412, 553–563).
+  - `LibrarySelectFilter` component and the two `LibraryFilterBar` widgets that use it (241–271, 319–332).
+  - Constants: `matchMethodFilters`, `fileStatusFilters`, `matchMethodLabels`, `fileStatusLabels`, `fileStatusTones`, `formatMatchMethod` (115–151, 196–202).
+  - `filterLibraryTracks` (204–218).
+  - Columns: `match_method`, `file_status`, and the `display` Actions column (lines 495–534).
+  - `LibraryTrackActions` component (358–399) and the now-unused `useMutation` / per-row `rematchLocalTrack` wiring it depended on.
+  - Now-unused imports: `Pill`, `PillTone`, `Clock3`, `Link2`, `Music2`, `LibraryFileStatus`. Keep `Unlink`, `RotateCcw`, `RefreshCw` — still used by the bulk action bar.
+- [ ] Wire link-status to DataTable filtering:
+  - Add `const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([])`.
+  - `handleLinkStatusFilterChange(value)`: `setColumnFilters(value === "all" ? [] : [{ id: "link_status", value }])`. Drop manual `setRowSelection({})`.
+  - `resetFilters` clears `columnFilters` and `bulkStatus`. Selection clearing comes from DataTable.
+  - Pass `data={tracks}`, `columnFilters`, `onColumnFiltersChange={setColumnFilters}` to `<DataTable>`.
+- [ ] Replace the inline "Showing X of Y rows" header (`LocalLibraryView.tsx:677–682`) with `headerSlot`. Keep the `<h2>Local library track list</h2>` heading inside the slot.
+- [ ] Empty-state copy (`LocalLibraryView.tsx:716–722`) body: **"No tracks match the selected link-status filter."**
+- [ ] Row activation already wired via `onActivate={openTrackDetail}` (`LocalLibraryView.tsx:711`) plus `?detail=` URL param in `openTrackDetail` (442–449); after T1 lands, click + Enter both open the drawer with no further changes.
+- [ ] Update `LocalLibraryView.test.tsx`:
+  - Drop stat-card assertions. Keep link-status chip + count assertions.
+  - Drop "updates and resets library filter selections" branches that touch match-method / file-status. Keep link-status reset behaviour.
+  - Drop `Match method` / `File status` filter assertions and the column assertions for `ISRC`, `Available`, `Beets failed`.
+  - Add: clicking a body row opens the `LocalTrackDetailDrawer` (mirrors PlaylistView's drawer-open test).
+  - Confirm Details/per-row Re-match buttons are absent.
+  - Keep the existing bulk re-match and bulk unlink tests (T4 will expand them).
+- [ ] Update `App.test.tsx`:
+  - Lines 566–576: drop `Library stats`, `Total tracks`, `Linked tracks`, `Pending tracks`, `Unlinked tracks`, `Match method`, `File status` assertions.
+  - Line 596: replace `getByLabelText("Library stats")` with an assertion on a surface that survives (e.g. `getByRole("region", { name: "Library filters" })`).
 
-## T5. Simplify LocalLibraryView columns and row actions
+**Definition of done:**
+- `cd app-ui && npm run lint && npm test && npm run build` (full suite — App.test is cross-cutting).
+- Bulk re-match still works for unlinked rows (T4 expands eligibility next).
 
-- [ ] Remove Local Library table columns:
-  - `Match method`,
-  - `File status`,
-  - `Actions`.
-- [ ] Keep columns:
-  - status dot,
-  - title,
-  - artist,
-  - album,
-  - duration,
-  - file path.
-- [ ] Remove per-row `Details` and per-row `Re-match` UI with the deleted Actions column.
-- [ ] Preserve detail access through row click and `Enter`, opening the existing `LocalTrackDetailDrawer`.
-- [ ] Keep row activation URL behavior through `?detail={localTrackId}`.
-- [ ] Remove now-unused imports/helpers such as `Pill`, file-status tones, match-method formatting, and `LibraryTrackActions`.
+## T4. Expand LocalLibrary bulk re-match eligibility to pending + unlinked
 
-## T6. Fix LocalLibrary bulk re-match eligibility
+- [ ] Files: `app-ui/src/features/library/LocalLibraryView.tsx`, `app-ui/src/features/library/LocalLibraryView.test.tsx`.
+- [ ] Replace `selectedUnlinkedTracks` (`LocalLibraryView.tsx:432–435`) with `selectedRematchableTracks = selectedTracks.filter((t) => t.link_status !== "linked")` (covers `pending` and `unlinked`).
+- [ ] Bulk `Re-match` disabled when `selectedRematchableTracks.length === 0 || isBulkBusy`.
+- [ ] Bulk `Unlink` unchanged: still gated by `selectedLinkedTracks` (rows with `final_link_id !== null`).
+- [ ] `handleBulkRematch` defensively re-filters linked rows out of the worker input, keeps `settleInChunks(..., 5, ...)`, and aggregates success/failure counts unchanged. Reuses `POST /api/local-tracks/{id}/rematch` (`LocalLibraryView.tsx:58–68`).
+- [ ] Mixed selection of `{ linked, pending }` enables both buttons; `Re-match` POSTs only the pending id, `Unlink` DELETEs only the linked row's final-link.
+- [ ] Status copy: existing `"queued for matching"` covers both pending and unlinked attempts — no string change unless review surfaces a clarity issue.
+- [ ] Tests (`LocalLibraryView.test.tsx`):
+  - Add: selecting a single `pending` row enables `Re-match`, disables `Unlink`; click queues `POST /api/local-tracks/{pendingId}/rematch`.
+  - Update "enables bulk actions only for compatible selected local rows": pending row now enables `Re-match`.
+  - Add: mixed `linked + pending` selection enables both buttons; `Re-match` only fires for the pending id, `Unlink` only fires for the linked row's `final_link_id`.
 
-- [ ] Change bulk `Re-match` eligibility from selected `unlinked` rows only to selected non-linked rows:
-  - eligible: `pending`, `unlinked`,
-  - ineligible: `linked`.
-- [ ] Keep bulk `Unlink` limited to selected linked rows with `final_link_id`.
-- [ ] Reuse existing `POST /api/local-tracks/{id}/rematch`; do not add or change backend endpoints.
-- [ ] Preserve existing concurrency behavior: process rematch requests in chunks of 5 and aggregate success/failure counts.
-- [ ] Update button disabled logic so a mixed selection enables:
-  - `Re-match` when at least one selected row is pending or unlinked,
-  - `Unlink` when at least one selected row is linked.
-- [ ] Update status copy only where needed to stay accurate for pending and unlinked rows.
-- [ ] Add tests proving pending rows are valid rematch targets.
-
-## T7. Audit other DataTable consumers
-
-- [ ] Confirm `MissingLocallyView`, `UnidentifiedView`, and `PlaylistSyncConfiguration` still work with omitted filter props.
-- [ ] Confirm their selection, bulk-action, row action, and sorting behavior still passes existing tests after `DataTable` changes.
-- [ ] Confirm no stale filter UI, copy, helper functions, or tests remain from the removed Local Library match/file filters.
-- [ ] Do not change non-table proposal filters in this pass.
-- [ ] Do not add pagination, virtualization, column visibility menus, or column resizing.
-
-## T8. Frontend tests and validation
-
-- [ ] Update `app-ui/src/features/library/LocalLibraryView.test.tsx` for:
-  - removed stats,
-  - removed match method and file status filters,
-  - removed match method, file status, and actions columns,
-  - link-status table filtering,
-  - row-click / Enter detail activation,
-  - pending and unlinked bulk rematch,
-  - linked-only bulk unlink.
-- [ ] Update `app-ui/src/App.test.tsx` assertions that currently expect library stats or removed filters.
-- [ ] Update `app-ui/src/components/DataTable.test.tsx` for shared filtering and row activation.
-- [ ] Update playlist filter tests for table-owned filtering.
-- [ ] Run frontend validation:
-  - `cd app-ui`
-  - `npm run lint`
-  - `npm test`
-  - `npm run build`
+**Definition of done:**
+- `cd app-ui && npm run lint && npm test -- library/LocalLibraryView && npm run build`
