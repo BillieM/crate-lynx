@@ -11,6 +11,7 @@ from app.ingestion import BeetsImporter, IngestionProcessor, IngestionWatcher
 from app.ingestion.failures import FailedIngestionAttemptStore
 from app.library.router import create_router as create_library_router
 from app.links.router import create_router as create_links_router
+from app.local_tracks.router import create_router as create_local_tracks_router
 from app.local_tracks.store import LocalTrackStore
 from app.maintenance.router import create_router as create_maintenance_router
 from app.matching.jobs import MatchingJobEnqueuer
@@ -140,6 +141,10 @@ def create_app() -> FastAPI:
             require_database_url=require_database_url,
             require_database_engine=require_database_engine,
         ),
+        prefix="/api",
+    )
+    app.include_router(
+        create_local_tracks_router(require_database_url=require_database_url),
         prefix="/api",
     )
     app.include_router(

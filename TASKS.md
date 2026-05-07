@@ -39,15 +39,15 @@
 
 ## T3. Track-detail drawer shell + supporting endpoint
 
-- Carved out so it isn't reinvented by T4 and T5.
-- New endpoint: `GET /api/local-tracks/{id}` returning a combined detail payload — file path, `library_root_rel_path`, link status, final-link record (if any), pending suggestions, recent failed ingestion attempts. Backed by a new `LocalTrackStore.get_detail` reading from `local_tracks_table`, `final_links_table`, `suggested_links_table`, `failed_ingestion_attempts_table`.
-- Drawer primitive (hand-rolled — only `react-router-dom`, `@tanstack/react-query`, and `lucide-react` are available, no headless lib in deps):
+- [x] Carved out so it isn't reinvented by T4 and T5.
+- [x] New endpoint: `GET /api/local-tracks/{id}` returning a combined detail payload — file path, `library_root_rel_path`, link status, final-link record (if any), pending suggestions, recent failed ingestion attempts. Backed by a new `LocalTrackStore.get_detail` reading from `local_tracks_table`, `final_links_table`, `suggested_links_table`, `failed_ingestion_attempts_table`.
+- [x] Drawer primitive (hand-rolled — only `react-router-dom`, `@tanstack/react-query`, and `lucide-react` are available, no headless lib in deps):
   - Props: `open`, `onClose`, `title`, `children`.
   - Focus trap, ESC closes, body scroll lock, `role="dialog"` + `aria-labelledby`, returns focus to invoker on close.
   - Optional URL sync via `?detail={localTrackId}` so refresh / browser back works.
-- The drawer body in this task is a placeholder (title + raw detail JSON or a minimal summary). Per-view drawer content lands with the consuming task.
-- Tests: drawer open/close, ESC, focus return; backend endpoint shape + 404 path.
-- **Definition of done:** `ruff check . && ruff format --check . && pytest` pass for the new endpoint; `npm run lint && npm test` pass for the drawer.
+- [x] The drawer body in this task is a placeholder (title + raw detail JSON or a minimal summary). Per-view drawer content lands with the consuming task.
+- [x] Tests: drawer open/close, ESC, focus return; backend endpoint shape + 404 path.
+- [x] **Definition of done:** `ruff check . && ruff format --check . && pytest` pass for the new endpoint; `npm run lint && npm test` pass for the drawer.
 
 ## T4. Convert PlaylistView to dense table + replace overview card with a toolbar
 

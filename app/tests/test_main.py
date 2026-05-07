@@ -84,6 +84,7 @@ def test_links_routes_are_mounted_under_api_prefix() -> None:
     assert "/api/playlists/{playlist_id}/tracks" in route_paths
     assert "/api/playlists/{playlist_id}/m3u" in route_paths
     assert "/api/library/tracks" in route_paths
+    assert "/api/local-tracks/{local_track_id}" in route_paths
     assert "/api/maintenance/missing-locally" in route_paths
     assert "/api/maintenance/unidentified" in route_paths
     assert "/api/streaming/accounts/{account_id}/sync" in route_paths
@@ -1567,6 +1568,98 @@ def test_local_track_rematch_endpoint_returns_404_for_unknown_track(
 
     try:
         _call_endpoint(route.endpoint, 999)
+    except StarletteHTTPException as exc:
+        assert exc.status_code == 404
+        assert exc.detail == "Local track not found"
+    else:
+        raise AssertionError("Expected HTTPException for missing local track")
+
+
+def test_local_track_detail_endpoint_returns_combined_track_context(
+    monkeypatch,
+    migrated_database,
+    test_data,
+) -> None:
+    database_url, engine = migrated_database
+    monkeypatch.setenv("DATABASE_URL", database_url)
+
+    local_track_id = test_data.local_track(
+        file_path="OnlyL/Memories.mp3",
+        library_root_rel_path="OnlyL/Memories.mp3",
+    )
+    streaming_track_id = test_data.streaming_track(
+        artist="OnlyL",
+        title="Memories",
+        provider_track_id="ytm-onlyl",
+    )
+    final_link_id = test_data.final_link(
+        approved_at=datetime(2026, 5, 2, 8, 30, tzinfo=UTC),
+        local_track_id=local_track_id,
+        streaming_track_id=streaming_track_id,
+    )
+    low_score_suggestion_id = test_data.suggested_link(
+        local_track_id=local_track_id,
+        match_method="tags",
+        score=0.61,
+        streaming_track_id=test_data.streaming_track(provider_track_id="ytm-low"),
+    )
+    high_score_suggestion_id = test_data.suggested_link(
+        local_track_id=local_track_id,
+        match_method="isrc",
+        score=0.98,
+        streaming_track_id=test_data.streaming_track(provider_track_id="ytm-high"),
+    )
+    with engine.begin() as connection:
+        connection.execute(
+            insert(failed_ingestion_attempts_table).values(
+                source_path="/imports/OnlyL/Memories.flac",
+                filename="Memories.flac",
+                fingerprint="fp-detail",
+                failure_reason="beets import failed",
+                failed_at=datetime(2026, 5, 3, 9, 15, tzinfo=UTC),
+                local_track_id=local_track_id,
+            )
+        )
+
+    app = create_app()
+    route = _route("GET", "/api/local-tracks/{local_track_id}", app)
+    response = _call_endpoint(route.endpoint, local_track_id)
+
+    assert response.id == local_track_id
+    assert response.file_path == "OnlyL/Memories.mp3"
+    assert response.library_root_rel_path == "OnlyL/Memories.mp3"
+    assert response.link_status == "linked"
+    assert response.final_link is not None
+    assert response.final_link.id == final_link_id
+    assert response.final_link.streaming_track_id == streaming_track_id
+    assert response.final_link.approved_at == datetime(2026, 5, 2, 8, 30)
+    assert [suggestion.id for suggestion in response.pending_suggestions] == [
+        high_score_suggestion_id,
+        low_score_suggestion_id,
+    ]
+    assert response.pending_suggestions[0].match_method == "isrc"
+    assert response.pending_suggestions[0].score == 0.98
+    assert len(response.failed_ingestion_attempts) == 1
+    assert response.failed_ingestion_attempts[0].source_path == (
+        "/imports/OnlyL/Memories.flac"
+    )
+    assert response.failed_ingestion_attempts[0].failure_reason == (
+        "beets import failed"
+    )
+
+
+def test_local_track_detail_endpoint_returns_404_for_unknown_track(
+    monkeypatch,
+    migrated_database,
+) -> None:
+    database_url, _ = migrated_database
+    monkeypatch.setenv("DATABASE_URL", database_url)
+
+    app = create_app()
+    route = _route("GET", "/api/local-tracks/{local_track_id}", app)
+
+    try:
+        _call_endpoint(route.endpoint, 404)
     except StarletteHTTPException as exc:
         assert exc.status_code == 404
         assert exc.detail == "Local track not found"
