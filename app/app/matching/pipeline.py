@@ -189,10 +189,7 @@ class MatchingPipeline:
 
     def __post_init__(self) -> None:
         if self.isrc_matcher is None:
-            self.isrc_matcher = IsrcMatcher(
-                database_url=self.database_url,
-                beets_library=self.beets_library,
-            )
+            self.isrc_matcher = IsrcMatcher(database_url=self.database_url)
         if self.tag_matcher is None:
             self.tag_matcher = TagMatcher(
                 database_url=self.database_url,

@@ -107,7 +107,7 @@ Non-goals:
 
 ## T5a. Move ISRC matching off Beets SQLite
 
-- [ ] Extend `app/tests/factories.py:24` `TestDataFactory` with shared helpers consumed by T5a, T5b, and T6:
+- [x] Extend `app/tests/factories.py:24` `TestDataFactory` with shared helpers consumed by T5a, T5b, and T6:
   ```python
   def beets_item(
       self,
@@ -126,11 +126,11 @@ Non-goals:
   ) -> int: ...
   ```
   Insert into `beets_items_table` / `beets_item_attributes_table` via the existing `_insert` helper.
-- [ ] Files: `app/app/matching/isrc.py` (whole file, 93 LOC), `app/app/matching/pipeline.py:191–200` (drop `beets_library` arg from `IsrcMatcher` construction; **leave `TagMatcher` arg in place** — it's removed in T5b), `app/tests/test_matching_isrc.py` (335 LOC of fixture migration).
-- [ ] New `IsrcMatcher.__init__` signature: `__init__(self, *, database_url: str)` — drops `beets_library`.
-- [ ] Single Postgres query joining `local_tracks ⋈ beets_items` on `beets_id`, where `local_tracks.id = :id`, returning `beets_items.isrc`. If row missing or isrc null → return `None`.
-- [ ] Keep ISRC normalization (`_normalize_isrc`), confidence band, score (1.0), and streaming-track lookup unchanged.
-- [ ] Migrate `test_matching_isrc.py` to seed Postgres mirror rows via `factories.beets_item(...)` instead of `sqlite3.connect`. Remove the `import sqlite3` line at file top once all uses are gone.
+- [x] Files: `app/app/matching/isrc.py` (whole file, 93 LOC), `app/app/matching/pipeline.py:191–200` (drop `beets_library` arg from `IsrcMatcher` construction; **leave `TagMatcher` arg in place** — it's removed in T5b), `app/tests/test_matching_isrc.py` (335 LOC of fixture migration).
+- [x] New `IsrcMatcher.__init__` signature: `__init__(self, *, database_url: str)` — drops `beets_library`.
+- [x] Single Postgres query joining `local_tracks ⋈ beets_items` on `beets_id`, where `local_tracks.id = :id`, returning `beets_items.isrc`. If row missing or isrc null → return `None`.
+- [x] Keep ISRC normalization (`_normalize_isrc`), confidence band, score (1.0), and streaming-track lookup unchanged.
+- [x] Migrate `test_matching_isrc.py` to seed Postgres mirror rows via `factories.beets_item(...)` instead of `sqlite3.connect`. Remove the `import sqlite3` line at file top once all uses are gone.
 
 **Definition of done:**
 - `source .venv/bin/activate && ruff check . && ruff format --check . && pytest app/tests/test_matching_isrc.py app/tests/test_matching_pipeline.py`

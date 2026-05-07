@@ -6,6 +6,10 @@ from typing import Any
 
 from sqlalchemy import Engine, insert
 
+from app.ingestion.beets_mirror import (
+    beets_item_attributes_table,
+    beets_items_table,
+)
 from app.links.store import final_links_table
 from app.local_tracks.store import local_tracks_table
 from app.matching.pipeline import (
@@ -113,6 +117,38 @@ class TestDataFactory:
             file_path=file_path,
             fingerprint=fingerprint,
             library_root_rel_path=library_root_rel_path or file_path,
+        )
+
+    def beets_item(
+        self,
+        *,
+        beets_id: int,
+        album_id: int | None = None,
+        title: str | None = None,
+        artist: str | None = None,
+        album: str | None = None,
+        isrc: str | None = None,
+        length: float | None = None,
+        **fixed_fields: Any,
+    ) -> int:
+        return self._insert(
+            beets_items_table,
+            beets_id=beets_id,
+            album_id=album_id,
+            title=title,
+            artist=artist,
+            album=album,
+            isrc=isrc,
+            length=length,
+            **fixed_fields,
+        )
+
+    def beets_item_attribute(self, *, beets_id: int, key: str, value: str) -> int:
+        return self._insert(
+            beets_item_attributes_table,
+            entity_id=beets_id,
+            key=key,
+            value=value,
         )
 
     def suggested_link(

@@ -1,26 +1,20 @@
 from __future__ import annotations
 
-import sqlite3
-from pathlib import Path
-
-from sqlalchemy import create_engine, func, select
+from sqlalchemy import column, create_engine, func, select, table
 
 from app.local_tracks.store import local_tracks_table
 from app.matching.models import ConfidenceBand, MatchResult
 from app.streaming.models import streaming_tracks_table
 
+beets_items_view = table("beets_items", column("beets_id"), column("isrc"))
+
 
 class IsrcMatcher:
-    def __init__(self, *, database_url: str, beets_library: Path | str) -> None:
+    def __init__(self, *, database_url: str) -> None:
         self._engine = create_engine(database_url)
-        self._beets_library = Path(beets_library)
 
     def match(self, local_track_id: int) -> MatchResult | None:
-        beets_id = self._lookup_beets_id(local_track_id)
-        if beets_id is None:
-            return None
-
-        isrc = self._lookup_beets_isrc(beets_id)
+        isrc = self._lookup_local_isrc(local_track_id)
         if isrc is None:
             return None
 
@@ -36,13 +30,19 @@ class IsrcMatcher:
             confidence_band=ConfidenceBand.HIGH,
         )
 
-    def _lookup_beets_id(self, local_track_id: int) -> int | None:
+    def _lookup_local_isrc(self, local_track_id: int) -> str | None:
         with self._engine.connect() as connection:
             row = (
                 connection.execute(
-                    select(local_tracks_table.c.beets_id).where(
-                        local_tracks_table.c.id == local_track_id
+                    select(beets_items_view.c.isrc)
+                    .select_from(
+                        local_tracks_table.join(
+                            beets_items_view,
+                            local_tracks_table.c.beets_id
+                            == beets_items_view.c.beets_id,
+                        )
                     )
+                    .where(local_tracks_table.c.id == local_track_id)
                 )
                 .mappings()
                 .one_or_none()
@@ -51,20 +51,7 @@ class IsrcMatcher:
         if row is None:
             return None
 
-        beets_id = row["beets_id"]
-        return beets_id if isinstance(beets_id, int) else None
-
-    def _lookup_beets_isrc(self, beets_id: int) -> str | None:
-        with sqlite3.connect(self._beets_library) as connection:
-            row = connection.execute(
-                "SELECT isrc FROM items WHERE id = ?",
-                (beets_id,),
-            ).fetchone()
-
-        if row is None:
-            return None
-
-        return _normalize_isrc(row[0])
+        return _normalize_isrc(row["isrc"])
 
     def _lookup_streaming_track_id(self, isrc: str) -> int | None:
         with self._engine.connect() as connection:
