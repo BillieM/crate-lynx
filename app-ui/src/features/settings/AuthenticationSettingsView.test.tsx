@@ -79,8 +79,8 @@ describe("AuthenticationSettingsView", () => {
 
   it("submits no-account state with the expected POST body and clears the textarea", async () => {
     const browserHeaders = {
-      Authorization: "Bearer fresh",
-      Cookie: "SID=fresh",
+      authorization: "Bearer fresh",
+      cookie: "SID=fresh",
     };
     const fetchMock = mockAccountFetch([]);
 
@@ -89,9 +89,12 @@ describe("AuthenticationSettingsView", () => {
     expect(await screen.findByText("Not connected")).toBeInTheDocument();
     expect(screen.getByLabelText("Display name")).toHaveValue("YouTube Music");
 
-    fireEvent.change(screen.getByLabelText("Browser headers"), {
+    expect(screen.getByText("How to copy the cURL request")).toBeInTheDocument();
+    expect(screen.getByText(/right-click and choose Copy > Copy as cURL/)).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("cURL request"), {
       target: {
-        value: JSON.stringify(browserHeaders),
+        value: "curl 'https://music.youtube.com/youtubei/v1/browse' -H 'Authorization: Bearer fresh' -H 'Cookie: SID=fresh'",
       },
     });
     fireEvent.click(screen.getByRole("button", { name: "Connect" }));
@@ -110,24 +113,28 @@ describe("AuthenticationSettingsView", () => {
     });
     expect(await screen.findByText("YouTube Music authentication was saved.")).toBeInTheDocument();
     await waitFor(() => {
-      expect(screen.getByLabelText("Browser headers")).toHaveValue("");
+      expect(screen.getByLabelText("cURL request")).toHaveValue("");
     });
     expect(screen.getByRole("button", { name: "Configure playlists" })).toBeInTheDocument();
   });
 
   it("submits existing-account state with the expected PATCH body", async () => {
     const browserHeaders = {
-      Authorization: "Bearer refreshed",
-      Cookie: "SID=refreshed",
+      authorization: "Bearer refreshed",
+      cookie: "SID=refreshed",
     };
     const fetchMock = mockAccountFetch([connectedAccount]);
 
     renderWithProviders(<AuthenticationSettingsView />);
 
-    expect(await screen.findByText("Connected")).toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText("Browser headers"), {
+    expect(await screen.findByText("Saved, not verified")).toBeInTheDocument();
+    expect(screen.getByText(/next playlist sync will verify/)).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("cURL request"), {
       target: {
-        value: JSON.stringify(browserHeaders),
+        value:
+          "curl 'https://music.youtube.com/youtubei/v1/browse' " +
+          "-H 'Authorization: Bearer refreshed' " +
+          "-H 'Cookie: SID=refreshed'",
       },
     });
     fireEvent.click(screen.getByRole("button", { name: "Refresh authentication" }));
@@ -135,6 +142,80 @@ describe("AuthenticationSettingsView", () => {
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith("/api/streaming/accounts/4/auth", {
         body: JSON.stringify({ browser_headers: browserHeaders }),
+        headers: {
+          "Content-Type": "application/json",
+        },
+        method: "PATCH",
+      });
+    });
+  });
+
+  it("extracts request headers from a copied cURL command", async () => {
+    const fetchMock = mockAccountFetch([connectedAccount]);
+
+    renderWithProviders(<AuthenticationSettingsView />);
+
+    expect(await screen.findByText("Saved, not verified")).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("cURL request"), {
+      target: {
+        value:
+          "curl 'https://music.youtube.com/youtubei/v1/browse?prettyPrint=false' " +
+          "-H 'accept: */*' " +
+          "-H 'authorization: SAPISIDHASH fresh_hash' " +
+          "-H 'origin: https://music.youtube.com' " +
+          "-b '__Secure-3PAPISID=fresh; SID=fresh' " +
+          "--data-raw '{\"context\":{}}'",
+      },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Refresh authentication" }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith("/api/streaming/accounts/4/auth", {
+        body: JSON.stringify({
+          browser_headers: {
+            accept: "*/*",
+            authorization: "SAPISIDHASH fresh_hash",
+            origin: "https://music.youtube.com",
+            cookie: "__Secure-3PAPISID=fresh; SID=fresh",
+          },
+        }),
+        headers: {
+          "Content-Type": "application/json",
+        },
+        method: "PATCH",
+      });
+    });
+  });
+
+  it("extracts request headers from DevTools header text and drops pseudo headers", async () => {
+    const fetchMock = mockAccountFetch([connectedAccount]);
+
+    renderWithProviders(<AuthenticationSettingsView />);
+
+    expect(await screen.findByText("Saved, not verified")).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("cURL request"), {
+      target: {
+        value: [
+          "Request URL: https://music.youtube.com/youtubei/v1/browse",
+          "Request Method: POST",
+          ":authority: music.youtube.com",
+          "authorization: SAPISIDHASH copied_hash",
+          "cookie: __Secure-3PAPISID=copied; SID=copied",
+          "x-youtube-client-name: 67",
+        ].join("\n"),
+      },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Refresh authentication" }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith("/api/streaming/accounts/4/auth", {
+        body: JSON.stringify({
+          browser_headers: {
+            authorization: "SAPISIDHASH copied_hash",
+            cookie: "__Secure-3PAPISID=copied; SID=copied",
+            "x-youtube-client-name": "67",
+          },
+        }),
         headers: {
           "Content-Type": "application/json",
         },
@@ -173,7 +254,7 @@ describe("AuthenticationSettingsView", () => {
 
     renderWithProviders(<AuthenticationSettingsView />);
 
-    expect(await screen.findByText("Connected")).toBeInTheDocument();
+    expect(await screen.findByText("Saved, not verified")).toBeInTheDocument();
     expect(document.body).not.toHaveTextContent("SENTINEL_AUTH_BLOB");
     expect(document.body).not.toHaveTextContent("SENTINEL_COOKIE");
   });
