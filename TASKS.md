@@ -237,7 +237,7 @@ Each task is sized to fit comfortably in one Codex 5.5-xhigh context window.
 
 ---
 
-## - [ ] T13. A11y on PlaylistTrackActions popover
+## - [x] T13. A11y on PlaylistTrackActions popover
 
 **Why**: Popover at `app-ui/src/features/playlists/PlaylistTrackActions.tsx:42-50` lacks ESC dismiss, `aria-modal`, and focus trap.
 

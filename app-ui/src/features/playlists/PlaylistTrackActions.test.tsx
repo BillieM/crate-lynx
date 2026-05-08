@@ -48,8 +48,41 @@ describe("PlaylistTrackActions", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Linked" }));
 
-    expect(screen.getByRole("dialog")).toHaveTextContent("Final link #88");
-    expect(screen.getByRole("dialog")).toHaveTextContent("local track #22");
+    const dialog = screen.getByRole("dialog", { name: "Final link info" });
+
+    expect(dialog).toHaveAttribute("aria-modal", "true");
+    expect(dialog).toHaveTextContent("Final link #88");
+    expect(dialog).toHaveTextContent("local track #22");
+  });
+
+  it("closes final link info on Escape and returns focus to the trigger", () => {
+    render(<PlaylistTrackActions track={buildTrack({ status: "linked" })} />, {
+      wrapper: createWrapper(),
+    });
+
+    const trigger = screen.getByRole("button", { name: "Linked" });
+
+    trigger.focus();
+    fireEvent.click(trigger);
+    fireEvent.keyDown(screen.getByRole("dialog", { name: "Final link info" }), { key: "Escape" });
+
+    expect(screen.queryByRole("dialog", { name: "Final link info" })).not.toBeInTheDocument();
+    expect(trigger).toHaveFocus();
+  });
+
+  it("keeps Tab focus inside the final link info dialog", () => {
+    render(<PlaylistTrackActions track={buildTrack({ status: "linked" })} />, {
+      wrapper: createWrapper(),
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Linked" }));
+    const dialog = screen.getByRole("dialog", { name: "Final link info" });
+    const closeButton = screen.getByRole("button", { name: "Close final link info" });
+
+    closeButton.focus();
+    fireEvent.keyDown(dialog, { key: "Tab" });
+
+    expect(closeButton).toHaveFocus();
   });
 
   it("calls the detail callback for linked tracks when supplied", () => {
@@ -76,7 +109,6 @@ describe("PlaylistTrackActions", () => {
     expect(screen.getByRole("dialog")).toHaveTextContent("Final link #88");
     expect(screen.getByRole("dialog")).toHaveTextContent("local track #unknown");
   });
-
 
   it("calls the review navigation callback for pending tracks", () => {
     const onReviewTrack = vi.fn();
