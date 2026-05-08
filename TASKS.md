@@ -193,7 +193,7 @@ Each task is sized to fit comfortably in one Codex 5.5-xhigh context window.
 
 ---
 
-## - [ ] T10. Codify connection-context rule
+## - [x] T10. Codify connection-context rule
 
 **Why**: `.connect()` vs `.begin()` are used interchangeably across stores (e.g., `app/app/matching/pipeline.py`). No documented rule.
 

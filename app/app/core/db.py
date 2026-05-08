@@ -1,3 +1,13 @@
+"""Shared SQLAlchemy engine helpers.
+
+Connection-context rule:
+- Use ``Engine.connect()`` for read-only units of work.
+- Use ``Engine.begin()`` for units that write or may write, including
+  read-before-write flows.
+- Helpers that receive an existing ``Connection`` inherit the caller's
+  transaction choice instead of opening a second engine context.
+"""
+
 from __future__ import annotations
 
 import os
