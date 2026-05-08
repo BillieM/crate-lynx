@@ -10,6 +10,7 @@ from sqlalchemy import and_, delete, insert, select, update
 from sqlalchemy.engine import Engine
 from sqlalchemy.sql.elements import ColumnElement
 
+from app.core.db import create_database_engine, get_engine
 from app.ingestion.beets_mirror import beets_items_table
 from app.links.models import ProposalListResponse, ProposalResponse
 from app.links.store import final_links_table
@@ -31,19 +32,16 @@ from app.streaming.models import streaming_tracks_table
 
 def create_router(
     *,
-    require_database_url: Callable[[], str],
-    require_database_engine: Callable[[], Engine] | None = None,
+    require_database_url: Callable[[], str] | None = None,
 ) -> APIRouter:
     router = APIRouter()
 
-    def _engine(engine: Engine) -> Engine:
+    def _engine(engine: object) -> Engine:
         if isinstance(engine, Engine):
             return engine
-        if require_database_engine is not None:
-            return require_database_engine()
-        from sqlalchemy import create_engine
-
-        return create_engine(require_database_url())
+        return create_database_engine(
+            require_database_url() if require_database_url is not None else None
+        )
 
     def _regenerate_m3u_exports(streaming_track_id: int, engine: Engine) -> None:
         regenerate_m3us_for_streaming_track(
@@ -56,9 +54,7 @@ def create_router(
     @router.get("/proposals", response_model=ProposalListResponse)
     def list_proposals(
         band: ConfidenceBand | None = None,
-        engine: object = Depends(require_database_engine)
-        if require_database_engine is not None
-        else None,
+        engine: Engine = Depends(get_engine),
     ) -> ProposalListResponse:
         engine = _engine(engine)
         query = (
@@ -139,9 +135,7 @@ def create_router(
     @router.post("/proposals/{proposal_id}/approve", status_code=201)
     def approve_proposal(
         proposal_id: int,
-        engine: object = Depends(require_database_engine)
-        if require_database_engine is not None
-        else None,
+        engine: Engine = Depends(get_engine),
     ) -> dict[str, object]:
         engine = _engine(engine)
         suggestion_store = SuggestedLinkStore(engine=engine)
@@ -221,9 +215,7 @@ def create_router(
     @router.post("/proposals/{proposal_id}/reject")
     def reject_proposal(
         proposal_id: int,
-        engine: object = Depends(require_database_engine)
-        if require_database_engine is not None
-        else None,
+        engine: Engine = Depends(get_engine),
     ) -> dict[str, object]:
         engine = _engine(engine)
         rejected_at = datetime.now(UTC)
@@ -263,9 +255,7 @@ def create_router(
     @router.delete("/final-links/{final_link_id}")
     def break_final_link(
         final_link_id: int,
-        engine: object = Depends(require_database_engine)
-        if require_database_engine is not None
-        else None,
+        engine: Engine = Depends(get_engine),
     ) -> dict[str, object]:
         engine = _engine(engine)
         rejected_at = datetime.now(UTC)

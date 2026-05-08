@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.engine import Engine
 
+from app.core.db import create_database_engine, get_engine
 from app.local_tracks.store import local_tracks_table
 from app.matching.jobs import MatchingJobEnqueuer
 from app.matching.pipeline import SuggestedLinkStore
@@ -13,27 +14,22 @@ from app.matching.pipeline import SuggestedLinkStore
 
 def create_router(
     *,
-    require_database_url: Callable[[], str],
-    require_database_engine: Callable[[], Engine] | None = None,
     require_redis_url: Callable[[], str],
+    require_database_url: Callable[[], str] | None = None,
 ) -> APIRouter:
     router = APIRouter()
 
-    def _engine(engine: Engine | None) -> Engine:
+    def _engine(engine: object) -> Engine:
         if isinstance(engine, Engine):
             return engine
-        if require_database_engine is not None:
-            return require_database_engine()
-        from sqlalchemy import create_engine
-
-        return create_engine(require_database_url())
+        return create_database_engine(
+            require_database_url() if require_database_url is not None else None
+        )
 
     @router.post("/local-tracks/{local_track_id}/rematch", status_code=202)
     def rematch_local_track(
         local_track_id: int,
-        engine: object = Depends(require_database_engine)
-        if require_database_engine is not None
-        else None,
+        engine: Engine = Depends(get_engine),
     ) -> dict[str, object]:
         engine = _engine(engine)
         with engine.connect() as connection:

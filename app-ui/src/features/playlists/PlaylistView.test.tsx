@@ -109,7 +109,13 @@ function renderWithProviders(ui: ReactElement) {
 }
 
 function mockPlaylistApi({
-  deleteHandler = () => jsonResponse({ final_link_id: 9001, status: "deleted" }),
+  deleteHandler = () =>
+    jsonResponse({
+      final_link_id: 9001,
+      rejected_at: "2026-05-03T12:00:00+00:00",
+      rejected_suggestion_id: 7001,
+      status: "rejected",
+    }),
   detailResponse = playlistDetailResponse,
   accounts = [connectedStreamingAccount],
   tracksResponse = playlistTracksResponse,

@@ -6,8 +6,9 @@ import os
 from pathlib import Path
 import sqlite3
 
-from sqlalchemy import create_engine, delete, select, update
+from sqlalchemy import delete, select, update
 
+from app.core.db import create_database_engine
 from app.ingestion.beets_mirror_backfill import backfill_beets_mirror
 from app.ingestion.beets_mirror_sync import decode_beets_path
 from app.ingestion.failures import failed_ingestion_attempts_table
@@ -30,7 +31,7 @@ def main() -> None:
         os.environ.get("INGESTION_STAGING_ROOT", "/tmp/crate-lynx-ingestion-staging")
     )
 
-    engine = create_engine(database_url)
+    engine = create_database_engine(database_url)
     actions: list[str] = []
 
     with engine.begin() as connection:

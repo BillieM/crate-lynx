@@ -84,10 +84,26 @@ const libraryTracksResponse: LibraryTracksResponse = {
 };
 
 function mockLibraryFetch(response: LibraryTracksResponse = libraryTracksResponse) {
-  return vi.spyOn(globalThis, "fetch").mockResolvedValue({
-    ok: true,
-    json: async () => response,
-  } as Response);
+  return vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+    const url = String(input);
+
+    if (url.startsWith("/api/final-links/") && init?.method === "DELETE") {
+      return {
+        ok: true,
+        json: async () => ({
+          final_link_id: Number(url.split("/").pop()),
+          rejected_at: "2026-05-03T12:00:00+00:00",
+          rejected_suggestion_id: 7001,
+          status: "rejected",
+        }),
+      } as Response;
+    }
+
+    return {
+      ok: true,
+      json: async () => response,
+    } as Response;
+  });
 }
 
 function mockLibraryFetchWithRematch({
@@ -97,11 +113,23 @@ function mockLibraryFetchWithRematch({
   libraryResponse?: LibraryTracksResponse;
   rematchResponse: Promise<Response> | Response;
 }) {
-  return vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+  return vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
     const url = String(input);
 
     if (url.includes("/rematch")) {
       return await rematchResponse;
+    }
+
+    if (url.startsWith("/api/final-links/") && init?.method === "DELETE") {
+      return {
+        ok: true,
+        json: async () => ({
+          final_link_id: Number(url.split("/").pop()),
+          rejected_at: "2026-05-03T12:00:00+00:00",
+          rejected_suggestion_id: 7001,
+          status: "rejected",
+        }),
+      } as Response;
     }
 
     return {

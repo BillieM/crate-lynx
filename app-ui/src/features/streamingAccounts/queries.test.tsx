@@ -67,6 +67,17 @@ describe("streaming account queries", () => {
     expect(fetchMock).toHaveBeenCalledWith("/api/streaming/accounts");
   });
 
+  it("rejects malformed streaming account payloads", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        accounts: [{ ...connectedAccount, id: "not-a-number" }],
+      }),
+    } as Response);
+
+    await expect(fetchStreamingAccounts()).rejects.toThrow();
+  });
+
   it("creates a streaming account with the expected POST payload", async () => {
     const browserHeaders = {
       cookie: "SID=fresh",

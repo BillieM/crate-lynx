@@ -13,7 +13,6 @@ from sqlalchemy import (
     String,
     Table,
     column,
-    create_engine,
     delete,
     func,
     insert,
@@ -22,6 +21,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.engine import Engine
 
+from app.core.db import create_database_engine
 from app.matching.isrc import IsrcMatcher
 from app.matching.models import MatchResult
 from app.matching.tags import TagMatcher
@@ -65,9 +65,7 @@ class SuggestedLinkStore:
 
     def __post_init__(self) -> None:
         if self.engine is None:
-            if self.database_url is None:
-                raise ValueError("database_url or engine is required")
-            self._engine = create_engine(self.database_url)
+            self._engine = create_database_engine(self.database_url)
             return
         self._engine = self.engine
 
@@ -182,19 +180,28 @@ class SuggestedLinkStore:
 
 @dataclass(slots=True)
 class MatchingPipeline:
-    database_url: str
+    database_url: str | None = None
+    engine: Engine | None = None
     redis_url: str | None = None
     isrc_matcher: IsrcMatcher | None = None
     tag_matcher: TagMatcher | None = None
     suggestion_store: SuggestedLinkStore | None = None
 
     def __post_init__(self) -> None:
+        engine = self.engine
+        if engine is None and self.database_url is not None:
+            engine = create_database_engine(self.database_url)
         if self.isrc_matcher is None:
-            self.isrc_matcher = IsrcMatcher(database_url=self.database_url)
+            self.isrc_matcher = IsrcMatcher(
+                engine=engine, database_url=self.database_url
+            )
         if self.tag_matcher is None:
-            self.tag_matcher = TagMatcher(database_url=self.database_url)
+            self.tag_matcher = TagMatcher(engine=engine, database_url=self.database_url)
         if self.suggestion_store is None:
-            self.suggestion_store = SuggestedLinkStore(self.database_url)
+            self.suggestion_store = SuggestedLinkStore(
+                database_url=self.database_url,
+                engine=engine,
+            )
 
     def run(self, local_track_id: int) -> MatchResult | None:
         result = self.isrc_matcher.match(local_track_id)
@@ -220,7 +227,7 @@ class MatchingPipeline:
 
 
 def fetch_suggested_links(database_url: str) -> list[dict[str, object]]:
-    engine = create_engine(database_url)
+    engine = create_database_engine(database_url)
     with engine.connect() as connection:
         rows = connection.execute(
             select(

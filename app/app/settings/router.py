@@ -1,7 +1,9 @@
 from collections.abc import Callable
 
-from fastapi import APIRouter, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException, Response
+from sqlalchemy.engine import Engine
 
+from app.core.db import create_database_engine, get_engine
 from app.settings.schemas import (
     CreateIngestFolderRequest,
     GeneralSettingsResponse,
@@ -20,15 +22,24 @@ IngestFolderMutationCallback = Callable[[str], None]
 
 def create_router(
     *,
-    require_database_url: Callable[[], str],
+    require_database_url: Callable[[], str] | None = None,
     on_ingest_folder_created: IngestFolderMutationCallback | None = None,
     on_ingest_folder_deleted: IngestFolderMutationCallback | None = None,
 ) -> APIRouter:
     router = APIRouter()
 
+    def _engine(engine: object) -> Engine:
+        if isinstance(engine, Engine):
+            return engine
+        return create_database_engine(
+            require_database_url() if require_database_url is not None else None
+        )
+
     @router.get("/settings/general", response_model=GeneralSettingsResponse)
-    async def get_general_settings() -> GeneralSettingsResponse:
-        folders = GeneralSettingsStore(require_database_url()).list_ingest_folders()
+    def get_general_settings(
+        engine: Engine = Depends(get_engine),
+    ) -> GeneralSettingsResponse:
+        folders = GeneralSettingsStore(engine=_engine(engine)).list_ingest_folders()
         return GeneralSettingsResponse(
             ingest_folders=[_serialize_ingest_folder(folder) for folder in folders]
         )
@@ -38,11 +49,12 @@ def create_router(
         response_model=IngestFolderResponse,
         status_code=201,
     )
-    async def create_ingest_folder(
+    def create_ingest_folder(
         payload: CreateIngestFolderRequest,
+        engine: Engine = Depends(get_engine),
     ) -> IngestFolderResponse:
         try:
-            folder = GeneralSettingsStore(require_database_url()).create_ingest_folder(
+            folder = GeneralSettingsStore(engine=_engine(engine)).create_ingest_folder(
                 payload.path
             )
         except InvalidIngestFolderPathError as exc:
@@ -59,9 +71,12 @@ def create_router(
         return _serialize_ingest_folder(folder)
 
     @router.delete("/settings/ingest-folders/{folder_id}", status_code=204)
-    async def delete_ingest_folder(folder_id: int) -> Response:
+    def delete_ingest_folder(
+        folder_id: int,
+        engine: Engine = Depends(get_engine),
+    ) -> Response:
         try:
-            folder = GeneralSettingsStore(require_database_url()).delete_ingest_folder(
+            folder = GeneralSettingsStore(engine=_engine(engine)).delete_ingest_folder(
                 folder_id
             )
         except IngestFolderNotFoundError as exc:

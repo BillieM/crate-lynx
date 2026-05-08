@@ -5,8 +5,10 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 
 from rapidfuzz import fuzz
-from sqlalchemy import case, column, create_engine, func, select, table
+from sqlalchemy import case, column, func, select, table
+from sqlalchemy.engine import Engine
 
+from app.core.db import create_database_engine
 from app.local_tracks.store import local_tracks_table
 from app.matching.models import ConfidenceBand, MatchResult
 from app.streaming.models import streaming_tracks_table
@@ -47,8 +49,10 @@ class _LocalTags:
 
 
 class TagMatcher:
-    def __init__(self, *, database_url: str) -> None:
-        self._engine = create_engine(database_url)
+    def __init__(
+        self, *, database_url: str | None = None, engine: Engine | None = None
+    ) -> None:
+        self._engine = engine or create_database_engine(database_url)
 
     def match(self, local_track_id: int) -> MatchResult | None:
         candidates = self.candidates(local_track_id, limit=1)

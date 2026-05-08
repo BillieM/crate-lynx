@@ -14,13 +14,15 @@ from sqlalchemy import (
     Table,
     UniqueConstraint,
     column,
-    create_engine,
     func,
     select,
     table,
 )
 from sqlalchemy.dialects.postgresql import insert as postgresql_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+from sqlalchemy.engine import Engine
+
+from app.core.db import create_database_engine
 
 metadata = MetaData()
 
@@ -116,8 +118,10 @@ class LocalTrackDetailRecord:
 
 
 class LocalTrackStore:
-    def __init__(self, database_url: str) -> None:
-        self._engine = create_engine(database_url)
+    def __init__(
+        self, database_url: str | None = None, *, engine: Engine | None = None
+    ) -> None:
+        self._engine = engine or create_database_engine(database_url)
 
     def persist(
         self,

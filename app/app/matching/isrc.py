@@ -1,7 +1,9 @@
 from __future__ import annotations
 
-from sqlalchemy import column, create_engine, func, select, table
+from sqlalchemy import column, func, select, table
+from sqlalchemy.engine import Engine
 
+from app.core.db import create_database_engine
 from app.local_tracks.store import local_tracks_table
 from app.matching.models import ConfidenceBand, MatchResult
 from app.streaming.models import streaming_tracks_table
@@ -10,8 +12,10 @@ beets_items_view = table("beets_items", column("beets_id"), column("isrc"))
 
 
 class IsrcMatcher:
-    def __init__(self, *, database_url: str) -> None:
-        self._engine = create_engine(database_url)
+    def __init__(
+        self, *, database_url: str | None = None, engine: Engine | None = None
+    ) -> None:
+        self._engine = engine or create_database_engine(database_url)
 
     def match(self, local_track_id: int) -> MatchResult | None:
         isrc = self._lookup_local_isrc(local_track_id)

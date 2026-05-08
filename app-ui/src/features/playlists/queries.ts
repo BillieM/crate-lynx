@@ -1,101 +1,36 @@
 import { useQuery } from "@tanstack/react-query";
+import { z } from "zod";
 
-import { endpoints, fetchJson } from "../../lib/api";
+import { deleteJson, endpoints, fetchBlob, fetchJson, patchJson, postJson } from "../../lib/api";
+import type { components } from "../../lib/api-types";
+
+type ApiSchemas = components["schemas"];
 
 export type PlaylistTrackStatus = "linked" | "pending" | "unlinked";
-export type LinkProposalConfidenceBand = "high" | "medium" | "low";
+export type LinkProposalConfidenceBand = ApiSchemas["ConfidenceBand"];
 
-export type PlaylistDetail = {
-  account_id: number;
-  cover_art_url: string | null;
-  id: number;
-  last_sync_error: string | null;
-  last_sync_error_at: string | null;
-  linked_count: number;
-  name: string;
-  pending_count: number;
-  provider_playlist_id: string;
-  synced_at: string | null;
-  track_count: number;
-  unlinked_count: number;
-};
-
-export type StreamingPlaylist = {
-  account_id: number;
-  id: number;
-  provider_playlist_id: string;
-  synced_at: string | null;
-  title: string;
-  track_count: number;
-};
-
-export type StreamingPlaylistConfig = StreamingPlaylist & {
-  last_sync_error: string | null;
-  last_sync_error_at: string | null;
-  selected_for_sync: boolean;
-};
-
-export type PlaylistTrack = {
-  album: string | null;
-  artist: string;
-  duration_ms: number | null;
-  final_link_id: number | null;
-  id: number;
-  local_track_id: number | null;
-  position: number;
-  proposal_id: number | null;
-  provider_track_id: string;
+export type PlaylistDetail = ApiSchemas["PlaylistDetail"];
+export type StreamingPlaylist = ApiSchemas["StreamingPlaylistResponse"];
+export type StreamingPlaylistConfig = ApiSchemas["StreamingPlaylistConfigResponse"];
+export type PlaylistTrack = Omit<ApiSchemas["PlaylistTrackResponse"], "status"> & {
   status: PlaylistTrackStatus;
-  title: string;
 };
 
-export type PlaylistDetailResponse = {
-  playlist: PlaylistDetail;
-};
-
-export type StreamingPlaylistsResponse = {
-  playlists: StreamingPlaylist[];
-};
-
-export type StreamingPlaylistConfigResponse = {
-  playlists: StreamingPlaylistConfig[];
-};
-
-export type UpdateStreamingPlaylistConfigInput = {
+export type PlaylistDetailResponse = ApiSchemas["PlaylistDetailResponse"];
+export type StreamingPlaylistsResponse = ApiSchemas["StreamingPlaylistsResponse"];
+export type StreamingPlaylistConfigResponse = ApiSchemas["StreamingPlaylistConfigListResponse"];
+export type UpdateStreamingPlaylistConfigInput = ApiSchemas["UpdateStreamingPlaylistRequest"] & {
   playlistId: number | string;
-  selected_for_sync: boolean;
 };
-
 export type PlaylistTracksResponse = {
   tracks: PlaylistTrack[];
 };
-
 export type PlaylistM3uExport = {
   blob: Blob;
   filename: string;
 };
-
-export type LinkProposal = {
-  confidence_band: LinkProposalConfidenceBand;
-  id: number;
-  local_album: string | null;
-  local_artist: string | null;
-  local_file_path: string;
-  local_title: string | null;
-  local_track_id: number;
-  match_method: string;
-  rejected_at: string | null;
-  score: number;
-  status: string;
-  streaming_album: string | null;
-  streaming_artist: string;
-  streaming_title: string;
-  streaming_track_id: number;
-};
-
-export type LinkProposalsResponse = {
-  proposals: LinkProposal[];
-};
+export type LinkProposal = ApiSchemas["ProposalResponse"];
+export type LinkProposalsResponse = ApiSchemas["ProposalListResponse"];
 
 export type ApproveLinkProposalResponse = {
   final_link_id: number;
@@ -113,20 +48,140 @@ export type LinkProposalListFilters = {
   confidenceBand?: LinkProposalConfidenceBand | null;
 };
 
-export type StreamingSyncResponse = {
-  account_id: number;
-  job_id: string;
-};
-
-export type PlaylistSyncResponse = {
-  playlist_id: number;
-  job_id: string;
-};
+export type StreamingSyncResponse = ApiSchemas["StreamingSyncResponse"];
+export type PlaylistSyncResponse = ApiSchemas["PlaylistSyncResponse"];
 
 export type DeleteFinalLinkResponse = {
   final_link_id: number;
-  status: "deleted";
+  rejected_at: string;
+  rejected_suggestion_id: number;
+  status: "rejected";
 };
+
+const nullableStringSchema = z.string().nullable();
+
+const playlistDetailSchema: z.ZodType<PlaylistDetail> = z.object({
+  account_id: z.number(),
+  cover_art_url: nullableStringSchema,
+  id: z.number(),
+  last_sync_error: nullableStringSchema,
+  last_sync_error_at: nullableStringSchema,
+  linked_count: z.number(),
+  name: z.string(),
+  pending_count: z.number(),
+  provider_playlist_id: z.string(),
+  synced_at: nullableStringSchema,
+  track_count: z.number(),
+  unlinked_count: z.number(),
+});
+
+const playlistDetailResponseSchema: z.ZodType<PlaylistDetailResponse> = z.object({
+  playlist: playlistDetailSchema,
+});
+
+const streamingPlaylistSchema: z.ZodType<StreamingPlaylist> = z.object({
+  account_id: z.number(),
+  id: z.number(),
+  last_sync_error: nullableStringSchema,
+  last_sync_error_at: nullableStringSchema,
+  provider_playlist_id: z.string(),
+  synced_at: nullableStringSchema,
+  title: z.string(),
+  track_count: z.number(),
+});
+
+const streamingPlaylistConfigSchema: z.ZodType<StreamingPlaylistConfig> = z.object({
+  account_id: z.number(),
+  id: z.number(),
+  last_sync_error: nullableStringSchema,
+  last_sync_error_at: nullableStringSchema,
+  provider_playlist_id: z.string(),
+  selected_for_sync: z.boolean(),
+  synced_at: nullableStringSchema,
+  title: z.string(),
+  track_count: z.number(),
+});
+
+const streamingPlaylistsResponseSchema: z.ZodType<StreamingPlaylistsResponse> = z.object({
+  playlists: z.array(streamingPlaylistSchema),
+});
+
+const streamingPlaylistConfigResponseSchema: z.ZodType<StreamingPlaylistConfigResponse> = z.object({
+  playlists: z.array(streamingPlaylistConfigSchema),
+});
+
+const playlistTrackStatusSchema = z.enum(["linked", "pending", "unlinked"]);
+
+const playlistTrackSchema: z.ZodType<PlaylistTrack> = z.object({
+  album: nullableStringSchema,
+  artist: z.string(),
+  duration_ms: z.number().nullable(),
+  final_link_id: z.number().nullable(),
+  id: z.number(),
+  local_track_id: z.number().nullable(),
+  position: z.number(),
+  proposal_id: z.number().nullable(),
+  provider_track_id: z.string(),
+  status: playlistTrackStatusSchema,
+  title: z.string(),
+});
+
+const playlistTracksResponseSchema: z.ZodType<PlaylistTracksResponse> = z.object({
+  tracks: z.array(playlistTrackSchema),
+});
+
+const linkProposalConfidenceBandSchema = z.enum(["high", "medium", "low"]);
+
+const linkProposalSchema: z.ZodType<LinkProposal> = z.object({
+  confidence_band: linkProposalConfidenceBandSchema,
+  id: z.number(),
+  local_album: nullableStringSchema,
+  local_artist: nullableStringSchema,
+  local_file_path: z.string(),
+  local_title: nullableStringSchema,
+  local_track_id: z.number(),
+  match_method: z.string(),
+  rejected_at: nullableStringSchema,
+  score: z.number(),
+  status: z.string(),
+  streaming_album: nullableStringSchema,
+  streaming_artist: z.string(),
+  streaming_title: z.string(),
+  streaming_track_id: z.number(),
+});
+
+const linkProposalsResponseSchema: z.ZodType<LinkProposalsResponse> = z.object({
+  proposals: z.array(linkProposalSchema),
+});
+
+const streamingSyncResponseSchema: z.ZodType<StreamingSyncResponse> = z.object({
+  account_id: z.number(),
+  job_id: z.string(),
+});
+
+const playlistSyncResponseSchema: z.ZodType<PlaylistSyncResponse> = z.object({
+  job_id: z.string(),
+  playlist_id: z.number(),
+});
+
+const deleteFinalLinkResponseSchema: z.ZodType<DeleteFinalLinkResponse> = z.object({
+  final_link_id: z.number(),
+  rejected_at: z.string(),
+  rejected_suggestion_id: z.number(),
+  status: z.literal("rejected"),
+});
+
+const approveLinkProposalResponseSchema: z.ZodType<ApproveLinkProposalResponse> = z.object({
+  final_link_id: z.number(),
+  proposal_id: z.number(),
+  status: z.literal("approved"),
+});
+
+const rejectLinkProposalResponseSchema: z.ZodType<RejectLinkProposalResponse> = z.object({
+  proposal_id: z.number(),
+  rejected_at: z.string(),
+  status: z.literal("rejected"),
+});
 
 export const playlistQueryKeys = {
   all: ["playlists"] as const,
@@ -158,86 +213,64 @@ function getFilenameFromContentDisposition(contentDisposition: string | null) {
 }
 
 export async function fetchPlaylistDetail(playlistId: number | string): Promise<PlaylistDetailResponse> {
-  return fetchJson<PlaylistDetailResponse>(endpoints.api(`/playlists/${encodeURIComponent(String(playlistId))}`));
+  return fetchJson(
+    endpoints.api(`/playlists/${encodeURIComponent(String(playlistId))}`),
+    playlistDetailResponseSchema,
+  );
 }
 
 export async function fetchStreamingPlaylists(): Promise<StreamingPlaylistsResponse> {
-  return fetchJson<StreamingPlaylistsResponse>(endpoints.api("/streaming/playlists"));
+  return fetchJson(endpoints.api("/streaming/playlists"), streamingPlaylistsResponseSchema);
 }
 
 export async function fetchStreamingPlaylistConfig(): Promise<StreamingPlaylistConfigResponse> {
-  return fetchJson<StreamingPlaylistConfigResponse>(endpoints.api("/streaming/playlists/config"));
+  return fetchJson(endpoints.api("/streaming/playlists/config"), streamingPlaylistConfigResponseSchema);
 }
 
 export async function updateStreamingPlaylistConfig({
   playlistId,
   selected_for_sync,
 }: UpdateStreamingPlaylistConfigInput): Promise<StreamingPlaylistConfig> {
-  const response = await fetch(`/api/streaming/playlists/${encodeURIComponent(String(playlistId))}`, {
-    body: JSON.stringify({ selected_for_sync }),
-    headers: {
-      "Content-Type": "application/json",
-    },
-    method: "PATCH",
+  return patchJson(endpoints.api(`/streaming/playlists/${encodeURIComponent(String(playlistId))}`), {
+    body: { selected_for_sync },
+    errorMessage: "Playlist update request failed",
+    schema: streamingPlaylistConfigSchema,
   });
-
-  if (!response.ok) {
-    throw new Error(`Playlist update request failed with status ${response.status}`);
-  }
-
-  return (await response.json()) as StreamingPlaylistConfig;
 }
 
 export async function refreshStreamingAccountMetadata(accountId: number | string): Promise<StreamingSyncResponse> {
-  const response = await fetch(`/api/streaming/accounts/${encodeURIComponent(String(accountId))}/refresh-metadata`, {
-    method: "POST",
+  return postJson(endpoints.api(`/streaming/accounts/${encodeURIComponent(String(accountId))}/refresh-metadata`), {
+    errorMessage: "Metadata refresh request failed",
+    schema: streamingSyncResponseSchema,
   });
-
-  if (!response.ok) {
-    throw new Error(`Metadata refresh request failed with status ${response.status}`);
-  }
-
-  return (await response.json()) as StreamingSyncResponse;
 }
 
 export async function syncStreamingAccount(accountId: number | string): Promise<StreamingSyncResponse> {
-  const response = await fetch(`/api/streaming/accounts/${encodeURIComponent(String(accountId))}/sync`, {
-    method: "POST",
+  return postJson(endpoints.api(`/streaming/accounts/${encodeURIComponent(String(accountId))}/sync`), {
+    errorMessage: "Sync request failed",
+    schema: streamingSyncResponseSchema,
   });
-
-  if (!response.ok) {
-    throw new Error(`Sync request failed with status ${response.status}`);
-  }
-
-  return (await response.json()) as StreamingSyncResponse;
 }
 
 export async function syncStreamingPlaylist(playlistId: number | string): Promise<PlaylistSyncResponse> {
-  const response = await fetch(`/api/streaming/playlists/${encodeURIComponent(String(playlistId))}/sync`, {
-    method: "POST",
+  return postJson(endpoints.api(`/streaming/playlists/${encodeURIComponent(String(playlistId))}/sync`), {
+    errorMessage: "Playlist sync request failed",
+    schema: playlistSyncResponseSchema,
   });
-
-  if (!response.ok) {
-    throw new Error(`Playlist sync request failed with status ${response.status}`);
-  }
-
-  return (await response.json()) as PlaylistSyncResponse;
 }
 
 export async function deleteFinalLink(finalLinkId: number | string): Promise<DeleteFinalLinkResponse> {
-  const response = await fetch(`/api/final-links/${encodeURIComponent(String(finalLinkId))}`, {
-    method: "DELETE",
+  return deleteJson(endpoints.api(`/final-links/${encodeURIComponent(String(finalLinkId))}`), {
+    errorMessage: "Final link delete request failed",
+    schema: deleteFinalLinkResponseSchema,
   });
-
-  if (!response.ok) {
-    throw new Error(`Final link delete request failed with status ${response.status}`);
-  }
-
-  return (await response.json()) as DeleteFinalLinkResponse;
 }
 
 export async function fetchPlaylistTracks(playlistId: number | string): Promise<PlaylistTracksResponse> {
-  return fetchJson<PlaylistTracksResponse>(endpoints.api(`/playlists/${encodeURIComponent(String(playlistId))}/tracks`));
+  return fetchJson(
+    endpoints.api(`/playlists/${encodeURIComponent(String(playlistId))}/tracks`),
+    playlistTracksResponseSchema,
+  );
 }
 
 export async function fetchLinkProposals(filters: LinkProposalListFilters = {}): Promise<LinkProposalsResponse> {
@@ -248,42 +281,34 @@ export async function fetchLinkProposals(filters: LinkProposalListFilters = {}):
   }
 
   const queryString = params.toString();
-  return fetchJson<LinkProposalsResponse>(endpoints.api(`/proposals${queryString ? `?${queryString}` : ""}`));
+  return fetchJson(
+    endpoints.api(`/proposals${queryString ? `?${queryString}` : ""}`),
+    linkProposalsResponseSchema,
+  );
 }
 
 export async function approveLinkProposal(proposalId: number | string): Promise<ApproveLinkProposalResponse> {
-  const response = await fetch(`/api/proposals/${encodeURIComponent(String(proposalId))}/approve`, {
-    method: "POST",
+  return postJson(endpoints.api(`/proposals/${encodeURIComponent(String(proposalId))}/approve`), {
+    errorMessage: "Proposal approve request failed",
+    schema: approveLinkProposalResponseSchema,
   });
-
-  if (!response.ok) {
-    throw new Error(`Proposal approve request failed with status ${response.status}`);
-  }
-
-  return (await response.json()) as ApproveLinkProposalResponse;
 }
 
 export async function rejectLinkProposal(proposalId: number | string): Promise<RejectLinkProposalResponse> {
-  const response = await fetch(`/api/proposals/${encodeURIComponent(String(proposalId))}/reject`, {
-    method: "POST",
+  return postJson(endpoints.api(`/proposals/${encodeURIComponent(String(proposalId))}/reject`), {
+    errorMessage: "Proposal reject request failed",
+    schema: rejectLinkProposalResponseSchema,
   });
-
-  if (!response.ok) {
-    throw new Error(`Proposal reject request failed with status ${response.status}`);
-  }
-
-  return (await response.json()) as RejectLinkProposalResponse;
 }
 
 export async function exportPlaylistM3u(playlistId: number | string): Promise<PlaylistM3uExport> {
-  const response = await fetch(`/api/playlists/${encodeURIComponent(String(playlistId))}/m3u`);
-
-  if (!response.ok) {
-    throw new Error(`M3U export request failed with status ${response.status}`);
-  }
+  const { blob, response } = await fetchBlob(
+    endpoints.api(`/playlists/${encodeURIComponent(String(playlistId))}/m3u`),
+    "M3U export request failed",
+  );
 
   return {
-    blob: await response.blob(),
+    blob,
     filename: getFilenameFromContentDisposition(response.headers.get("Content-Disposition")),
   };
 }

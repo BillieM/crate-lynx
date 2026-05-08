@@ -1,32 +1,33 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { z } from "zod";
 
-import { endpoints, fetchJson } from "../../lib/api";
+import { endpoints, fetchJson, patchJson, postJson } from "../../lib/api";
+import type { components } from "../../lib/api-types";
 import { playlistQueryKeys } from "../playlists/queries";
 
-export type StreamingAccount = {
-  auth_error: string | null;
-  auth_error_at: string | null;
-  auth_state: string;
-  created_at: string;
-  display_name: string;
-  id: number;
-  provider: string;
-  updated_at: string;
-};
+type ApiSchemas = components["schemas"];
 
-export type StreamingAccountsResponse = {
-  accounts: StreamingAccount[];
-};
-
-export type CreateStreamingAccountInput = {
-  browser_headers: Record<string, unknown>;
-  display_name: string;
-};
-
-export type RefreshStreamingAccountAuthInput = {
+export type StreamingAccount = ApiSchemas["StreamingAccountResponse"];
+export type StreamingAccountsResponse = ApiSchemas["StreamingAccountsResponse"];
+export type CreateStreamingAccountInput = ApiSchemas["CreateStreamingAccountRequest"];
+export type RefreshStreamingAccountAuthInput = ApiSchemas["UpdateStreamingAccountAuthRequest"] & {
   accountId: number | string;
-  browser_headers: Record<string, unknown>;
 };
+
+const streamingAccountSchema: z.ZodType<StreamingAccount> = z.object({
+  auth_error: z.string().nullable(),
+  auth_error_at: z.string().nullable(),
+  auth_state: z.string(),
+  created_at: z.string(),
+  display_name: z.string(),
+  id: z.number(),
+  provider: z.string(),
+  updated_at: z.string(),
+});
+
+const streamingAccountsResponseSchema: z.ZodType<StreamingAccountsResponse> = z.object({
+  accounts: z.array(streamingAccountSchema),
+});
 
 export const streamingAccountQueryKeys = {
   all: ["streaming-accounts"] as const,
@@ -40,45 +41,29 @@ function invalidateStreamingAccountMutationQueries(queryClient: ReturnType<typeo
 }
 
 export async function fetchStreamingAccounts(): Promise<StreamingAccountsResponse> {
-  return fetchJson<StreamingAccountsResponse>(endpoints.api("/streaming/accounts"));
+  return fetchJson(endpoints.api("/streaming/accounts"), streamingAccountsResponseSchema);
 }
 
 export async function createStreamingAccount({
   browser_headers,
   display_name,
 }: CreateStreamingAccountInput): Promise<StreamingAccount> {
-  const response = await fetch("/api/streaming/accounts", {
-    body: JSON.stringify({ display_name, browser_headers }),
-    headers: {
-      "Content-Type": "application/json",
-    },
-    method: "POST",
+  return postJson(endpoints.api("/streaming/accounts"), {
+    body: { display_name, browser_headers },
+    errorMessage: "Streaming account create request failed",
+    schema: streamingAccountSchema,
   });
-
-  if (!response.ok) {
-    throw new Error(`Streaming account create request failed with status ${response.status}`);
-  }
-
-  return (await response.json()) as StreamingAccount;
 }
 
 export async function refreshStreamingAccountAuth({
   accountId,
   browser_headers,
 }: RefreshStreamingAccountAuthInput): Promise<StreamingAccount> {
-  const response = await fetch(`/api/streaming/accounts/${encodeURIComponent(String(accountId))}/auth`, {
-    body: JSON.stringify({ browser_headers }),
-    headers: {
-      "Content-Type": "application/json",
-    },
-    method: "PATCH",
+  return patchJson(endpoints.api(`/streaming/accounts/${encodeURIComponent(String(accountId))}/auth`), {
+    body: { browser_headers },
+    errorMessage: "Streaming account auth refresh request failed",
+    schema: streamingAccountSchema,
   });
-
-  if (!response.ok) {
-    throw new Error(`Streaming account auth refresh request failed with status ${response.status}`);
-  }
-
-  return (await response.json()) as StreamingAccount;
 }
 
 export function useStreamingAccountsQuery() {

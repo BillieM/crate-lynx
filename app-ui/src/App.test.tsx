@@ -90,6 +90,8 @@ const streamingPlaylistsResponse: StreamingPlaylistsResponse = {
       title: "Late Night Drive",
       track_count: 62,
       synced_at: "2026-05-01T09:00:00Z",
+      last_sync_error: null,
+      last_sync_error_at: null,
     },
     ...secondaryPlaylistFixtures.map(({ id, name }) => ({
       id,
@@ -98,6 +100,8 @@ const streamingPlaylistsResponse: StreamingPlaylistsResponse = {
       title: name,
       track_count: 1,
       synced_at: "2026-05-01T09:00:00Z",
+      last_sync_error: null,
+      last_sync_error_at: null,
     })),
   ],
 };

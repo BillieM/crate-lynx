@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import os
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -272,10 +273,10 @@ def test_settings_ingest_folder_mutations_synchronize_active_watcher(
     async def run_lifespan() -> None:
         async with app.router.lifespan_context(app):
             watcher = StubIngestionWatcher.instances[-1]
-            created = await create_route.endpoint(
-                CreateIngestFolderRequest(path="/incoming")
+            created = _call_endpoint(
+                create_route.endpoint, CreateIngestFolderRequest(path="/incoming")
             )
-            response = await delete_route.endpoint(created.id)
+            response = _call_endpoint(delete_route.endpoint, created.id)
 
             assert response.status_code == 204
             assert watcher.added_roots == ["/incoming"]
@@ -294,7 +295,14 @@ def _route(method: str, path: str, app):
 
 
 def _call_endpoint(endpoint, *args):
-    result = endpoint(*args)
+    signature = inspect.signature(endpoint)
+    bound = signature.bind_partial(*args)
+    if "engine" in signature.parameters and "engine" not in bound.arguments:
+        database_url = os.environ.get("DATABASE_URL")
+        if database_url is not None:
+            bound.arguments["engine"] = create_engine(database_url)
+
+    result = endpoint(*bound.args, **bound.kwargs)
     if inspect.isawaitable(result):
         return asyncio.run(result)
     return result
@@ -323,8 +331,8 @@ def test_streaming_accounts_endpoint_lists_persisted_accounts(
     )
     response = _call_endpoint(route.endpoint)
 
-    assert len(response["accounts"]) == 1
-    account = response["accounts"][0]
+    assert len(response.accounts) == 1
+    account = response.accounts[0]
     assert account.id == 1
     assert account.provider == "youtube_music"
     assert account.display_name == "Main Account"
@@ -397,8 +405,8 @@ def test_streaming_playlists_endpoint_lists_synced_playlists(
     )
     response = _call_endpoint(route.endpoint)
 
-    assert len(response["playlists"]) == 1
-    playlist = response["playlists"][0]
+    assert len(response.playlists) == 1
+    playlist = response.playlists[0]
     assert playlist.account_id == 1
     assert playlist.provider_playlist_id == "PL1"
     assert playlist.title == "Morning Mix"
@@ -459,11 +467,11 @@ def test_streaming_playlists_config_endpoint_lists_all_discovered_playlists(
     )
     response = _call_endpoint(route.endpoint)
 
-    assert [playlist.provider_playlist_id for playlist in response["playlists"]] == [
+    assert [playlist.provider_playlist_id for playlist in response.playlists] == [
         "PL1",
         "PL2",
     ]
-    selected, unselected = response["playlists"]
+    selected, unselected = response.playlists
     assert selected.selected_for_sync is True
     assert selected.track_count == 1
     assert selected.synced_at == "2026-05-01T09:00:00"
@@ -1988,7 +1996,7 @@ def test_local_track_rescue_endpoint_returns_updated_track_record(
     assert seen["engine"] is not None
     assert seen == {
         "local_track_id": 21,
-        "database_url": database_url,
+        "database_url": None,
         "engine": seen["engine"],
         "library_root": str(tmp_path / "library"),
     }

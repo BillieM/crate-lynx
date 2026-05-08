@@ -1,7 +1,7 @@
-from collections.abc import Callable
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.engine import Engine
 
-from fastapi import APIRouter, HTTPException
-
+from app.core.db import get_engine
 from app.local_tracks.schemas import (
     LocalTrackDetailResponse,
     LocalTrackFailedIngestionResponse,
@@ -11,14 +11,17 @@ from app.local_tracks.schemas import (
 from app.local_tracks.store import LocalTrackStore
 
 
-def create_router(*, require_database_url: Callable[[], str]) -> APIRouter:
+def create_router() -> APIRouter:
     router = APIRouter()
 
     @router.get(
         "/local-tracks/{local_track_id}", response_model=LocalTrackDetailResponse
     )
-    def get_local_track_detail(local_track_id: int) -> LocalTrackDetailResponse:
-        detail = LocalTrackStore(require_database_url()).get_detail(local_track_id)
+    def get_local_track_detail(
+        local_track_id: int,
+        engine: Engine = Depends(get_engine),
+    ) -> LocalTrackDetailResponse:
+        detail = LocalTrackStore(engine=engine).get_detail(local_track_id)
 
         if detail is None:
             raise HTTPException(status_code=404, detail="Local track not found")

@@ -140,6 +140,31 @@ describe("playlist queries", () => {
     expect(fetchMock).toHaveBeenCalledWith("/api/playlists/12/tracks");
   });
 
+  it("rejects playlist tracks with unknown status values", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        tracks: [
+          {
+            id: 77,
+            provider_track_id: "trk-77",
+            position: 1,
+            title: "Open Road",
+            artist: "Frame Delay",
+            album: "Late Night Drive",
+            duration_ms: 215000,
+            status: "archived",
+            local_track_id: 101,
+            proposal_id: null,
+            final_link_id: 55,
+          },
+        ],
+      }),
+    } as Response);
+
+    await expect(fetchPlaylistTracks(12)).rejects.toThrow();
+  });
+
   it("fetches link proposals without a confidence-band filter", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({
       ok: true,
@@ -256,6 +281,8 @@ describe("playlist queries", () => {
                 title: "Late Night Drive",
                 track_count: 62,
                 synced_at: "2026-05-01T09:00:00",
+                last_sync_error: null,
+                last_sync_error_at: null,
               },
             ],
           }),
@@ -274,6 +301,8 @@ describe("playlist queries", () => {
           title: "Late Night Drive",
           track_count: 62,
           synced_at: "2026-05-01T09:00:00",
+          last_sync_error: null,
+          last_sync_error_at: null,
         },
       ],
     });
@@ -490,6 +519,8 @@ describe("playlist queries", () => {
             title: "Static Bloom",
             track_count: 41,
             synced_at: null,
+            last_sync_error: null,
+            last_sync_error_at: null,
           },
         ],
       }),

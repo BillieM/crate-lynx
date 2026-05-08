@@ -4,9 +4,10 @@ import os
 import re
 from pathlib import Path
 
-from sqlalchemy import create_engine, select
+from sqlalchemy import select
 from sqlalchemy.engine import Engine
 
+from app.core.db import create_database_engine
 from app.links.store import final_links_table
 from app.local_tracks.store import local_tracks_table
 from app.streaming.models import (
@@ -30,7 +31,7 @@ def generate_m3u(
 ) -> str:
     """Generate M3U contents for a playlist."""
     base_path = Path(base_path).resolve()
-    engine = engine or create_engine(_require_database_url())
+    engine = engine or create_database_engine()
     query = (
         select(
             local_tracks_table.c.file_path,
@@ -103,7 +104,7 @@ def regenerate_m3us_for_streaming_track(
     base_path: Path | str,
     output_dir: Path | str = DEFAULT_M3U_OUTPUT_DIR,
 ) -> list[Path]:
-    engine = engine or create_engine(_require_database_url())
+    engine = engine or create_database_engine()
     query = (
         select(
             streaming_playlists_table.c.id,
@@ -141,10 +142,3 @@ def _format_duration_seconds(duration_ms: int | None) -> int:
         return -1
 
     return duration_ms // 1000
-
-
-def _require_database_url() -> str:
-    database_url = os.environ.get("DATABASE_URL")
-    if not database_url:
-        raise RuntimeError("DATABASE_URL must be configured for M3U generation")
-    return database_url

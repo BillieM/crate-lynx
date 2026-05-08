@@ -8,8 +8,9 @@ from pathlib import Path
 import sqlite3
 from typing import TypeVar
 
-from sqlalchemy import create_engine, select
+from sqlalchemy import select
 
+from app.core.db import create_database_engine
 from app.ingestion.beets_mirror import beets_albums_table, beets_items_table
 from app.ingestion.beets_mirror_sync import (
     iter_all_albums,
@@ -29,7 +30,7 @@ def main(argv: Sequence[str] | None = None) -> None:
     database_url = os.environ["DATABASE_URL"]
     beets_library = Path(os.environ["BEETS_LIBRARY"])
 
-    engine = create_engine(database_url)
+    engine = create_database_engine(database_url)
     with engine.begin() as connection:
         actions = backfill_beets_mirror(
             connection,

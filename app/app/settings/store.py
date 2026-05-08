@@ -2,9 +2,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from sqlalchemy import create_engine, delete, insert, select
+from sqlalchemy import delete, insert, select
+from sqlalchemy.engine import Engine
 from sqlalchemy.exc import IntegrityError
 
+from app.core.db import create_database_engine
 from app.settings.models import (
     DEFAULT_INGEST_FOLDER_PATHS,
     IngestFolderRecord,
@@ -25,8 +27,10 @@ class IngestFolderNotFoundError(ValueError):
 
 
 class GeneralSettingsStore:
-    def __init__(self, database_url: str) -> None:
-        self._engine = create_engine(database_url)
+    def __init__(
+        self, database_url: str | None = None, *, engine: Engine | None = None
+    ) -> None:
+        self._engine = engine or create_database_engine(database_url)
 
     def list_ingest_folders(self) -> list[IngestFolderRecord]:
         with self._engine.connect() as connection:

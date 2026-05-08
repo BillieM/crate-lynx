@@ -7,7 +7,6 @@ from typing import Any
 
 from sqlalchemy import (
     column,
-    create_engine,
     delete,
     func,
     insert,
@@ -20,6 +19,7 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.engine import Engine
 from ytmusicapi.exceptions import YTMusicError
 
+from app.core.db import create_database_engine
 from app.streaming.adapters.youtube_music import (
     YouTubeMusicAdapter,
     YouTubeMusicPlaylist,
@@ -78,11 +78,7 @@ class StreamingAccountStore:
     def __init__(
         self, database_url: str | None = None, *, engine: Engine | None = None
     ) -> None:
-        if engine is None:
-            if database_url is None:
-                raise ValueError("database_url or engine is required")
-            engine = create_engine(database_url)
-        self._engine = engine
+        self._engine = engine or create_database_engine(database_url)
 
     def create_youtube_music_account(
         self,

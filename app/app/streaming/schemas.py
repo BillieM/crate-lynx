@@ -12,6 +12,10 @@ class StreamingAccountResponse(BaseModel):
     updated_at: str
 
 
+class StreamingAccountsResponse(BaseModel):
+    accounts: list[StreamingAccountResponse]
+
+
 class StreamingPlaylistResponse(BaseModel):
     id: int
     account_id: int
@@ -25,6 +29,14 @@ class StreamingPlaylistResponse(BaseModel):
 
 class StreamingPlaylistConfigResponse(StreamingPlaylistResponse):
     selected_for_sync: bool
+
+
+class StreamingPlaylistsResponse(BaseModel):
+    playlists: list[StreamingPlaylistResponse]
+
+
+class StreamingPlaylistConfigListResponse(BaseModel):
+    playlists: list[StreamingPlaylistConfigResponse]
 
 
 class UpdateStreamingPlaylistRequest(BaseModel):

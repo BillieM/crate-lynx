@@ -146,7 +146,7 @@ Each task is sized to fit comfortably in one Codex 5.5-xhigh context window.
 
 ---
 
-## - [ ] T8. Centralize SQLAlchemy engine, inject via Depends, drop blocking async
+## - [x] T8. Centralize SQLAlchemy engine, inject via Depends, drop blocking async
 
 **Why**: Three coupled problems on the same files:
 - 17 `create_engine()` call sites. Each Store class instantiates its own engine in `__init__`, so connection-pool isolation is per-store — multiplies pool exhaustion risk under load.
@@ -167,7 +167,7 @@ Each task is sized to fit comfortably in one Codex 5.5-xhigh context window.
 
 ---
 
-## - [ ] T9. End-to-end type safety: response_model → OpenAPI → openapi-typescript → fetchJson + zod
+## - [x] T9. End-to-end type safety: response_model → OpenAPI → openapi-typescript → fetchJson + zod
 
 **Why**: Four tightly coupled gaps that all touch the same boundary code — doing them separately means re-touching the same 2 feature files three times:
 - `app/app/streaming/router.py` returns raw `dict[str, object]`; `app/app/links/router.py` already uses typed Pydantic responses. Inconsistent.

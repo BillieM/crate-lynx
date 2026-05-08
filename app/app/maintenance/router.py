@@ -1,7 +1,7 @@
-from collections.abc import Callable
+from fastapi import APIRouter, Depends
+from sqlalchemy.engine import Engine
 
-from fastapi import APIRouter
-
+from app.core.db import get_engine
 from app.maintenance.schemas import (
     MissingLocallyResponse,
     MissingLocallyTrackResponse,
@@ -11,12 +11,14 @@ from app.maintenance.schemas import (
 from app.maintenance.store import MaintenanceStore
 
 
-def create_router(*, require_database_url: Callable[[], str]) -> APIRouter:
+def create_router() -> APIRouter:
     router = APIRouter()
 
     @router.get("/maintenance/missing-locally", response_model=MissingLocallyResponse)
-    async def list_missing_locally() -> MissingLocallyResponse:
-        tracks = MaintenanceStore(require_database_url()).list_missing_locally()
+    def list_missing_locally(
+        engine: Engine = Depends(get_engine),
+    ) -> MissingLocallyResponse:
+        tracks = MaintenanceStore(engine=engine).list_missing_locally()
         return MissingLocallyResponse(
             tracks=[
                 MissingLocallyTrackResponse(
@@ -35,8 +37,10 @@ def create_router(*, require_database_url: Callable[[], str]) -> APIRouter:
         )
 
     @router.get("/maintenance/unidentified", response_model=UnidentifiedResponse)
-    async def list_unidentified() -> UnidentifiedResponse:
-        tracks = MaintenanceStore(require_database_url()).list_unidentified()
+    def list_unidentified(
+        engine: Engine = Depends(get_engine),
+    ) -> UnidentifiedResponse:
+        tracks = MaintenanceStore(engine=engine).list_unidentified()
         return UnidentifiedResponse(
             tracks=[
                 UnidentifiedTrackResponse(

@@ -6,10 +6,11 @@ import os
 from pathlib import Path
 from urllib.request import urlopen
 
-from sqlalchemy import create_engine, select
+from sqlalchemy import select
 from sqlalchemy.engine import Engine
 from mutagen.id3 import APIC, TALB, TDRC, TIT2, TPE1, ID3, ID3NoHeaderError
 
+from app.core.db import create_database_engine
 from app.links.store import final_links_table
 from app.local_tracks.store import local_tracks_table
 from app.streaming.adapters.youtube_music import (
@@ -60,7 +61,7 @@ def rescue_metadata(
     resolved_library_root = Path(
         library_root or os.environ.get("LIBRARY_ROOT", "/music")
     )
-    engine = engine or create_engine(resolved_database_url)
+    engine = engine or create_database_engine(resolved_database_url)
 
     with engine.connect() as connection:
         row = (
@@ -119,9 +120,7 @@ def rescue_metadata(
             "No streaming account is available to fetch rescue metadata"
         )
 
-    account = StreamingAccountStore(resolved_database_url, engine=engine).get_account(
-        account_id
-    )
+    account = StreamingAccountStore(engine=engine).get_account(account_id)
     adapter = YouTubeMusicAdapter.from_browser_auth(account.browser_headers)
     fetched_metadata = adapter.get_track_metadata(row["provider_track_id"])
     metadata = _merge_metadata(row, fetched_metadata)

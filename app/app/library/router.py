@@ -1,8 +1,9 @@
-from collections.abc import Callable
 from typing import Annotated
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Query
+from sqlalchemy.engine import Engine
 
+from app.core.db import get_engine
 from app.library.schemas import (
     LibraryStatsResponse,
     LibraryTrackResponse,
@@ -11,15 +12,16 @@ from app.library.schemas import (
 from app.library.store import LibraryStore
 
 
-def create_router(*, require_database_url: Callable[[], str]) -> APIRouter:
+def create_router() -> APIRouter:
     router = APIRouter()
 
     @router.get("/library/tracks", response_model=LibraryTracksResponse)
-    async def list_library_tracks(
+    def list_library_tracks(
         cursor: Annotated[int | None, Query(ge=0)] = None,
         limit: Annotated[int, Query(ge=1, le=500)] = 100,
+        engine: Engine = Depends(get_engine),
     ) -> LibraryTracksResponse:
-        store = LibraryStore(require_database_url())
+        store = LibraryStore(engine=engine)
         stats = store.compute_stats()
         page = store.list_tracks_page(cursor=cursor, limit=limit)
         return LibraryTracksResponse(

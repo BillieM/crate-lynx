@@ -3,8 +3,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import PurePath
 
-from sqlalchemy import and_, case, create_engine, func, select
+from sqlalchemy import and_, case, func, select
+from sqlalchemy.engine import Engine
 
+from app.core.db import create_database_engine
 from app.links.store import final_links_table
 from app.local_tracks.store import local_tracks_table
 from app.matching.pipeline import (
@@ -45,8 +47,10 @@ class LibraryTracksPage:
 
 
 class LibraryStore:
-    def __init__(self, database_url: str) -> None:
-        self._engine = create_engine(database_url)
+    def __init__(
+        self, database_url: str | None = None, *, engine: Engine | None = None
+    ) -> None:
+        self._engine = engine or create_database_engine(database_url)
 
     def list_tracks_page(
         self,

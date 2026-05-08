@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.engine import Engine
 
+from app.core.db import create_database_engine, get_engine
 from app.links.store import final_links_table
 from app.local_tracks.store import local_tracks_table
 from app.rescue.metadata import MetadataRescueError, rescue_metadata
@@ -15,28 +16,22 @@ from app.rescue.metadata import MetadataRescueError, rescue_metadata
 
 def create_router(
     *,
-    require_database_url: Callable[[], str],
-    require_database_engine: Callable[[], Engine] | None = None,
+    require_database_url: Callable[[], str] | None = None,
 ) -> APIRouter:
     router = APIRouter()
 
-    def _engine(engine: Engine | None) -> Engine:
+    def _engine(engine: object) -> Engine:
         if isinstance(engine, Engine):
             return engine
-        if require_database_engine is not None:
-            return require_database_engine()
-        from sqlalchemy import create_engine
-
-        return create_engine(require_database_url())
+        return create_database_engine(
+            require_database_url() if require_database_url is not None else None
+        )
 
     @router.post("/local-tracks/{local_track_id}/rescue")
     def rescue_local_track_metadata(
         local_track_id: int,
-        engine: object = Depends(require_database_engine)
-        if require_database_engine is not None
-        else None,
+        engine: Engine = Depends(get_engine),
     ) -> dict[str, object]:
-        database_url = require_database_url()
         engine = _engine(engine)
 
         with engine.connect() as connection:
@@ -72,7 +67,6 @@ def create_router(
         try:
             rescue_metadata(
                 local_track_id,
-                database_url=database_url,
                 engine=engine,
                 library_root=Path(os.environ.get("LIBRARY_ROOT", "/music")),
             )

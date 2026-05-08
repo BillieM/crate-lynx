@@ -5,6 +5,7 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy.engine import Engine
 
+from app.core.db import get_engine
 from app.core.queueing import StreamingSyncJobEnqueuer
 from app.streaming.schemas import (
     CreateStreamingAccountRequest,
@@ -14,8 +15,11 @@ from app.streaming.schemas import (
     PlaylistTrackResponse,
     PlaylistTracksResponse,
     StreamingAccountResponse,
+    StreamingAccountsResponse,
+    StreamingPlaylistConfigListResponse,
     StreamingPlaylistConfigResponse,
     StreamingPlaylistResponse,
+    StreamingPlaylistsResponse,
     StreamingSyncResponse,
     UpdateStreamingAccountAuthRequest,
     UpdateStreamingPlaylistRequest,
@@ -25,20 +29,11 @@ from app.streaming.store import StreamingAccountStore
 
 def create_router(
     *,
-    require_database_url: Callable[[], str],
-    require_database_engine: Callable[[], Engine],
     require_redis_url: Callable[[], str],
 ) -> APIRouter:
     router = APIRouter()
 
-    def _engine(engine: object) -> Engine:
-        if isinstance(engine, Engine):
-            return engine
-        return require_database_engine()
-
-    def _store(engine: object) -> StreamingAccountStore:
-        if not isinstance(engine, Engine):
-            return StreamingAccountStore(require_database_url())
+    def _store(engine: Engine) -> StreamingAccountStore:
         return StreamingAccountStore(engine=engine)
 
     def serialize_streaming_account(account: object) -> StreamingAccountResponse:
@@ -126,59 +121,50 @@ def create_router(
             )
         )
 
-    def serialize_playlist_track(track: object) -> PlaylistTrackResponse:
-        return PlaylistTrackResponse(
-            id=track.id,
-            provider_track_id=track.provider_track_id,
-            title=track.title,
-            artist=track.artist,
-            album=track.album,
-            duration_ms=track.duration_ms,
-            position=track.position,
-            status=track.status,
-            final_link_id=track.final_link_id,
-            local_track_id=track.local_track_id,
-            proposal_id=track.proposal_id,
+    @router.get("/streaming/accounts", response_model=StreamingAccountsResponse)
+    def list_streaming_accounts(
+        engine: Engine = Depends(get_engine),
+    ) -> StreamingAccountsResponse:
+        accounts = _store(engine).list_accounts()
+        return StreamingAccountsResponse(
+            accounts=[serialize_streaming_account(account) for account in accounts]
         )
 
-    @router.get("/streaming/accounts")
-    def list_streaming_accounts(
-        engine: Engine = Depends(require_database_engine),
-    ) -> dict[str, list[StreamingAccountResponse]]:
-        accounts = _store(engine).list_accounts()
-        return {
-            "accounts": [serialize_streaming_account(account) for account in accounts]
-        }
-
-    @router.get("/streaming/playlists")
+    @router.get("/streaming/playlists", response_model=StreamingPlaylistsResponse)
     def list_streaming_playlists(
-        engine: Engine = Depends(require_database_engine),
-    ) -> dict[str, list[StreamingPlaylistResponse]]:
+        engine: Engine = Depends(get_engine),
+    ) -> StreamingPlaylistsResponse:
         playlists = _store(engine).list_playlists()
-        return {
-            "playlists": [
+        return StreamingPlaylistsResponse(
+            playlists=[
                 serialize_streaming_playlist(playlist)
                 for playlist in playlists
                 if playlist.selected_for_sync
             ]
-        }
+        )
 
-    @router.get("/streaming/playlists/config")
+    @router.get(
+        "/streaming/playlists/config",
+        response_model=StreamingPlaylistConfigListResponse,
+    )
     def list_streaming_playlist_config(
-        engine: Engine = Depends(require_database_engine),
-    ) -> dict[str, list[StreamingPlaylistConfigResponse]]:
+        engine: Engine = Depends(get_engine),
+    ) -> StreamingPlaylistConfigListResponse:
         playlists = _store(engine).list_playlists()
-        return {
-            "playlists": [
+        return StreamingPlaylistConfigListResponse(
+            playlists=[
                 serialize_streaming_playlist_config(playlist) for playlist in playlists
             ]
-        }
+        )
 
-    @router.patch("/streaming/playlists/{playlist_id}")
+    @router.patch(
+        "/streaming/playlists/{playlist_id}",
+        response_model=StreamingPlaylistConfigResponse,
+    )
     def update_streaming_playlist(
         playlist_id: int,
         payload: UpdateStreamingPlaylistRequest,
-        engine: Engine = Depends(require_database_engine),
+        engine: Engine = Depends(get_engine),
     ) -> StreamingPlaylistConfigResponse:
         playlist = _store(engine).set_playlist_selected_for_sync(
             playlist_id=playlist_id,
@@ -189,10 +175,10 @@ def create_router(
 
         return serialize_streaming_playlist_config(playlist)
 
-    @router.get("/playlists/{playlist_id}")
+    @router.get("/playlists/{playlist_id}", response_model=PlaylistDetailResponse)
     def get_playlist_detail(
         playlist_id: int,
-        engine: Engine = Depends(require_database_engine),
+        engine: Engine = Depends(get_engine),
     ) -> PlaylistDetailResponse:
         playlist = _store(engine).get_playlist_detail(playlist_id)
         if playlist is None:
@@ -200,19 +186,32 @@ def create_router(
 
         return serialize_playlist_detail(playlist)
 
-    @router.get("/playlists/{playlist_id}/tracks")
+    @router.get(
+        "/playlists/{playlist_id}/tracks", response_model=PlaylistTracksResponse
+    )
     def list_playlist_tracks(
         playlist_id: int,
-        engine: Engine = Depends(require_database_engine),
+        engine: Engine = Depends(get_engine),
     ) -> PlaylistTracksResponse:
-        engine = _engine(engine)
         store = _store(engine)
         if not store.playlist_exists(playlist_id):
             raise HTTPException(status_code=404, detail="Playlist not found")
 
         return PlaylistTracksResponse(
             tracks=[
-                serialize_playlist_track(track)
+                PlaylistTrackResponse(
+                    id=track.id,
+                    provider_track_id=track.provider_track_id,
+                    title=track.title,
+                    artist=track.artist,
+                    album=track.album,
+                    duration_ms=track.duration_ms,
+                    position=track.position,
+                    status=track.status,
+                    final_link_id=track.final_link_id,
+                    local_track_id=track.local_track_id,
+                    proposal_id=track.proposal_id,
+                )
                 for track in store.list_playlist_tracks(playlist_id)
             ]
         )
@@ -220,11 +219,10 @@ def create_router(
     @router.get("/playlists/{playlist_id}/m3u")
     def export_playlist_m3u(
         playlist_id: int,
-        engine: Engine = Depends(require_database_engine),
+        engine: Engine = Depends(get_engine),
     ) -> Response:
         from app.m3u.generator import build_m3u_filename, generate_m3u
 
-        engine = _engine(engine)
         store = _store(engine)
         playlist = next(
             (
@@ -246,10 +244,14 @@ def create_router(
             headers={"Content-Disposition": f'attachment; filename="{filename}"'},
         )
 
-    @router.post("/streaming/accounts", status_code=201)
+    @router.post(
+        "/streaming/accounts",
+        response_model=StreamingAccountResponse,
+        status_code=201,
+    )
     def create_streaming_account(
         payload: CreateStreamingAccountRequest,
-        engine: Engine = Depends(require_database_engine),
+        engine: Engine = Depends(get_engine),
     ) -> StreamingAccountResponse:
         store = _store(engine)
         account = store.create_youtube_music_account(
@@ -264,11 +266,14 @@ def create_router(
         )
         return serialize_streaming_account(created_account)
 
-    @router.patch("/streaming/accounts/{account_id}/auth")
+    @router.patch(
+        "/streaming/accounts/{account_id}/auth",
+        response_model=StreamingAccountResponse,
+    )
     def update_streaming_account_auth(
         account_id: int,
         payload: UpdateStreamingAccountAuthRequest,
-        engine: Engine = Depends(require_database_engine),
+        engine: Engine = Depends(get_engine),
     ) -> StreamingAccountResponse:
         account = _store(engine).update_youtube_music_account_auth(
             account_id=account_id,
@@ -279,10 +284,14 @@ def create_router(
 
         return serialize_streaming_account(account)
 
-    @router.post("/streaming/accounts/{account_id}/sync", status_code=202)
+    @router.post(
+        "/streaming/accounts/{account_id}/sync",
+        response_model=StreamingSyncResponse,
+        status_code=202,
+    )
     def sync_streaming_account(
         account_id: int,
-        engine: Engine = Depends(require_database_engine),
+        engine: Engine = Depends(get_engine),
     ) -> StreamingSyncResponse:
         store = _store(engine)
         if not any(account.id == account_id for account in store.list_accounts()):
@@ -295,11 +304,12 @@ def create_router(
 
     @router.post(
         "/streaming/accounts/{account_id}/refresh-metadata",
+        response_model=StreamingSyncResponse,
         status_code=202,
     )
     def refresh_streaming_account_metadata(
         account_id: int,
-        engine: Engine = Depends(require_database_engine),
+        engine: Engine = Depends(get_engine),
     ) -> StreamingSyncResponse:
         store = _store(engine)
         if not any(account.id == account_id for account in store.list_accounts()):
@@ -310,10 +320,14 @@ def create_router(
         )
         return StreamingSyncResponse(account_id=account_id, job_id=job_id)
 
-    @router.post("/streaming/playlists/{playlist_id}/sync", status_code=202)
+    @router.post(
+        "/streaming/playlists/{playlist_id}/sync",
+        response_model=PlaylistSyncResponse,
+        status_code=202,
+    )
     def sync_streaming_playlist(
         playlist_id: int,
-        engine: Engine = Depends(require_database_engine),
+        engine: Engine = Depends(get_engine),
     ) -> PlaylistSyncResponse:
         store = _store(engine)
         if not any(playlist.id == playlist_id for playlist in store.list_playlists()):
