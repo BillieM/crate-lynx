@@ -27,6 +27,7 @@ from app.streaming.models import (
 from app.streaming.store import StreamingAccountStore
 from app.streaming.adapters.youtube_music import (
     MalformedPlaylistPayloadError,
+    YouTubeMusicAuthenticationError,
     YouTubeMusicPlaylist,
     YouTubeMusicTrack,
 )
@@ -1101,6 +1102,52 @@ def test_streaming_account_store_marks_auth_errors_without_crashing(
         == "YouTube Music authentication failed: refresh token expired"
     )
     assert persisted.auth_error_at is not None
+
+
+def test_streaming_account_store_marks_logged_out_playlist_response_as_auth_error(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite:///{tmp_path / 'streaming-playlist-auth-error.db'}"
+    engine = create_engine(database_url)
+    metadata.create_all(engine)
+    monkeypatch.setenv("TOKEN_ENCRYPTION_KEY", Fernet.generate_key().decode("utf-8"))
+
+    store = StreamingAccountStore(database_url)
+    account = store.create_youtube_music_account(
+        display_name="Listener",
+        browser_headers={"refresh_token": "refresh-token"},
+    )
+    playlist = store.upsert_playlists(
+        account_id=account.id,
+        playlists=[YouTubeMusicPlaylist(provider_playlist_id="PL1", title="Road Trip")],
+    )[0]
+
+    class FakeAdapter:
+        def list_playlist_tracks(self, playlist_id):
+            raise YouTubeMusicAuthenticationError(
+                "Playlist response reported logged_in: 0"
+            )
+
+    monkeypatch.setattr(
+        "app.streaming.store.YouTubeMusicAdapter.from_browser_auth",
+        lambda auth, *, user=None, language="en", location="": FakeAdapter(),
+    )
+
+    synced = store.sync_youtube_music_playlist(playlist_id=playlist.id)
+
+    assert synced == []
+    persisted_account = store.list_accounts()[0]
+    assert persisted_account.auth_state == "error"
+    assert (
+        persisted_account.auth_error
+        == "YouTube Music authentication failed: Playlist response reported logged_in: 0"
+    )
+    assert persisted_account.auth_error_at is not None
+
+    persisted_playlist = store.list_playlists()[0]
+    assert persisted_playlist.last_sync_error is None
+    assert persisted_playlist.last_sync_error_at is None
 
 
 def test_streaming_account_store_clears_auth_errors_after_successful_sync(

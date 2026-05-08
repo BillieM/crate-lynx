@@ -22,6 +22,7 @@ from ytmusicapi.exceptions import YTMusicError
 from app.core.db import create_database_engine
 from app.streaming.adapters.youtube_music import (
     YouTubeMusicAdapter,
+    YouTubeMusicAuthenticationError,
     YouTubeMusicPlaylist,
     YouTubeMusicTrack,
     sync_library_playlists,
@@ -777,7 +778,7 @@ class StreamingAccountStore:
                 account.browser_headers,
             )
             synced = run_sync(adapter)
-        except YTMusicError as exc:
+        except (YTMusicError, YouTubeMusicAuthenticationError) as exc:
             self.mark_account_auth_error(account_id=account_id, error=exc)
             return []
 

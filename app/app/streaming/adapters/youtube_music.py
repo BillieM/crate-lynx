@@ -18,6 +18,10 @@ class MalformedPlaylistPayloadError(RuntimeError):
     """Raised when YouTube Music returns an unparseable playlist payload."""
 
 
+class YouTubeMusicAuthenticationError(RuntimeError):
+    """Raised when YouTube Music indicates the browser session is logged out."""
+
+
 @dataclass(frozen=True, slots=True)
 class YouTubeMusicPlaylist:
     provider_playlist_id: str
@@ -178,12 +182,19 @@ class YouTubeMusicAdapter(StreamingAdapter):
         related: bool = False,
         suggestions_limit: int = 0,
     ) -> JsonMapping:
-        return self._client.get_playlist(
-            playlistId=playlist_id,
-            limit=limit,
-            related=related,
-            suggestions_limit=suggestions_limit,
-        )
+        try:
+            return self._client.get_playlist(
+                playlistId=playlist_id,
+                limit=limit,
+                related=related,
+                suggestions_limit=suggestions_limit,
+            )
+        except KeyError as exc:
+            if _exception_reports_logged_out(exc):
+                raise YouTubeMusicAuthenticationError(
+                    "Playlist response reported logged_in: 0"
+                ) from exc
+            raise
 
     def get_song(
         self,
@@ -323,6 +334,8 @@ def sync_library_playlist_tracks(
                 exc_info=True,
             )
             continue
+        except YouTubeMusicAuthenticationError:
+            raise
         except Exception as exc:
             _mark_playlist_sync_failure(
                 playlist_store,
@@ -371,6 +384,8 @@ def sync_single_library_playlist_tracks(
             exc_info=True,
         )
         return []
+    except YouTubeMusicAuthenticationError:
+        raise
     except Exception as exc:
         _mark_playlist_sync_failure(
             playlist_store,
@@ -422,6 +437,14 @@ def _format_sync_failure(exc: Exception) -> str:
     if message:
         return message
     return exc.__class__.__name__
+
+
+def _exception_reports_logged_out(exc: Exception) -> bool:
+    message = str(exc)
+    if "logged_in" not in message and "yt_li" not in message:
+        return False
+
+    return "'value': '0'" in message or '"value": "0"' in message
 
 
 def _normalize_artist(track: JsonMapping) -> str | None:

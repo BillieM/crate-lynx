@@ -7,6 +7,7 @@ import pytest
 
 from app.streaming.adapters.youtube_music import (
     MalformedPlaylistPayloadError,
+    YouTubeMusicAuthenticationError,
     YouTubeMusicAdapter,
     YouTubeMusicPlaylist,
     YouTubeMusicTrackMetadata,
@@ -628,6 +629,28 @@ def test_list_playlist_tracks_returns_empty_for_empty_playlist() -> None:
     adapter = YouTubeMusicAdapter(FakeYTMusic())  # type: ignore[arg-type]
 
     assert adapter.list_playlist_tracks("PL1") == []
+
+
+def test_list_playlist_tracks_reports_logged_out_playlist_response() -> None:
+    class FakeYTMusic:
+        def get_playlist(
+            self,
+            *,
+            playlistId: str,
+            limit: int | None,
+            related: bool,
+            suggestions_limit: int,
+        ) -> dict[str, object]:
+            assert playlistId == "PL1"
+            raise KeyError("{'key': 'logged_in', 'value': '0'}")
+
+    adapter = YouTubeMusicAdapter(FakeYTMusic())  # type: ignore[arg-type]
+
+    with pytest.raises(
+        YouTubeMusicAuthenticationError,
+        match="Playlist response reported logged_in: 0",
+    ):
+        adapter.list_playlist_tracks("PL1")
 
 
 def test_sync_library_playlists_uses_adapter_and_store() -> None:
