@@ -88,7 +88,6 @@ def test_matching_pipeline_persists_isrc_match_without_running_tag_matcher(
 
     result = MatchingPipeline(
         database_url=database_url,
-        beets_library=tmp_path / "library.db",
         isrc_matcher=isrc_matcher,
         tag_matcher=tag_matcher,
     ).run(17)
@@ -127,7 +126,6 @@ def test_matching_pipeline_persists_medium_confidence_tag_match(
 
     result = MatchingPipeline(
         database_url=database_url,
-        beets_library=tmp_path / "library.db",
         redis_url="redis://redis:6379/0",
         isrc_matcher=FakeMatcher(result=None, calls=[]),
         tag_matcher=tag_matcher,
@@ -155,7 +153,6 @@ def test_matching_pipeline_persists_low_confidence_tag_match_without_acoustic_jo
 
     result = MatchingPipeline(
         database_url=database_url,
-        beets_library=tmp_path / "library.db",
         redis_url="redis://redis:6379/0",
         isrc_matcher=FakeMatcher(result=None, calls=[]),
         tag_matcher=FakeMatcher(
@@ -219,7 +216,6 @@ def test_matching_pipeline_rerun_clears_existing_non_approved_suggestion(
 
     result = MatchingPipeline(
         database_url=database_url,
-        beets_library=tmp_path / "library.db",
         isrc_matcher=FakeMatcher(result=None, calls=[]),
         tag_matcher=FakeMatcher(
             result=MatchResult(
@@ -300,7 +296,6 @@ def test_matching_pipeline_skips_rejected_isrc_pair_and_persists_tag_match(
 
     result = MatchingPipeline(
         database_url=database_url,
-        beets_library=tmp_path / "library.db",
         isrc_matcher=isrc_matcher,
         tag_matcher=tag_matcher,
     ).run(52)
@@ -345,7 +340,6 @@ def test_matching_pipeline_does_not_recreate_rejected_tag_pair(tmp_path) -> None
 
     result = MatchingPipeline(
         database_url=database_url,
-        beets_library=tmp_path / "library.db",
         isrc_matcher=FakeMatcher(result=None, calls=[]),
         tag_matcher=FakeMatcher(
             result=MatchResult(
@@ -409,7 +403,6 @@ def test_matching_pipeline_filters_rejected_pairs_before_tag_ranking(tmp_path) -
 
     result = MatchingPipeline(
         database_url=database_url,
-        beets_library=tmp_path / "library.db",
         isrc_matcher=FakeMatcher(result=None, calls=[]),
         tag_matcher=tag_matcher,
     ).run(71)
@@ -444,7 +437,6 @@ def test_matching_pipeline_persists_ranked_tag_shortlist(
 
     result = MatchingPipeline(
         database_url=database_url,
-        beets_library=tmp_path / "library.db",
         redis_url="redis://redis:6379/0",
         isrc_matcher=FakeMatcher(result=None, calls=[]),
         tag_matcher=FakeCandidateMatcher(
@@ -528,7 +520,6 @@ def test_matching_pipeline_persists_only_plausible_tag_candidates(tmp_path) -> N
 
     result = MatchingPipeline(
         database_url=database_url,
-        beets_library=tmp_path / "library.db",
         isrc_matcher=FakeMatcher(result=None, calls=[]),
         tag_matcher=tag_matcher,
     ).run(82)
@@ -563,7 +554,6 @@ def test_matching_pipeline_keeps_top_low_confidence_fallback_candidates(
 
     result = MatchingPipeline(
         database_url=database_url,
-        beets_library=tmp_path / "library.db",
         isrc_matcher=FakeMatcher(result=None, calls=[]),
         tag_matcher=FakeCandidateMatcher(
             results=[

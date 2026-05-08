@@ -1,12 +1,10 @@
 from __future__ import annotations
 
 import re
-import sqlite3
 from dataclasses import dataclass
-from pathlib import Path
 
 from rapidfuzz import fuzz
-from sqlalchemy import create_engine, select
+from sqlalchemy import column, create_engine, select, table
 
 from app.local_tracks.store import local_tracks_table
 from app.matching.models import ConfidenceBand, MatchResult
@@ -28,6 +26,15 @@ ALBUM_BONUS_WEIGHT = 0.04
 DURATION_BONUS_WEIGHT = 0.02
 DURATION_BONUS_TOLERANCE_MS = 10_000
 
+beets_items_view = table(
+    "beets_items",
+    column("beets_id"),
+    column("title"),
+    column("artist"),
+    column("album"),
+    column("length"),
+)
+
 
 @dataclass(frozen=True, slots=True)
 class _LocalTags:
@@ -38,9 +45,8 @@ class _LocalTags:
 
 
 class TagMatcher:
-    def __init__(self, *, database_url: str, beets_library: Path | str) -> None:
+    def __init__(self, *, database_url: str) -> None:
         self._engine = create_engine(database_url)
-        self._beets_library = Path(beets_library)
 
     def match(self, local_track_id: int) -> MatchResult | None:
         candidates = self.candidates(local_track_id, limit=1)
@@ -53,11 +59,7 @@ class TagMatcher:
         excluded_streaming_track_ids: set[int] | frozenset[int] | None = None,
         limit: int = DEFAULT_TAG_CANDIDATE_LIMIT,
     ) -> list[MatchResult]:
-        beets_id = self._lookup_beets_id(local_track_id)
-        if beets_id is None:
-            return []
-
-        local_tags = self._lookup_local_tags(beets_id)
+        local_tags = self._lookup_local_tags(local_track_id)
         if local_tags is None:
             return []
 
@@ -115,13 +117,24 @@ class TagMatcher:
         candidates.sort(key=lambda candidate: candidate.score, reverse=True)
         return candidates[:limit]
 
-    def _lookup_beets_id(self, local_track_id: int) -> int | None:
+    def _lookup_local_tags(self, local_track_id: int) -> _LocalTags | None:
         with self._engine.connect() as connection:
             row = (
                 connection.execute(
-                    select(local_tracks_table.c.beets_id).where(
-                        local_tracks_table.c.id == local_track_id
+                    select(
+                        beets_items_view.c.title,
+                        beets_items_view.c.artist,
+                        beets_items_view.c.album,
+                        beets_items_view.c.length,
                     )
+                    .select_from(
+                        local_tracks_table.join(
+                            beets_items_view,
+                            local_tracks_table.c.beets_id
+                            == beets_items_view.c.beets_id,
+                        )
+                    )
+                    .where(local_tracks_table.c.id == local_track_id)
                 )
                 .mappings()
                 .one_or_none()
@@ -130,29 +143,10 @@ class TagMatcher:
         if row is None:
             return None
 
-        beets_id = row["beets_id"]
-        return beets_id if isinstance(beets_id, int) else None
-
-    def _lookup_local_tags(self, beets_id: int) -> _LocalTags | None:
-        with sqlite3.connect(self._beets_library) as connection:
-            columns = {
-                row[1]
-                for row in connection.execute("PRAGMA table_info(items)").fetchall()
-                if isinstance(row[1], str)
-            }
-            duration_column = ", length" if "length" in columns else ""
-            row = connection.execute(
-                f"SELECT title, artist, album{duration_column} FROM items WHERE id = ?",
-                (beets_id,),
-            ).fetchone()
-
-        if row is None:
-            return None
-
-        title = _normalize_text(row[0])
-        artist = _normalize_text(row[1])
-        album = _normalize_text(row[2])
-        duration_ms = _normalize_duration_ms(row[3]) if len(row) > 3 else None
+        title = _normalize_text(row["title"])
+        artist = _normalize_text(row["artist"])
+        album = _normalize_text(row["album"])
+        duration_ms = _normalize_duration_ms(row["length"])
         if title is None or artist is None:
             return None
 

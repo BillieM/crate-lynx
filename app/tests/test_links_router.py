@@ -53,6 +53,12 @@ def test_list_proposals_returns_joined_pending_records(
         file_path="Artist/Already Linked.mp3",
         fingerprint="fp-6",
     )
+    test_data.beets_item(
+        beets_id=4,
+        title="Local Track",
+        artist="Local Artist",
+        album="Local Album",
+    )
     pending_streaming_id = test_data.streaming_track(
         album="Album",
         artist="Artist",
@@ -122,6 +128,9 @@ def test_list_proposals_returns_joined_pending_records(
                 "id": proposal_id,
                 "local_track_id": pending_local_id,
                 "local_file_path": "Artist/Track.mp3",
+                "local_title": "Local Track",
+                "local_artist": "Local Artist",
+                "local_album": "Local Album",
                 "streaming_track_id": pending_streaming_id,
                 "streaming_title": "Track",
                 "streaming_artist": "Artist",
@@ -136,105 +145,77 @@ def test_list_proposals_returns_joined_pending_records(
     }
 
 
-def test_list_proposals_filters_by_confidence_band(tmp_path: Path) -> None:
-    database_url = f"sqlite:///{tmp_path / 'proposal-filter.db'}"
-    engine = create_engine(database_url)
-    local_tracks_metadata.create_all(engine)
-    streaming_metadata.create_all(engine)
-    suggested_links_metadata.create_all(engine)
-    links_metadata.create_all(engine)
-
-    with engine.begin() as connection:
-        connection.execute(
-            insert(local_tracks_table),
-            [
-                {
-                    "id": 1,
-                    "file_path": "Artist/high.mp3",
-                    "library_root_rel_path": "Artist/high.mp3",
-                    "fingerprint": "fp-1",
-                    "beets_id": 1,
-                },
-                {
-                    "id": 2,
-                    "file_path": "Artist/medium.mp3",
-                    "library_root_rel_path": "Artist/medium.mp3",
-                    "fingerprint": "fp-2",
-                    "beets_id": 2,
-                },
-                {
-                    "id": 3,
-                    "file_path": "Artist/low.mp3",
-                    "library_root_rel_path": "Artist/low.mp3",
-                    "fingerprint": "fp-3",
-                    "beets_id": 3,
-                },
-            ],
-        )
-        connection.execute(
-            insert(streaming_tracks_table),
-            [
-                {
-                    "id": 11,
-                    "provider_track_id": "ytm-11",
-                    "title": "High",
-                    "artist": "Artist",
-                    "album": None,
-                    "year": None,
-                    "isrc": None,
-                    "duration_ms": None,
-                },
-                {
-                    "id": 12,
-                    "provider_track_id": "ytm-12",
-                    "title": "Medium",
-                    "artist": "Artist",
-                    "album": None,
-                    "year": None,
-                    "isrc": None,
-                    "duration_ms": None,
-                },
-                {
-                    "id": 13,
-                    "provider_track_id": "ytm-13",
-                    "title": "Low",
-                    "artist": "Artist",
-                    "album": None,
-                    "year": None,
-                    "isrc": None,
-                    "duration_ms": None,
-                },
-            ],
-        )
-        connection.execute(
-            insert(suggested_links_table),
-            [
-                {
-                    "id": 21,
-                    "local_track_id": 1,
-                    "streaming_track_id": 11,
-                    "match_method": "isrc",
-                    "score": 0.99,
-                    "status": "pending",
-                },
-                {
-                    "id": 22,
-                    "local_track_id": 2,
-                    "streaming_track_id": 12,
-                    "match_method": "tags",
-                    "score": 0.85,
-                    "status": "pending",
-                },
-                {
-                    "id": 23,
-                    "local_track_id": 3,
-                    "streaming_track_id": 13,
-                    "match_method": "tags",
-                    "score": 0.49,
-                    "status": "pending",
-                },
-            ],
-        )
+def test_list_proposals_filters_by_confidence_band(
+    migrated_database,
+    test_data,
+) -> None:
+    database_url, _ = migrated_database
+    high_local_id = test_data.local_track(
+        beets_id=1,
+        file_path="Artist/high.mp3",
+        fingerprint="fp-1",
+    )
+    medium_local_id = test_data.local_track(
+        beets_id=2,
+        file_path="Artist/medium.mp3",
+        fingerprint="fp-2",
+    )
+    low_local_id = test_data.local_track(
+        beets_id=3,
+        file_path="Artist/low.mp3",
+        fingerprint="fp-3",
+    )
+    test_data.beets_item(beets_id=1, title="High", artist="Artist", album=None)
+    test_data.beets_item(beets_id=2, title="Medium", artist="Artist", album=None)
+    test_data.beets_item(beets_id=3, title="Low", artist="Artist", album=None)
+    high_streaming_id = test_data.streaming_track(
+        album=None,
+        artist="Artist",
+        duration_ms=None,
+        isrc=None,
+        provider_track_id="ytm-11",
+        title="High",
+        year=None,
+    )
+    medium_streaming_id = test_data.streaming_track(
+        album=None,
+        artist="Artist",
+        duration_ms=None,
+        isrc=None,
+        provider_track_id="ytm-12",
+        title="Medium",
+        year=None,
+    )
+    low_streaming_id = test_data.streaming_track(
+        album=None,
+        artist="Artist",
+        duration_ms=None,
+        isrc=None,
+        provider_track_id="ytm-13",
+        title="Low",
+        year=None,
+    )
+    high_proposal_id = test_data.suggested_link(
+        local_track_id=high_local_id,
+        match_method="isrc",
+        score=0.99,
+        status=SUGGESTED_LINK_STATUS_PENDING,
+        streaming_track_id=high_streaming_id,
+    )
+    medium_proposal_id = test_data.suggested_link(
+        local_track_id=medium_local_id,
+        match_method="tags",
+        score=0.85,
+        status=SUGGESTED_LINK_STATUS_PENDING,
+        streaming_track_id=medium_streaming_id,
+    )
+    low_proposal_id = test_data.suggested_link(
+        local_track_id=low_local_id,
+        match_method="tags",
+        score=0.49,
+        status=SUGGESTED_LINK_STATUS_PENDING,
+        streaming_track_id=low_streaming_id,
+    )
 
     router = create_router(require_database_url=lambda: database_url)
     route = next(
@@ -248,9 +229,11 @@ def test_list_proposals_filters_by_confidence_band(tmp_path: Path) -> None:
     medium_response = _call_endpoint(route.endpoint, ConfidenceBand.MEDIUM)
     low_response = _call_endpoint(route.endpoint, ConfidenceBand.LOW)
 
-    assert [proposal.id for proposal in high_response.proposals] == [21]
-    assert [proposal.id for proposal in medium_response.proposals] == [22]
-    assert [proposal.id for proposal in low_response.proposals] == [23]
+    assert [proposal.id for proposal in high_response.proposals] == [high_proposal_id]
+    assert [proposal.id for proposal in medium_response.proposals] == [
+        medium_proposal_id
+    ]
+    assert [proposal.id for proposal in low_response.proposals] == [low_proposal_id]
 
 
 def test_approve_proposal_writes_final_link_and_clears_pending_siblings(

@@ -78,7 +78,10 @@ export type PlaylistM3uExport = {
 export type LinkProposal = {
   confidence_band: LinkProposalConfidenceBand;
   id: number;
+  local_album: string | null;
+  local_artist: string | null;
   local_file_path: string;
+  local_title: string | null;
   local_track_id: number;
   match_method: string;
   rejected_at: string | null;

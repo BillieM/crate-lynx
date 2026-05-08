@@ -7,6 +7,9 @@ class ProposalResponse(BaseModel):
     id: int
     local_track_id: int
     local_file_path: str
+    local_title: str | None
+    local_artist: str | None
+    local_album: str | None
     streaming_track_id: int
     streaming_title: str
     streaming_artist: str

@@ -137,43 +137,43 @@ Non-goals:
 
 ## T5b. Move tag matching off Beets SQLite and remove `BEETS_LIBRARY` from runtime
 
-- [ ] Reuses `factories.beets_item(...)` from T5a — no new test plumbing required.
-- [ ] Files: `app/app/matching/tags.py` (whole file, 233 LOC), `app/app/matching/pipeline.py:181–200` (drop `beets_library` from the `MatchingPipeline` dataclass + `__post_init__`), `app/app/matching/jobs.py:35–43` (remove env check + arg passthrough), `app/tests/test_matching_tags.py`, `app/tests/test_matching_pipeline.py`, `app/tests/test_worker.py`, `app/tests/test_main.py:175` (delete the now-redundant `delenv` if matching path no longer reads it).
-- [ ] New `TagMatcher.__init__` signature: `__init__(self, *, database_url: str)`.
-- [ ] Single Postgres query joining `local_tracks ⋈ beets_items` to fetch `title, artist, album, length` for the local track. Convert `length` (Beets seconds float) to ms via the existing `_normalize_duration_ms` logic.
-- [ ] Scoring functions (`_score_tags`, `_title_similarity`, `_token_similarity`, `_album_similarity`, weights, duration tolerance) remain identical.
-- [ ] Keep scoring, confidence bands, rejected-candidate exclusion, and candidate ordering unchanged.
-- [ ] All pipeline tests: replace `beets_library=tmp_path / "library.db"` calls with no-arg construction; seed `beets_items` rows via `factories.beets_item(...)` for any test that requires tag lookup data.
-- [ ] `BeetsImporter` retains its `BEETS_LIBRARY` env (`app/app/main.py:49`); only the matching pipeline / jobs path drops it.
-- [ ] After this task, `rg -n "BEETS_LIBRARY" app/app` should only match `main.py:49` (BeetsImporter wiring) and `ingestion/repair.py:22` (repair sync source).
+- [x] Reuses `factories.beets_item(...)` from T5a — no new test plumbing required.
+- [x] Files: `app/app/matching/tags.py` (whole file, 233 LOC), `app/app/matching/pipeline.py:181–200` (drop `beets_library` from the `MatchingPipeline` dataclass + `__post_init__`), `app/app/matching/jobs.py:35–43` (remove env check + arg passthrough), `app/tests/test_matching_tags.py`, `app/tests/test_matching_pipeline.py`, `app/tests/test_worker.py`, `app/tests/test_main.py:175` (delete the now-redundant `delenv` if matching path no longer reads it).
+- [x] New `TagMatcher.__init__` signature: `__init__(self, *, database_url: str)`.
+- [x] Single Postgres query joining `local_tracks ⋈ beets_items` to fetch `title, artist, album, length` for the local track. Convert `length` (Beets seconds float) to ms via the existing `_normalize_duration_ms` logic.
+- [x] Scoring functions (`_score_tags`, `_title_similarity`, `_token_similarity`, `_album_similarity`, weights, duration tolerance) remain identical.
+- [x] Keep scoring, confidence bands, rejected-candidate exclusion, and candidate ordering unchanged.
+- [x] All pipeline tests: replace `beets_library=tmp_path / "library.db"` calls with no-arg construction; seed `beets_items` rows via `factories.beets_item(...)` for any test that requires tag lookup data.
+- [x] `BeetsImporter` retains its `BEETS_LIBRARY` env (`app/app/main.py:49`); only the matching pipeline / jobs path drops it.
+- [x] After this task, `rg -n "BEETS_LIBRARY" app/app` should only match `main.py:49` (BeetsImporter wiring) and `ingestion/repair.py:22` (repair sync source).
 
 **Definition of done:**
 - `source .venv/bin/activate && ruff check . && ruff format --check . && pytest app/tests/test_matching_tags.py app/tests/test_matching_pipeline.py app/tests/test_worker.py app/tests/test_main.py`
 
 ## T6. Expand proposals API with local metadata
 
-- [ ] Reuses `factories.beets_item(...)` from T5a in `test_links_router.py` for the existing list-proposals tests at lines 35 and 139.
-- [ ] Files: `app/app/links/router.py:55–126`, `app/app/links/models.py:6–18`, `app/tests/test_links_router.py`.
-- [ ] Extend `ProposalResponse` with `local_title: str | None`, `local_artist: str | None`, `local_album: str | None`. Keep `local_file_path: str` (always present, unchanged).
-- [ ] Add `LEFT OUTER JOIN beets_items ON beets_items.beets_id = local_tracks.beets_id` to the existing query at `router.py:77–92` and select `beets_items.title`, `beets_items.artist`, `beets_items.album` aliased as `local_title` / `local_artist` / `local_album`.
-- [ ] Pydantic `str | None` handles null safely — no SQL coalesce needed.
-- [ ] Preserve existing pending-only filtering, confidence-band filtering, final-link exclusion, ordering, approve, and reject behavior.
+- [x] Reuses `factories.beets_item(...)` from T5a in `test_links_router.py` for the existing list-proposals tests at lines 35 and 139.
+- [x] Files: `app/app/links/router.py:55–126`, `app/app/links/models.py:6–18`, `app/tests/test_links_router.py`.
+- [x] Extend `ProposalResponse` with `local_title: str | None`, `local_artist: str | None`, `local_album: str | None`. Keep `local_file_path: str` (always present, unchanged).
+- [x] Add `LEFT OUTER JOIN beets_items ON beets_items.beets_id = local_tracks.beets_id` to the existing query at `router.py:77–92` and select `beets_items.title`, `beets_items.artist`, `beets_items.album` aliased as `local_title` / `local_artist` / `local_album`.
+- [x] Pydantic `str | None` handles null safely — no SQL coalesce needed.
+- [x] Preserve existing pending-only filtering, confidence-band filtering, final-link exclusion, ordering, approve, and reject behavior.
 
 **Definition of done:**
 - `source .venv/bin/activate && ruff check . && ruff format --check . && pytest app/tests/test_links_models.py app/tests/test_links_router.py`
 
 ## T7. Compress link proposal UI with side-by-side comparison
 
-- [ ] Files: `app-ui/src/features/proposals/LinkProposalsView.tsx` (especially `ProposalGroupCard` at lines 259–316 and `ProposalCandidateRow` at lines 318–379), `app-ui/src/features/playlists/queries.ts:78–91` (extend `LinkProposal` type), `app-ui/src/features/proposals/LinkProposalsView.test.tsx` (extend fixture at lines 8–53; add comparison-rendering tests).
-- [ ] Extend the frontend `LinkProposal` type with `local_title: string | null`, `local_artist: string | null`, `local_album: string | null` to match `/api/proposals`. Update test fixtures.
-- [ ] Locked layout in `ProposalGroupCard`:
+- [x] Files: `app-ui/src/features/proposals/LinkProposalsView.tsx` (especially `ProposalGroupCard` at lines 259–316 and `ProposalCandidateRow` at lines 318–379), `app-ui/src/features/playlists/queries.ts:78–91` (extend `LinkProposal` type), `app-ui/src/features/proposals/LinkProposalsView.test.tsx` (extend fixture at lines 8–53; add comparison-rendering tests).
+- [x] Extend the frontend `LinkProposal` type with `local_title: string | null`, `local_artist: string | null`, `local_album: string | null` to match `/api/proposals`. Update test fixtures.
+- [x] Locked layout in `ProposalGroupCard`:
   - Replace the single "Local track" header (`LinkProposalsView.tsx:283–288`) with a 2-column grid: left = local fields (filename, title, artist, album), right = streaming fields (title, artist, album).
   - Use `grid-cols-1 md:grid-cols-2`. Each row uses `<dt>` label + `<dd>` value. Center divider on `md:`.
   - When local title / artist / album is null, render `—` in `text-ctp-overlay1` italic. Always render filename (always present).
-- [ ] In `ProposalCandidateRow`: drop the local restatement — only show streaming side, score, method, rank, actions. Local context lives in the group header.
-- [ ] Truncate with `truncate` on each `<dd>`. Preserve existing `aria-hidden` on the score meter.
-- [ ] Approve/reject mutation logic, optimistic cache, and error banners untouched (`LinkProposalsView.tsx:159–185`).
-- [ ] Test additions: render with all-three-local-fields-present (verify side-by-side), render with all-null-locals (verify dashes), render with one missing field, preserve approve+reject pending-state assertions.
+- [x] In `ProposalCandidateRow`: drop the local restatement — only show streaming side, score, method, rank, actions. Local context lives in the group header.
+- [x] Truncate with `truncate` on each `<dd>`. Preserve existing `aria-hidden` on the score meter.
+- [x] Approve/reject mutation logic, optimistic cache, and error banners untouched (`LinkProposalsView.tsx:159–185`).
+- [x] Test additions: render with all-three-local-fields-present (verify side-by-side), render with all-null-locals (verify dashes), render with one missing field, preserve approve+reject pending-state assertions.
 - [ ] Manual review (replaces dropped T8): open `/proposals` in dev and verify rows with full Beets metadata, rows with only filename, and rows with multiple candidates render correctly; verify approve+reject pending states animate correctly.
 
 **Definition of done:**

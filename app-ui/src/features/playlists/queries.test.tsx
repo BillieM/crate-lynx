@@ -148,7 +148,10 @@ describe("playlist queries", () => {
           {
             id: 44,
             local_track_id: 8,
+            local_album: "Local Drive",
+            local_artist: "Frame Delay",
             local_file_path: "Frame Delay/Open Road.flac",
+            local_title: "Open Road Local",
             streaming_track_id: 77,
             streaming_title: "Open Road",
             streaming_artist: "Frame Delay",
@@ -168,7 +171,10 @@ describe("playlist queries", () => {
         {
           id: 44,
           local_track_id: 8,
+          local_album: "Local Drive",
+          local_artist: "Frame Delay",
           local_file_path: "Frame Delay/Open Road.flac",
+          local_title: "Open Road Local",
           streaming_track_id: 77,
           streaming_title: "Open Road",
           streaming_artist: "Frame Delay",
@@ -585,7 +591,10 @@ describe("playlist queries", () => {
           {
             id: 90,
             local_track_id: 12,
+            local_album: null,
+            local_artist: "Phase Memory",
             local_file_path: "Phase Memory/Signal Loss.flac",
+            local_title: "Signal Loss",
             streaming_track_id: 88,
             streaming_title: "Signal Loss",
             streaming_artist: "Phase Memory",

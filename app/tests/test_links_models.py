@@ -12,6 +12,9 @@ def test_proposal_response_stores_expected_fields() -> None:
         id=4,
         local_track_id=8,
         local_file_path="Artist/Track.mp3",
+        local_title="Track",
+        local_artist="Artist",
+        local_album="Album",
         streaming_track_id=12,
         streaming_title="Track",
         streaming_artist="Artist",
@@ -26,6 +29,9 @@ def test_proposal_response_stores_expected_fields() -> None:
     assert proposal.id == 4
     assert proposal.local_track_id == 8
     assert proposal.local_file_path == "Artist/Track.mp3"
+    assert proposal.local_title == "Track"
+    assert proposal.local_artist == "Artist"
+    assert proposal.local_album == "Album"
     assert proposal.streaming_track_id == 12
     assert proposal.streaming_title == "Track"
     assert proposal.streaming_artist == "Artist"
@@ -44,6 +50,9 @@ def test_proposal_list_response_wraps_proposals() -> None:
                 id=1,
                 local_track_id=2,
                 local_file_path="Artist/Track.mp3",
+                local_title=None,
+                local_artist=None,
+                local_album=None,
                 streaming_track_id=3,
                 streaming_title="Track",
                 streaming_artist="Artist",

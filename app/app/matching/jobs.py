@@ -32,13 +32,8 @@ def run_matching_pipeline(local_track_id: int) -> MatchResult | None:
     if not database_url:
         raise RuntimeError("DATABASE_URL must be configured for matching")
 
-    beets_library = os.environ.get("BEETS_LIBRARY")
-    if not beets_library:
-        raise RuntimeError("BEETS_LIBRARY must be configured for matching")
-
     pipeline = MatchingPipeline(
         database_url=database_url,
-        beets_library=beets_library,
         redis_url=os.environ.get("REDIS_URL"),
     )
     return pipeline.run(local_track_id)

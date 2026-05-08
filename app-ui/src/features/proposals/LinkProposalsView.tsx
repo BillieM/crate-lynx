@@ -109,6 +109,33 @@ function getLocalTrackLabel(proposal: LinkProposal) {
   return proposal.local_file_path.split("/").pop() || proposal.local_file_path;
 }
 
+function MetadataValue({ fallback = "—", value }: { fallback?: string; value: string | null }) {
+  if (!value) {
+    return <span className="italic text-ctp-overlay1">{fallback}</span>;
+  }
+
+  return value;
+}
+
+function ProposalMetadataRow({
+  fallback,
+  label,
+  value,
+}: {
+  fallback?: string;
+  label: string;
+  value: string | null;
+}) {
+  return (
+    <div className="grid min-w-0 grid-cols-[82px_minmax(0,1fr)] items-baseline gap-2">
+      <dt className={`${textClasses.detail} text-ctp-subtext0`}>{label}</dt>
+      <dd className={`min-w-0 truncate ${textClasses.caption}`}>
+        <MetadataValue fallback={fallback} value={value} />
+      </dd>
+    </div>
+  );
+}
+
 function getMatchMethodLabel(matchMethod: string) {
   const normalizedMethod = matchMethod.toLowerCase();
 
@@ -280,11 +307,24 @@ function ProposalGroupCard({
   return (
     <li className={surfaceClasses.rowCardCompact}>
       <div className="grid gap-4">
-        <div className="min-w-0">
-          <p className={`${textClasses.eyebrow} tracking-normal text-ctp-subtext0`}>Local track</p>
-          <p className={`mt-1 truncate ${textClasses.proposalTitle}`}>{getLocalTrackLabel(topProposal)}</p>
-          <p className={`mt-1 truncate ${textClasses.caption}`}>{topProposal.local_file_path}</p>
-          <p className={`mt-2 ${textClasses.detail}`}>Track #{topProposal.local_track_id}</p>
+        <div className="grid gap-4 md:grid-cols-2">
+          <div className="min-w-0">
+            <p className={`${textClasses.eyebrow} tracking-normal text-ctp-subtext0`}>Local track</p>
+            <dl className="mt-2 grid gap-2">
+              <ProposalMetadataRow label="Filename" value={getLocalTrackLabel(topProposal)} />
+              <ProposalMetadataRow label="Title" value={topProposal.local_title} />
+              <ProposalMetadataRow label="Artist" value={topProposal.local_artist} />
+              <ProposalMetadataRow label="Album" value={topProposal.local_album} />
+            </dl>
+          </div>
+          <div className="min-w-0 md:border-l md:border-ctp-surface0 md:pl-4">
+            <p className={`${textClasses.eyebrow} tracking-normal text-ctp-subtext0`}>Streaming track</p>
+            <dl className="mt-2 grid gap-2">
+              <ProposalMetadataRow label="Title" value={topProposal.streaming_title} />
+              <ProposalMetadataRow label="Artist" value={topProposal.streaming_artist} />
+              <ProposalMetadataRow fallback="Album unavailable" label="Album" value={topProposal.streaming_album} />
+            </dl>
+          </div>
         </div>
         <div className="grid gap-2">
           <p className={`${textClasses.eyebrow} tracking-normal text-ctp-subtext0`}>Ranked candidates</p>

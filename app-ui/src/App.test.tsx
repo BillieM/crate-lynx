@@ -132,7 +132,10 @@ const linkProposalsResponse: LinkProposalsResponse = {
     {
       id: 44,
       local_track_id: 501,
+      local_album: "Private Archive",
+      local_artist: "Frame Delay",
       local_file_path: "Frame Delay/Night Runner.mp3",
+      local_title: "Night Runner File",
       streaming_track_id: 901,
       streaming_title: "Night Runner",
       streaming_artist: "Frame Delay",
@@ -146,7 +149,10 @@ const linkProposalsResponse: LinkProposalsResponse = {
     {
       id: 45,
       local_track_id: 502,
+      local_album: null,
+      local_artist: null,
       local_file_path: "Static Gate/Pending Signal.mp3",
+      local_title: null,
       streaming_track_id: 902,
       streaming_title: "Pending Signal",
       streaming_artist: "Static Gate",
@@ -160,7 +166,10 @@ const linkProposalsResponse: LinkProposalsResponse = {
     {
       id: 46,
       local_track_id: 503,
+      local_album: "Maintenance Window",
+      local_artist: "Patch Bay",
       local_file_path: "Patch Bay/Loose Cable.mp3",
+      local_title: "Loose Cable",
       streaming_track_id: 903,
       streaming_title: "Loose Cable",
       streaming_artist: "Patch Bay",

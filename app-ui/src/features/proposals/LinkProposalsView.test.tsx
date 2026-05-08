@@ -10,7 +10,10 @@ const proposalsResponse: LinkProposalsResponse = {
     {
       confidence_band: "high",
       id: 44,
+      local_album: "Private Archive",
+      local_artist: "Frame Delay",
       local_file_path: "Frame Delay/Night Runner.mp3",
+      local_title: "Night Runner File",
       local_track_id: 501,
       match_method: "tag",
       rejected_at: null,
@@ -24,7 +27,10 @@ const proposalsResponse: LinkProposalsResponse = {
     {
       confidence_band: "medium",
       id: 47,
+      local_album: "Private Archive",
+      local_artist: "Frame Delay",
       local_file_path: "Frame Delay/Night Runner.mp3",
+      local_title: "Night Runner File",
       local_track_id: 501,
       match_method: "tag",
       rejected_at: null,
@@ -38,7 +44,10 @@ const proposalsResponse: LinkProposalsResponse = {
     {
       confidence_band: "medium",
       id: 45,
+      local_album: null,
+      local_artist: null,
       local_file_path: "Static Gate/Pending Signal.mp3",
+      local_title: null,
       local_track_id: 502,
       match_method: "isrc",
       rejected_at: null,
@@ -140,15 +149,62 @@ describe("LinkProposalsView", () => {
     expect(pendingSignalCard).not.toBeNull();
     expect(nightRunnerCard!.compareDocumentPosition(pendingSignalCard!)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
     expect(within(nightRunnerCard!).getByText("Night Runner Alternate")).toBeInTheDocument();
+    expect(within(nightRunnerCard!).getByText("Night Runner File")).toBeInTheDocument();
+    expect(within(nightRunnerCard!).getByText("Private Archive")).toBeInTheDocument();
     expect(within(nightRunnerCard!).getAllByText("Tag")).toHaveLength(2);
     expect(within(nightRunnerCard!).getByText("92%")).toBeInTheDocument();
     expect(within(nightRunnerCard!).getByText("82%")).toBeInTheDocument();
     expect(within(pendingSignalCard!).getByText("ISRC")).toBeInTheDocument();
-    expect(within(pendingSignalCard!).getByText("Album unavailable")).toBeInTheDocument();
+    expect(within(pendingSignalCard!).getAllByText("Album unavailable")).toHaveLength(2);
 
     expect(
       within(nightRunnerCard!).getByText("Local track").compareDocumentPosition(within(nightRunnerCard!).getByText("Ranked candidates")),
     ).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+  });
+
+  it("renders missing local metadata as dashes while keeping the filename", async () => {
+    mockProposalFetch();
+
+    renderLinkProposalsView();
+
+    const pendingSignalCard = (await screen.findByText("Pending Signal.mp3")).closest("li");
+    expect(pendingSignalCard).not.toBeNull();
+    expect(within(pendingSignalCard!).getAllByText("—")).toHaveLength(3);
+    expect(within(pendingSignalCard!).getAllByText("Album unavailable")).toHaveLength(2);
+  });
+
+  it("renders a dash only for the missing local field when partial metadata is present", async () => {
+    mockProposalFetch({
+      response: {
+        proposals: [
+          {
+            confidence_band: "medium",
+            id: 50,
+            local_album: "Singles",
+            local_artist: null,
+            local_file_path: "Static Gate/Partial Signal.mp3",
+            local_title: "Partial Signal",
+            local_track_id: 503,
+            match_method: "tag",
+            rejected_at: null,
+            score: 0.74,
+            status: "pending",
+            streaming_album: "Signals",
+            streaming_artist: "Static Gate",
+            streaming_title: "Partial Signal",
+            streaming_track_id: 908,
+          },
+        ],
+      },
+    });
+
+    renderLinkProposalsView();
+
+    const partialCard = (await screen.findByText("Partial Signal.mp3")).closest("li");
+    expect(partialCard).not.toBeNull();
+    expect(within(partialCard!).getAllByText("Partial Signal").length).toBeGreaterThanOrEqual(1);
+    expect(within(partialCard!).getByText("Singles")).toBeInTheDocument();
+    expect(within(partialCard!).getAllByText("—")).toHaveLength(1);
   });
 
   it("ignores legacy confidence band URL state and fetches all proposals", async () => {

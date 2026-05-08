@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from pathlib import Path
 
 from sqlalchemy import (
     and_,
@@ -181,7 +180,6 @@ class SuggestedLinkStore:
 @dataclass(slots=True)
 class MatchingPipeline:
     database_url: str
-    beets_library: Path | str
     redis_url: str | None = None
     isrc_matcher: IsrcMatcher | None = None
     tag_matcher: TagMatcher | None = None
@@ -191,10 +189,7 @@ class MatchingPipeline:
         if self.isrc_matcher is None:
             self.isrc_matcher = IsrcMatcher(database_url=self.database_url)
         if self.tag_matcher is None:
-            self.tag_matcher = TagMatcher(
-                database_url=self.database_url,
-                beets_library=self.beets_library,
-            )
+            self.tag_matcher = TagMatcher(database_url=self.database_url)
         if self.suggestion_store is None:
             self.suggestion_store = SuggestedLinkStore(self.database_url)
 

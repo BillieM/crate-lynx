@@ -10,6 +10,7 @@ from sqlalchemy import and_, delete, insert, select, update
 from sqlalchemy.engine import Engine
 from sqlalchemy.sql.elements import ColumnElement
 
+from app.ingestion.beets_mirror import beets_items_table
 from app.links.models import ProposalListResponse, ProposalResponse
 from app.links.store import final_links_table
 from app.local_tracks.store import local_tracks_table
@@ -65,6 +66,9 @@ def create_router(
                 suggested_links_table.c.id,
                 suggested_links_table.c.local_track_id,
                 local_tracks_table.c.file_path.label("local_file_path"),
+                beets_items_table.c.title.label("local_title"),
+                beets_items_table.c.artist.label("local_artist"),
+                beets_items_table.c.album.label("local_album"),
                 suggested_links_table.c.streaming_track_id,
                 streaming_tracks_table.c.title.label("streaming_title"),
                 streaming_tracks_table.c.artist.label("streaming_artist"),
@@ -78,6 +82,10 @@ def create_router(
                 suggested_links_table.join(
                     local_tracks_table,
                     local_tracks_table.c.id == suggested_links_table.c.local_track_id,
+                )
+                .outerjoin(
+                    beets_items_table,
+                    beets_items_table.c.beets_id == local_tracks_table.c.beets_id,
                 )
                 .join(
                     streaming_tracks_table,
@@ -106,6 +114,9 @@ def create_router(
                     id=row["id"],
                     local_track_id=row["local_track_id"],
                     local_file_path=row["local_file_path"],
+                    local_title=row["local_title"],
+                    local_artist=row["local_artist"],
+                    local_album=row["local_album"],
                     streaming_track_id=row["streaming_track_id"],
                     streaming_title=row["streaming_title"],
                     streaming_artist=row["streaming_artist"],
