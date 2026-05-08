@@ -34,6 +34,17 @@ def test_app_metadata_matches_migrated_schema(
     assert diff == []
 
 
+def test_tag_matching_trigram_index_is_created(
+    migrated_database: tuple[str, Engine],
+) -> None:
+    _, engine = migrated_database
+
+    inspector = inspect(engine)
+    indexes = {index["name"] for index in inspector.get_indexes("streaming_tracks")}
+
+    assert "ix_streaming_tracks_title_trgm" in indexes
+
+
 def test_beets_mirror_migration_matches_beets_field_set(
     migrated_database: tuple[str, Engine],
 ) -> None:

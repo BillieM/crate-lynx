@@ -92,7 +92,7 @@ Each task is sized to fit comfortably in one Codex 5.5-xhigh context window.
 
 ---
 
-## - [ ] T4. Fix tag-matching N+1
+## - [x] T4. Fix tag-matching N+1
 
 **Why**: `app/app/matching/tags.py:69-117` loads every streaming track into Python and scores in-memory — `O(local × streaming)`. Fine on dev fixtures; cliff at scale.
 

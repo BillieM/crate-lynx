@@ -76,6 +76,12 @@ streaming_tracks_table = Table(
         name="uq_streaming_tracks_provider_track_id",
     ),
     Index("ix_streaming_tracks_isrc", "isrc"),
+    Index(
+        "ix_streaming_tracks_title_trgm",
+        "title",
+        postgresql_using="gin",
+        postgresql_ops={"title": "gin_trgm_ops"},
+    ),
 )
 
 playlist_membership_table = Table(

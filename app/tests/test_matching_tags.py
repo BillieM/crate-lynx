@@ -3,6 +3,7 @@ from pathlib import Path
 import pytest
 from sqlalchemy import create_engine
 
+import app.matching.tags as tags_module
 from app.ingestion.beets_mirror import metadata as beets_mirror_metadata
 from app.local_tracks.store import metadata as local_metadata
 from app.matching import ConfidenceBand, TagMatcher
@@ -55,6 +56,52 @@ def test_tag_matcher_returns_best_high_confidence_match(tmp_path: Path) -> None:
     assert result.match_method == "tags"
     assert result.score == pytest.approx(0.98)
     assert result.confidence_band is ConfidenceBand.HIGH
+
+
+def test_tag_matcher_prefilters_streaming_tracks_before_scoring(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    database_url, test_data = _setup_matcher_database(tmp_path)
+    local_track_id = test_data.local_track(beets_id=42)
+    test_data.beets_item(beets_id=42, title="Needle", artist="Artist", album=None)
+    for index in range(150):
+        test_data.streaming_track(
+            album=None,
+            artist="Artist",
+            duration_ms=180000,
+            isrc=None,
+            provider_track_id=f"filler-{index}",
+            title=f"Haystack {index}",
+            year=2024,
+        )
+    matching_streaming_id = test_data.streaming_track(
+        album=None,
+        artist="Artist",
+        duration_ms=180000,
+        isrc=None,
+        provider_track_id="needle",
+        title="Needle",
+        year=2024,
+    )
+    scored_titles: list[str] = []
+    score_tags = tags_module._score_tags
+
+    def spy_score_tags(**kwargs: object) -> float:
+        scored_titles.append(str(kwargs["streaming_title"]))
+        return score_tags(**kwargs)
+
+    monkeypatch.setattr(tags_module, "_score_tags", spy_score_tags)
+
+    candidates = TagMatcher(database_url=database_url).candidates(
+        local_track_id,
+        limit=1,
+    )
+
+    assert [candidate.streaming_track_id for candidate in candidates] == [
+        matching_streaming_id,
+    ]
+    assert scored_titles == ["needle"]
 
 
 def test_tag_matcher_returns_medium_confidence_when_score_hits_threshold(
