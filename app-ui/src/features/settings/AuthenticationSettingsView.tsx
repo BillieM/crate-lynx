@@ -129,16 +129,56 @@ function normalizeHeaderEntries(headerEntries: HeaderEntry[]): Record<string, st
   return headers;
 }
 
+function normalizeBrowserHeaderEntries(headerEntries: HeaderEntry[]): Record<string, string> {
+  const headers = normalizeHeaderEntries(headerEntries);
+  validateYoutubeMusicBrowserHeaders(headers);
+  return headers;
+}
+
+function validateYoutubeMusicBrowserHeaders(headers: Record<string, string>) {
+  const authorization = headers.authorization;
+
+  if (!authorization?.startsWith("SAPISIDHASH ")) {
+    throw new Error(
+      "Paste a logged-in YouTube Music cURL request with an authorization: SAPISIDHASH header.",
+    );
+  }
+
+  const cookie = headers.cookie;
+  if (!cookie) {
+    throw new Error("Paste a YouTube Music cURL request copied with cookies included.");
+  }
+
+  if (!/(?:^|;\s*)__Secure-3PAPISID=/.test(cookie)) {
+    throw new Error("Paste a logged-in YouTube Music cURL request; the cookie is missing __Secure-3PAPISID.");
+  }
+
+  if (!headers["x-goog-authuser"]) {
+    throw new Error("Paste a YouTube Music cURL request that includes x-goog-authuser.");
+  }
+
+  if (!headers.origin && !headers["x-origin"]) {
+    throw new Error("Paste a YouTube Music cURL request that includes origin or x-origin.");
+  }
+}
+
 function splitShellWords(command: string): string[] {
   const words: string[] = [];
   let current = "";
   let quote: "'" | '"' | null = null;
   let escaped = false;
+  const normalizedCommand = command.replace(/\\\r?\n/g, " ");
 
-  for (const character of command.replace(/\\\r?\n/g, " ")) {
+  for (let index = 0; index < normalizedCommand.length; index += 1) {
+    const character = normalizedCommand[index];
+
     if (escaped) {
       current += character;
       escaped = false;
+      continue;
+    }
+
+    if (character === "$" && quote === null && ["'", '"'].includes(normalizedCommand[index + 1] ?? "")) {
       continue;
     }
 
@@ -257,7 +297,7 @@ function parseBrowserHeaders(rawHeaders: string): Record<string, unknown> {
     const entries = parseJsonHeaderEntries(parsedHeaders);
 
     if (entries) {
-      return normalizeHeaderEntries(entries);
+      return normalizeBrowserHeaderEntries(entries);
     }
   }
 
@@ -267,7 +307,7 @@ function parseBrowserHeaders(rawHeaders: string): Record<string, unknown> {
   const headerLineEntries = curlEntries ?? parseHeaderLineEntries(trimmedHeaders);
 
   if (headerLineEntries) {
-    return normalizeHeaderEntries(headerLineEntries);
+    return normalizeBrowserHeaderEntries(headerLineEntries);
   }
 
   throw new Error("Paste a cURL request copied from DevTools.");

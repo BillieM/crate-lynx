@@ -79,8 +79,10 @@ describe("AuthenticationSettingsView", () => {
 
   it("submits no-account state with the expected POST body and clears the textarea", async () => {
     const browserHeaders = {
-      authorization: "Bearer fresh",
-      cookie: "SID=fresh",
+      authorization: "SAPISIDHASH fresh_hash",
+      cookie: "__Secure-3PAPISID=fresh; SID=fresh",
+      origin: "https://music.youtube.com",
+      "x-goog-authuser": "0",
     };
     const fetchMock = mockAccountFetch([]);
 
@@ -94,7 +96,12 @@ describe("AuthenticationSettingsView", () => {
 
     fireEvent.change(screen.getByLabelText("cURL request"), {
       target: {
-        value: "curl 'https://music.youtube.com/youtubei/v1/browse' -H 'Authorization: Bearer fresh' -H 'Cookie: SID=fresh'",
+        value:
+          "curl 'https://music.youtube.com/youtubei/v1/browse' " +
+          "-H 'Authorization: SAPISIDHASH fresh_hash' " +
+          "-H 'Cookie: __Secure-3PAPISID=fresh; SID=fresh' " +
+          "-H 'Origin: https://music.youtube.com' " +
+          "-H 'X-Goog-AuthUser: 0'",
       },
     });
     fireEvent.click(screen.getByRole("button", { name: "Connect" }));
@@ -120,8 +127,10 @@ describe("AuthenticationSettingsView", () => {
 
   it("submits existing-account state with the expected PATCH body", async () => {
     const browserHeaders = {
-      authorization: "Bearer refreshed",
-      cookie: "SID=refreshed",
+      authorization: "SAPISIDHASH refreshed_hash",
+      cookie: "__Secure-3PAPISID=refreshed; SID=refreshed",
+      "x-goog-authuser": "0",
+      "x-origin": "https://music.youtube.com",
     };
     const fetchMock = mockAccountFetch([connectedAccount]);
 
@@ -133,8 +142,10 @@ describe("AuthenticationSettingsView", () => {
       target: {
         value:
           "curl 'https://music.youtube.com/youtubei/v1/browse' " +
-          "-H 'Authorization: Bearer refreshed' " +
-          "-H 'Cookie: SID=refreshed'",
+          "-H 'Authorization: SAPISIDHASH refreshed_hash' " +
+          "-H 'Cookie: __Secure-3PAPISID=refreshed; SID=refreshed' " +
+          "-H 'X-Goog-AuthUser: 0' " +
+          "-H 'X-Origin: https://music.youtube.com'",
       },
     });
     fireEvent.click(screen.getByRole("button", { name: "Refresh authentication" }));
@@ -161,8 +172,9 @@ describe("AuthenticationSettingsView", () => {
         value:
           "curl 'https://music.youtube.com/youtubei/v1/browse?prettyPrint=false' " +
           "-H 'accept: */*' " +
-          "-H 'authorization: SAPISIDHASH fresh_hash' " +
+          "-H $'authorization: SAPISIDHASH fresh_hash' " +
           "-H 'origin: https://music.youtube.com' " +
+          "-H $'x-goog-authuser: 0' " +
           "-b '__Secure-3PAPISID=fresh; SID=fresh' " +
           "--data-raw '{\"context\":{}}'",
       },
@@ -176,6 +188,7 @@ describe("AuthenticationSettingsView", () => {
             accept: "*/*",
             authorization: "SAPISIDHASH fresh_hash",
             origin: "https://music.youtube.com",
+            "x-goog-authuser": "0",
             cookie: "__Secure-3PAPISID=fresh; SID=fresh",
           },
         }),
@@ -201,6 +214,8 @@ describe("AuthenticationSettingsView", () => {
           ":authority: music.youtube.com",
           "authorization: SAPISIDHASH copied_hash",
           "cookie: __Secure-3PAPISID=copied; SID=copied",
+          "x-goog-authuser: 0",
+          "x-origin: https://music.youtube.com",
           "x-youtube-client-name: 67",
         ].join("\n"),
       },
@@ -213,6 +228,8 @@ describe("AuthenticationSettingsView", () => {
           browser_headers: {
             authorization: "SAPISIDHASH copied_hash",
             cookie: "__Secure-3PAPISID=copied; SID=copied",
+            "x-goog-authuser": "0",
+            "x-origin": "https://music.youtube.com",
             "x-youtube-client-name": "67",
           },
         }),
@@ -239,6 +256,28 @@ describe("AuthenticationSettingsView", () => {
     expect(await screen.findByText("Authentication needs attention")).toBeInTheDocument();
     expect(screen.getByText(/expired browser headers/)).toBeInTheDocument();
     expect(screen.getByText(/2026-05-02 10:30:00\+00:00/)).toBeInTheDocument();
+  });
+
+  it("rejects copied cURL requests that omit cookies before saving", async () => {
+    const fetchMock = mockAccountFetch([connectedAccount]);
+
+    renderWithProviders(<AuthenticationSettingsView />);
+
+    expect(await screen.findByText("Saved, not verified")).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("cURL request"), {
+      target: {
+        value:
+          "curl 'https://music.youtube.com/youtubei/v1/browse' " +
+          "-H 'Authorization: SAPISIDHASH copied_hash' " +
+          "-H 'X-Goog-AuthUser: 0' " +
+          "-H 'X-Origin: https://music.youtube.com'",
+      },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Refresh authentication" }));
+
+    expect(await screen.findByText("Authentication not saved")).toBeInTheDocument();
+    expect(screen.getByText("Paste a YouTube Music cURL request copied with cookies included.")).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it("does not render stored browser headers or auth blobs from the account response", async () => {

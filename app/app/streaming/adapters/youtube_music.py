@@ -3,6 +3,8 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from collections.abc import Mapping
+from http.cookies import SimpleCookie
 from typing import Any
 
 from ytmusicapi import YTMusic
@@ -20,6 +22,10 @@ class MalformedPlaylistPayloadError(RuntimeError):
 
 class YouTubeMusicAuthenticationError(RuntimeError):
     """Raised when YouTube Music indicates the browser session is logged out."""
+
+
+class YouTubeMusicAuthValidationError(ValueError):
+    """Raised when copied YouTube Music browser auth headers are incomplete."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -46,6 +52,50 @@ class YouTubeMusicTrackMetadata:
     album: str | None
     year: int | None
     album_art_url: str | None
+
+
+def validate_youtube_music_browser_auth(auth: Mapping[str, object]) -> None:
+    headers = {
+        name.lower(): value for name, value in auth.items() if isinstance(name, str)
+    }
+
+    authorization = _required_header(headers, "authorization")
+    if not authorization.startswith("SAPISIDHASH "):
+        raise YouTubeMusicAuthValidationError(
+            "YouTube Music browser auth must include authorization: SAPISIDHASH from a logged-in music.youtube.com request."
+        )
+
+    cookie = _required_header(headers, "cookie")
+    parsed_cookie = SimpleCookie()
+    parsed_cookie.load(cookie.replace('"', ""))
+    if "__Secure-3PAPISID" not in parsed_cookie:
+        raise YouTubeMusicAuthValidationError(
+            "YouTube Music browser auth cookie is missing __Secure-3PAPISID. Copy a logged-in music.youtube.com/youtubei request with cookies included."
+        )
+
+    _required_header(headers, "x-goog-authuser")
+    if not _optional_header(headers, "origin") and not _optional_header(
+        headers, "x-origin"
+    ):
+        raise YouTubeMusicAuthValidationError(
+            "YouTube Music browser auth must include origin or x-origin from the copied request."
+        )
+
+
+def _required_header(headers: Mapping[str, object], name: str) -> str:
+    value = _optional_header(headers, name)
+    if value is None:
+        raise YouTubeMusicAuthValidationError(
+            f"YouTube Music browser auth is missing the {name} header."
+        )
+    return value
+
+
+def _optional_header(headers: Mapping[str, object], name: str) -> str | None:
+    value = headers.get(name)
+    if not isinstance(value, str) or not value.strip():
+        return None
+    return value.strip()
 
 
 class YouTubeMusicAdapter(StreamingAdapter):

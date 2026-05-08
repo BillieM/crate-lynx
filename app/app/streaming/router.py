@@ -24,6 +24,10 @@ from app.streaming.schemas import (
     UpdateStreamingAccountAuthRequest,
     UpdateStreamingPlaylistRequest,
 )
+from app.streaming.adapters.youtube_music import (
+    YouTubeMusicAuthValidationError,
+    validate_youtube_music_browser_auth,
+)
 from app.streaming.store import StreamingAccountStore
 
 
@@ -120,6 +124,12 @@ def create_router(
                 ),
             )
         )
+
+    def validate_browser_headers(browser_headers: dict[str, object]) -> None:
+        try:
+            validate_youtube_music_browser_auth(browser_headers)
+        except YouTubeMusicAuthValidationError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     @router.get("/streaming/accounts", response_model=StreamingAccountsResponse)
     def list_streaming_accounts(
@@ -253,6 +263,7 @@ def create_router(
         payload: CreateStreamingAccountRequest,
         engine: Engine = Depends(get_engine),
     ) -> StreamingAccountResponse:
+        validate_browser_headers(payload.browser_headers)
         store = _store(engine)
         account = store.create_youtube_music_account(
             display_name=payload.display_name,
@@ -275,7 +286,12 @@ def create_router(
         payload: UpdateStreamingAccountAuthRequest,
         engine: Engine = Depends(get_engine),
     ) -> StreamingAccountResponse:
-        account = _store(engine).update_youtube_music_account_auth(
+        store = _store(engine)
+        if not any(account.id == account_id for account in store.list_accounts()):
+            raise HTTPException(status_code=404, detail="Streaming account not found")
+
+        validate_browser_headers(payload.browser_headers)
+        account = store.update_youtube_music_account_auth(
             account_id=account_id,
             browser_headers=payload.browser_headers,
         )

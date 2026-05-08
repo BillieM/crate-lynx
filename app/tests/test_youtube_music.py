@@ -7,6 +7,7 @@ import pytest
 
 from app.streaming.adapters.youtube_music import (
     MalformedPlaylistPayloadError,
+    YouTubeMusicAuthValidationError,
     YouTubeMusicAuthenticationError,
     YouTubeMusicAdapter,
     YouTubeMusicPlaylist,
@@ -14,6 +15,7 @@ from app.streaming.adapters.youtube_music import (
     YouTubeMusicTrack,
     sync_library_playlists,
     sync_library_playlist_tracks,
+    validate_youtube_music_browser_auth,
 )
 
 
@@ -90,6 +92,32 @@ def test_from_browser_auth_accepts_raw_header_mapping(monkeypatch) -> None:
         "language": "en",
         "location": "US",
     }
+
+
+def test_validate_youtube_music_browser_auth_accepts_copied_browser_headers() -> None:
+    validate_youtube_music_browser_auth(
+        {
+            "Authorization": "SAPISIDHASH fresh_hash",
+            "Cookie": "__Secure-3PAPISID=fresh; SID=fresh",
+            "X-Goog-AuthUser": "0",
+            "X-Origin": "https://music.youtube.com",
+        }
+    )
+
+
+def test_validate_youtube_music_browser_auth_rejects_missing_secure_cookie() -> None:
+    with pytest.raises(
+        YouTubeMusicAuthValidationError,
+        match="cookie is missing __Secure-3PAPISID",
+    ):
+        validate_youtube_music_browser_auth(
+            {
+                "Authorization": "SAPISIDHASH fresh_hash",
+                "Cookie": "SID=fresh",
+                "X-Goog-AuthUser": "0",
+                "X-Origin": "https://music.youtube.com",
+            }
+        )
 
 
 def test_adapter_methods_delegate_to_wrapped_client() -> None:

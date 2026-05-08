@@ -600,7 +600,9 @@ def test_streaming_accounts_endpoint_creates_youtube_music_account(
     payload = CreateStreamingAccountRequest(
         display_name="Billie",
         browser_headers={
-            "Authorization": "Bearer token",
+            "Authorization": "SAPISIDHASH token",
+            "Cookie": "__Secure-3PAPISID=cookie-value; SID=session",
+            "Origin": "https://music.youtube.com",
             "X-Goog-AuthUser": "0",
         },
     )
@@ -618,9 +620,49 @@ def test_streaming_accounts_endpoint_creates_youtube_music_account(
 
     stored_account = StreamingAccountStore(database_url).get_account(response.id)
     assert stored_account.browser_headers == {
-        "Authorization": "Bearer token",
+        "Authorization": "SAPISIDHASH token",
+        "Cookie": "__Secure-3PAPISID=cookie-value; SID=session",
+        "Origin": "https://music.youtube.com",
         "X-Goog-AuthUser": "0",
     }
+
+
+def test_streaming_accounts_endpoint_rejects_incomplete_youtube_music_auth(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite:///{tmp_path / 'streaming-create-invalid-auth.db'}"
+    engine = create_engine(database_url)
+    metadata.create_all(engine)
+    monkeypatch.setenv("DATABASE_URL", database_url)
+    monkeypatch.setenv("TOKEN_ENCRYPTION_KEY", Fernet.generate_key().decode("utf-8"))
+
+    app = create_app()
+    route = next(
+        route
+        for route in app.routes
+        if getattr(route, "path", None) == "/api/streaming/accounts"
+        and "POST" in getattr(route, "methods", set())
+    )
+    payload = CreateStreamingAccountRequest(
+        display_name="Billie",
+        browser_headers={
+            "Authorization": "SAPISIDHASH token",
+            "X-Goog-AuthUser": "0",
+            "X-Origin": "https://music.youtube.com",
+        },
+    )
+
+    try:
+        _call_endpoint(route.endpoint, payload)
+    except StarletteHTTPException as exc:
+        assert exc.status_code == 400
+        assert exc.detail == "YouTube Music browser auth is missing the cookie header."
+    else:
+        raise AssertionError("Expected streaming account create to reject invalid auth")
+
+    with engine.connect() as connection:
+        assert list(connection.execute(select(streaming_accounts_table))) == []
 
 
 def test_streaming_accounts_auth_endpoint_updates_youtube_music_account(
@@ -652,7 +694,9 @@ def test_streaming_accounts_auth_endpoint_updates_youtube_music_account(
     )
     payload = UpdateStreamingAccountAuthRequest(
         browser_headers={
-            "Authorization": "Bearer sentinel-secret-token",
+            "Authorization": "SAPISIDHASH sentinel-secret-token",
+            "Cookie": "__Secure-3PAPISID=fresh-cookie; SID=fresh-session",
+            "Origin": "https://music.youtube.com",
             "X-Goog-AuthUser": "0",
         },
     )
@@ -673,9 +717,71 @@ def test_streaming_accounts_auth_endpoint_updates_youtube_music_account(
     assert "browser_headers" not in response_payload
     assert "sentinel-secret-token" not in str(response_payload)
     assert store.get_account(account.id).browser_headers == {
-        "Authorization": "Bearer sentinel-secret-token",
+        "Authorization": "SAPISIDHASH sentinel-secret-token",
+        "Cookie": "__Secure-3PAPISID=fresh-cookie; SID=fresh-session",
+        "Origin": "https://music.youtube.com",
         "X-Goog-AuthUser": "0",
     }
+
+
+def test_streaming_accounts_auth_endpoint_rejects_invalid_auth_without_overwriting(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite:///{tmp_path / 'streaming-auth-patch-invalid.db'}"
+    engine = create_engine(database_url)
+    metadata.create_all(engine)
+    monkeypatch.setenv("DATABASE_URL", database_url)
+    monkeypatch.setenv("TOKEN_ENCRYPTION_KEY", Fernet.generate_key().decode("utf-8"))
+
+    store = StreamingAccountStore(database_url)
+    original_headers = {
+        "Authorization": "SAPISIDHASH old-token",
+        "Cookie": "__Secure-3PAPISID=old-cookie; SID=old-session",
+        "X-Goog-AuthUser": "0",
+        "X-Origin": "https://music.youtube.com",
+    }
+    account = store.create_youtube_music_account(
+        display_name="Billie",
+        browser_headers=original_headers,
+    )
+    store.mark_account_auth_error(
+        account_id=account.id,
+        error=ValueError("expired browser headers"),
+    )
+
+    app = create_app()
+    route = next(
+        route
+        for route in app.routes
+        if getattr(route, "path", None) == "/api/streaming/accounts/{account_id}/auth"
+        and "PATCH" in getattr(route, "methods", set())
+    )
+    payload = UpdateStreamingAccountAuthRequest(
+        browser_headers={
+            "Authorization": "SAPISIDHASH token-without-cookie",
+            "X-Goog-AuthUser": "0",
+            "X-Origin": "https://music.youtube.com",
+        },
+    )
+
+    try:
+        _call_endpoint(route.endpoint, account.id, payload)
+    except StarletteHTTPException as exc:
+        assert exc.status_code == 400
+        assert exc.detail == "YouTube Music browser auth is missing the cookie header."
+    else:
+        raise AssertionError(
+            "Expected streaming account auth refresh to reject invalid auth"
+        )
+
+    persisted = store.list_accounts()[0]
+    assert persisted.auth_state == "error"
+    assert (
+        persisted.auth_error
+        == "YouTube Music authentication failed: expired browser headers"
+    )
+    assert store.get_account(account.id).browser_headers == original_headers
 
 
 def test_streaming_accounts_auth_endpoint_missing_account_returns_404(
