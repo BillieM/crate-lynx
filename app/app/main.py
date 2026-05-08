@@ -19,6 +19,7 @@ from app.matching.router import create_router as create_matching_router
 from app.rescue.router import create_router as create_rescue_router
 from app.settings.router import create_router as create_settings_router
 from app.settings.store import GeneralSettingsStore
+from app.streaming import crypto
 from app.streaming.router import create_router as create_streaming_router
 from app.system.router import router as system_router
 
@@ -37,6 +38,8 @@ def create_app() -> FastAPI:
         library_root = Path(os.environ.get("LIBRARY_ROOT", "/music"))
         database_url = os.environ.get("DATABASE_URL")
         redis_url = os.environ.get("REDIS_URL")
+        if database_url or os.environ.get("TOKEN_ENCRYPTION_KEY"):
+            crypto.validate_token_encryption_key()
         database_engine = create_engine(database_url) if database_url else None
         app.state.database_engine = database_engine
         ingest_roots = _resolve_ingest_roots(database_url)

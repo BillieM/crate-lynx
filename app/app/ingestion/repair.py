@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import logging
 import os
 from pathlib import Path
 import sqlite3
@@ -10,11 +11,14 @@ from sqlalchemy import create_engine, delete, select, update
 from app.ingestion.beets_mirror_backfill import backfill_beets_mirror
 from app.ingestion.beets_mirror_sync import decode_beets_path
 from app.ingestion.failures import failed_ingestion_attempts_table
-from app.ingestion.pipeline import FingerprintGenerator
+from app.ingestion.pipeline import FingerprintGenerator, IngestionCommandError
 from app.links.store import final_links_table
 from app.local_tracks.store import local_tracks_table
 from app.matching.jobs import MatchingJobEnqueuer
 from app.matching.pipeline import suggested_links_table
+
+
+logger = logging.getLogger(__name__)
 
 
 def main() -> None:
@@ -257,7 +261,8 @@ def _iter_current_beets_items(
 def _fingerprint_or_none(library_path: Path) -> str | None:
     try:
         return FingerprintGenerator().generate(library_path)
-    except Exception:
+    except (FileNotFoundError, IngestionCommandError, ValueError):
+        logger.exception("Failed to fingerprint library_path=%s", library_path)
         return None
 
 

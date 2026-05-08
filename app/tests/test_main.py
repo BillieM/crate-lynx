@@ -5,6 +5,7 @@ import inspect
 from datetime import UTC, datetime
 from pathlib import Path
 
+import pytest
 from cryptography.fernet import Fernet
 from app.ingestion.failures import (
     failed_ingestion_attempts_table,
@@ -25,6 +26,7 @@ from app.matching.pipeline import (
 from app.settings.models import metadata as settings_metadata
 from app.settings.schemas import CreateIngestFolderRequest
 from app.settings.store import GeneralSettingsStore
+from app.streaming.crypto import TokenEncryptionKeyError
 from app.streaming.schemas import (
     CreateStreamingAccountRequest,
     UpdateStreamingAccountAuthRequest,
@@ -109,6 +111,7 @@ def test_startup_seeds_persisted_ingest_folders_and_watches_them(
     engine = create_engine(database_url)
     settings_metadata.create_all(engine)
     monkeypatch.setenv("DATABASE_URL", database_url)
+    monkeypatch.setenv("TOKEN_ENCRYPTION_KEY", Fernet.generate_key().decode("utf-8"))
     monkeypatch.setattr("app.main.IngestionWatcher", StubIngestionWatcher)
     StubIngestionWatcher.instances = []
     app = create_app()
@@ -147,6 +150,65 @@ def test_startup_falls_back_to_env_ingestion_root_without_database_url(
     asyncio.run(run_lifespan())
 
 
+def test_startup_allows_missing_token_encryption_key_without_database_url(
+    monkeypatch,
+) -> None:
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.delenv("TOKEN_ENCRYPTION_KEY", raising=False)
+    monkeypatch.setenv("INGESTION_ROOT", "/tmp/local-ingestion")
+    monkeypatch.setattr("app.main.IngestionWatcher", StubIngestionWatcher)
+    StubIngestionWatcher.instances = []
+    app = create_app()
+
+    async def run_lifespan() -> None:
+        async with app.router.lifespan_context(app):
+            watcher = StubIngestionWatcher.instances[-1]
+            assert watcher.started is True
+
+    asyncio.run(run_lifespan())
+
+
+def test_startup_requires_token_encryption_key_with_database_url(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite:///{tmp_path / 'settings.db'}"
+    engine = create_engine(database_url)
+    settings_metadata.create_all(engine)
+    monkeypatch.setenv("DATABASE_URL", database_url)
+    monkeypatch.delenv("TOKEN_ENCRYPTION_KEY", raising=False)
+    app = create_app()
+
+    async def run_lifespan() -> None:
+        async with app.router.lifespan_context(app):
+            raise AssertionError("startup should fail before yielding")
+
+    with pytest.raises(
+        TokenEncryptionKeyError,
+        match="TOKEN_ENCRYPTION_KEY is required",
+    ):
+        asyncio.run(run_lifespan())
+
+
+def test_startup_rejects_malformed_token_encryption_key(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite:///{tmp_path / 'settings.db'}"
+    engine = create_engine(database_url)
+    settings_metadata.create_all(engine)
+    monkeypatch.setenv("DATABASE_URL", database_url)
+    monkeypatch.setenv("TOKEN_ENCRYPTION_KEY", "not-a-fernet-key")
+    app = create_app()
+
+    async def run_lifespan() -> None:
+        async with app.router.lifespan_context(app):
+            raise AssertionError("startup should fail before yielding")
+
+    with pytest.raises(TokenEncryptionKeyError, match="valid Fernet key"):
+        asyncio.run(run_lifespan())
+
+
 def test_startup_defaults_beets_imports_to_music_and_data(
     monkeypatch,
     tmp_path: Path,
@@ -171,6 +233,7 @@ def test_startup_defaults_beets_imports_to_music_and_data(
             raise AssertionError(f"unexpected process call for {path}")
 
     monkeypatch.setenv("DATABASE_URL", database_url)
+    monkeypatch.setenv("TOKEN_ENCRYPTION_KEY", Fernet.generate_key().decode("utf-8"))
     monkeypatch.delenv("LIBRARY_ROOT", raising=False)
     monkeypatch.delenv("BEETS_LIBRARY", raising=False)
     monkeypatch.setattr("app.main.BeetsImporter", StubBeetsImporter)
@@ -199,6 +262,7 @@ def test_settings_ingest_folder_mutations_synchronize_active_watcher(
     engine = create_engine(database_url)
     settings_metadata.create_all(engine)
     monkeypatch.setenv("DATABASE_URL", database_url)
+    monkeypatch.setenv("TOKEN_ENCRYPTION_KEY", Fernet.generate_key().decode("utf-8"))
     monkeypatch.setattr("app.main.IngestionWatcher", StubIngestionWatcher)
     StubIngestionWatcher.instances = []
     app = create_app()

@@ -26,6 +26,7 @@ def migrated_database(
     monkeypatch.setenv("DATABASE_URL", database_url)
 
     alembic_config = Config(str(PROJECT_ROOT / "db" / "alembic.ini"))
+    alembic_config.set_main_option("script_location", str(PROJECT_ROOT / "db"))
     command.upgrade(alembic_config, "head")
 
     engine = create_engine(database_url)

@@ -1,5 +1,6 @@
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
+import logging
 import sqlite3
 import subprocess
 import time
@@ -24,6 +25,7 @@ from app.ingestion.pipeline import (
     BeetsImporter,
     FingerprintGenerator,
     ImportedTrack,
+    IngestionCommandError,
     PreparedTrack,
     UnsupportedAudioFormatError,
 )
@@ -906,6 +908,25 @@ def test_fingerprint_generator_includes_subprocess_output_in_failure(
         raise AssertionError("Expected RuntimeError")
 
 
+def test_repair_logs_fingerprint_failures(tmp_path: Path, monkeypatch, caplog) -> None:
+    library_path = tmp_path / "library" / "track.mp3"
+
+    def fake_generate(_self: FingerprintGenerator, _audio_path: Path) -> str:
+        raise IngestionCommandError("fpcalc failed")
+
+    monkeypatch.setattr(
+        "app.ingestion.repair.FingerprintGenerator.generate",
+        fake_generate,
+    )
+
+    with caplog.at_level(logging.ERROR, logger="app.ingestion.repair"):
+        fingerprint = ingestion_repair._fingerprint_or_none(library_path)
+
+    assert fingerprint is None
+    assert f"Failed to fingerprint library_path={library_path}" in caplog.text
+    assert any(record.exc_info is not None for record in caplog.records)
+
+
 def test_ingestion_processor_prepares_imports_and_deletes_source(
     tmp_path: Path,
 ) -> None:
@@ -1192,6 +1213,7 @@ def test_ingestion_processor_enqueues_matching_job_after_persisting(
 
 def test_ingestion_processor_persists_failed_attempt_with_fingerprint(
     tmp_path: Path,
+    caplog,
 ) -> None:
     source = tmp_path / "ingestion" / "unknown.mp3"
     source.parent.mkdir()
@@ -1204,7 +1226,9 @@ def test_ingestion_processor_persists_failed_attempt_with_fingerprint(
     preparer = Mock(spec=AudioPreparer)
     preparer.prepare.return_value = prepared
     importer = Mock(spec=BeetsImporter)
-    importer.import_file.side_effect = RuntimeError("Beets could not identify metadata")
+    importer.import_file.side_effect = IngestionCommandError(
+        "Beets could not identify metadata"
+    )
     fingerprint_generator = Mock(spec=FingerprintGenerator)
     fingerprint_generator.generate.return_value = "fp_failed"
 
@@ -1212,18 +1236,20 @@ def test_ingestion_processor_persists_failed_attempt_with_fingerprint(
     engine = create_engine(database_url)
     failed_ingestion_attempts_metadata.create_all(engine)
 
-    try:
-        IngestionProcessor(
-            staging_root=tmp_path / "staging",
-            audio_preparer=preparer,
-            beets_importer=importer,
-            fingerprint_generator=fingerprint_generator,
-            failed_attempt_store=FailedIngestionAttemptStore(database_url),
-        ).process(source)
-    except RuntimeError:
-        pass
-    else:
-        raise AssertionError("Expected failed Beets import")
+    processor = IngestionProcessor(
+        staging_root=tmp_path / "staging",
+        audio_preparer=preparer,
+        beets_importer=importer,
+        fingerprint_generator=fingerprint_generator,
+        failed_attempt_store=FailedIngestionAttemptStore(database_url),
+    )
+    with caplog.at_level(logging.ERROR, logger="app.ingestion.pipeline"):
+        try:
+            processor.process(source)
+        except IngestionCommandError:
+            pass
+        else:
+            raise AssertionError("Expected failed Beets import")
 
     with engine.connect() as connection:
         row = (
@@ -1235,6 +1261,8 @@ def test_ingestion_processor_persists_failed_attempt_with_fingerprint(
     assert row["fingerprint"] == "fp_failed"
     assert row["failure_reason"] == "Beets could not identify metadata"
     assert row["local_track_id"] is None
+    assert "Failed to ingest source_path=" in caplog.text
+    assert any(record.exc_info is not None for record in caplog.records)
 
 
 def test_ingestion_processor_clears_prior_failure_after_success(
@@ -1304,7 +1332,9 @@ def test_ingestion_processor_deletes_prepared_file_after_failure(
     preparer = Mock(spec=AudioPreparer)
     preparer.prepare.return_value = prepared
     importer = Mock(spec=BeetsImporter)
-    importer.import_file.side_effect = RuntimeError("Beets could not identify metadata")
+    importer.import_file.side_effect = IngestionCommandError(
+        "Beets could not identify metadata"
+    )
     fingerprint_generator = Mock(spec=FingerprintGenerator)
     fingerprint_generator.generate.return_value = "fp_failed"
 

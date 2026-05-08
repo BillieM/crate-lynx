@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 import json
+import logging
 from pathlib import Path
 import shutil
 import sqlite3
@@ -23,11 +24,17 @@ from app.ingestion.beets_mirror_sync import (
 from app.ingestion.failures import FailedIngestionAttemptStore
 
 
+logger = logging.getLogger(__name__)
+
 SUPPORTED_AUDIO_EXTENSIONS = {".mp3", ".flac", ".wav", ".aiff", ".aif"}
 LOSSLESS_AUDIO_EXTENSIONS = {".flac", ".wav", ".aiff", ".aif"}
 
 
 class UnsupportedAudioFormatError(ValueError):
+    pass
+
+
+class IngestionCommandError(RuntimeError):
     pass
 
 
@@ -232,7 +239,14 @@ class IngestionProcessor:
                 self.failed_attempt_store.clear_for_source_path(prepared.source_path)
             self._cleanup_source(prepared.source_path)
             return prepared
-        except Exception as exc:
+        except (
+            FileNotFoundError,
+            IngestionCommandError,
+            sqlite3.Error,
+            UnsupportedAudioFormatError,
+            ValueError,
+        ) as exc:
+            logger.exception("Failed to ingest source_path=%s", source_path)
             if prepared is not None:
                 self._cleanup_prepared(prepared.prepared_path)
             if self.failed_attempt_store is not None:
@@ -297,7 +311,7 @@ def _run_checked(
         )
     except subprocess.CalledProcessError as exc:
         detail = _format_process_output(exc)
-        raise RuntimeError(
+        raise IngestionCommandError(
             f"{operation} failed with exit status {exc.returncode}: {detail}"
         ) from exc
 
