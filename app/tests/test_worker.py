@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import logging
 from types import SimpleNamespace
 
 from app.core.worker import build_worker, main, resolve_queue_names
+from app.matching.jobs import run_matching_pipeline
 
 
 def test_resolve_queue_names_uses_default_when_unset(monkeypatch) -> None:
@@ -68,3 +70,40 @@ def test_main_starts_worker(monkeypatch) -> None:
     main()
 
     assert seen["worked"] is True
+
+
+def test_run_matching_pipeline_logs_job_context(monkeypatch, caplog) -> None:
+    class FakePipeline:
+        def __init__(self, *, database_url: str, redis_url: str | None, log) -> None:
+            self.log = log
+            assert database_url == "sqlite:///app.db"
+            assert redis_url == "redis://redis:6379/0"
+
+        def run(self, local_track_id: int) -> None:
+            self.log.info("downstream matching log")
+            assert local_track_id == 42
+            return None
+
+    monkeypatch.setenv("DATABASE_URL", "sqlite:///app.db")
+    monkeypatch.setenv("REDIS_URL", "redis://redis:6379/0")
+    monkeypatch.setattr("app.matching.jobs.MatchingPipeline", FakePipeline)
+    monkeypatch.setattr(
+        "app.matching.jobs.get_current_job",
+        lambda: SimpleNamespace(id="job-123"),
+    )
+
+    with caplog.at_level(logging.INFO, logger="app.matching.jobs"):
+        assert run_matching_pipeline(42) is None
+
+    matching_records = [
+        record for record in caplog.records if record.name == "app.matching.jobs"
+    ]
+    assert len(matching_records) == 3
+    assert all(record.job_id == "job-123" for record in matching_records)
+    assert all(record.local_track_id == 42 for record in matching_records)
+    assert [record.getMessage() for record in matching_records] == [
+        "job_id=job-123 local_track_id=42 starting matching pipeline",
+        "job_id=job-123 local_track_id=42 downstream matching log",
+        "job_id=job-123 local_track_id=42 "
+        "matching pipeline completed without suggestion",
+    ]

@@ -1,3 +1,4 @@
+import logging
 from pathlib import Path
 import sqlite3
 from typing import Any
@@ -20,7 +21,7 @@ from app.local_tracks.store import local_tracks_table, metadata as local_tracks_
 def test_beets_mirror_backfill_command_defaults_to_dry_run(
     tmp_path: Path,
     monkeypatch,
-    capsys,
+    caplog,
 ) -> None:
     beets_library = tmp_path / "library.db"
     database_path = tmp_path / "app.db"
@@ -32,9 +33,17 @@ def test_beets_mirror_backfill_command_defaults_to_dry_run(
     monkeypatch.setenv("DATABASE_URL", f"sqlite:///{database_path}")
     monkeypatch.setenv("BEETS_LIBRARY", str(beets_library))
 
-    beets_mirror_backfill.main([])
+    with caplog.at_level(
+        logging.INFO,
+        logger="app.ingestion.beets_mirror_backfill",
+    ):
+        beets_mirror_backfill.main([])
 
-    assert capsys.readouterr().out.splitlines() == [
+    assert [
+        record.getMessage()
+        for record in caplog.records
+        if record.name == "app.ingestion.beets_mirror_backfill"
+    ] == [
         "DRY-RUN: 1 action(s)",
         "- inserted beets_mirror item beets_id=1",
     ]

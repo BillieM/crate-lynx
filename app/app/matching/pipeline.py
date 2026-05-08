@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import logging
 
 from sqlalchemy import (
     and_,
@@ -26,6 +27,8 @@ from app.matching.isrc import IsrcMatcher
 from app.matching.models import MatchResult
 from app.matching.tags import TagMatcher
 
+
+logger = logging.getLogger(__name__)
 
 TAG_SHORTLIST_LIMIT = 3
 TAG_PLAUSIBLE_SCORE_THRESHOLD = 0.5
@@ -186,6 +189,7 @@ class MatchingPipeline:
     isrc_matcher: IsrcMatcher | None = None
     tag_matcher: TagMatcher | None = None
     suggestion_store: SuggestedLinkStore | None = None
+    log: logging.Logger | logging.LoggerAdapter = logger
 
     def __post_init__(self) -> None:
         engine = self.engine
@@ -204,11 +208,22 @@ class MatchingPipeline:
             )
 
     def run(self, local_track_id: int) -> MatchResult | None:
+        self.log.info("running ISRC matcher")
         result = self.isrc_matcher.match(local_track_id)
         if result is not None:
             if self.suggestion_store.persist(result):
+                self.log.info(
+                    "persisted ISRC suggestion streaming_track_id=%s score=%.3f",
+                    result.streaming_track_id,
+                    result.score,
+                )
                 return result
+            self.log.info(
+                "skipped rejected ISRC suggestion streaming_track_id=%s",
+                result.streaming_track_id,
+            )
 
+        self.log.info("running tag matcher")
         rejected_streaming_track_ids = (
             self.suggestion_store.rejected_streaming_track_ids(local_track_id)
         )
@@ -218,11 +233,22 @@ class MatchingPipeline:
             limit=TAG_SHORTLIST_LIMIT,
         )
         if not candidates:
+            self.log.info("tag matcher returned no candidates")
             return None
 
         persisted = self.suggestion_store.persist_many(
             _persistable_tag_candidates(candidates)
         )
+        if persisted:
+            self.log.info(
+                "persisted tag suggestions count=%s top_streaming_track_id=%s "
+                "top_score=%.3f",
+                len(persisted),
+                persisted[0].streaming_track_id,
+                persisted[0].score,
+            )
+        else:
+            self.log.info("tag candidates were skipped after rejection filtering")
         return persisted[0] if persisted else None
 
 

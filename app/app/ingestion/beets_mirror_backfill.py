@@ -3,9 +3,11 @@ from __future__ import annotations
 import argparse
 from collections.abc import Iterable, Iterator, Sequence
 from itertools import islice
+import logging
 import os
 from pathlib import Path
 import sqlite3
+import sys
 from typing import TypeVar
 
 from sqlalchemy import select
@@ -23,9 +25,11 @@ from app.local_tracks.store import local_tracks_table
 
 BEETS_MIRROR_BACKFILL_CHUNK_SIZE = 500
 T = TypeVar("T")
+logger = logging.getLogger(__name__)
 
 
 def main(argv: Sequence[str] | None = None) -> None:
+    _configure_cli_logging()
     args = _parse_args(argv)
     database_url = os.environ["DATABASE_URL"]
     beets_library = Path(os.environ["BEETS_LIBRARY"])
@@ -38,7 +42,7 @@ def main(argv: Sequence[str] | None = None) -> None:
             apply=args.apply,
         )
 
-    _print_actions(actions, apply=args.apply)
+    _log_actions(actions, apply=args.apply)
 
 
 def backfill_beets_mirror(
@@ -138,15 +142,23 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-def _print_actions(actions: list[str], *, apply: bool) -> None:
+def _configure_cli_logging() -> None:
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(levelname)s:%(name)s:%(message)s",
+        stream=sys.stdout,
+    )
+
+
+def _log_actions(actions: list[str], *, apply: bool) -> None:
     if not actions:
-        print("No Beets mirror backfill actions needed.")
+        logger.info("No Beets mirror backfill actions needed.")
         return
 
     mode = "APPLY" if apply else "DRY-RUN"
-    print(f"{mode}: {len(actions)} action(s)")
+    logger.info("%s: %s action(s)", mode, len(actions))
     for action in actions:
-        print(f"- {action}")
+        logger.info("- %s", action)
 
 
 def _mirror_status(entity_id: int, existing_ids: set[int]) -> str:

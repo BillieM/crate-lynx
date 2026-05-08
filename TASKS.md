@@ -269,7 +269,7 @@ Each task is sized to fit comfortably in one Codex 5.5-xhigh context window.
 
 ---
 
-## - [ ] T15. Logging standardization
+## - [x] T15. Logging standardization
 
 **Why**: Two adjacent gaps:
 - `app/app/matching/jobs.py:run_matching_pipeline` doesn't include `job_id` or `local_track_id` in log records, so worker output can't be correlated with an enqueue.
