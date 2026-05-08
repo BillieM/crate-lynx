@@ -1,5 +1,6 @@
-import { useMemo, type CSSProperties, type ReactNode } from "react";
+import { useMemo, type ReactNode } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { CheckCircle2, XCircle } from "lucide-react";
 import { ActionButton } from "../../components/ActionButton";
 import { EmptyStateCard } from "../../components/EmptyStateCard";
 import { Pill, type PillTone } from "../../components/Pill";
@@ -13,10 +14,6 @@ import {
   useLinkProposalsQuery,
 } from "../playlists/queries";
 
-type LinkProposalGroup = {
-  candidates: LinkProposal[];
-  localTrackId: number;
-};
 type OptimisticProposalMutationContext = {
   previousProposalQueries: [readonly unknown[], LinkProposalsResponse | undefined][];
 };
@@ -25,7 +22,7 @@ function clampPercentage(matchPercentage: number) {
   return Math.max(0, Math.min(100, matchPercentage));
 }
 
-function sortProposalCandidates(proposals: LinkProposal[]) {
+function sortLinkProposals(proposals: LinkProposal[]) {
   return [...proposals].sort((left, right) => {
     if (right.score !== left.score) {
       return right.score - left.score;
@@ -33,30 +30,6 @@ function sortProposalCandidates(proposals: LinkProposal[]) {
 
     return left.id - right.id;
   });
-}
-
-function groupLinkProposalsByLocalTrack(proposals: LinkProposal[]): LinkProposalGroup[] {
-  const proposalsByTrack = proposals.reduce<Map<number, LinkProposal[]>>((groups, proposal) => {
-    const existingGroup = groups.get(proposal.local_track_id) ?? [];
-    existingGroup.push(proposal);
-    groups.set(proposal.local_track_id, existingGroup);
-    return groups;
-  }, new Map());
-
-  return Array.from(proposalsByTrack.entries())
-    .map(([localTrackId, trackProposals]) => ({
-      candidates: sortProposalCandidates(trackProposals),
-      localTrackId,
-    }))
-    .sort((left, right) => {
-      const scoreDifference = right.candidates[0].score - left.candidates[0].score;
-
-      if (scoreDifference !== 0) {
-        return scoreDifference;
-      }
-
-      return left.localTrackId - right.localTrackId;
-    });
 }
 
 async function removeProposalCandidateFromCache(
@@ -117,20 +90,27 @@ function MetadataValue({ fallback = "—", value }: { fallback?: string; value: 
   return value;
 }
 
-function ProposalMetadataRow({
-  fallback,
+function ProposalComparisonRow({
   label,
-  value,
+  localValue,
+  streamingFallback,
+  streamingValue,
 }: {
-  fallback?: string;
   label: string;
-  value: string | null;
+  localValue: string | null;
+  streamingFallback?: string;
+  streamingValue: string | null;
 }) {
   return (
-    <div className="grid min-w-0 grid-cols-[82px_minmax(0,1fr)] items-baseline gap-2">
-      <dt className={`${textClasses.detail} text-ctp-subtext0`}>{label}</dt>
-      <dd className={`min-w-0 truncate ${textClasses.caption}`}>
-        <MetadataValue fallback={fallback} value={value} />
+    <div className="grid min-w-0 gap-1 rounded-[8px] bg-ctp-surface0/48 px-2.5 py-2 sm:grid-cols-[70px_minmax(0,1fr)_minmax(0,1fr)] sm:items-baseline sm:gap-3 lg:contents">
+      <dt className={`${textClasses.detail} text-ctp-subtext0 lg:py-0.5`}>{label}</dt>
+      <dd className={`min-w-0 truncate ${textClasses.caption} lg:py-0.5`}>
+        <span className={`${textClasses.microEyebrow} mb-1 block text-ctp-overlay1 sm:hidden`}>Local</span>
+        <MetadataValue value={localValue} />
+      </dd>
+      <dd className={`min-w-0 truncate ${textClasses.caption} lg:py-0.5`}>
+        <span className={`${textClasses.microEyebrow} mb-1 block text-ctp-overlay1 sm:hidden`}>Streaming</span>
+        <MetadataValue fallback={streamingFallback} value={streamingValue} />
       </dd>
     </div>
   );
@@ -168,16 +148,40 @@ function getProposalScorePercentage(score: number) {
   return clampPercentage(score * 100);
 }
 
-function getProposalScoreColorClass(scorePercentage: number) {
+function getProposalScoreTone(scorePercentage: number): PillTone {
   if (scorePercentage >= 85) {
-    return "bg-ctp-green";
+    return "success";
   }
 
   if (scorePercentage >= 50) {
+    return "pending";
+  }
+
+  return "neutral";
+}
+
+function getConfidenceLabel(confidenceBand: LinkProposal["confidence_band"]) {
+  if (confidenceBand === "high") {
+    return "High confidence";
+  }
+
+  if (confidenceBand === "medium") {
+    return "Medium confidence";
+  }
+
+  return "Low confidence";
+}
+
+function getConfidenceDotColorClass(confidenceBand: LinkProposal["confidence_band"]) {
+  if (confidenceBand === "high") {
+    return "bg-ctp-green";
+  }
+
+  if (confidenceBand === "medium") {
     return "bg-ctp-yellow";
   }
 
-  return "bg-ctp-overlay1";
+  return "bg-ctp-red";
 }
 
 export function LinkProposalsView() {
@@ -205,7 +209,7 @@ export function LinkProposalsView() {
   });
   const proposals = proposalsQuery.data?.proposals;
   const proposalCount = proposals?.length ?? 0;
-  const proposalGroups = useMemo(() => groupLinkProposalsByLocalTrack(proposals ?? []), [proposals]);
+  const sortedProposals = useMemo(() => sortLinkProposals(proposals ?? []), [proposals]);
   const activeApproveProposalId = approveMutation.isPending ? String(approveMutation.variables) : null;
   const activeRejectProposalId = rejectMutation.isPending ? String(rejectMutation.variables) : null;
   const failedApproveProposalId = approveMutation.isError ? String(approveMutation.variables) : null;
@@ -266,16 +270,16 @@ export function LinkProposalsView() {
   return renderProposalFrame(
     <div className="min-h-0 flex-1 overflow-y-auto pr-1">
       <ul className="grid gap-3">
-        {proposalGroups.map((proposalGroup) => (
-          <ProposalGroupCard
+        {sortedProposals.map((proposal) => (
+          <ProposalRow
             activeApproveProposalId={activeApproveProposalId}
             activeRejectProposalId={activeRejectProposalId}
             failedApproveProposalId={failedApproveProposalId}
             failedRejectProposalId={failedRejectProposalId}
-            key={proposalGroup.localTrackId}
+            key={proposal.id}
             onApprove={(proposalId) => approveMutation.mutate(proposalId)}
             onReject={(proposalId) => rejectMutation.mutate(proposalId)}
-            proposalGroup={proposalGroup}
+            proposal={proposal}
           />
         ))}
       </ul>
@@ -283,14 +287,14 @@ export function LinkProposalsView() {
   );
 }
 
-function ProposalGroupCard({
+function ProposalRow({
   activeApproveProposalId,
   activeRejectProposalId,
   failedApproveProposalId,
   failedRejectProposalId,
   onApprove,
   onReject,
-  proposalGroup,
+  proposal,
 }: {
   activeApproveProposalId: string | null;
   activeRejectProposalId: string | null;
@@ -298,122 +302,96 @@ function ProposalGroupCard({
   failedRejectProposalId: string | null;
   onApprove: (proposalId: number) => void;
   onReject: (proposalId: number) => void;
-  proposalGroup: LinkProposalGroup;
-}) {
-  const topProposal = proposalGroup.candidates[0];
-  const activeProposalId = activeApproveProposalId ?? activeRejectProposalId;
-  const isGroupActionPending = proposalGroup.candidates.some((proposal) => String(proposal.id) === activeProposalId);
-
-  return (
-    <li className={surfaceClasses.rowCardCompact}>
-      <div className="grid gap-4">
-        <div className="grid gap-4 md:grid-cols-2">
-          <div className="min-w-0">
-            <p className={`${textClasses.eyebrow} tracking-normal text-ctp-subtext0`}>Local track</p>
-            <dl className="mt-2 grid gap-2">
-              <ProposalMetadataRow label="Filename" value={getLocalTrackLabel(topProposal)} />
-              <ProposalMetadataRow label="Title" value={topProposal.local_title} />
-              <ProposalMetadataRow label="Artist" value={topProposal.local_artist} />
-              <ProposalMetadataRow label="Album" value={topProposal.local_album} />
-            </dl>
-          </div>
-          <div className="min-w-0 md:border-l md:border-ctp-surface0 md:pl-4">
-            <p className={`${textClasses.eyebrow} tracking-normal text-ctp-subtext0`}>Streaming track</p>
-            <dl className="mt-2 grid gap-2">
-              <ProposalMetadataRow label="Title" value={topProposal.streaming_title} />
-              <ProposalMetadataRow label="Artist" value={topProposal.streaming_artist} />
-              <ProposalMetadataRow fallback="Album unavailable" label="Album" value={topProposal.streaming_album} />
-            </dl>
-          </div>
-        </div>
-        <div className="grid gap-2">
-          <p className={`${textClasses.eyebrow} tracking-normal text-ctp-subtext0`}>Ranked candidates</p>
-          <ul className="grid gap-2">
-            {proposalGroup.candidates.map((proposal, index) => (
-              <ProposalCandidateRow
-                actionError={
-                  failedApproveProposalId === String(proposal.id)
-                    ? "Approve failed."
-                    : failedRejectProposalId === String(proposal.id)
-                      ? "Reject failed."
-                      : null
-                }
-                isApproving={activeApproveProposalId === String(proposal.id)}
-                isRejecting={activeRejectProposalId === String(proposal.id)}
-                isGroupActionPending={isGroupActionPending}
-                key={proposal.id}
-                onApprove={() => onApprove(proposal.id)}
-                onReject={() => onReject(proposal.id)}
-                proposal={proposal}
-                rank={index + 1}
-              />
-            ))}
-          </ul>
-        </div>
-      </div>
-    </li>
-  );
-}
-
-function ProposalCandidateRow({
-  actionError,
-  isApproving,
-  isGroupActionPending,
-  isRejecting,
-  onApprove,
-  onReject,
-  proposal,
-  rank,
-}: {
-  actionError: string | null;
-  isApproving: boolean;
-  isGroupActionPending: boolean;
-  isRejecting: boolean;
-  onApprove: () => void;
-  onReject: () => void;
   proposal: LinkProposal;
-  rank: number;
 }) {
   const scorePercentage = getProposalScorePercentage(proposal.score);
-  const scoreMeterStyle: CSSProperties & Record<"--proposal-score-width", string> = {
-    "--proposal-score-width": `${scorePercentage}%`,
-  };
+  const actionError =
+    failedApproveProposalId === String(proposal.id)
+      ? "Approve failed."
+      : failedRejectProposalId === String(proposal.id)
+        ? "Reject failed."
+        : null;
+  const isApproving = activeApproveProposalId === String(proposal.id);
+  const isRejecting = activeRejectProposalId === String(proposal.id);
+  const isActionPending = isApproving || isRejecting;
 
   return (
-    <li className={`${surfaceClasses.insetPanel} px-3 py-2.5`}>
-      <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_170px]">
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className={controlClasses.countBadgeCompact}>{rank}</span>
-            <Pill tone={getMatchMethodTone(proposal.match_method)}>
-              {getMatchMethodLabel(proposal.match_method)}
-            </Pill>
-            <span className={textClasses.score}>{formatProposalScore(proposal.score)}</span>
+    <li
+      aria-label={`Proposal ${proposal.id}: ${getLocalTrackLabel(proposal)} to ${proposal.streaming_title}`}
+      className={surfaceClasses.rowCardCompact}
+    >
+      <article className="grid min-w-0 gap-3 xl:grid-cols-[minmax(0,1fr)_150px] xl:items-start">
+        <dl className="grid min-w-0 gap-2 lg:grid-cols-[70px_minmax(0,1fr)_minmax(0,1fr)] lg:items-start">
+          <div className="hidden lg:block" aria-hidden="true" />
+          <div className="min-w-0">
+            <p className={`${textClasses.eyebrow} tracking-normal text-ctp-subtext0`}>Local track</p>
+            <p className={`mt-1 truncate font-mono ${textClasses.finePrint} text-ctp-overlay1`}>
+              {getLocalTrackLabel(proposal)}
+            </p>
           </div>
-          <p className={`mt-2 truncate ${textClasses.proposalTitle}`}>{proposal.streaming_title}</p>
-          <p className={`mt-1 truncate ${textClasses.caption}`}>{proposal.streaming_artist}</p>
-          <p className={`mt-2 truncate ${textClasses.detail}`}>{proposal.streaming_album ?? "Album unavailable"}</p>
-          <div className="mt-3 h-2 overflow-hidden rounded-full bg-ctp-surface0" aria-hidden="true">
-            <div
-              className={`h-full rounded-full [width:var(--proposal-score-width)] ${getProposalScoreColorClass(scorePercentage)}`}
-              style={scoreMeterStyle}
-            />
+          <div className="min-w-0 border-t border-ctp-surface0 pt-2 sm:border-t-0 sm:pt-0">
+            <div className="flex min-w-0 flex-wrap items-center gap-2">
+              <p className={`${textClasses.eyebrow} tracking-normal text-ctp-subtext0`}>Streaming track</p>
+              <Pill className="tabular-nums" tone={getProposalScoreTone(scorePercentage)}>
+                {formatProposalScore(proposal.score)}
+              </Pill>
+              <Pill tone={getMatchMethodTone(proposal.match_method)}>
+                {getMatchMethodLabel(proposal.match_method)}
+              </Pill>
+              <span className={`inline-flex items-center gap-1 ${textClasses.finePrint} font-medium text-ctp-subtext0`}>
+                <span
+                  aria-hidden="true"
+                  className={`h-1.5 w-1.5 rounded-full ${getConfidenceDotColorClass(proposal.confidence_band)}`}
+                />
+                {getConfidenceLabel(proposal.confidence_band)}
+              </span>
+            </div>
           </div>
-        </div>
-        <div className="grid content-end gap-2">
-          <div className="flex flex-wrap items-center gap-2 lg:justify-end">
-            <ActionButton disabled={isGroupActionPending} onClick={onApprove} tone="success">
-              {isApproving ? "Approving..." : "Approve"}
-            </ActionButton>
-            <ActionButton disabled={isGroupActionPending} onClick={onReject} tone="danger">
-              {isRejecting ? "Rejecting..." : "Reject"}
-            </ActionButton>
-          </div>
+
+          <ProposalComparisonRow
+            label="Title"
+            localValue={proposal.local_title}
+            streamingValue={proposal.streaming_title}
+          />
+          <ProposalComparisonRow
+            label="Artist"
+            localValue={proposal.local_artist}
+            streamingValue={proposal.streaming_artist}
+          />
+          <ProposalComparisonRow
+            label="Album"
+            localValue={proposal.local_album}
+            streamingFallback="Album unavailable"
+            streamingValue={proposal.streaming_album}
+          />
+        </dl>
+
+        <div className="flex flex-wrap items-center gap-2 border-t border-ctp-surface0 pt-2 xl:flex-col xl:items-stretch xl:border-t-0 xl:pt-0">
+          <ActionButton
+            className={`${controlClasses.actionButtonCompact} inline-flex items-center justify-center gap-1.5`}
+            disabled={isActionPending}
+            onClick={() => onApprove(proposal.id)}
+            tone="success"
+          >
+            <CheckCircle2 aria-hidden="true" className="h-3.5 w-3.5" strokeWidth={1.9} />
+            <span>{isApproving ? "Approving..." : "Approve"}</span>
+            <span className="sr-only"> proposal {proposal.id}</span>
+          </ActionButton>
+          <ActionButton
+            className={`${controlClasses.actionButtonCompact} inline-flex items-center justify-center gap-1.5`}
+            disabled={isActionPending}
+            onClick={() => onReject(proposal.id)}
+            tone="danger"
+          >
+            <XCircle aria-hidden="true" className="h-3.5 w-3.5" strokeWidth={1.9} />
+            <span>{isRejecting ? "Rejecting..." : "Reject"}</span>
+            <span className="sr-only"> proposal {proposal.id}</span>
+          </ActionButton>
           {actionError ? (
-            <p className={`text-right font-medium text-ctp-red ${textClasses.finePrint}`}>{actionError}</p>
+            <p className={`font-medium text-ctp-red ${textClasses.finePrint} xl:text-right`}>{actionError}</p>
           ) : null}
         </div>
-      </div>
+      </article>
     </li>
   );
 }

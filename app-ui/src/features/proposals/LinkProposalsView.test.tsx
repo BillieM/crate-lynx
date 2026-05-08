@@ -129,37 +129,47 @@ describe("LinkProposalsView", () => {
     vi.restoreAllMocks();
   });
 
-  it("renders local-track proposal cards together in score order without confidence band filters", async () => {
+  it("renders flat proposal rows in score order without confidence band filters", async () => {
     const fetchMock = mockProposalFetch();
 
     renderLinkProposalsView();
 
     expect(await screen.findByRole("heading", { level: 2, name: "Proposal queue" })).toBeInTheDocument();
-    expect(await screen.findByText("Night Runner.mp3")).toBeInTheDocument();
+    expect(await screen.findAllByText("Night Runner.mp3")).toHaveLength(2);
     expect(fetchMock).toHaveBeenCalledWith("/api/proposals");
 
     expect(screen.queryByRole("heading", { level: 3, name: "High" })).not.toBeInTheDocument();
     expect(screen.queryByRole("heading", { level: 3, name: "Medium" })).not.toBeInTheDocument();
     expect(screen.queryByRole("heading", { level: 3, name: "Low" })).not.toBeInTheDocument();
     expect(screen.queryByRole("group", { name: "Confidence band filters" })).not.toBeInTheDocument();
+    expect(screen.queryByText("Ranked candidates")).not.toBeInTheDocument();
 
-    const nightRunnerCard = screen.getByText("Night Runner.mp3").closest("li");
-    const pendingSignalCard = screen.getByText("Pending Signal.mp3").closest("li");
-    expect(nightRunnerCard).not.toBeNull();
-    expect(pendingSignalCard).not.toBeNull();
-    expect(nightRunnerCard!.compareDocumentPosition(pendingSignalCard!)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
-    expect(within(nightRunnerCard!).getByText("Night Runner Alternate")).toBeInTheDocument();
-    expect(within(nightRunnerCard!).getByText("Night Runner File")).toBeInTheDocument();
-    expect(within(nightRunnerCard!).getByText("Private Archive")).toBeInTheDocument();
-    expect(within(nightRunnerCard!).getAllByText("Tag")).toHaveLength(2);
-    expect(within(nightRunnerCard!).getByText("92%")).toBeInTheDocument();
-    expect(within(nightRunnerCard!).getByText("82%")).toBeInTheDocument();
-    expect(within(pendingSignalCard!).getByText("ISRC")).toBeInTheDocument();
-    expect(within(pendingSignalCard!).getAllByText("Album unavailable")).toHaveLength(2);
+    const nightRunnerRow = screen.getByRole("listitem", { name: /Proposal 44: Night Runner\.mp3 to Night Runner$/ });
+    const alternateRow = screen.getByRole("listitem", {
+      name: /Proposal 47: Night Runner\.mp3 to Night Runner Alternate$/,
+    });
+    const pendingSignalRow = screen.getByRole("listitem", {
+      name: /Proposal 45: Pending Signal\.mp3 to Pending Signal$/,
+    });
+
+    expect(nightRunnerRow.compareDocumentPosition(alternateRow)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(alternateRow.compareDocumentPosition(pendingSignalRow)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(within(nightRunnerRow).getByText("Night Runner File")).toBeInTheDocument();
+    expect(within(nightRunnerRow).getByText("Private Archive")).toBeInTheDocument();
+    expect(within(nightRunnerRow).getByText("Tag")).toBeInTheDocument();
+    expect(within(nightRunnerRow).getByText("92%")).toBeInTheDocument();
+    expect(within(nightRunnerRow).getByText("High confidence")).toBeInTheDocument();
+    expect(within(alternateRow).getByText("Night Runner Alternate")).toBeInTheDocument();
+    expect(within(alternateRow).getByText("82%")).toBeInTheDocument();
+    expect(within(alternateRow).getByText("Medium confidence")).toBeInTheDocument();
+    expect(within(pendingSignalRow).getByText("ISRC")).toBeInTheDocument();
+    expect(within(pendingSignalRow).getAllByText("Album unavailable")).toHaveLength(1);
 
     expect(
-      within(nightRunnerCard!).getByText("Local track").compareDocumentPosition(within(nightRunnerCard!).getByText("Ranked candidates")),
+      within(nightRunnerRow).getByText("Local track").compareDocumentPosition(within(nightRunnerRow).getByText("Streaming track")),
     ).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(screen.getAllByRole("button", { name: /Approve proposal/ })).toHaveLength(3);
+    expect(screen.getAllByRole("button", { name: /Reject proposal/ })).toHaveLength(3);
   });
 
   it("renders missing local metadata as dashes while keeping the filename", async () => {
@@ -167,10 +177,9 @@ describe("LinkProposalsView", () => {
 
     renderLinkProposalsView();
 
-    const pendingSignalCard = (await screen.findByText("Pending Signal.mp3")).closest("li");
-    expect(pendingSignalCard).not.toBeNull();
-    expect(within(pendingSignalCard!).getAllByText("—")).toHaveLength(3);
-    expect(within(pendingSignalCard!).getAllByText("Album unavailable")).toHaveLength(2);
+    const pendingSignalRow = await screen.findByRole("listitem", { name: /Proposal 45: Pending Signal\.mp3/ });
+    expect(within(pendingSignalRow).getAllByText("—")).toHaveLength(3);
+    expect(within(pendingSignalRow).getAllByText("Album unavailable")).toHaveLength(1);
   });
 
   it("renders a dash only for the missing local field when partial metadata is present", async () => {
@@ -200,11 +209,10 @@ describe("LinkProposalsView", () => {
 
     renderLinkProposalsView();
 
-    const partialCard = (await screen.findByText("Partial Signal.mp3")).closest("li");
-    expect(partialCard).not.toBeNull();
-    expect(within(partialCard!).getAllByText("Partial Signal").length).toBeGreaterThanOrEqual(1);
-    expect(within(partialCard!).getByText("Singles")).toBeInTheDocument();
-    expect(within(partialCard!).getAllByText("—")).toHaveLength(1);
+    const partialRow = await screen.findByRole("listitem", { name: /Proposal 50: Partial Signal\.mp3/ });
+    expect(within(partialRow).getAllByText("Partial Signal")).toHaveLength(2);
+    expect(within(partialRow).getByText("Singles")).toBeInTheDocument();
+    expect(within(partialRow).getAllByText("—")).toHaveLength(1);
   });
 
   it("ignores legacy confidence band URL state and fetches all proposals", async () => {
@@ -212,7 +220,7 @@ describe("LinkProposalsView", () => {
 
     renderLinkProposalsView("/proposals?band=high");
 
-    expect(await screen.findByText("Night Runner.mp3")).toBeInTheDocument();
+    expect(await screen.findAllByText("Night Runner.mp3")).toHaveLength(2);
     expect(screen.getByText("Pending Signal.mp3")).toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledWith("/api/proposals");
     expect(fetchMock).not.toHaveBeenCalledWith("/api/proposals?band=high");
@@ -235,24 +243,35 @@ describe("LinkProposalsView", () => {
 
     renderLinkProposalsView();
 
-    expect(await screen.findByText("Night Runner.mp3")).toBeInTheDocument();
+    expect(await screen.findAllByText("Night Runner.mp3")).toHaveLength(2);
     expect(screen.getByText("Night Runner Alternate")).toBeInTheDocument();
-    fireEvent.click(screen.getAllByRole("button", { name: "Reject" })[1]);
+    const alternateRow = screen.getByRole("listitem", {
+      name: /Proposal 47: Night Runner\.mp3 to Night Runner Alternate$/,
+    });
+    fireEvent.click(within(alternateRow).getByRole("button", { name: /Reject proposal 47/ }));
 
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith("/api/proposals/47/reject", { method: "POST" });
       expect(screen.queryByText("Night Runner Alternate")).not.toBeInTheDocument();
     });
-    expect(screen.getByText("Night Runner.mp3")).toBeInTheDocument();
+    expect(screen.getByRole("listitem", { name: /Proposal 44: Night Runner\.mp3/ })).toBeInTheDocument();
 
-    fireEvent.click(screen.getAllByRole("button", { name: "Approve" })[0]);
+    fireEvent.click(
+      within(screen.getByRole("listitem", { name: /Proposal 44: Night Runner\.mp3/ })).getByRole("button", {
+        name: /Approve proposal 44/,
+      }),
+    );
 
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith("/api/proposals/44/approve", { method: "POST" });
       expect(screen.queryByText("Night Runner.mp3")).not.toBeInTheDocument();
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "Reject" }));
+    fireEvent.click(
+      within(screen.getByRole("listitem", { name: /Proposal 45: Pending Signal\.mp3/ })).getByRole("button", {
+        name: /Reject proposal 45/,
+      }),
+    );
 
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith("/api/proposals/45/reject", { method: "POST" });

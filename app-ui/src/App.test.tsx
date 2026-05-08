@@ -638,26 +638,30 @@ describe("App", () => {
     expect(screen.queryByRole("heading", { level: 3, name: "Low" })).not.toBeInTheDocument();
     expect(screen.queryByRole("group", { name: "Confidence band filters" })).not.toBeInTheDocument();
 
-    const nightRunnerCard = (await screen.findByText("Night Runner.mp3")).closest("li");
-    const pendingSignalCard = screen.getByText("Pending Signal.mp3").closest("li");
-    const looseCableCard = screen.getByText("Loose Cable.mp3").closest("li");
+    const nightRunnerRow = await screen.findByRole("listitem", {
+      name: /Proposal 44: Night Runner\.mp3 to Night Runner$/,
+    });
+    const pendingSignalRow = screen.getByRole("listitem", {
+      name: /Proposal 45: Pending Signal\.mp3 to Pending Signal$/,
+    });
+    const looseCableRow = screen.getByRole("listitem", {
+      name: /Proposal 46: Loose Cable\.mp3 to Loose Cable$/,
+    });
 
-    expect(nightRunnerCard).not.toBeNull();
-    expect(pendingSignalCard).not.toBeNull();
-    expect(looseCableCard).not.toBeNull();
-    expect(nightRunnerCard!.compareDocumentPosition(pendingSignalCard!)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
-    expect(pendingSignalCard!.compareDocumentPosition(looseCableCard!)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
-    expect(within(nightRunnerCard!).getByText("1")).toBeInTheDocument();
-    expect(within(nightRunnerCard!).getByText("Night Runner")).toBeInTheDocument();
-    expect(within(nightRunnerCard!).getByText("Frame Delay")).toBeInTheDocument();
-    expect(within(nightRunnerCard!).getByText("Tag")).toBeInTheDocument();
-    expect(within(nightRunnerCard!).getByText("92%")).toBeInTheDocument();
-    expect(within(pendingSignalCard!).getByText("Album unavailable")).toBeInTheDocument();
-    expect(within(looseCableCard!).getByText("Tag")).toBeInTheDocument();
+    expect(nightRunnerRow.compareDocumentPosition(pendingSignalRow)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(pendingSignalRow.compareDocumentPosition(looseCableRow)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(screen.queryByText("Ranked candidates")).not.toBeInTheDocument();
+    expect(within(nightRunnerRow).getByText("Night Runner")).toBeInTheDocument();
+    expect(within(nightRunnerRow).getAllByText("Frame Delay")).toHaveLength(2);
+    expect(within(nightRunnerRow).getByText("Tag")).toBeInTheDocument();
+    expect(within(nightRunnerRow).getByText("92%")).toBeInTheDocument();
+    expect(within(nightRunnerRow).getByText("High confidence")).toBeInTheDocument();
+    expect(within(pendingSignalRow).getByText("Album unavailable")).toBeInTheDocument();
+    expect(within(looseCableRow).getByText("Tag")).toBeInTheDocument();
     expect(
-      within(nightRunnerCard!)
+      within(nightRunnerRow)
         .getByText("Local track")
-        .compareDocumentPosition(within(nightRunnerCard!).getByText("Ranked candidates")),
+        .compareDocumentPosition(within(nightRunnerRow).getByText("Streaming track")),
     ).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
   });
 
@@ -698,7 +702,11 @@ describe("App", () => {
     renderApp(["/proposals"]);
 
     expect(await screen.findByText("Night Runner.mp3")).toBeInTheDocument();
-    fireEvent.click(screen.getAllByRole("button", { name: "Approve" })[0]);
+    fireEvent.click(
+      within(screen.getByRole("listitem", { name: /Proposal 44: Night Runner\.mp3/ })).getByRole("button", {
+        name: /Approve proposal 44/,
+      }),
+    );
 
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith("/api/proposals/44/approve", { method: "POST" });
@@ -707,7 +715,11 @@ describe("App", () => {
     expect(screen.getByText("Pending Signal.mp3")).toBeInTheDocument();
     expect(screen.getByText("Loose Cable.mp3")).toBeInTheDocument();
 
-    fireEvent.click(screen.getAllByRole("button", { name: "Reject" })[0]);
+    fireEvent.click(
+      within(screen.getByRole("listitem", { name: /Proposal 45: Pending Signal\.mp3/ })).getByRole("button", {
+        name: /Reject proposal 45/,
+      }),
+    );
 
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith("/api/proposals/45/reject", { method: "POST" });
