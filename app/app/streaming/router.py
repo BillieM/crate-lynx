@@ -207,7 +207,7 @@ def create_router(
     ) -> PlaylistTracksResponse:
         engine = _engine(engine)
         store = _store(engine)
-        if store.get_playlist_detail(playlist_id) is None:
+        if not store.playlist_exists(playlist_id):
             raise HTTPException(status_code=404, detail="Playlist not found")
 
         return PlaylistTracksResponse(

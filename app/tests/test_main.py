@@ -43,7 +43,7 @@ from app.streaming.adapters.youtube_music import (
     YouTubeMusicPlaylist,
     YouTubeMusicTrack,
 )
-from sqlalchemy import create_engine, insert, select
+from sqlalchemy import create_engine, event, insert, select
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 
@@ -897,6 +897,17 @@ def test_playlist_tracks_endpoint_returns_rows_with_link_status(
             )
         )
 
+    playlist_membership_statement_count = 0
+
+    def count_playlist_membership_statement(
+        conn, cursor, statement, parameters, context, executemany
+    ) -> None:
+        nonlocal playlist_membership_statement_count
+        if "playlist_membership" in statement:
+            playlist_membership_statement_count += 1
+
+    event.listen(engine, "before_cursor_execute", count_playlist_membership_statement)
+
     app = create_app()
     route = next(
         route
@@ -905,13 +916,19 @@ def test_playlist_tracks_endpoint_returns_rows_with_link_status(
         and "GET" in getattr(route, "methods", set())
     )
 
-    response = _call_endpoint(route.endpoint, 7)
+    try:
+        response = _call_endpoint(route.endpoint, 7, engine)
+    finally:
+        event.remove(
+            engine, "before_cursor_execute", count_playlist_membership_statement
+        )
 
     assert [track.title for track in response.tracks] == [
         "Linked Song",
         "Pending Song",
         "Unlinked Song",
     ]
+    assert playlist_membership_statement_count == 1
     assert [track.position for track in response.tracks] == [1, 2, 3]
     assert response.tracks[0].status == "linked"
     assert response.tracks[0].final_link_id == 3

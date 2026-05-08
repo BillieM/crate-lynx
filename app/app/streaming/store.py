@@ -413,6 +413,17 @@ class StreamingAccountStore:
 
         return self._get_playlist_summary(playlist_id)
 
+    def playlist_exists(self, playlist_id: int) -> bool:
+        with self._engine.connect() as connection:
+            return (
+                connection.execute(
+                    select(streaming_playlists_table.c.id).where(
+                        streaming_playlists_table.c.id == playlist_id
+                    )
+                ).scalar_one_or_none()
+                is not None
+            )
+
     def list_playlist_tracks(self, playlist_id: int) -> list[StreamingPlaylistTrack]:
         pending_link_ids = (
             select(

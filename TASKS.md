@@ -104,7 +104,7 @@ Each task is sized to fit comfortably in one Codex 5.5-xhigh context window.
 
 ---
 
-## - [ ] T5. Fix playlist-tracks triple-scan
+## - [x] T5. Fix playlist-tracks triple-scan
 
 **Why**: `/playlists/{id}/tracks` at `app/app/streaming/router.py:210` calls `get_playlist_detail()` (which iterates `list_playlist_tracks()` to compute counts), then `:216` calls `list_playlist_tracks()` again. Frontend separately requests detail. Three scans per request on large playlists.
 
