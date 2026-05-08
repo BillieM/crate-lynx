@@ -41,7 +41,7 @@ local_tracks_table = Table(
         "updated_at", DateTime(timezone=True), server_default=func.now(), nullable=False
     ),
     UniqueConstraint("beets_id", name="uq_local_tracks_beets_id"),
-    Index("ix_local_tracks_fingerprint", "fingerprint"),
+    Index("ix_local_tracks_fingerprint", "fingerprint", postgresql_using="hash"),
     Index("ix_local_tracks_beets_id", "beets_id"),
 )
 

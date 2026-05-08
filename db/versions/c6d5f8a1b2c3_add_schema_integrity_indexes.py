@@ -36,7 +36,12 @@ def upgrade() -> None:
             ["provider_track_id"],
         )
 
-    op.create_index("ix_local_tracks_fingerprint", "local_tracks", ["fingerprint"])
+    op.create_index(
+        "ix_local_tracks_fingerprint",
+        "local_tracks",
+        ["fingerprint"],
+        postgresql_using="hash",
+    )
     op.create_index("ix_local_tracks_beets_id", "local_tracks", ["beets_id"])
     op.create_index("ix_streaming_tracks_isrc", "streaming_tracks", ["isrc"])
     op.create_index(
