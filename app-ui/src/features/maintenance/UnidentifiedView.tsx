@@ -9,7 +9,7 @@ import { StatusMessage } from "../../components/StatusMessage";
 import { settleInChunks } from "../../lib/settleInChunks";
 import { surfaceClasses, textClasses } from "../../styles/componentClasses";
 import {
-  maintenanceQueryKeys,
+  invalidateUnidentifiedQueries,
   rescueLocalTrackMetadata,
   type UnidentifiedResponse,
   type UnidentifiedTrack,
@@ -210,7 +210,7 @@ export function UnidentifiedView({ isPending = false, state, tracksResponse }: U
     const successCount = results.filter((result) => result.status === "fulfilled").length;
     const failureCount = results.filter((result) => result.status === "rejected").length;
 
-    await queryClient.invalidateQueries({ queryKey: maintenanceQueryKeys.unidentified() });
+    await invalidateUnidentifiedQueries(queryClient);
 
     setRowSelection({});
     setIsBulkRescuing(false);

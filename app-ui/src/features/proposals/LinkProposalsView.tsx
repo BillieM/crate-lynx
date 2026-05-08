@@ -12,7 +12,7 @@ import {
   approveLinkProposal,
   type LinkProposal,
   type LinkProposalsResponse,
-  playlistQueryKeys,
+  invalidatePlaylistLinkQueries,
   rejectLinkProposal,
   type RejectLinkProposalResponse,
   useLinkProposalsQuery,
@@ -175,7 +175,7 @@ export function LinkProposalsView() {
       queryKey: proposalsQueryKey,
     }),
     onSettled: async () => {
-      await queryClient.invalidateQueries({ queryKey: playlistQueryKeys.all });
+      await invalidatePlaylistLinkQueries(queryClient);
     },
   });
   const rejectMutation = useMutation({
@@ -187,7 +187,7 @@ export function LinkProposalsView() {
       queryKey: proposalsQueryKey,
     }),
     onSettled: async () => {
-      await queryClient.invalidateQueries({ queryKey: playlistQueryKeys.all });
+      await invalidatePlaylistLinkQueries(queryClient);
     },
   });
   const proposals = proposalsQuery.data?.proposals;

@@ -8,10 +8,15 @@ import { EmptyStateCard } from "../../components/EmptyStateCard";
 import { StatusMessage } from "../../components/StatusMessage";
 import { formatDuration } from "../../lib/formatters";
 import { settleInChunks } from "../../lib/settleInChunks";
+import { useDelayedInvalidate } from "../../lib/useDelayedInvalidate";
 import { surfaceClasses, textClasses } from "../../styles/componentClasses";
-import { syncStreamingPlaylist } from "../playlists/queries";
 import {
-  maintenanceQueryKeys,
+  playlistContentInvalidationKeys,
+  syncStreamingPlaylist,
+} from "../playlists/queries";
+import {
+  invalidateMissingLocallyQueries,
+  missingLocallyInvalidationKeys,
   type MissingLocallyResponse,
   type MissingLocallyTrack,
   useMissingLocallyTracksQuery,
@@ -76,6 +81,7 @@ type MissingLocallyViewProps = {
 
 export function MissingLocallyView({ isPending = false, state, tracksResponse }: MissingLocallyViewProps = {}) {
   const queryClient = useQueryClient();
+  const delayedInvalidate = useDelayedInvalidate();
   const missingLocallyQuery = useMissingLocallyTracksQuery();
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
   const [sorting, setSorting] = useState<SortingState>([]);
@@ -171,7 +177,11 @@ export function MissingLocallyView({ isPending = false, state, tracksResponse }:
     const successCount = results.filter((result) => result.status === "fulfilled").length;
     const failureCount = results.filter((result) => result.status === "rejected").length;
 
-    await queryClient.invalidateQueries({ queryKey: maintenanceQueryKeys.missingLocally() });
+    await invalidateMissingLocallyQueries(queryClient);
+    delayedInvalidate([
+      ...missingLocallyInvalidationKeys(),
+      ...playlistContentInvalidationKeys(selectedPlaylistIds),
+    ]);
 
     setRowSelection({});
     setIsSyncing(false);

@@ -5,11 +5,12 @@ import { useDelayedInvalidate } from "../../lib/useDelayedInvalidate";
 import { controlClasses, shellClasses, textClasses } from "../../styles/componentClasses";
 import {
   exportPlaylistM3u,
-  playlistQueryKeys,
+  invalidatePlaylistContentQueries,
+  playlistContentInvalidationKeys,
   syncStreamingPlaylist,
   usePlaylistDetailQuery,
 } from "../playlists/queries";
-import { streamingAccountQueryKeys } from "../streamingAccounts/queries";
+import { streamingAccountInvalidationKeys } from "../streamingAccounts/queries";
 import type { PlaylistSyncViewState, ViewConfig } from "./types";
 
 function downloadBlob(blob: Blob, filename: string) {
@@ -112,16 +113,10 @@ export function Topbar({
     },
     onSuccess: async (_data, playlistId) => {
       onPlaylistSyncStateChange({ playlistId: Number(playlistId), status: "success" });
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: playlistQueryKeys.detail(playlistId) }),
-        queryClient.invalidateQueries({ queryKey: playlistQueryKeys.tracks(playlistId) }),
-        queryClient.invalidateQueries({ queryKey: playlistQueryKeys.list() }),
-      ]);
+      await invalidatePlaylistContentQueries(queryClient, [playlistId]);
       delayedInvalidate([
-        playlistQueryKeys.detail(playlistId),
-        playlistQueryKeys.tracks(playlistId),
-        playlistQueryKeys.list(),
-        streamingAccountQueryKeys.list(),
+        ...playlistContentInvalidationKeys([playlistId]),
+        ...streamingAccountInvalidationKeys(),
       ]);
     },
   });

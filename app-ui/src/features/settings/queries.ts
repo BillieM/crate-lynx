@@ -1,6 +1,7 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { type QueryClient, type QueryKey, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { endpoints, fetchJson } from "../../lib/api";
+import { invalidateQueryKeys } from "../../lib/queryInvalidation";
 
 export type IngestFolder = {
   id: number;
@@ -21,9 +22,12 @@ export const settingsQueryKeys = {
   ingestFolders: () => ["settings", "ingest-folders"] as const,
 };
 
-function invalidateSettingsQueries(queryClient: ReturnType<typeof useQueryClient>) {
-  void queryClient.invalidateQueries({ queryKey: settingsQueryKeys.general() });
-  void queryClient.invalidateQueries({ queryKey: settingsQueryKeys.ingestFolders() });
+export function settingsInvalidationKeys(): QueryKey[] {
+  return [settingsQueryKeys.general(), settingsQueryKeys.ingestFolders()];
+}
+
+export async function invalidateSettingsQueries(queryClient: QueryClient): Promise<void> {
+  await invalidateQueryKeys(queryClient, settingsInvalidationKeys());
 }
 
 export async function fetchGeneralSettings(): Promise<GeneralSettingsResponse> {
@@ -68,9 +72,7 @@ export function useCreateIngestFolderMutation() {
 
   return useMutation({
     mutationFn: createIngestFolder,
-    onSuccess: () => {
-      invalidateSettingsQueries(queryClient);
-    },
+    onSuccess: () => invalidateSettingsQueries(queryClient),
   });
 }
 
@@ -79,8 +81,6 @@ export function useDeleteIngestFolderMutation() {
 
   return useMutation({
     mutationFn: deleteIngestFolder,
-    onSuccess: () => {
-      invalidateSettingsQueries(queryClient);
-    },
+    onSuccess: () => invalidateSettingsQueries(queryClient),
   });
 }

@@ -1,6 +1,7 @@
-import { useQuery } from "@tanstack/react-query";
+import { type QueryClient, type QueryKey, useQuery } from "@tanstack/react-query";
 
 import { endpoints, fetchJson } from "../../lib/api";
+import { invalidateQueryKeys } from "../../lib/queryInvalidation";
 
 export type MissingLocallyTrack = {
   album: string | null;
@@ -43,6 +44,22 @@ export const maintenanceQueryKeys = {
   missingLocally: () => ["maintenance", "missing-locally"] as const,
   unidentified: () => ["maintenance", "unidentified"] as const,
 };
+
+export function missingLocallyInvalidationKeys(): QueryKey[] {
+  return [maintenanceQueryKeys.missingLocally()];
+}
+
+export function unidentifiedInvalidationKeys(): QueryKey[] {
+  return [maintenanceQueryKeys.unidentified()];
+}
+
+export async function invalidateMissingLocallyQueries(queryClient: QueryClient): Promise<void> {
+  await invalidateQueryKeys(queryClient, missingLocallyInvalidationKeys());
+}
+
+export async function invalidateUnidentifiedQueries(queryClient: QueryClient): Promise<void> {
+  await invalidateQueryKeys(queryClient, unidentifiedInvalidationKeys());
+}
 
 export async function fetchMissingLocallyTracks(): Promise<MissingLocallyResponse> {
   return fetchJson<MissingLocallyResponse>(endpoints.api("/maintenance/missing-locally"));

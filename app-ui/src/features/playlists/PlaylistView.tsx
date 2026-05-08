@@ -19,7 +19,7 @@ import { PlaylistTrackActions } from "./PlaylistTrackActions";
 import { TrackStatusDot } from "./TrackStatusDot";
 import {
   deleteFinalLink,
-  playlistQueryKeys,
+  invalidatePlaylistContentQueries,
   type PlaylistTrack,
   usePlaylistDetailQuery,
   usePlaylistTracksQuery,
@@ -209,11 +209,7 @@ export function PlaylistView({
     const successCount = results.filter((result) => result.status === "fulfilled").length;
     const failureCount = results.filter((result) => result.status === "rejected").length + missingFinalLinkCount;
 
-    await Promise.all([
-      queryClient.invalidateQueries({ queryKey: playlistQueryKeys.detail(playlistResourceId) }),
-      queryClient.invalidateQueries({ queryKey: playlistQueryKeys.tracks(playlistResourceId) }),
-      queryClient.invalidateQueries({ queryKey: playlistQueryKeys.list() }),
-    ]);
+    await invalidatePlaylistContentQueries(queryClient, [playlistResourceId]);
 
     setRowSelection({});
     setIsUnlinking(false);

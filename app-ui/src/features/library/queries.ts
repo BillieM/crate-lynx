@@ -1,6 +1,7 @@
-import { useInfiniteQuery } from "@tanstack/react-query";
+import { type QueryClient, type QueryKey, useInfiniteQuery } from "@tanstack/react-query";
 
 import { endpoints, fetchJson } from "../../lib/api";
+import { invalidateQueryKeys } from "../../lib/queryInvalidation";
 
 export type LibraryLinkStatus = "linked" | "pending" | "unlinked";
 export type LibraryFileStatus = "available" | "missing" | "beets_failed";
@@ -37,6 +38,14 @@ export const libraryQueryKeys = {
   all: ["library"] as const,
   tracks: () => ["library", "tracks"] as const,
 };
+
+export function libraryInvalidationKeys(): QueryKey[] {
+  return [libraryQueryKeys.all, libraryQueryKeys.tracks()];
+}
+
+export async function invalidateLibraryQueries(queryClient: QueryClient): Promise<void> {
+  await invalidateQueryKeys(queryClient, libraryInvalidationKeys());
+}
 
 type FetchLibraryTracksOptions = {
   cursor?: number | null;

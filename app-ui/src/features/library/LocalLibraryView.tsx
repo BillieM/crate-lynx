@@ -10,16 +10,22 @@ import { FilterChipGroup, type FilterChipOption } from "../../components/FilterC
 import { StatusMessage } from "../../components/StatusMessage";
 import { formatDuration } from "../../lib/formatters";
 import { settleInChunks } from "../../lib/settleInChunks";
+import { useDelayedInvalidate } from "../../lib/useDelayedInvalidate";
 import { controlClasses, surfaceClasses, textClasses } from "../../styles/componentClasses";
 import { trackStatusDotClasses } from "../../styles/toneClasses";
 import { LocalTrackDetailDrawer } from "../localTracks/LocalTrackDetailDrawer";
-import { deleteFinalLink, playlistQueryKeys } from "../playlists/queries";
+import {
+  deleteFinalLink,
+  invalidatePlaylistLinkQueries,
+  playlistLinkInvalidationKeys,
+} from "../playlists/queries";
 import {
   type LibraryLinkStatus,
   type LibraryStats,
   type LibraryTrack,
   type LibraryTracksResponse,
-  libraryQueryKeys,
+  invalidateLibraryQueries,
+  libraryInvalidationKeys,
   useLibraryTracksQuery,
 } from "./queries";
 
@@ -165,6 +171,7 @@ type LocalLibraryViewProps = {
 
 export function LocalLibraryView({ isPending = false, state, tracksResponse }: LocalLibraryViewProps = {}) {
   const queryClient = useQueryClient();
+  const delayedInvalidate = useDelayedInvalidate();
   const [searchParams, setSearchParams] = useSearchParams();
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
@@ -281,11 +288,13 @@ export function LocalLibraryView({ isPending = false, state, tracksResponse }: L
 
   async function invalidateLibraryTables() {
     await Promise.all([
-      queryClient.invalidateQueries({ queryKey: libraryQueryKeys.all }),
-      queryClient.invalidateQueries({ queryKey: libraryQueryKeys.tracks() }),
-      queryClient.invalidateQueries({ queryKey: playlistQueryKeys.all }),
-      queryClient.invalidateQueries({ queryKey: playlistQueryKeys.proposals() }),
+      invalidateLibraryQueries(queryClient),
+      invalidatePlaylistLinkQueries(queryClient),
     ]);
+  }
+
+  function scheduleRematchRefresh() {
+    delayedInvalidate([...libraryInvalidationKeys(), ...playlistLinkInvalidationKeys()]);
   }
 
   async function handleBulkRematch() {
@@ -303,6 +312,7 @@ export function LocalLibraryView({ isPending = false, state, tracksResponse }: L
     const failureCount = results.filter((result) => result.status === "rejected").length;
 
     await invalidateLibraryTables();
+    scheduleRematchRefresh();
 
     setRowSelection({});
     setIsBulkRematching(false);

@@ -11,11 +11,18 @@ import { settleInChunks } from "../../lib/settleInChunks";
 import { useDelayedInvalidate } from "../../lib/useDelayedInvalidate";
 import { controlClasses, layoutClasses, textClasses } from "../../styles/componentClasses";
 import { actionButtonToneClasses } from "../../styles/toneClasses";
-import { maintenanceQueryKeys } from "../maintenance/queries";
-import { PlaylistActionStatus } from "../shell/Topbar";
-import { streamingAccountQueryKeys, useStreamingAccountsQuery } from "../streamingAccounts/queries";
 import {
-  playlistQueryKeys,
+  invalidateMissingLocallyQueries,
+  missingLocallyInvalidationKeys,
+} from "../maintenance/queries";
+import { PlaylistActionStatus } from "../shell/Topbar";
+import {
+  streamingAccountInvalidationKeys,
+  useStreamingAccountsQuery,
+} from "../streamingAccounts/queries";
+import {
+  invalidatePlaylistConfigurationQueries,
+  playlistConfigurationInvalidationKeys,
   refreshStreamingAccountMetadata,
   syncStreamingAccount,
   syncStreamingPlaylist,
@@ -113,20 +120,14 @@ export function PlaylistSyncConfiguration() {
   const selectedSyncMutation = useMutation({
     mutationFn: syncStreamingAccount,
     onSuccess: async () => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: playlistQueryKeys.list() }),
-        queryClient.invalidateQueries({ queryKey: playlistQueryKeys.config() }),
-      ]);
+      await invalidatePlaylistConfigurationQueries(queryClient);
       scheduleStreamingSyncRefresh();
     },
   });
   const metadataRefreshMutation = useMutation({
     mutationFn: refreshStreamingAccountMetadata,
     onSuccess: async () => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: playlistQueryKeys.list() }),
-        queryClient.invalidateQueries({ queryKey: playlistQueryKeys.config() }),
-      ]);
+      await invalidatePlaylistConfigurationQueries(queryClient);
       scheduleStreamingSyncRefresh();
     },
   });
@@ -134,9 +135,8 @@ export function PlaylistSyncConfiguration() {
     mutationFn: updateStreamingPlaylistConfig,
     onSuccess: async () => {
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: playlistQueryKeys.list() }),
-        queryClient.invalidateQueries({ queryKey: playlistQueryKeys.config() }),
-        queryClient.invalidateQueries({ queryKey: maintenanceQueryKeys.missingLocally() }),
+        invalidatePlaylistConfigurationQueries(queryClient),
+        invalidateMissingLocallyQueries(queryClient),
       ]);
     },
   });
@@ -298,17 +298,16 @@ export function PlaylistSyncConfiguration() {
 
   async function refreshPlaylistQueries() {
     await Promise.all([
-      queryClient.invalidateQueries({ queryKey: playlistQueryKeys.list() }),
-      queryClient.invalidateQueries({ queryKey: playlistQueryKeys.config() }),
-      queryClient.invalidateQueries({ queryKey: maintenanceQueryKeys.missingLocally() }),
+      invalidatePlaylistConfigurationQueries(queryClient),
+      invalidateMissingLocallyQueries(queryClient),
     ]);
   }
 
   function scheduleStreamingSyncRefresh() {
     delayedInvalidate([
-      playlistQueryKeys.list(),
-      playlistQueryKeys.config(),
-      streamingAccountQueryKeys.list(),
+      ...playlistConfigurationInvalidationKeys(),
+      ...missingLocallyInvalidationKeys(),
+      ...streamingAccountInvalidationKeys(),
     ]);
   }
 

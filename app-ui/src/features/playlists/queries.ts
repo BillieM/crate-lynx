@@ -1,8 +1,9 @@
-import { useQuery } from "@tanstack/react-query";
+import { type QueryClient, type QueryKey, useQuery } from "@tanstack/react-query";
 import { z } from "zod";
 
 import { deleteJson, endpoints, fetchBlob, fetchJson, patchJson, postJson } from "../../lib/api";
 import type { components } from "../../lib/api-types";
+import { invalidateQueryKeys } from "../../lib/queryInvalidation";
 
 type ApiSchemas = components["schemas"];
 
@@ -192,6 +193,39 @@ export const playlistQueryKeys = {
     ["playlists", "proposals", { confidenceBand: filters.confidenceBand ?? null }] as const,
   tracks: (playlistId: number | string) => ["playlists", playlistId, "tracks"] as const,
 };
+
+export function playlistConfigurationInvalidationKeys(): QueryKey[] {
+  return [playlistQueryKeys.list(), playlistQueryKeys.config()];
+}
+
+export function playlistContentInvalidationKeys(playlistIds: readonly (number | string)[]): QueryKey[] {
+  return [
+    playlistQueryKeys.list(),
+    ...playlistIds.flatMap((playlistId) => [
+      playlistQueryKeys.detail(playlistId),
+      playlistQueryKeys.tracks(playlistId),
+    ]),
+  ];
+}
+
+export function playlistLinkInvalidationKeys(): QueryKey[] {
+  return [playlistQueryKeys.all];
+}
+
+export async function invalidatePlaylistConfigurationQueries(queryClient: QueryClient): Promise<void> {
+  await invalidateQueryKeys(queryClient, playlistConfigurationInvalidationKeys());
+}
+
+export async function invalidatePlaylistContentQueries(
+  queryClient: QueryClient,
+  playlistIds: readonly (number | string)[],
+): Promise<void> {
+  await invalidateQueryKeys(queryClient, playlistContentInvalidationKeys(playlistIds));
+}
+
+export async function invalidatePlaylistLinkQueries(queryClient: QueryClient): Promise<void> {
+  await invalidateQueryKeys(queryClient, playlistLinkInvalidationKeys());
+}
 
 function hasPlaylistId(playlistId: number | string | null | undefined): playlistId is number | string {
   if (playlistId === null || playlistId === undefined) {

@@ -3,6 +3,8 @@ import { useCallback, useEffect, useRef } from "react";
 
 const defaultDelaysMs = [3000, 10000] as const;
 
+// Use delayed invalidation only after a mutation queues backend work whose visible
+// results land after the request returns. Synchronous mutations should invalidate immediately.
 export function useDelayedInvalidate(): (
   queryKeys: readonly QueryKey[],
   delaysMs?: readonly number[],

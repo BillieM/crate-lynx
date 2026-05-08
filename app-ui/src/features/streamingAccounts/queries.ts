@@ -1,9 +1,10 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { type QueryClient, type QueryKey, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { z } from "zod";
 
 import { endpoints, fetchJson, patchJson, postJson } from "../../lib/api";
 import type { components } from "../../lib/api-types";
-import { playlistQueryKeys } from "../playlists/queries";
+import { invalidateQueryKeys } from "../../lib/queryInvalidation";
+import { playlistConfigurationInvalidationKeys } from "../playlists/queries";
 
 type ApiSchemas = components["schemas"];
 
@@ -34,10 +35,16 @@ export const streamingAccountQueryKeys = {
   list: () => ["streaming-accounts", "list"] as const,
 };
 
-function invalidateStreamingAccountMutationQueries(queryClient: ReturnType<typeof useQueryClient>) {
-  void queryClient.invalidateQueries({ queryKey: streamingAccountQueryKeys.list() });
-  void queryClient.invalidateQueries({ queryKey: playlistQueryKeys.list() });
-  void queryClient.invalidateQueries({ queryKey: playlistQueryKeys.config() });
+export function streamingAccountInvalidationKeys(): QueryKey[] {
+  return [streamingAccountQueryKeys.list()];
+}
+
+export function streamingAccountMutationInvalidationKeys(): QueryKey[] {
+  return [...streamingAccountInvalidationKeys(), ...playlistConfigurationInvalidationKeys()];
+}
+
+export async function invalidateStreamingAccountMutationQueries(queryClient: QueryClient): Promise<void> {
+  await invalidateQueryKeys(queryClient, streamingAccountMutationInvalidationKeys());
 }
 
 export async function fetchStreamingAccounts(): Promise<StreamingAccountsResponse> {
@@ -78,9 +85,7 @@ export function useCreateStreamingAccountMutation() {
 
   return useMutation({
     mutationFn: createStreamingAccount,
-    onSuccess: () => {
-      invalidateStreamingAccountMutationQueries(queryClient);
-    },
+    onSuccess: () => invalidateStreamingAccountMutationQueries(queryClient),
   });
 }
 
@@ -89,8 +94,6 @@ export function useRefreshStreamingAccountAuthMutation() {
 
   return useMutation({
     mutationFn: refreshStreamingAccountAuth,
-    onSuccess: () => {
-      invalidateStreamingAccountMutationQueries(queryClient);
-    },
+    onSuccess: () => invalidateStreamingAccountMutationQueries(queryClient),
   });
 }
