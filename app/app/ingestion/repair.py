@@ -1,33 +1,20 @@
 from __future__ import annotations
 
 import argparse
-from collections.abc import Iterable, Iterator
-from itertools import islice
 import os
 from pathlib import Path
 import sqlite3
-from typing import TypeVar
 
 from sqlalchemy import create_engine, delete, select, update
 
-from app.ingestion.beets_mirror import beets_albums_table, beets_items_table
-from app.ingestion.beets_mirror_sync import (
-    decode_beets_path,
-    iter_all_albums,
-    iter_all_items,
-    upsert_album,
-    upsert_item,
-)
+from app.ingestion.beets_mirror_backfill import backfill_beets_mirror
+from app.ingestion.beets_mirror_sync import decode_beets_path
 from app.ingestion.failures import failed_ingestion_attempts_table
 from app.ingestion.pipeline import FingerprintGenerator
 from app.links.store import final_links_table
 from app.local_tracks.store import local_tracks_table
 from app.matching.jobs import MatchingJobEnqueuer
 from app.matching.pipeline import suggested_links_table
-
-
-BEETS_MIRROR_SYNC_CHUNK_SIZE = 500
-T = TypeVar("T")
 
 
 def main() -> None:
@@ -191,86 +178,11 @@ def _repair_beets_mirror(
     beets_library: Path,
     apply: bool,
 ) -> list[str]:
-    if not beets_library.exists():
-        return []
-
-    actions: list[str] = []
-    existing_item_ids = set(
-        connection.execute(select(beets_items_table.c.beets_id)).scalars()
+    return backfill_beets_mirror(
+        connection,
+        beets_library=beets_library,
+        apply=apply,
     )
-    current_item_ids: set[int] = set()
-
-    with sqlite3.connect(beets_library) as sqlite_connection:
-        for item_chunk in _batched(
-            iter_all_items(sqlite_connection),
-            BEETS_MIRROR_SYNC_CHUNK_SIZE,
-        ):
-            for item_row in item_chunk:
-                current_item_ids.add(item_row.beets_id)
-                status = (
-                    upsert_item(connection, item_row)
-                    if apply
-                    else _mirror_status(item_row.beets_id, existing_item_ids)
-                )
-                actions.append(
-                    f"{status} beets_mirror item beets_id={item_row.beets_id}"
-                )
-
-        existing_album_ids = set(
-            connection.execute(select(beets_albums_table.c.beets_album_id)).scalars()
-        )
-        for album_chunk in _batched(
-            iter_all_albums(sqlite_connection),
-            BEETS_MIRROR_SYNC_CHUNK_SIZE,
-        ):
-            for album_row in album_chunk:
-                status = (
-                    upsert_album(connection, album_row)
-                    if apply
-                    else _mirror_status(album_row.beets_album_id, existing_album_ids)
-                )
-                actions.append(
-                    f"{status} beets_mirror album "
-                    f"beets_album_id={album_row.beets_album_id}"
-                )
-
-    mirrored_item_ids = set(
-        connection.execute(select(beets_items_table.c.beets_id)).scalars()
-    )
-    for beets_id in sorted(mirrored_item_ids - current_item_ids):
-        actions.append(f"stale_mirror_items beets_id={beets_id} missing from Beets")
-
-    local_track_rows = (
-        connection.execute(
-            select(local_tracks_table.c.id, local_tracks_table.c.beets_id).where(
-                local_tracks_table.c.beets_id.is_not(None)
-            )
-        )
-        .mappings()
-        .all()
-    )
-    for row in local_track_rows:
-        beets_id = row["beets_id"]
-        if isinstance(beets_id, int) and beets_id not in current_item_ids:
-            actions.append(
-                "stale_local_track_beets_ids "
-                f"local_track_id={row['id']} beets_id={beets_id} missing from Beets"
-            )
-
-    return actions
-
-
-def _mirror_status(entity_id: int, existing_ids: set[int]) -> str:
-    return "updated" if entity_id in existing_ids else "inserted"
-
-
-def _batched(
-    rows: Iterable[T],
-    size: int,
-) -> Iterator[tuple[T, ...]]:
-    iterator = iter(rows)
-    while batch := tuple(islice(iterator, size)):
-        yield batch
 
 
 def _repair_missing_local_tracks(
