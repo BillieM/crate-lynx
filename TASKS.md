@@ -249,7 +249,7 @@ Each task is sized to fit comfortably in one Codex 5.5-xhigh context window.
 
 ---
 
-## - [ ] T14. Test infra overhaul: testcontainers + conftest cleanup + m3u coverage
+## - [x] T14. Test infra overhaul: testcontainers + conftest cleanup + m3u coverage
 
 **Why**: Three test-infra issues converge on `conftest.py`:
 - `app/tests/conftest.py:25` uses SQLite. Schema features (CHECK constraints, partial unique indexes, FK ON DELETE) silently differ from prod — T2 (uniqueness) and T3 (idempotence) cannot be tested under SQLite.

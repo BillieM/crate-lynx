@@ -407,6 +407,7 @@ def test_approve_proposal_writes_final_link_and_clears_pending_siblings(
 
 
 def test_approve_proposal_regenerates_playlist_m3u(
+    library_root: Path,
     monkeypatch,
     tmp_path: Path,
 ) -> None:
@@ -417,7 +418,6 @@ def test_approve_proposal_regenerates_playlist_m3u(
     suggested_links_metadata.create_all(engine)
     links_metadata.create_all(engine)
     monkeypatch.setenv("DATABASE_URL", database_url)
-    monkeypatch.setenv("LIBRARY_ROOT", str(tmp_path / "library"))
     monkeypatch.setenv("M3U_OUTPUT_DIR", str(tmp_path / "m3u"))
 
     with engine.begin() as connection:
@@ -483,7 +483,7 @@ def test_approve_proposal_regenerates_playlist_m3u(
     ).splitlines() == [
         "#EXTM3U",
         "#EXTINF:123,Artist - Approved Track",
-        str((tmp_path / "library" / "Artist/approved.mp3").resolve()),
+        str((library_root / "Artist/approved.mp3").resolve()),
     ]
 
 
@@ -766,6 +766,7 @@ def test_reject_proposal_marks_suggestion_rejected(tmp_path: Path) -> None:
 
 
 def test_reject_proposal_regenerates_playlist_m3u(
+    library_root: Path,
     monkeypatch,
     tmp_path: Path,
 ) -> None:
@@ -776,8 +777,8 @@ def test_reject_proposal_regenerates_playlist_m3u(
     suggested_links_metadata.create_all(engine)
     links_metadata.create_all(engine)
     monkeypatch.setenv("DATABASE_URL", database_url)
-    monkeypatch.setenv("LIBRARY_ROOT", str(tmp_path / "library"))
     monkeypatch.setenv("M3U_OUTPUT_DIR", str(tmp_path / "m3u"))
+    assert library_root == tmp_path / "library"
 
     output_path = tmp_path / "m3u" / "Road-Trip-Mix.m3u"
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -941,6 +942,7 @@ def test_break_final_link_removes_final_link_and_writes_rejected_suggestion(
 
 
 def test_break_final_link_regenerates_playlist_m3u(
+    library_root: Path,
     monkeypatch,
     tmp_path: Path,
 ) -> None:
@@ -951,8 +953,8 @@ def test_break_final_link_regenerates_playlist_m3u(
     suggested_links_metadata.create_all(engine)
     links_metadata.create_all(engine)
     monkeypatch.setenv("DATABASE_URL", database_url)
-    monkeypatch.setenv("LIBRARY_ROOT", str(tmp_path / "library"))
     monkeypatch.setenv("M3U_OUTPUT_DIR", str(tmp_path / "m3u"))
+    assert library_root == tmp_path / "library"
 
     output_path = tmp_path / "m3u" / "Road-Trip-Mix.m3u"
     output_path.parent.mkdir(parents=True, exist_ok=True)

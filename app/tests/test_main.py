@@ -1572,6 +1572,7 @@ def test_unidentified_endpoint_lists_durable_failed_ingestion_attempts(
 
 
 def test_playlist_m3u_export_endpoint_returns_attachment(
+    library_root: Path,
     monkeypatch,
     tmp_path: Path,
 ) -> None:
@@ -1581,7 +1582,6 @@ def test_playlist_m3u_export_endpoint_returns_attachment(
     local_tracks_metadata.create_all(engine)
     links_metadata.create_all(engine)
     monkeypatch.setenv("DATABASE_URL", database_url)
-    monkeypatch.setenv("LIBRARY_ROOT", str(tmp_path / "library"))
 
     with engine.begin() as connection:
         connection.execute(
@@ -1645,7 +1645,7 @@ def test_playlist_m3u_export_endpoint_returns_attachment(
     assert response.body.decode("utf-8").splitlines() == [
         "#EXTM3U",
         "#EXTINF:181,Artist - Song",
-        str((tmp_path / "library" / "Artist/song.mp3").resolve()),
+        str((library_root / "Artist/song.mp3").resolve()),
     ]
 
 
@@ -2041,6 +2041,7 @@ def test_local_track_detail_endpoint_returns_404_for_unknown_track(
 
 
 def test_local_track_rescue_endpoint_returns_updated_track_record(
+    library_root: Path,
     monkeypatch,
     tmp_path: Path,
 ) -> None:
@@ -2049,7 +2050,6 @@ def test_local_track_rescue_endpoint_returns_updated_track_record(
     local_tracks_metadata.create_all(engine)
     links_metadata.create_all(engine)
     monkeypatch.setenv("DATABASE_URL", database_url)
-    monkeypatch.setenv("LIBRARY_ROOT", str(tmp_path / "library"))
 
     with engine.begin() as connection:
         connection.execute(
@@ -2104,7 +2104,7 @@ def test_local_track_rescue_endpoint_returns_updated_track_record(
         "local_track_id": 21,
         "database_url": None,
         "engine": seen["engine"],
-        "library_root": str(tmp_path / "library"),
+        "library_root": str(library_root),
     }
 
 
