@@ -47,6 +47,10 @@ type BulkLibraryStatus = {
   title: string;
 };
 
+type LibraryTrackWithFinalLink = LibraryTrack & {
+  final_link_id: number;
+};
+
 async function rematchLocalTrack(localTrackId: number): Promise<RematchResponse> {
   const response = await fetch(`/api/local-tracks/${encodeURIComponent(String(localTrackId))}/rematch`, {
     method: "POST",
@@ -57,6 +61,10 @@ async function rematchLocalTrack(localTrackId: number): Promise<RematchResponse>
   }
 
   return (await response.json()) as RematchResponse;
+}
+
+function hasFinalLinkId(track: LibraryTrack): track is LibraryTrackWithFinalLink {
+  return typeof track.final_link_id === "number" && Number.isFinite(track.final_link_id);
 }
 
 const linkStatusLabels = {
@@ -320,7 +328,7 @@ export function LocalLibraryView({ isPending = false, state, tracksResponse }: L
   }
 
   async function handleBulkUnlink() {
-    const unlinkableTracks = selectedLinkedTracks.filter((track) => track.final_link_id !== null);
+    const unlinkableTracks = selectedLinkedTracks.filter(hasFinalLinkId);
     const missingFinalLinkCount = selectedLinkedTracks.length - unlinkableTracks.length;
 
     if (selectedLinkedTracks.length === 0 || isBulkBusy) {
@@ -330,7 +338,7 @@ export function LocalLibraryView({ isPending = false, state, tracksResponse }: L
     setIsBulkUnlinking(true);
     setBulkStatus(null);
 
-    const results = await settleInChunks(unlinkableTracks, 5, (track) => deleteFinalLink(track.final_link_id as number));
+    const results = await settleInChunks(unlinkableTracks, 5, (track) => deleteFinalLink(track.final_link_id));
     const successCount = results.filter((result) => result.status === "fulfilled").length;
     const failureCount = results.filter((result) => result.status === "rejected").length + missingFinalLinkCount;
 

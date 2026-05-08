@@ -249,11 +249,11 @@ export async function invalidatePlaylistLinkQueries(queryClient: QueryClient): P
 }
 
 function hasPlaylistId(playlistId: number | string | null | undefined): playlistId is number | string {
-  if (playlistId === null || playlistId === undefined) {
-    return false;
+  if (typeof playlistId === "number") {
+    return Number.isFinite(playlistId);
   }
 
-  return String(playlistId).trim().length > 0;
+  return typeof playlistId === "string" && playlistId.trim().length > 0;
 }
 
 function getFilenameFromContentDisposition(contentDisposition: string | null) {
@@ -369,10 +369,18 @@ export async function exportPlaylistM3u(playlistId: number | string): Promise<Pl
 }
 
 export function usePlaylistDetailQuery(playlistId: number | string | null | undefined) {
+  const queryPlaylistId = hasPlaylistId(playlistId) ? playlistId : null;
+
   return useQuery({
-    queryKey: hasPlaylistId(playlistId) ? playlistQueryKeys.detail(playlistId) : playlistQueryKeys.detail("idle"),
-    queryFn: () => fetchPlaylistDetail(playlistId as number | string),
-    enabled: hasPlaylistId(playlistId),
+    queryKey: queryPlaylistId === null ? playlistQueryKeys.detail("idle") : playlistQueryKeys.detail(queryPlaylistId),
+    queryFn: () => {
+      if (queryPlaylistId === null) {
+        throw new Error("Playlist detail query requires a playlist id");
+      }
+
+      return fetchPlaylistDetail(queryPlaylistId);
+    },
+    enabled: queryPlaylistId !== null,
   });
 }
 
@@ -391,10 +399,18 @@ export function useStreamingPlaylistConfigQuery() {
 }
 
 export function usePlaylistTracksQuery(playlistId: number | string | null | undefined) {
+  const queryPlaylistId = hasPlaylistId(playlistId) ? playlistId : null;
+
   return useQuery({
-    queryKey: hasPlaylistId(playlistId) ? playlistQueryKeys.tracks(playlistId) : playlistQueryKeys.tracks("idle"),
-    queryFn: () => fetchPlaylistTracks(playlistId as number | string),
-    enabled: hasPlaylistId(playlistId),
+    queryKey: queryPlaylistId === null ? playlistQueryKeys.tracks("idle") : playlistQueryKeys.tracks(queryPlaylistId),
+    queryFn: () => {
+      if (queryPlaylistId === null) {
+        throw new Error("Playlist tracks query requires a playlist id");
+      }
+
+      return fetchPlaylistTracks(queryPlaylistId);
+    },
+    enabled: queryPlaylistId !== null,
   });
 }
 

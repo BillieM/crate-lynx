@@ -323,7 +323,7 @@ Each task is sized to fit comfortably in one Codex 5.5-xhigh context window.
 
 ---
 
-## - [ ] T18. Replace `as number | string` casts in frontend
+## - [x] T18. Replace `as number | string` casts in frontend
 
 **Why**: `app-ui/src/features/library/LocalLibraryView.tsx:46-56` and `features/playlists/queries.ts:160-161` use repeated unsafe casts that hide bugs if upstream guards break.
 
