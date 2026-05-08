@@ -305,7 +305,11 @@ def sync_library_playlist_tracks(
                     tracks=tracks,
                 )
             )
-            _clear_playlist_sync_failure(playlist_store, playlist_id=playlist.id)
+            _mark_playlist_sync_success(
+                playlist_store,
+                playlist_id=playlist.id,
+                synced_at=sync_timestamp,
+            )
         except MalformedPlaylistPayloadError as exc:
             _mark_playlist_sync_failure(
                 playlist_store,
@@ -341,13 +345,18 @@ def sync_single_library_playlist_tracks(
     adapter: StreamingAdapter,
     playlist_store: Any,
 ) -> list[Any]:
+    sync_timestamp = datetime.now(UTC)
     try:
         tracks = adapter.list_playlist_tracks(playlist.provider_playlist_id)
         synced_memberships = playlist_store.replace_playlist_membership(
             playlist_id=playlist.id,
             tracks=tracks,
         )
-        _clear_playlist_sync_failure(playlist_store, playlist_id=playlist.id)
+        _mark_playlist_sync_success(
+            playlist_store,
+            playlist_id=playlist.id,
+            synced_at=sync_timestamp,
+        )
         return synced_memberships
     except MalformedPlaylistPayloadError as exc:
         _mark_playlist_sync_failure(
@@ -386,6 +395,20 @@ def _mark_playlist_sync_failure(
     marker = getattr(playlist_store, "mark_playlist_sync_failure", None)
     if marker is not None:
         marker(playlist_id=playlist_id, error=error, failed_at=failed_at)
+
+
+def _mark_playlist_sync_success(
+    playlist_store: Any,
+    *,
+    playlist_id: int,
+    synced_at: datetime,
+) -> None:
+    marker = getattr(playlist_store, "mark_playlist_sync_success", None)
+    if marker is not None:
+        marker(playlist_id=playlist_id, synced_at=synced_at)
+        return
+
+    _clear_playlist_sync_failure(playlist_store, playlist_id=playlist_id)
 
 
 def _clear_playlist_sync_failure(playlist_store: Any, *, playlist_id: int) -> None:

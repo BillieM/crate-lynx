@@ -695,6 +695,23 @@ class StreamingAccountStore:
                 )
             )
 
+    def mark_playlist_sync_success(
+        self,
+        *,
+        playlist_id: int,
+        synced_at: datetime | None = None,
+    ) -> None:
+        with self._engine.begin() as connection:
+            connection.execute(
+                update(streaming_playlists_table)
+                .where(streaming_playlists_table.c.id == playlist_id)
+                .values(
+                    synced_at=synced_at or datetime.now(UTC),
+                    last_sync_error=None,
+                    last_sync_error_at=None,
+                )
+            )
+
     def sync_youtube_music_playlists(
         self,
         *,

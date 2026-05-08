@@ -566,6 +566,14 @@ def test_streaming_account_store_persists_playlist_sync_failures(
     assert recovered_playlist.last_sync_error is None
     assert recovered_playlist.last_sync_error_at is None
 
+    synced_at = datetime(2026, 5, 2, 12, 30, tzinfo=UTC)
+    store.mark_playlist_sync_success(playlist_id=playlist.id, synced_at=synced_at)
+
+    synced_playlist = store.list_playlists()[0]
+    assert synced_playlist.synced_at == synced_at.replace(tzinfo=None)
+    assert synced_playlist.last_sync_error is None
+    assert synced_playlist.last_sync_error_at is None
+
 
 def test_streaming_account_store_upserts_tracks_and_playlist_membership(
     monkeypatch,
@@ -878,7 +886,9 @@ def test_streaming_account_store_syncs_single_playlist_ignoring_selected_flag(
     assert [membership["playlist_id"] for membership in stored_memberships] == [
         playlist.id
     ]
-    assert store.list_playlists()[0].selected_for_sync is False
+    persisted_playlist = store.list_playlists()[0]
+    assert persisted_playlist.selected_for_sync is False
+    assert persisted_playlist.synced_at is not None
 
 
 def test_streaming_account_store_preserves_membership_for_malformed_playlist(

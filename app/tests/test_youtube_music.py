@@ -685,6 +685,10 @@ def test_sync_library_playlist_tracks_uses_adapter_and_store() -> None:
             )
             return [f"membership-{playlist_id}"]
 
+        def mark_playlist_sync_success(self, *, playlist_id, synced_at):
+            successes = seen.setdefault("successes", [])
+            successes.append({"playlist_id": playlist_id, "synced_at": synced_at})
+
     class FakeAdapter:
         def list_library_playlists(self):
             return [
@@ -748,6 +752,10 @@ def test_sync_library_playlist_tracks_uses_adapter_and_store() -> None:
             ],
         },
     ]
+    assert seen["successes"] == [
+        {"playlist_id": 11, "synced_at": seen["synced_at"]},
+        {"playlist_id": 12, "synced_at": seen["synced_at"]},
+    ]
 
 
 def test_sync_library_playlist_tracks_skips_malformed_playlist_payload() -> None:
@@ -772,6 +780,10 @@ def test_sync_library_playlist_tracks_skips_malformed_playlist_payload() -> None
             seen["failed_playlist_id"] = playlist_id
             seen["failure_error"] = error
             seen["failed_at"] = failed_at
+
+        def mark_playlist_sync_success(self, *, playlist_id, synced_at):
+            seen["successful_playlist_id"] = playlist_id
+            seen["successful_synced_at"] = synced_at
 
     class FakeAdapter:
         def list_library_playlists(self):
@@ -806,6 +818,8 @@ def test_sync_library_playlist_tracks_skips_malformed_playlist_payload() -> None
     assert seen["failed_playlist_id"] == 11
     assert seen["failure_error"] == "invalid tracks payload"
     assert isinstance(seen["failed_at"], datetime)
+    assert seen["successful_playlist_id"] == 12
+    assert isinstance(seen["successful_synced_at"], datetime)
 
 
 def test_sync_library_playlist_tracks_isolates_playlist_failures() -> None:
@@ -830,6 +844,10 @@ def test_sync_library_playlist_tracks_isolates_playlist_failures() -> None:
             seen["failed_playlist_id"] = playlist_id
             seen["failure_error"] = error
             seen["failed_at"] = failed_at
+
+        def mark_playlist_sync_success(self, *, playlist_id, synced_at):
+            seen["successful_playlist_id"] = playlist_id
+            seen["successful_synced_at"] = synced_at
 
     class FakeAdapter:
         def list_library_playlists(self):
@@ -864,3 +882,5 @@ def test_sync_library_playlist_tracks_isolates_playlist_failures() -> None:
     assert seen["failure_error"] == "upstream request failed"
     assert isinstance(seen["failed_at"], datetime)
     assert seen["replaced_playlist_ids"] == [12]
+    assert seen["successful_playlist_id"] == 12
+    assert isinstance(seen["successful_synced_at"], datetime)
