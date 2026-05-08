@@ -8,7 +8,6 @@ Create Date: 2026-05-05 00:00:00.000000
 from __future__ import annotations
 
 from alembic import op
-import sqlalchemy as sa
 
 
 revision = "9b7e3c2d1a4f"
@@ -32,15 +31,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.add_column(
-        "streaming_tracks",
-        sa.Column("fingerprint", sa.String(), nullable=True),
-    )
-    op.add_column(
-        "streaming_tracks",
-        sa.Column("fingerprint_duration_seconds", sa.Float(), nullable=True),
-    )
-    op.add_column(
-        "streaming_tracks",
-        sa.Column("fingerprinted_at", sa.DateTime(timezone=True), nullable=True),
+    raise NotImplementedError(
+        "downgrade cannot restore removed fingerprints or acoustic match methods; "
+        "restore from backup"
     )

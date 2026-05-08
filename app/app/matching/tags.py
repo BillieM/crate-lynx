@@ -5,10 +5,11 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 
 from rapidfuzz import fuzz
-from sqlalchemy import case, column, func, select, table
+from sqlalchemy import case, func, select
 from sqlalchemy.engine import Engine
 
 from app.core.db import create_database_engine
+from app.core.tables import beets_items_view
 from app.local_tracks.store import local_tracks_table
 from app.matching.models import ConfidenceBand, MatchResult
 from app.streaming.models import streaming_tracks_table
@@ -29,15 +30,6 @@ ARTIST_WEIGHT = 0.26
 ALBUM_BONUS_WEIGHT = 0.04
 DURATION_BONUS_WEIGHT = 0.02
 DURATION_BONUS_TOLERANCE_MS = 10_000
-
-beets_items_view = table(
-    "beets_items",
-    column("beets_id"),
-    column("title"),
-    column("artist"),
-    column("album"),
-    column("length"),
-)
 
 
 @dataclass(frozen=True, slots=True)

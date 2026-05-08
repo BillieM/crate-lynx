@@ -13,16 +13,19 @@ from sqlalchemy import (
     String,
     Table,
     UniqueConstraint,
-    column,
     func,
     select,
-    table,
 )
 from sqlalchemy.dialects.postgresql import insert as postgresql_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.engine import Engine
 
 from app.core.db import create_database_engine
+from app.core.tables import (
+    failed_ingestion_attempts_view,
+    final_links_view,
+    suggested_links_view,
+)
 
 metadata = MetaData()
 
@@ -46,32 +49,6 @@ local_tracks_table = Table(
 )
 
 SUGGESTED_LINK_STATUS_PENDING = "pending"
-final_links_view = table(
-    "final_links",
-    column("id"),
-    column("local_track_id"),
-    column("streaming_track_id"),
-    column("approved_at"),
-)
-suggested_links_view = table(
-    "suggested_links",
-    column("id"),
-    column("local_track_id"),
-    column("streaming_track_id"),
-    column("match_method"),
-    column("score"),
-    column("status"),
-    column("created_at"),
-)
-failed_ingestion_attempts_view = table(
-    "failed_ingestion_attempts",
-    column("id"),
-    column("source_path"),
-    column("filename"),
-    column("failure_reason"),
-    column("failed_at"),
-    column("local_track_id"),
-)
 
 
 @dataclass(slots=True)

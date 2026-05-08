@@ -30,4 +30,6 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    pass
+    raise NotImplementedError(
+        "downgrade is destructive; restore failed ingestion attempts from backup"
+    )

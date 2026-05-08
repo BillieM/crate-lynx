@@ -13,16 +13,15 @@ from sqlalchemy import (
     MetaData,
     String,
     Table,
-    column,
     delete,
     func,
     insert,
     select,
-    table,
 )
 from sqlalchemy.engine import Engine
 
 from app.core.db import create_database_engine
+from app.core.tables import final_links_view
 from app.matching.isrc import IsrcMatcher
 from app.matching.models import MatchResult
 from app.matching.tags import TagMatcher
@@ -56,8 +55,6 @@ suggested_links_table = Table(
     Index("ix_suggested_links_local_track_id_status", "local_track_id", "status"),
     Index("ix_suggested_links_streaming_track_id", "streaming_track_id"),
 )
-
-final_links_view = table("final_links", column("local_track_id"))
 
 
 @dataclass(slots=True)

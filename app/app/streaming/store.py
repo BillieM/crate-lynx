@@ -6,12 +6,10 @@ from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import (
-    column,
     delete,
     func,
     insert,
     select,
-    table,
     update,
 )
 from sqlalchemy.dialects.postgresql import insert as postgresql_insert
@@ -20,6 +18,7 @@ from sqlalchemy.engine import Engine
 from ytmusicapi.exceptions import YTMusicError
 
 from app.core.db import create_database_engine
+from app.core.tables import final_links_view, suggested_links_view
 from app.streaming.adapters.youtube_music import (
     YouTubeMusicAdapter,
     YouTubeMusicAuthenticationError,
@@ -50,19 +49,6 @@ from app.streaming.models import (
 )
 
 PENDING_LINK_STATUS = "pending"
-final_links_view = table(
-    "final_links",
-    column("id"),
-    column("local_track_id"),
-    column("streaming_track_id"),
-)
-suggested_links_view = table(
-    "suggested_links",
-    column("id"),
-    column("local_track_id"),
-    column("streaming_track_id"),
-    column("status"),
-)
 
 
 def _conflict_insert(target_table: Any, dialect_name: str) -> Any:

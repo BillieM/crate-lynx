@@ -82,7 +82,7 @@ def decode_beets_path(raw_path: bytes | str) -> str:
 
 
 def read_item(sqlite_conn, beets_id: int) -> BeetsMirrorRow | None:
-    row = _fetch_one(sqlite_conn, "items", beets_id)
+    row = _fetch_one_item(sqlite_conn, beets_id)
     if row is None:
         return None
 
@@ -90,7 +90,7 @@ def read_item(sqlite_conn, beets_id: int) -> BeetsMirrorRow | None:
 
 
 def read_album(sqlite_conn, beets_album_id: int) -> BeetsMirrorAlbumRow | None:
-    row = _fetch_one(sqlite_conn, "albums", beets_album_id)
+    row = _fetch_one_album(sqlite_conn, beets_album_id)
     if row is None:
         return None
 
@@ -98,12 +98,12 @@ def read_album(sqlite_conn, beets_album_id: int) -> BeetsMirrorAlbumRow | None:
 
 
 def iter_all_items(sqlite_conn) -> Iterator[BeetsMirrorRow]:
-    for row in _fetch_all(sqlite_conn, "items"):
+    for row in _fetch_all_items(sqlite_conn):
         yield _item_row_from_sqlite(sqlite_conn, row)
 
 
 def iter_all_albums(sqlite_conn) -> Iterator[BeetsMirrorAlbumRow]:
-    for row in _fetch_all(sqlite_conn, "albums"):
+    for row in _fetch_all_albums(sqlite_conn):
         yield _album_row_from_sqlite(sqlite_conn, row)
 
 
@@ -139,9 +139,9 @@ def upsert_album(pg_conn, row: BeetsMirrorAlbumRow) -> Literal["inserted", "upda
     return status
 
 
-def _fetch_one(sqlite_conn, table_name: str, entity_id: int) -> dict[str, Any] | None:
+def _fetch_one_item(sqlite_conn, entity_id: int) -> dict[str, Any] | None:
     cursor = sqlite_conn.execute(
-        f"SELECT * FROM {table_name} WHERE id = ?",
+        "SELECT * FROM items WHERE id = ?",
         (entity_id,),
     )
     row = cursor.fetchone()
@@ -150,8 +150,25 @@ def _fetch_one(sqlite_conn, table_name: str, entity_id: int) -> dict[str, Any] |
     return _row_dict(cursor, row)
 
 
-def _fetch_all(sqlite_conn, table_name: str) -> Iterator[dict[str, Any]]:
-    cursor = sqlite_conn.execute(f"SELECT * FROM {table_name} ORDER BY id")
+def _fetch_one_album(sqlite_conn, entity_id: int) -> dict[str, Any] | None:
+    cursor = sqlite_conn.execute(
+        "SELECT * FROM albums WHERE id = ?",
+        (entity_id,),
+    )
+    row = cursor.fetchone()
+    if row is None:
+        return None
+    return _row_dict(cursor, row)
+
+
+def _fetch_all_items(sqlite_conn) -> Iterator[dict[str, Any]]:
+    cursor = sqlite_conn.execute("SELECT * FROM items ORDER BY id")
+    for row in cursor.fetchall():
+        yield _row_dict(cursor, row)
+
+
+def _fetch_all_albums(sqlite_conn) -> Iterator[dict[str, Any]]:
+    cursor = sqlite_conn.execute("SELECT * FROM albums ORDER BY id")
     for row in cursor.fetchall():
         yield _row_dict(cursor, row)
 
@@ -173,7 +190,7 @@ def _item_row_from_sqlite(sqlite_conn, row: Mapping[str, Any]) -> BeetsMirrorRow
         beets_id=beets_id,
         album_id=album_id,
         fixed_fields=fixed_fields,
-        flex_attributes=_read_attributes(sqlite_conn, "item_attributes", beets_id),
+        flex_attributes=_read_item_attributes(sqlite_conn, beets_id),
     )
 
 
@@ -182,11 +199,7 @@ def _album_row_from_sqlite(sqlite_conn, row: Mapping[str, Any]) -> BeetsMirrorAl
     return BeetsMirrorAlbumRow(
         beets_album_id=beets_album_id,
         fixed_fields=_fixed_fields_from_sqlite(row, Album._fields),
-        flex_attributes=_read_attributes(
-            sqlite_conn,
-            "album_attributes",
-            beets_album_id,
-        ),
+        flex_attributes=_read_album_attributes(sqlite_conn, beets_album_id),
     )
 
 
@@ -204,16 +217,23 @@ def _fixed_fields_from_sqlite(
     return fixed_fields
 
 
-def _read_attributes(
-    sqlite_conn,
-    table_name: str,
-    entity_id: int,
-) -> dict[str, str]:
-    if not _sqlite_table_exists(sqlite_conn, table_name):
+def _read_item_attributes(sqlite_conn, entity_id: int) -> dict[str, str]:
+    if not _sqlite_table_exists(sqlite_conn, "item_attributes"):
         return {}
 
     rows = sqlite_conn.execute(
-        f"SELECT key, value FROM {table_name} WHERE entity_id = ? ORDER BY key",
+        "SELECT key, value FROM item_attributes WHERE entity_id = ? ORDER BY key",
+        (entity_id,),
+    ).fetchall()
+    return {str(key): "" if value is None else str(value) for key, value in rows}
+
+
+def _read_album_attributes(sqlite_conn, entity_id: int) -> dict[str, str]:
+    if not _sqlite_table_exists(sqlite_conn, "album_attributes"):
+        return {}
+
+    rows = sqlite_conn.execute(
+        "SELECT key, value FROM album_attributes WHERE entity_id = ? ORDER BY key",
         (entity_id,),
     ).fetchall()
     return {str(key): "" if value is None else str(value) for key, value in rows}

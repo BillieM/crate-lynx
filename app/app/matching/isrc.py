@@ -1,14 +1,13 @@
 from __future__ import annotations
 
-from sqlalchemy import column, func, select, table
+from sqlalchemy import func, select
 from sqlalchemy.engine import Engine
 
 from app.core.db import create_database_engine
+from app.core.tables import beets_items_view
 from app.local_tracks.store import local_tracks_table
 from app.matching.models import ConfidenceBand, MatchResult
 from app.streaming.models import streaming_tracks_table
-
-beets_items_view = table("beets_items", column("beets_id"), column("isrc"))
 
 
 class IsrcMatcher:

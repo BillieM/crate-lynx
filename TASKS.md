@@ -305,7 +305,7 @@ Each task is sized to fit comfortably in one Codex 5.5-xhigh context window.
 
 ---
 
-## - [ ] T17. Backend code-quality cleanup: f-strings, view consolidation, migration safety
+## - [x] T17. Backend code-quality cleanup: f-strings, view consolidation, migration safety
 
 **Why**: Three small backend hygiene items:
 - `app/app/ingestion/beets_mirror_sync.py:144, 154` interpolates `table_name` into SQL via f-string. Not a vulnerability (callers are internal, args are string literals) but ugly.
