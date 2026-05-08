@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from sqlalchemy import Column, DateTime, Integer, MetaData, Table, func
+from sqlalchemy import Column, DateTime, Index, Integer, MetaData, Table, func
 
 
 metadata = MetaData()
@@ -17,4 +17,5 @@ final_links_table = Table(
         server_default=func.now(),
         nullable=False,
     ),
+    Index("ix_final_links_streaming_track_id", "streaming_track_id"),
 )

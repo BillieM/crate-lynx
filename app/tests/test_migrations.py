@@ -19,6 +19,8 @@ from app.streaming.models import (
     streaming_tracks_table,
 )
 
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+
 
 def test_app_metadata_matches_migrated_schema(
     migrated_database: tuple[str, Engine],
@@ -55,6 +57,12 @@ def _beets_column_names(fields: dict[str, object], *, id_column_name: str) -> se
     }
 
 
+def _alembic_config() -> Config:
+    config = Config(str(PROJECT_ROOT / "db" / "alembic.ini"))
+    config.set_main_option("script_location", str(PROJECT_ROOT / "db"))
+    return config
+
+
 def test_selected_for_sync_migration_backfills_playlists_with_memberships(
     monkeypatch,
     tmp_path: Path,
@@ -62,7 +70,7 @@ def test_selected_for_sync_migration_backfills_playlists_with_memberships(
     database_url = f"sqlite:///{tmp_path / 'migration.db'}"
     monkeypatch.setenv("DATABASE_URL", database_url)
 
-    alembic_config = Config("db/alembic.ini")
+    alembic_config = _alembic_config()
     command.upgrade(alembic_config, "7a90b6dfc1e2")
 
     engine = create_engine(database_url)
@@ -123,6 +131,112 @@ def test_selected_for_sync_migration_backfills_playlists_with_memberships(
     }
 
 
+def test_schema_integrity_migration_deduplicates_provider_rows(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite:///{tmp_path / 'schema-integrity.db'}"
+    monkeypatch.setenv("DATABASE_URL", database_url)
+
+    alembic_config = _alembic_config()
+    command.upgrade(alembic_config, "b9c2f4a8e7d1")
+
+    engine = create_engine(database_url)
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                """
+                INSERT INTO streaming_accounts
+                    (id, provider, display_name, auth_token_blob, auth_state)
+                VALUES
+                    (1, 'youtube_music', 'Listener', 'encrypted-token', 'connected')
+                """
+            )
+        )
+        connection.execute(
+            text(
+                """
+                INSERT INTO streaming_playlists
+                    (id, account_id, provider_playlist_id, title, selected_for_sync)
+                VALUES
+                    (10, 1, 'PL1', 'Kept playlist', FALSE),
+                    (11, 1, 'PL1', 'Duplicate playlist', FALSE)
+                """
+            )
+        )
+        connection.execute(
+            text(
+                """
+                INSERT INTO streaming_tracks
+                    (id, provider_track_id, title, artist)
+                VALUES
+                    (20, 'track-1', 'Kept track', 'Artist'),
+                    (21, 'track-1', 'Duplicate track', 'Artist')
+                """
+            )
+        )
+        connection.execute(
+            text(
+                """
+                INSERT INTO playlist_membership
+                    (playlist_id, streaming_track_id, position)
+                VALUES
+                    (11, 21, 1)
+                """
+            )
+        )
+
+    command.upgrade(alembic_config, "head")
+
+    with engine.connect() as connection:
+        playlists = list(
+            connection.execute(
+                text("SELECT id FROM streaming_playlists ORDER BY id")
+            ).scalars()
+        )
+        tracks = list(
+            connection.execute(
+                text("SELECT id FROM streaming_tracks ORDER BY id")
+            ).scalars()
+        )
+        membership = (
+            connection.execute(
+                text(
+                    """
+                    SELECT playlist_id, streaming_track_id
+                    FROM playlist_membership
+                    """
+                )
+            )
+            .mappings()
+            .one()
+        )
+
+    with engine.begin() as connection:
+        try:
+            connection.execute(
+                text(
+                    """
+                    INSERT INTO streaming_tracks
+                        (provider_track_id, title, artist)
+                    VALUES
+                        ('track-1', 'Duplicate rejected', 'Artist')
+                    """
+                )
+            )
+        except IntegrityError:
+            pass
+        else:
+            raise AssertionError("duplicate provider_track_id was accepted")
+
+    assert playlists == [10]
+    assert tracks == [20]
+    assert dict(membership) == {
+        "playlist_id": 10,
+        "streaming_track_id": 20,
+    }
+
+
 def test_remove_streaming_fingerprints_migration_normalizes_acoustic_suggestions(
     monkeypatch,
     tmp_path: Path,
@@ -130,7 +244,7 @@ def test_remove_streaming_fingerprints_migration_normalizes_acoustic_suggestions
     database_url = f"sqlite:///{tmp_path / 'remove-fingerprints.db'}"
     monkeypatch.setenv("DATABASE_URL", database_url)
 
-    alembic_config = Config("db/alembic.ini")
+    alembic_config = _alembic_config()
     command.upgrade(alembic_config, "f8a3d2c1b0e4")
 
     engine = create_engine(database_url)
@@ -212,7 +326,7 @@ def test_ingest_folders_migration_seeds_default_unique_paths(
     database_url = f"sqlite:///{tmp_path / 'ingest_folders.db'}"
     monkeypatch.setenv("DATABASE_URL", database_url)
 
-    alembic_config = Config("db/alembic.ini")
+    alembic_config = _alembic_config()
     command.upgrade(alembic_config, "head")
 
     engine = create_engine(database_url)
@@ -254,7 +368,7 @@ def test_failed_ingestion_cleanup_migration_removes_non_audio_rows(
     database_url = f"sqlite:///{tmp_path / 'failed-ingestion-cleanup.db'}"
     monkeypatch.setenv("DATABASE_URL", database_url)
 
-    alembic_config = Config("db/alembic.ini")
+    alembic_config = _alembic_config()
     command.upgrade(alembic_config, "e17a4c9b2d01")
 
     engine = create_engine(database_url)

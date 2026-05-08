@@ -7,6 +7,7 @@ from sqlalchemy import (
     Column,
     DateTime,
     Float,
+    Index,
     Integer,
     MetaData,
     String,
@@ -49,6 +50,8 @@ suggested_links_table = Table(
     Column(
         "created_at", DateTime(timezone=True), server_default=func.now(), nullable=False
     ),
+    Index("ix_suggested_links_local_track_id_status", "local_track_id", "status"),
+    Index("ix_suggested_links_streaming_track_id", "streaming_track_id"),
 )
 
 final_links_view = table("final_links", column("local_track_id"))

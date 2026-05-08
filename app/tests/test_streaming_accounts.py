@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
+from datetime import UTC, datetime
 import json
 import os
-from datetime import UTC, datetime
 from pathlib import Path
+from threading import Barrier
 
 from cryptography.fernet import Fernet
 from sqlalchemy import create_engine, select
@@ -287,6 +289,66 @@ def test_streaming_account_store_upserts_playlists(
     assert stored_playlist_rows[0]["synced_at"] is not None
     assert stored_playlist_rows[1]["provider_playlist_id"] == "PL2"
     assert stored_playlist_rows[1]["title"] == "Evening Mix"
+
+
+def test_streaming_account_store_concurrent_upserts_reuse_provider_rows(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite:///{tmp_path / 'streaming-concurrent-upserts.db'}"
+    engine = create_engine(database_url)
+    metadata.create_all(engine)
+    monkeypatch.setenv("TOKEN_ENCRYPTION_KEY", Fernet.generate_key().decode("utf-8"))
+
+    account = StreamingAccountStore(database_url).create_youtube_music_account(
+        display_name="Listener",
+        browser_headers={"refresh_token": "refresh-token"},
+    )
+    barrier = Barrier(2)
+
+    def upsert_from_worker(title: str) -> tuple[int, int]:
+        worker_store = StreamingAccountStore(database_url)
+        barrier.wait(timeout=5)
+        playlist = worker_store.upsert_playlists(
+            account_id=account.id,
+            playlists=[
+                YouTubeMusicPlaylist(
+                    provider_playlist_id="PL-RACE",
+                    title=title,
+                )
+            ],
+        )[0]
+        track = worker_store.upsert_tracks(
+            tracks=[
+                YouTubeMusicTrack(
+                    provider_track_id="track-race",
+                    title=title,
+                    artist="Artist",
+                    album=None,
+                    year=None,
+                    isrc=None,
+                    duration_ms=120000,
+                )
+            ],
+        )[0]
+        return playlist.id, track.id
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        futures = [
+            executor.submit(upsert_from_worker, "Race Winner A"),
+            executor.submit(upsert_from_worker, "Race Winner B"),
+        ]
+        results = [future.result() for future in futures]
+
+    assert len({playlist_id for playlist_id, _ in results}) == 1
+    assert len({track_id for _, track_id in results}) == 1
+
+    with engine.connect() as connection:
+        stored_playlists = list(connection.execute(select(streaming_playlists_table)))
+        stored_tracks = list(connection.execute(select(streaming_tracks_table)))
+
+    assert len(stored_playlists) == 1
+    assert len(stored_tracks) == 1
 
 
 def test_streaming_account_store_updates_playlist_selected_for_sync(

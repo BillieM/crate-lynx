@@ -7,6 +7,7 @@ from pathlib import Path
 from sqlalchemy import (
     Column,
     DateTime,
+    Index,
     Integer,
     MetaData,
     String,
@@ -35,6 +36,8 @@ local_tracks_table = Table(
     Column(
         "updated_at", DateTime(timezone=True), server_default=func.now(), nullable=False
     ),
+    Index("ix_local_tracks_fingerprint", "fingerprint"),
+    Index("ix_local_tracks_beets_id", "beets_id"),
 )
 
 SUGGESTED_LINK_STATUS_PENDING = "pending"

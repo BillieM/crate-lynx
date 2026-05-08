@@ -7,10 +7,12 @@ from sqlalchemy import (
     Boolean,
     Column,
     DateTime,
+    Index,
     Integer,
     MetaData,
     String,
     Table,
+    UniqueConstraint,
     false,
     func,
 )
@@ -51,6 +53,11 @@ streaming_playlists_table = Table(
     Column("synced_at", DateTime(timezone=True), nullable=True),
     Column("last_sync_error", String, nullable=True),
     Column("last_sync_error_at", DateTime(timezone=True), nullable=True),
+    UniqueConstraint(
+        "account_id",
+        "provider_playlist_id",
+        name="uq_streaming_playlists_account_id_provider_playlist_id",
+    ),
 )
 
 streaming_tracks_table = Table(
@@ -64,6 +71,11 @@ streaming_tracks_table = Table(
     Column("year", Integer, nullable=True),
     Column("isrc", String, nullable=True),
     Column("duration_ms", Integer, nullable=True),
+    UniqueConstraint(
+        "provider_track_id",
+        name="uq_streaming_tracks_provider_track_id",
+    ),
+    Index("ix_streaming_tracks_isrc", "isrc"),
 )
 
 playlist_membership_table = Table(
@@ -73,6 +85,8 @@ playlist_membership_table = Table(
     Column("playlist_id", Integer, nullable=False),
     Column("streaming_track_id", Integer, nullable=False),
     Column("position", Integer, nullable=False),
+    Index("ix_playlist_membership_playlist_id", "playlist_id"),
+    Index("ix_playlist_membership_streaming_track_id", "streaming_track_id"),
 )
 
 

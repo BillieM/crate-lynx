@@ -51,7 +51,7 @@ Each task is sized to fit comfortably in one Codex 5.5-xhigh context window.
 
 ---
 
-## - [ ] T2. Schema integrity: indexes + unique constraints + migration
+## - [x] T2. Schema integrity: indexes + unique constraints + migration
 
 **Why**: Two correctness/perf gaps share one migration:
 - Concurrent sync jobs can create duplicate rows. `streaming_playlists.provider_playlist_id` and `streaming_tracks.provider_track_id` are bare columns; the store does select-then-insert at `app/app/streaming/store.py:262` and `:573`.
