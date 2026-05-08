@@ -750,13 +750,22 @@ class StreamingAccountStore:
         if playlist is None:
             return []
 
+        def run_single_playlist_sync(
+            adapter: YouTubeMusicAdapter,
+        ) -> list[PlaylistMembershipRecord]:
+            try:
+                return sync_single_library_playlist_tracks(
+                    playlist=playlist,
+                    adapter=adapter,
+                    playlist_store=self,
+                )
+            except YouTubeMusicAuthenticationError:
+                self.clear_playlist_sync_failure(playlist_id=playlist_id)
+                raise
+
         return self._run_youtube_music_sync(
             account_id=playlist.account_id,
-            run_sync=lambda adapter: sync_single_library_playlist_tracks(
-                playlist=playlist,
-                adapter=adapter,
-                playlist_store=self,
-            ),
+            run_sync=run_single_playlist_sync,
         )
 
     def sync_youtube_music_account(

@@ -1122,6 +1122,11 @@ def test_streaming_account_store_marks_logged_out_playlist_response_as_auth_erro
         account_id=account.id,
         playlists=[YouTubeMusicPlaylist(provider_playlist_id="PL1", title="Road Trip")],
     )[0]
+    store.mark_playlist_sync_failure(
+        playlist_id=playlist.id,
+        error="previous playlist parse error",
+        failed_at=datetime(2026, 5, 2, 11, 45, tzinfo=UTC),
+    )
 
     class FakeAdapter:
         def list_playlist_tracks(self, playlist_id):
