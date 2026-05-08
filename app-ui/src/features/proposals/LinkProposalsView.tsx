@@ -90,7 +90,7 @@ function MetadataValue({ fallback = "—", value }: { fallback?: string; value: 
   return value;
 }
 
-function ProposalComparisonRow({
+function ProposalComparisonField({
   label,
   localValue,
   streamingFallback,
@@ -102,15 +102,27 @@ function ProposalComparisonRow({
   streamingValue: string | null;
 }) {
   return (
-    <div className="grid min-w-0 gap-1 rounded-[8px] bg-ctp-surface0/48 px-2.5 py-2 sm:grid-cols-[70px_minmax(0,1fr)_minmax(0,1fr)] sm:items-baseline sm:gap-3 lg:contents">
-      <dt className={`${textClasses.detail} text-ctp-subtext0 lg:py-0.5`}>{label}</dt>
-      <dd className={`min-w-0 truncate ${textClasses.caption} lg:py-0.5`}>
-        <span className={`${textClasses.microEyebrow} mb-1 block text-ctp-overlay1 sm:hidden`}>Local</span>
-        <MetadataValue value={localValue} />
-      </dd>
-      <dd className={`min-w-0 truncate ${textClasses.caption} lg:py-0.5`}>
-        <span className={`${textClasses.microEyebrow} mb-1 block text-ctp-overlay1 sm:hidden`}>Streaming</span>
-        <MetadataValue fallback={streamingFallback} value={streamingValue} />
+    <div className="grid min-w-0 gap-1.5 rounded-[8px] bg-ctp-surface0/48 px-2.5 py-2">
+      <dt className={`${textClasses.detail} text-ctp-subtext0`}>{label}</dt>
+      <dd className="grid min-w-0 gap-1">
+        <div className="grid min-w-0 grid-cols-[1.25rem_minmax(0,1fr)] items-baseline gap-1.5">
+          <span aria-hidden="true" className="text-[10px] font-semibold uppercase text-ctp-overlay1">
+            L
+          </span>
+          <span className="sr-only">Local: </span>
+          <span className={`min-w-0 truncate ${textClasses.caption}`}>
+            <MetadataValue value={localValue} />
+          </span>
+        </div>
+        <div className="grid min-w-0 grid-cols-[1.25rem_minmax(0,1fr)] items-baseline gap-1.5">
+          <span aria-hidden="true" className="text-[10px] font-semibold uppercase text-ctp-overlay1">
+            S
+          </span>
+          <span className="sr-only">Streaming: </span>
+          <span className={`min-w-0 truncate ${textClasses.caption}`}>
+            <MetadataValue fallback={streamingFallback} value={streamingValue} />
+          </span>
+        </div>
       </dd>
     </div>
   );
@@ -321,50 +333,56 @@ function ProposalRow({
       className={surfaceClasses.rowCardCompact}
     >
       <article className="grid min-w-0 gap-3 xl:grid-cols-[minmax(0,1fr)_150px] xl:items-start">
-        <dl className="grid min-w-0 gap-2 lg:grid-cols-[70px_minmax(0,1fr)_minmax(0,1fr)] lg:items-start">
-          <div className="hidden lg:block" aria-hidden="true" />
-          <div className="min-w-0">
-            <p className={`${textClasses.eyebrow} tracking-normal text-ctp-subtext0`}>Local track</p>
-            <p className={`mt-1 truncate font-mono ${textClasses.finePrint} text-ctp-overlay1`}>
-              {getLocalTrackLabel(proposal)}
-            </p>
-          </div>
-          <div className="min-w-0 border-t border-ctp-surface0 pt-2 sm:border-t-0 sm:pt-0">
-            <div className="flex min-w-0 flex-wrap items-center gap-2">
-              <p className={`${textClasses.eyebrow} tracking-normal text-ctp-subtext0`}>Streaming track</p>
-              <Pill className="tabular-nums" tone={getProposalScoreTone(scorePercentage)}>
-                {formatProposalScore(proposal.score)}
-              </Pill>
-              <Pill tone={getMatchMethodTone(proposal.match_method)}>
-                {getMatchMethodLabel(proposal.match_method)}
-              </Pill>
-              <span className={`inline-flex items-center gap-1 ${textClasses.finePrint} font-medium text-ctp-subtext0`}>
-                <span
-                  aria-hidden="true"
-                  className={`h-1.5 w-1.5 rounded-full ${getConfidenceDotColorClass(proposal.confidence_band)}`}
-                />
-                {getConfidenceLabel(proposal.confidence_band)}
-              </span>
+        <div className="grid min-w-0 gap-2.5">
+          <div className="grid min-w-0 gap-2 md:grid-cols-[minmax(0,1fr)_minmax(0,1.25fr)] md:items-start">
+            <div className="min-w-0">
+              <p className={`${textClasses.eyebrow} tracking-normal text-ctp-subtext0`}>Local track</p>
+              <p className={`mt-1 truncate font-mono ${textClasses.finePrint} text-ctp-overlay1`}>
+                {getLocalTrackLabel(proposal)}
+              </p>
+            </div>
+            <div className="min-w-0 border-t border-ctp-surface0 pt-2 md:border-t-0 md:pt-0">
+              <div className="flex min-w-0 flex-wrap items-center gap-2">
+                <p className={`${textClasses.eyebrow} tracking-normal text-ctp-subtext0`}>Streaming track</p>
+                <Pill className="tabular-nums" tone={getProposalScoreTone(scorePercentage)}>
+                  {formatProposalScore(proposal.score)}
+                </Pill>
+                <Pill tone={getMatchMethodTone(proposal.match_method)}>
+                  {getMatchMethodLabel(proposal.match_method)}
+                </Pill>
+                <span className={`inline-flex items-center gap-1 ${textClasses.finePrint} font-medium text-ctp-subtext0`}>
+                  <span
+                    aria-hidden="true"
+                    className={`h-1.5 w-1.5 rounded-full ${getConfidenceDotColorClass(proposal.confidence_band)}`}
+                  />
+                  {getConfidenceLabel(proposal.confidence_band)}
+                </span>
+              </div>
+              <p className={`mt-1 truncate ${textClasses.finePrint} font-medium text-ctp-text`}>
+                {proposal.streaming_title}
+              </p>
             </div>
           </div>
 
-          <ProposalComparisonRow
-            label="Title"
-            localValue={proposal.local_title}
-            streamingValue={proposal.streaming_title}
-          />
-          <ProposalComparisonRow
-            label="Artist"
-            localValue={proposal.local_artist}
-            streamingValue={proposal.streaming_artist}
-          />
-          <ProposalComparisonRow
-            label="Album"
-            localValue={proposal.local_album}
-            streamingFallback="Album unavailable"
-            streamingValue={proposal.streaming_album}
-          />
-        </dl>
+          <dl className="grid min-w-0 gap-2 md:grid-cols-3">
+            <ProposalComparisonField
+              label="Title"
+              localValue={proposal.local_title}
+              streamingValue={proposal.streaming_title}
+            />
+            <ProposalComparisonField
+              label="Artist"
+              localValue={proposal.local_artist}
+              streamingValue={proposal.streaming_artist}
+            />
+            <ProposalComparisonField
+              label="Album"
+              localValue={proposal.local_album}
+              streamingFallback="Album unavailable"
+              streamingValue={proposal.streaming_album}
+            />
+          </dl>
+        </div>
 
         <div className="flex flex-wrap items-center gap-2 border-t border-ctp-surface0 pt-2 xl:flex-col xl:items-stretch xl:border-t-0 xl:pt-0">
           <ActionButton

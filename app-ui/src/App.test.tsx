@@ -651,7 +651,7 @@ describe("App", () => {
     expect(nightRunnerRow.compareDocumentPosition(pendingSignalRow)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
     expect(pendingSignalRow.compareDocumentPosition(looseCableRow)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
     expect(screen.queryByText("Ranked candidates")).not.toBeInTheDocument();
-    expect(within(nightRunnerRow).getByText("Night Runner")).toBeInTheDocument();
+    expect(within(nightRunnerRow).getAllByText("Night Runner")).toHaveLength(2);
     expect(within(nightRunnerRow).getAllByText("Frame Delay")).toHaveLength(2);
     expect(within(nightRunnerRow).getByText("Tag")).toBeInTheDocument();
     expect(within(nightRunnerRow).getByText("92%")).toBeInTheDocument();

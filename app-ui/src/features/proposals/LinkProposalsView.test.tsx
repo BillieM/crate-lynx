@@ -159,7 +159,7 @@ describe("LinkProposalsView", () => {
     expect(within(nightRunnerRow).getByText("Tag")).toBeInTheDocument();
     expect(within(nightRunnerRow).getByText("92%")).toBeInTheDocument();
     expect(within(nightRunnerRow).getByText("High confidence")).toBeInTheDocument();
-    expect(within(alternateRow).getByText("Night Runner Alternate")).toBeInTheDocument();
+    expect(within(alternateRow).getAllByText("Night Runner Alternate")).toHaveLength(2);
     expect(within(alternateRow).getByText("82%")).toBeInTheDocument();
     expect(within(alternateRow).getByText("Medium confidence")).toBeInTheDocument();
     expect(within(pendingSignalRow).getByText("ISRC")).toBeInTheDocument();
@@ -210,7 +210,7 @@ describe("LinkProposalsView", () => {
     renderLinkProposalsView();
 
     const partialRow = await screen.findByRole("listitem", { name: /Proposal 50: Partial Signal\.mp3/ });
-    expect(within(partialRow).getAllByText("Partial Signal")).toHaveLength(2);
+    expect(within(partialRow).getAllByText("Partial Signal")).toHaveLength(3);
     expect(within(partialRow).getByText("Singles")).toBeInTheDocument();
     expect(within(partialRow).getAllByText("—")).toHaveLength(1);
   });
@@ -244,7 +244,7 @@ describe("LinkProposalsView", () => {
     renderLinkProposalsView();
 
     expect(await screen.findAllByText("Night Runner.mp3")).toHaveLength(2);
-    expect(screen.getByText("Night Runner Alternate")).toBeInTheDocument();
+    expect(screen.getAllByText("Night Runner Alternate")).toHaveLength(2);
     const alternateRow = screen.getByRole("listitem", {
       name: /Proposal 47: Night Runner\.mp3 to Night Runner Alternate$/,
     });

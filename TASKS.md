@@ -1,180 +1,334 @@
-# Beets Metadata Mirror And Link Proposal Comparison
+# tasks.md
 
-Context:
+Audit-driven cleanup backlog. Originating audit files (`claudeaudit.md`, `codexaudit.md`)
+have been retired; their findings live here, verified against the codebase.
 
-- Replace the old tracker content with only this Beets metadata mirror work.
-- Do not edit or stage unrelated local changes, especially the existing `app-ui/src/features/library/` files currently dirty in the worktree.
-- Beets SQLite should be treated as an import/backfill source only. Runtime app flows, routers, and matchers should read from the main Postgres database.
-- The mirror targets the pinned Beets dependency in `app/requirements.txt`: `beets==2.2.0`.
-- Existing `local_tracks` remain app-owned identity/state rows and continue to link to Beets data through `beets_id`.
+Tasks are roughly ordered by impact — correctness/data integrity first, polish last.
+Each task is sized to fit comfortably in one Codex 5.5-xhigh context window.
 
-Locked decisions:
+---
 
-- Use a full typed Postgres mirror for fixed Beets 2.2.0 item and album fields.
-- Store Beets flexible/plugin attributes in separate key/value tables.
-- Keep Beets SQLite reads isolated to import and repair/backfill tooling.
-- Use the mirrored Beets metadata for matching, proposal API responses, and local-vs-streaming comparison UI.
-- Recommended landing order: T1 → T2 → T4 → T3 → T5a → T5b → T6 → T7. Backfilling first means matchers and proposals always see populated mirror rows for older imports.
+## Locked decisions (apply across tasks)
 
-Non-goals:
+- **Streaming track uniqueness key** (T2): `provider_track_id` only. The `streaming_tracks` table has no `account_id` column — the original audit's `(account_id, provider_track_id)` hint was wrong.
+- **Ingestion idempotence direction** (T3): direction 1 — make persistence idempotent on `beets_id`. Simpler than quarantining sources; `beets_id` uniqueness is reliable per beets's own model.
+- **Async-route conversion** (T8): convert `async def` → `def` rather than `run_in_threadpool`. No async I/O happens in those routes today.
+- **Library pagination** (T6): cursor-based, sorted by `local_tracks.id ASC`. Default 100, max 500. No filtering or sorting in v1.
+- **Cache invalidation rule** (T12): `delayedInvalidate` only after mutations that trigger backend jobs whose effect lands asynchronously (e.g., RQ-backed sync endpoints). Otherwise immediate.
+- **Duplicate streaming title in proposal rows**: kept as intentional UX. Header summarizes the row; comparison field shows the local-vs-streaming pairing. Tests assert it (`LinkProposalsView.test.tsx:162, :213`, `App.test.tsx:654`). Not a task.
 
-- No direct proposal endpoint reads from the Beets SQLite database.
-- No runtime matcher dependency on `BEETS_LIBRARY`.
-- No broad redesign of the local library or playlist UI outside the link proposal view.
-- No Beets version upgrade as part of this work.
-- No automatic deletion of stale `beets_items` mirror rows or stale `local_tracks` rows in v1. Surface them; do not act.
-- No mobile-specific column hiding beyond the existing `md:` breakpoint.
-- No proposal-row bulk approve/reject UI.
-- No moving `BeetsImporter`'s sqlite reads (`app/app/ingestion/pipeline.py:133, 143`) off SQLite — they're how the importer learns the new beets_id.
-- No re-run of matching against backfilled rows (existing `--enqueue-matching` flag stays as-is).
+---
 
-## T1. Add Beets mirror schema
+## Verification notes (corrections to the original audits)
 
-- [x] New module `app/app/ingestion/beets_mirror.py` exporting a `metadata: MetaData` and four tables: `beets_items_table`, `beets_albums_table`, `beets_item_attributes_table`, `beets_album_attributes_table`.
-- [x] Wire the new metadata into `app/app/schema.py:34` `_app_tables()`.
-- [x] New Alembic revision under `db/versions/` (e.g. `b9c2f4a8e7d1_add_beets_mirror_tables.py`) with `down_revision = "9b7e3c2d1a4f"`.
-- [x] `beets_items_table`: keyed by `beets_id` (PK, integer), with typed columns enumerated literally from `beets.library.Item._fields` in the pinned `beets==2.2.0`.
-- [x] `beets_albums_table`: keyed by `beets_album_id` (PK, integer), with typed columns enumerated literally from `beets.library.Album._fields`.
-- [x] `beets_item_attributes_table` and `beets_album_attributes_table`: `(id PK, entity_id INT NOT NULL, key TEXT NOT NULL, value TEXT, created_at, updated_at)` with `UNIQUE(entity_id, key)` and FK `entity_id → beets_items.beets_id` / `beets_albums.beets_album_id`.
-- [x] Type mapping helper that maps `beets.dbcore.types.*` → SQLAlchemy column type via one switch:
-  - string/path fields -> text
-  - id/integer/padded integer fields -> integer
-  - booleans -> boolean
-  - duration/float/gain (`NULL_FLOAT`) fields -> float
-  - Beets `DateType` fields -> timezone-aware timestamp
-- [x] Preserve the existing `local_tracks.beets_id` column unchanged. Do not move app-owned state into the mirror tables.
-- [x] Add a `test_beets_mirror_migration_matches_beets_field_set` test in `app/tests/test_migrations.py` that imports `beets.library.Item._fields` / `Album._fields` and asserts each fixed field name has a column in the migrated DB.
+- `create_engine()` is in **17 files / 20 calls**, not 37 (audit overcount). Concern still stands.
+- `LIBRARY_ROOT` setenv duplicates exist in **2 files** (`test_links_router.py`, `test_main.py`), not 3. `test_beets_mirror_backfill.py` doesn't use it.
+- View duplications confirmed: `final_links_view` × 3, `suggested_links_view` × 2, `beets_items_view` × 2 (verified — see T17).
+- Zero `Index()` declarations across `app/app/` or `db/versions/` (verified — T2).
+- The "TanStack Table column defs recreated each render" finding was wrong: `LocalLibraryView.tsx:216-289` and `PlaylistView.tsx:133-151` already wrap in `useMemo`.
+- The "`PlaylistTrackActions.tsx` is dead code" finding was wrong: imported at `PlaylistView.tsx:16`, rendered at `:194`.
+- The `repair.py` `print()` complaint was wrong: it already uses `logging`. Only `beets_mirror_backfill.py` needs the fix (T15).
+- The `optimisticMutation` factory finding originally listed 3 sites; only 2 are real (`LinkProposalsView.tsx` approve + reject). `PlaylistView.tsx` and `LocalLibraryView.tsx` use `Promise.allSettled` + post-hoc invalidation, not optimistic-cache (T11).
 
-**Definition of done:**
-- `source .venv/bin/activate && ruff check . && ruff format --check . && pytest app/tests/test_migrations.py`
+---
 
-## T2. Add Beets metadata extraction and Postgres upsert service
+## T1. Tighten crypto, validate at startup, narrow ingestion exceptions
 
-- [x] New module `app/app/ingestion/beets_mirror_sync.py`. Locked API:
-  - `@dataclass(frozen=True) class BeetsMirrorRow: beets_id: int; album_id: int | None; fixed_fields: dict[str, Any]; flex_attributes: dict[str, str]` (only `Item._fields` keys allowed in `fixed_fields`).
-  - `@dataclass(frozen=True) class BeetsMirrorAlbumRow: beets_album_id: int; fixed_fields: dict[str, Any]; flex_attributes: dict[str, str]`.
-  - `@dataclass(frozen=True) class BeetsMirrorCounts: items_inserted: int; items_updated: int; items_skipped: int; albums_inserted: int; albums_updated: int; albums_skipped: int; missing_in_beets: int; stale_items: int`.
-  - `def read_item(sqlite_conn, beets_id: int) -> BeetsMirrorRow | None`.
-  - `def read_album(sqlite_conn, beets_album_id: int) -> BeetsMirrorAlbumRow | None`.
-  - `def iter_all_items(sqlite_conn) -> Iterator[BeetsMirrorRow]`.
-  - `def iter_all_albums(sqlite_conn) -> Iterator[BeetsMirrorAlbumRow]`.
-  - `def upsert_item(pg_conn, row: BeetsMirrorRow) -> Literal["inserted", "updated"]`.
-  - `def upsert_album(pg_conn, row: BeetsMirrorAlbumRow) -> Literal["inserted", "updated"]`.
-- [x] Move `_decode_beets_path` from `app/app/ingestion/repair.py:235` and `app/app/ingestion/pipeline.py:157` into this new module. Export as `decode_beets_path(raw_path: bytes | str) -> str` (drop the leading underscore — it's shared now).
-- [x] Update both call sites in `repair.py` and `pipeline.py` to import from `app.ingestion.beets_mirror_sync` (one-line change each).
-- [x] Read Beets SQLite `items`, `albums`, `item_attributes`, and `album_attributes` tables.
-- [x] Map Beets fixed item/album fields into the typed Postgres mirror columns using the same type switch as T1.
-- [x] Map flexible/plugin attributes into the key/value tables.
-- [x] Idempotent upserts: `ON CONFLICT (beets_id) DO UPDATE` for items, `ON CONFLICT (beets_album_id) DO UPDATE` for albums; attributes replaced wholesale per entity (`DELETE WHERE entity_id = :id` then `INSERT`).
-- [x] New tests file `app/tests/test_beets_mirror_sync.py`. Cover: round-trip read+write, attribute replacement on re-upsert, missing-row handling, type coercion for `DateType` / `PathType` / boolean / `PaddedInt`, bytes-with-surrogateescape and str path round-trips.
+**Why**: Three related error-handling weaknesses:
+- `app/app/streaming/crypto.py` raises only on first `encrypt_token`/`decrypt_token` call. The app boots fine without `TOKEN_ENCRYPTION_KEY` and fails later on user auth — confusing failure mode, easy to miss in deploy validation.
+- Fernet key initialization is duplicated between `encrypt_token` and `decrypt_token` (`crypto.py:8-31`).
+- `app/app/ingestion/pipeline.py:235-247` and `app/app/ingestion/repair.py:260` catch `Exception` broadly and either re-raise without context or return `None`, losing diagnostic information.
 
-**Definition of done:**
-- `source .venv/bin/activate && ruff check . && ruff format --check . && pytest app/tests/test_beets_mirror_sync.py app/tests/test_ingestion.py`
+**Files**: `app/app/streaming/crypto.py` (31 LOC, full rewrite); `app/app/main.py` (lifespan, `:29-79`); `app/app/ingestion/pipeline.py:235-247`; `app/app/ingestion/repair.py:260`.
 
-## T4. Backfill existing records from Beets
+**Approach**:
+- `crypto.py`: extract `_get_fernet() -> Fernet` helper; both `encrypt_token` and `decrypt_token` call it. Raise a new `TokenEncryptionKeyError(RuntimeError)` instead of generic `RuntimeError` so callers can match cleanly. Export `validate_token_encryption_key()` that runs `_get_fernet()` once and discards.
+- `main.py` lifespan: call `crypto.validate_token_encryption_key()` at startup. Skip the check if `TOKEN_ENCRYPTION_KEY` is unset *and* `DATABASE_URL` is unset (current behavior — accounts table won't be touched).
+- `pipeline.py`: narrow `except Exception` to expected types (`subprocess.CalledProcessError`, `ValueError`, `FileNotFoundError`, beets-specific exceptions). `logger.exception(...)` before re-raise.
+- `repair.py:260`: same narrowing treatment.
 
-- [x] Files: `app/app/ingestion/repair.py` (lines 30–62 wiring; existing `_iter_current_beets_items` at line 210 stays untouched). Add a new repair step `_repair_beets_mirror`.
-- [x] Use `decode_beets_path` from `app.ingestion.beets_mirror_sync` (already moved there in T2) — do not re-add a local copy.
-- [x] Add a dry-run / `--apply` backfill path that reads the current `BEETS_LIBRARY` SQLite database and mirrors all Beets item/album/attribute rows into Postgres via `beets_mirror_sync.upsert_item` / `upsert_album`.
-- [x] All upserts run inside one `engine.begin()` block. Steps in order:
-  1. Iterate all Beets items via `iter_all_items` chunked at 500; call `upsert_item` per chunk.
-  2. Iterate all Beets albums via `iter_all_albums` chunked at 500; call `upsert_album`.
-  3. Compute mirror-vs-source diff: `beets_items.beets_id NOT IN (current sqlite ids)` → report as `stale_mirror_items` (do not delete in v1).
-  4. Compute `local_tracks.beets_id NOT IN (current sqlite ids)` → report as `stale_local_track_beets_ids` (do not delete in v1).
-  5. Existing missing-`local_tracks` insertion (lines 166–207) stays unchanged.
-- [x] Concurrency cap: chunk size 500 for attribute writes; single connection (repair runs single-threaded today — do not introduce parallelism).
-- [x] Report stale `local_tracks.beets_id` values that no longer exist in Beets; do not delete them automatically.
-- [x] Keep existing duplicate-track, stale-failure, zero-byte staging, and optional `--enqueue-matching` repair behavior intact.
-- [x] New tests in `app/tests/test_ingestion.py` covering: dry-run vs apply, partial mirror (some items already in Postgres), stale-mirror detection, stale-local-track detection.
+**Definition of done**: New `test_main.py` tests cover missing-key and malformed-key boot failure (both raise `TokenEncryptionKeyError`). Logs include traceback context for each handled failure. No behavioral change for happy paths. `cd app && ruff check . && ruff format --check . && pytest tests/test_crypto.py tests/test_ingestion.py tests/test_main.py`.
 
-**Definition of done:**
-- `source .venv/bin/activate && ruff check . && ruff format --check . && pytest app/tests/test_ingestion.py app/tests/test_main.py`
+---
 
-## T3. Mirror metadata during import
+## T2. Schema integrity: indexes + unique constraints + migration
 
-- [x] Files: `app/app/ingestion/pipeline.py` (`IngestionProcessor.process` at lines 201–242), `app/tests/test_ingestion.py`.
-- [x] After `BeetsImporter.import_file` returns at `pipeline.py:208`, open a sqlite read on `self.beets_importer.library_database` and call `beets_mirror_sync.read_item` / `read_album` then `upsert_item` / `upsert_album` against the Postgres engine.
-- [x] Order: mirror upsert **before** `track_store.persist`, so the FK chain `local_tracks.beets_id → beets_items.beets_id` is always satisfied.
-- [x] Wrap the new step in the same try/except as the existing import path, so failure paths still record `failed_ingestion_attempts`.
-- [x] `BeetsImporter._fetch_imported_track` continues to read sqlite locally — only the post-import mirror upsert uses the new module.
-- [x] Keep `local_tracks` schema unchanged. Do not duplicate the full Beets field set on `local_tracks`.
-- [x] Preserve existing staging cleanup, failure recording, and matching enqueue behavior.
-- [x] Extend existing successful-import tests in `test_ingestion.py` to assert one `beets_items` row + N `beets_item_attributes` exist and the album row exists.
-- [x] Add a regression test: re-importing the same path updates the existing mirror row instead of creating a duplicate.
+**Why**: Two correctness/perf gaps share one migration:
+- Concurrent sync jobs can create duplicate rows. `streaming_playlists.provider_playlist_id` and `streaming_tracks.provider_track_id` are bare columns; the store does select-then-insert at `app/app/streaming/store.py:262` and `:573`.
+- Zero `Index()` declarations exist across `app/app/` or `db/versions/`. Postgres does not auto-index FKs. Joins through `final_links`, `suggested_links`, `playlist_membership`, `streaming_playlists.account_id` are sequential scans today — fine on dev, cliff at 100k+ rows.
 
-**Definition of done:**
-- `source .venv/bin/activate && ruff check . && ruff format --check . && pytest app/tests/test_ingestion.py`
+**Files**: `app/app/streaming/models.py:43-67`; `app/app/streaming/store.py:250-360, 564-615`; `app/app/local_tracks/store.py`; `app/app/links/store.py`; `app/app/matching/pipeline.py`; single new Alembic migration in `db/versions/`.
 
-## T5a. Move ISRC matching off Beets SQLite
+**Approach** — unique constraints (locked):
+- `streaming_playlists` → `UniqueConstraint("account_id", "provider_playlist_id")`.
+- `streaming_tracks` → `UniqueConstraint("provider_track_id")` (no `account_id` column on this table).
+- Replace select-then-insert in `streaming/store.py` with `sqlalchemy.dialects.postgresql.insert(...).on_conflict_do_update(...)`. Postgres-specific.
 
-- [x] Extend `app/tests/factories.py:24` `TestDataFactory` with shared helpers consumed by T5a, T5b, and T6:
-  ```python
-  def beets_item(
-      self,
-      *,
-      beets_id: int,
-      album_id: int | None = None,
-      title: str | None = None,
-      artist: str | None = None,
-      album: str | None = None,
-      isrc: str | None = None,
-      length: float | None = None,
-      **fixed_fields: Any,
-  ) -> int: ...
-  def beets_item_attribute(
-      self, *, beets_id: int, key: str, value: str
-  ) -> int: ...
-  ```
-  Insert into `beets_items_table` / `beets_item_attributes_table` via the existing `_insert` helper.
-- [x] Files: `app/app/matching/isrc.py` (whole file, 93 LOC), `app/app/matching/pipeline.py:191–200` (drop `beets_library` arg from `IsrcMatcher` construction; **leave `TagMatcher` arg in place** — it's removed in T5b), `app/tests/test_matching_isrc.py` (335 LOC of fixture migration).
-- [x] New `IsrcMatcher.__init__` signature: `__init__(self, *, database_url: str)` — drops `beets_library`.
-- [x] Single Postgres query joining `local_tracks ⋈ beets_items` on `beets_id`, where `local_tracks.id = :id`, returning `beets_items.isrc`. If row missing or isrc null → return `None`.
-- [x] Keep ISRC normalization (`_normalize_isrc`), confidence band, score (1.0), and streaming-track lookup unchanged.
-- [x] Migrate `test_matching_isrc.py` to seed Postgres mirror rows via `factories.beets_item(...)` instead of `sqlite3.connect`. Remove the `import sqlite3` line at file top once all uses are gone.
+**Approach** — indexes (fixed inventory):
+- `local_tracks(fingerprint)` — ingestion repair lookups.
+- `local_tracks(beets_id)` — joined to mirror.
+- `streaming_tracks(isrc)` — ISRC matching.
+- `playlist_membership(playlist_id)`, `(streaming_track_id)`.
+- `final_links(streaming_track_id)` (already unique on `local_track_id`).
+- `suggested_links(local_track_id, status)`, `(streaming_track_id)`.
+- Add `Index(...)` next to each `Table(...)` declaration; one migration runs `op.create_index(...)` for everything. No `CONCURRENTLY` in dev — flag in the migration's docstring that prod operators should run `--sql` and switch to `CREATE INDEX CONCURRENTLY` if rolling against a populated DB.
 
-**Definition of done:**
-- `source .venv/bin/activate && ruff check . && ruff format --check . && pytest app/tests/test_matching_isrc.py app/tests/test_matching_pipeline.py`
+**Definition of done**: Migration applies cleanly. Concurrent upsert test (two threads upserting same provider IDs) produces a single row. `cd app && ruff check . && pytest tests/test_streaming_accounts.py tests/test_migrations.py`. Manually run `EXPLAIN` on `/library/tracks` and `/playlists/{id}/tracks` against a seeded dev DB; paste output into the PR description.
 
-## T5b. Move tag matching off Beets SQLite and remove `BEETS_LIBRARY` from runtime
+---
 
-- [x] Reuses `factories.beets_item(...)` from T5a — no new test plumbing required.
-- [x] Files: `app/app/matching/tags.py` (whole file, 233 LOC), `app/app/matching/pipeline.py:181–200` (drop `beets_library` from the `MatchingPipeline` dataclass + `__post_init__`), `app/app/matching/jobs.py:35–43` (remove env check + arg passthrough), `app/tests/test_matching_tags.py`, `app/tests/test_matching_pipeline.py`, `app/tests/test_worker.py`, `app/tests/test_main.py:175` (delete the now-redundant `delenv` if matching path no longer reads it).
-- [x] New `TagMatcher.__init__` signature: `__init__(self, *, database_url: str)`.
-- [x] Single Postgres query joining `local_tracks ⋈ beets_items` to fetch `title, artist, album, length` for the local track. Convert `length` (Beets seconds float) to ms via the existing `_normalize_duration_ms` logic.
-- [x] Scoring functions (`_score_tags`, `_title_similarity`, `_token_similarity`, `_album_similarity`, weights, duration tolerance) remain identical.
-- [x] Keep scoring, confidence bands, rejected-candidate exclusion, and candidate ordering unchanged.
-- [x] All pipeline tests: replace `beets_library=tmp_path / "library.db"` calls with no-arg construction; seed `beets_items` rows via `factories.beets_item(...)` for any test that requires tag lookup data.
-- [x] `BeetsImporter` retains its `BEETS_LIBRARY` env (`app/app/main.py:49`); only the matching pipeline / jobs path drops it.
-- [x] After this task, `rg -n "BEETS_LIBRARY" app/app` should only match `main.py:49` (BeetsImporter wiring) and `ingestion/repair.py:22` (repair sync source).
+## T3. Make ingestion idempotent
 
-**Definition of done:**
-- `source .venv/bin/activate && ruff check . && ruff format --check . && pytest app/tests/test_matching_tags.py app/tests/test_matching_pipeline.py app/tests/test_worker.py app/tests/test_main.py`
+**Why**: In `app/app/ingestion/pipeline.py:212-233`, beets import happens before mirror, persist, enqueue, and source cleanup. A crash between import (`:212`) and source cleanup (`:233`) leaves the source file in place — the watcher re-ingests on next pass and can produce duplicate `local_tracks`.
 
-## T6. Expand proposals API with local metadata
+**Files**: `app/app/ingestion/pipeline.py:205-247`; `app/app/local_tracks/store.py` (persist method); new Alembic migration in `db/versions/`.
 
-- [x] Reuses `factories.beets_item(...)` from T5a in `test_links_router.py` for the existing list-proposals tests at lines 35 and 139.
-- [x] Files: `app/app/links/router.py:55–126`, `app/app/links/models.py:6–18`, `app/tests/test_links_router.py`.
-- [x] Extend `ProposalResponse` with `local_title: str | None`, `local_artist: str | None`, `local_album: str | None`. Keep `local_file_path: str` (always present, unchanged).
-- [x] Add `LEFT OUTER JOIN beets_items ON beets_items.beets_id = local_tracks.beets_id` to the existing query at `router.py:77–92` and select `beets_items.title`, `beets_items.artist`, `beets_items.album` aliased as `local_title` / `local_artist` / `local_album`.
-- [x] Pydantic `str | None` handles null safely — no SQL coalesce needed.
-- [x] Preserve existing pending-only filtering, confidence-band filtering, final-link exclusion, ordering, approve, and reject behavior.
+**Approach** (locked direction 1):
+- Add `UniqueConstraint("beets_id")` on `local_tracks` (one local track ↔ one beets row).
+- In `LocalTrackStore.persist`, use `INSERT ... ON CONFLICT (beets_id) DO UPDATE SET fingerprint=EXCLUDED.fingerprint, ... RETURNING id`.
+- Source cleanup at `pipeline.py:233` becomes safe to retry.
 
-**Definition of done:**
-- `source .venv/bin/activate && ruff check . && ruff format --check . && pytest app/tests/test_links_models.py app/tests/test_links_router.py`
+**Definition of done**: New `test_ingestion.py` test simulates a mid-pipeline crash followed by retry on the same source path; asserts a single `local_tracks` row. Existing ingestion tests pass. `cd app && pytest tests/test_ingestion.py tests/test_migrations.py`.
 
-## T7. Compress link proposal UI with side-by-side comparison
+---
 
-- [x] Files: `app-ui/src/features/proposals/LinkProposalsView.tsx` (especially `ProposalGroupCard` at lines 259–316 and `ProposalCandidateRow` at lines 318–379), `app-ui/src/features/playlists/queries.ts:78–91` (extend `LinkProposal` type), `app-ui/src/features/proposals/LinkProposalsView.test.tsx` (extend fixture at lines 8–53; add comparison-rendering tests).
-- [x] Extend the frontend `LinkProposal` type with `local_title: string | null`, `local_artist: string | null`, `local_album: string | null` to match `/api/proposals`. Update test fixtures.
-- [x] Locked layout in `ProposalGroupCard`:
-  - Replace the single "Local track" header (`LinkProposalsView.tsx:283–288`) with a 2-column grid: left = local fields (filename, title, artist, album), right = streaming fields (title, artist, album).
-  - Use `grid-cols-1 md:grid-cols-2`. Each row uses `<dt>` label + `<dd>` value. Center divider on `md:`.
-  - When local title / artist / album is null, render `—` in `text-ctp-overlay1` italic. Always render filename (always present).
-- [x] In `ProposalCandidateRow`: drop the local restatement — only show streaming side, score, method, rank, actions. Local context lives in the group header.
-- [x] Truncate with `truncate` on each `<dd>`. Preserve existing `aria-hidden` on the score meter.
-- [x] Approve/reject mutation logic, optimistic cache, and error banners untouched (`LinkProposalsView.tsx:159–185`).
-- [x] Test additions: render with all-three-local-fields-present (verify side-by-side), render with all-null-locals (verify dashes), render with one missing field, preserve approve+reject pending-state assertions.
-- [ ] Manual review (replaces dropped T8): open `/proposals` in dev and verify rows with full Beets metadata, rows with only filename, and rows with multiple candidates render correctly; verify approve+reject pending states animate correctly.
+## T4. Fix tag-matching N+1
 
-**Definition of done:**
-- `cd app-ui && npm run lint && npm test -- LinkProposalsView queries && npm run build`
+**Why**: `app/app/matching/tags.py:69-117` loads every streaming track into Python and scores in-memory — `O(local × streaming)`. Fine on dev fixtures; cliff at scale.
+
+**Files**: `app/app/matching/tags.py`; new migration to enable `pg_trgm` extension.
+
+**Approach**: `CREATE EXTENSION IF NOT EXISTS pg_trgm` in a new migration. Use trigram similarity (`title % :query`) to prefilter candidates SQL-side, returning ~50-100 candidates per local track. Score the small candidate set in Python as today. Alternative if pg_trgm setup is painful: precompute normalized `title_norm`/`artist_norm` columns and filter SQL-side.
+
+**Definition of done**: Benchmark on 5k local × 50k streaming shows order-of-magnitude reduction in match time. Quality of matches unchanged on existing fixtures. `cd app && pytest tests/test_matching_tags.py tests/test_migrations.py`.
+
+---
+
+## T5. Fix playlist-tracks triple-scan
+
+**Why**: `/playlists/{id}/tracks` at `app/app/streaming/router.py:210` calls `get_playlist_detail()` (which iterates `list_playlist_tracks()` to compute counts), then `:216` calls `list_playlist_tracks()` again. Frontend separately requests detail. Three scans per request on large playlists.
+
+**Files**: `app/app/streaming/router.py:203-218`; `app/app/streaming/store.py:384-407`.
+
+**Approach**: Replace the `get_playlist_detail()` existence check at `router.py:210` with a cheap `select(streaming_playlists_table.c.id).where(...).scalar_one_or_none()`. Don't change `get_playlist_detail`'s signature — it's still used by `:197`. If counts surface elsewhere, use SQL aggregation (`COUNT(*)`) instead of materializing the track list.
+
+**Definition of done**: Endpoint issues at most one `playlist_membership` scan per request; response shape unchanged. `cd app && pytest tests/test_main.py -k playlist_tracks`.
+
+---
+
+## T6. Paginate library listing
+
+**Why**: `app/app/library/store.py:51-137` runs an unbounded 7-table outer join with no `LIMIT`/`OFFSET`. Fine today, dies at large libraries.
+
+**Files**: `app/app/library/store.py`; `app/app/library/router.py`; `app-ui/src/features/library/LocalLibraryView.tsx`.
+
+**Approach** (locked):
+- Cursor-based pagination, sorted by `local_tracks.id ASC`. Default limit 100; max 500.
+- Split `LibraryStore.list_tracks()` into `list_tracks_page(cursor, limit) -> LibraryTracksPage` + `compute_stats() -> LibraryStatsRecord`. Stats summary stays unpaginated (returns full counts).
+- Router accepts `?cursor=&limit=`.
+- Frontend uses TanStack Query `useInfiniteQuery`.
+
+**Non-goals**: no filtering, no sorting beyond `id`. Those are future tasks.
+
+**Definition of done**: Library page loads paginated. Tests cover empty, single-page, multi-page, end-of-list. `cd app && pytest tests/test_main.py -k library`. `cd app-ui && npm run lint && npm test && npm run build`.
+
+---
+
+## T7. Set TanStack Query defaults
+
+**Why**: `app-ui/src/main.tsx:8` instantiates `new QueryClient()` with no `defaultOptions`. Default `staleTime` is `0` so every component remount refetches — unnecessary network chatter.
+
+**Files**: `app-ui/src/main.tsx` only.
+
+**Approach** (locked): `new QueryClient({ defaultOptions: { queries: { staleTime: 30_000, gcTime: 5 * 60_000 } } })`. Queries that need fresher data (job-status polling) keep their per-query overrides — audit them.
+
+**Definition of done**: Devtools show fewer network requests on tab/page navigation; no stale-data UX regressions. `cd app-ui && npm test`.
+
+---
+
+## T8. Centralize SQLAlchemy engine, inject via Depends, drop blocking async
+
+**Why**: Three coupled problems on the same files:
+- 17 `create_engine()` call sites. Each Store class instantiates its own engine in `__init__`, so connection-pool isolation is per-store — multiplies pool exhaustion risk under load.
+- `require_database_engine` + lazy `create_engine` block is copy-pasted across 3 routers (`matching/router.py:22-46`, `links/router.py`, `rescue/router.py`).
+- `app/app/library/router.py:17`, `maintenance/router.py:18`, `settings/router.py:30` are `async def` but call sync SQLAlchemy code that blocks the event loop.
+
+**Files**: new `app/app/core/db.py`; `app/app/main.py:29-79`; every `*/store.py` (`local_tracks`, `streaming`, `links`, `library`, `maintenance`, `matching`, `rescue/metadata`, `settings`, `ingestion/failures`, `ingestion/beets_mirror_backfill`, `m3u/generator`); `app/app/{matching,links,rescue,library,maintenance,settings}/router.py`; `app/tests/conftest.py` fixture wiring.
+
+**Approach**:
+- `core/db.py` exposes module-level `get_engine() -> Engine` that pulls from `app.state` (set during lifespan startup).
+- All 6 routers move to `engine: Engine = Depends(get_engine)`.
+- `library/maintenance/settings` routes drop `async def` → `def` (FastAPI runs sync routes in a threadpool).
+- Every Store's `__init__` accepts `engine: Engine`; remove `create_engine` calls inside.
+- Retire the duplicated `require_database_engine` blocks in `matching/links/rescue` routers.
+- Update `conftest.py:31` to pass the migrated engine into Store fixtures.
+
+**Definition of done**: `grep -rn "create_engine" app/app/` returns 1 (only `core/db.py`). Event loop no longer blocks during library/maintenance/settings calls. Existing tests pass after fixture wiring update. `cd app && ruff check . && pytest`.
+
+---
+
+## T9. End-to-end type safety: response_model → OpenAPI → openapi-typescript → fetchJson + zod
+
+**Why**: Four tightly coupled gaps that all touch the same boundary code — doing them separately means re-touching the same 2 feature files three times:
+- `app/app/streaming/router.py` returns raw `dict[str, object]`; `app/app/links/router.py` already uses typed Pydantic responses. Inconsistent.
+- Frontend types are hand-maintained (`app-ui/src/features/streamingAccounts/queries.ts`, etc.). Backend Pydantic models are the source of truth — manual sync drifts silently.
+- `app-ui/src/lib/api.ts:5-13` blindly casts JSON to `T` with no validation.
+- `fetchJson()` only wraps GET. Mutations across `app-ui/src/features/playlists/queries.ts:172-225` and `streamingAccounts/queries.ts:46-82` reimplement headers, JSON serialization, and `response.ok` checks inline.
+- `serialize_playlist_track()` at `app/app/streaming/router.py:129-142` has one caller — folds in cleanly here.
+
+**Files**:
+- Backend: `app/app/streaming/router.py:44-218`; audit `app/app/system/router.py`; new `app/app/openapi_export.py` CLI module.
+- Build: new `scripts/generate-types.sh`; `app-ui/package.json` codegen script.
+- Frontend: generated `app-ui/src/lib/api-types.ts` (committed); `app-ui/src/lib/api.ts`; migrate `app-ui/src/features/streamingAccounts/queries.ts` and `app-ui/src/features/playlists/queries.ts`.
+
+**Approach**:
+- Backend: add `response_model=...` to every streaming route. Replace dict construction with Pydantic instances. Inline the one-call `serialize_playlist_track`.
+- Codegen: small CLI in `app/app/openapi_export.py` (`from app.main import app; print(app.openapi())`). Build script writes `openapi.json`, then `npx openapi-typescript openapi.json -o app-ui/src/lib/api-types.ts`. Single `npm run codegen` script. CI lint runs codegen then `git diff --exit-code app-ui/src/lib/api-types.ts` to fail on staleness.
+- Frontend `api.ts`: add `postJson<T>`, `patchJson<T>`, `deleteJson<T>` (or `request<T>(method, url, body)` + thin wrappers). Each accepts an optional zod schema and parses on the way out; default no-op if no schema passed.
+- Migrate `streamingAccounts/queries.ts` + `playlists/queries.ts` to use the new helpers + generated types + zod.
+
+**Non-goals** (v1 scope): do NOT migrate `library`, `maintenance`, `proposals`, `localTracks`, `settings` features in this task — they keep hand-written types. Each becomes its own future cleanup task.
+
+**Definition of done**: `grep -n "dict\[str, " app/app/streaming/router.py` returns 0. All streaming routes have `response_model`. `streamingAccounts/queries.ts` and `playlists/queries.ts` import from `lib/api-types.ts`. No raw `fetch()` calls remain in those two files. CI fails when types are stale. Bogus payloads surface as parse errors instead of late `undefined` crashes. `cd app && pytest && cd ../app-ui && npm run lint && npm test && npm run build`.
+
+---
+
+## T10. Codify connection-context rule
+
+**Why**: `.connect()` vs `.begin()` are used interchangeably across stores (e.g., `app/app/matching/pipeline.py`). No documented rule.
+
+**Files**: docstring in `app/app/core/db.py` (depends on T8) or `CLAUDE.md`; spot-fix obvious misuses found during the audit pass.
+
+**Approach**: Document the rule — `.begin()` for any code path that mutates, `.connect()` for read-only queries. Add a banner to `core/db.py`. Audit `app/app/` for misuses; fix any clearly wrong.
+
+**Definition of done**: Rule documented in `core/db.py` or CLAUDE.md. Review pass over `app/app/` confirms compliance. `cd app && pytest`.
+
+---
+
+## T11. Extract shared frontend helpers to lib/
+
+**Why**: Three duplicated patterns across feature files:
+- `settleInChunks` is identical in 5 files: `features/playlists/PlaylistView.tsx:63`, `features/playlists/PlaylistSyncConfiguration.tsx:48`, `features/library/LocalLibraryView.tsx:58`, `features/maintenance/UnidentifiedView.tsx:33`, `features/maintenance/MissingLocallyView.tsx:55`.
+- Formatters `formatPlaylistTimestamp`, `getLocalTrackLabel`, `getMatchMethodLabel`, `formatDuration` are scattered across `features/proposals/LinkProposalsView.tsx:154-197`, `features/playlists/PlaylistSyncConfiguration.tsx:28-34`, etc.
+- `onMutate` / `onError` / `onSettled` cache-restore pattern repeats at `LinkProposalsView.tsx:202-221` (approve + reject — 2 mutations, same shape).
+
+**Files**:
+- New: `app-ui/src/lib/settleInChunks.ts`, `app-ui/src/lib/formatters.ts`, `app-ui/src/lib/optimisticMutation.ts`.
+- Consumers: 5 files for settleInChunks, scattered consumers for formatters, `LinkProposalsView.tsx` for the optimistic factory.
+
+**Approach**:
+- `settleInChunks`: move once, replace 5 imports. No behavioral change; all 5 sites already use chunks of 5 with `Promise.allSettled`. Keep that as the bulk-action concurrency cap.
+- Formatters: pull each function into `lib/formatters.ts`; consolidate variants where equivalent; document any genuine differences in inline comments.
+- `createOptimisticMutation()` factory: accepts `mutationFn`, `queryKey`, `optimisticUpdate`, `revertOnError`; returns a `useMutation` config. Migrate the 2 mutations in `LinkProposalsView.tsx`. `PlaylistView.tsx` and `LocalLibraryView.tsx` use `Promise.allSettled` + post-hoc invalidation, NOT optimistic-cache — out of scope here.
+
+**Definition of done**: `grep -rln "settleInChunks" app-ui/src/` shows the helper file plus 5 consumers. Each formatter has one canonical implementation. Optimistic boilerplate removed at `LinkProposalsView.tsx:202-221`. `cd app-ui && npm run lint && npm test && npm run build`.
+
+---
+
+## T12. Standardize cache invalidation
+
+**Why**: Some sites use feature-level helpers (`invalidateStreamingAccountMutationQueries`); others inline 2-3 `queryClient.invalidateQueries()` calls. `Topbar.tsx:120-125` uses `delayedInvalidate` while `PlaylistSyncConfiguration.tsx:136-151` does not despite a similar workflow.
+
+**Files**: `app-ui/src/features/shell/Topbar.tsx`; `app-ui/src/features/playlists/PlaylistSyncConfiguration.tsx:136-160`; audit other features.
+
+**Approach** (locked rule): `delayedInvalidate` is required after a mutation that triggers a backend job whose effect lands asynchronously (RQ-backed sync endpoints). Otherwise immediate `invalidateQueries`. Pull each feature's invalidation list into `<feature>/queries.ts` (where the keys live). Document the rule as a comment above `useDelayedInvalidate`. Audit all `invalidateQueries` call sites against the rule.
+
+**Definition of done**: Each feature uses a single invalidation pattern; rule for delayed vs immediate documented. Manual smoke: trigger a streaming-sync, confirm playlist detail re-renders after the worker completes. `cd app-ui && npm test && npm run build`.
+
+---
+
+## T13. A11y on PlaylistTrackActions popover
+
+**Why**: Popover at `app-ui/src/features/playlists/PlaylistTrackActions.tsx:42-50` lacks ESC dismiss, `aria-modal`, and focus trap.
+
+**Files**: `app-ui/src/features/playlists/PlaylistTrackActions.tsx`.
+
+**Approach**: Use the existing dialog/popover primitive (check `app-ui/src/components/` first) or add ESC handler + focus-trap + `aria-modal="true"` directly.
+
+**Definition of done**: Keyboard dismiss works; screen reader announces modal correctly. Existing tests pass. `cd app-ui && npm test`.
+
+---
+
+## T14. Test infra overhaul: testcontainers + conftest cleanup + m3u coverage
+
+**Why**: Three test-infra issues converge on `conftest.py`:
+- `app/tests/conftest.py:25` uses SQLite. Schema features (CHECK constraints, partial unique indexes, FK ON DELETE) silently differ from prod — T2 (uniqueness) and T3 (idempotence) cannot be tested under SQLite.
+- `monkeypatch.setenv("LIBRARY_ROOT", ...)` repeats across `test_links_router.py` (3 sites) and `test_main.py` (2 sites).
+- `test_m3u_generator.py` only has 2 tests; missing coverage for empty playlists, all-unlinked playlists, and approval-triggered regeneration.
+
+**Files**: `app/tests/conftest.py`; `app/tests/test_links_router.py`; `app/tests/test_main.py`; `app/tests/test_m3u_generator.py`; `requirements-dev.txt`.
+
+**Approach**:
+- Add `testcontainers-python` to dev deps. Provide a session-scoped Postgres container fixture; existing per-test fixture creates a fresh schema inside it. Keep SQLite as a fallback for ultra-fast unit tests if migration tests are too slow.
+- Module-level `library_root` fixture in `conftest.py`; remove the 5 duplicates.
+- Add `test_m3u_generator.py` cases for empty playlists, all-unlinked playlists, approval-triggered regeneration.
+
+**Sequencing note**: Land before T2/T3 if possible so those tasks can include real Postgres tests at landing time. If sequenced after, T2/T3 should explicitly note "Postgres-specific tests deferred until T14 lands."
+
+**Definition of done**: `grep -rn 'setenv("LIBRARY_ROOT"' app/tests/` shows only the conftest entry. Migration and schema tests run against Postgres. Coverage report shows added m3u paths exercised. `cd app && pytest`. CI time acceptable.
+
+---
+
+## T15. Logging standardization
+
+**Why**: Two adjacent gaps:
+- `app/app/matching/jobs.py:run_matching_pipeline` doesn't include `job_id` or `local_track_id` in log records, so worker output can't be correlated with an enqueue.
+- `app/app/ingestion/beets_mirror_backfill.py:51-56` uses `print()` while the rest of the backend uses `logging`. Operator output is inconsistent and not capturable.
+
+**Files**: `app/app/matching/jobs.py`; `app/app/matching/pipeline.py`; `app/app/ingestion/beets_mirror_backfill.py`.
+
+**Approach**:
+- `LoggerAdapter` (or `structlog.bind`) at job entry with `job_id` + `local_track_id`; pass through to downstream calls in `matching/pipeline.py`.
+- `beets_mirror_backfill.py`: module-level logger; configure CLI entry to set `INFO` level on stdout. Replace `print()` with `logger.info(...)`.
+
+**Definition of done**: Worker logs show both IDs on every line emitted by a job. `grep -n "print(" app/app/ingestion/beets_mirror_backfill.py` returns 0. Tools emit standard log lines; behavior unchanged for users running them. `cd app && pytest tests/test_beets_mirror_backfill.py tests/test_worker.py`.
+
+---
+
+## T16. Deployment & ops polish
+
+**Why**: Four small deployment-time gaps:
+- Hardcoded `/tmp/crate-lynx-*` staging dirs in `app/app/main.py:34-35` and `app/app/m3u/generator.py`.
+- `DEFAULT_INGEST_FOLDER_PATHS = ("/ingestion", "/soulseek")` in `app/app/settings/models.py` must stay in sync with `docker-compose.yml:53-58` mounts by hand. Drift = silent breakage.
+- `docker-compose.yml:57-60` hardcodes `/srv/mergerfs/...` host paths — non-portable.
+- Only Postgres has a compose healthcheck; the API doesn't.
+
+**Files**: `app/app/main.py`; `app/app/m3u/generator.py`; `app/app/settings/models.py`; `docker-compose.yml`; `.env.example` (new or extended).
+
+**Approach**:
+- Read staging dir from env (`CRATE_LYNX_STAGING_DIR`); default to `/tmp/...`.
+- Add banner comments in `settings/models.py` and `docker-compose.yml` cross-referencing each other (lower-effort than env-driven defaults).
+- Use `${VAR:-default}` syntax in compose with documented `.env.example` for host paths.
+- Add `/healthz` endpoint to `main.py` returning `{"ok": true}` plus a DB ping; add `healthcheck:` to the api compose service.
+
+**Definition of done**: `docker-compose ps` shows `(healthy)` for the api service. Staging dir override works. Fresh clone with documented `.env` builds and runs. Deployment to gluesoup-1 unchanged. `cd app && pytest`.
+
+---
+
+## T17. Backend code-quality cleanup: f-strings, view consolidation, migration safety
+
+**Why**: Three small backend hygiene items:
+- `app/app/ingestion/beets_mirror_sync.py:144, 154` interpolates `table_name` into SQL via f-string. Not a vulnerability (callers are internal, args are string literals) but ugly.
+- `final_links_view` is defined in 3 places (`local_tracks/store.py:41`, `streaming/store.py:50`, `matching/pipeline.py:54`); `suggested_links_view` in 2 (`local_tracks/store.py:48`, `streaming/store.py:56`); `beets_items_view` in 2 (`matching/tags.py:29`, `matching/isrc.py:9`). These are SQLAlchemy `table()` literals (not Postgres views) — name the new module accordingly.
+- `db/versions/f8a3d2c1b0e4_remove_non_audio_failed_ingestion_attempts.py:32-33` has empty `pass` downgrade after destructive delete; `9b7e3c2d1a4f_remove_streaming_fingerprints_and_acoustic_suggestions.py:20-31` cannot restore original `match_method` values. Rolling back loses data silently.
+
+**Files**: `app/app/ingestion/beets_mirror_sync.py`; new `app/app/core/tables.py` (name reflects SQLAlchemy literals, not DB views); 5 consumer files; the 2 cited migrations.
+
+**Approach**:
+- f-strings: split into two functions (`_fetch_one_item`, `_fetch_one_album`) instead of parameterized table name. Or use module-level constants if one-function reads cleaner.
+- Move all duplicated `table()` literals into `app/app/core/tables.py`. Stores import from there.
+- Migration downgrades: replace empty `pass` with `raise NotImplementedError("downgrade is destructive; restore from backup")` for both cited migrations. Best-effort reverse migration is not worth the complexity here.
+
+**Definition of done**: `grep -rn "= table(" app/app/` returns only definitions in `core/tables.py`. No string-formatted table names in SQL. Each migration's downgrade either works or fails loudly. `cd app && pytest`.
+
+---
+
+## T18. Replace `as number | string` casts in frontend
+
+**Why**: `app-ui/src/features/library/LocalLibraryView.tsx:46-56` and `features/playlists/queries.ts:160-161` use repeated unsafe casts that hide bugs if upstream guards break.
+
+**Files**: `app-ui/src/features/library/LocalLibraryView.tsx:46-56`; `app-ui/src/features/playlists/queries.ts:160-161`.
+
+**Approach**: Replace casts with proper type guards (`typeof x === "number"` etc.). If T9 has reached these features, drop the casts entirely in favor of generated types. Otherwise ship runtime guards now.
+
+**Definition of done**: No `as number | string` casts remain in those files. `cd app-ui && npm run lint && npm test && npm run build`.
