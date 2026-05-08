@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import PurePath
 
-from sqlalchemy import and_, create_engine, func, select
+from sqlalchemy import and_, case, create_engine, func, select
 
 from app.links.store import final_links_table
 from app.local_tracks.store import local_tracks_table
@@ -39,16 +39,21 @@ class LibraryStatsRecord:
 
 
 @dataclass(frozen=True, slots=True)
-class LibraryTracksResult:
-    stats: LibraryStatsRecord
+class LibraryTracksPage:
     tracks: list[LibraryTrackRecord]
+    next_cursor: int | None
 
 
 class LibraryStore:
     def __init__(self, database_url: str) -> None:
         self._engine = create_engine(database_url)
 
-    def list_tracks(self) -> LibraryTracksResult:
+    def list_tracks_page(
+        self,
+        *,
+        cursor: int | None = None,
+        limit: int = 100,
+    ) -> LibraryTracksPage:
         pending_suggestion_ids = (
             select(
                 suggested_links_table.c.local_track_id,
@@ -134,7 +139,10 @@ class LibraryStore:
                 )
             )
             .order_by(local_tracks_table.c.id.asc())
+            .limit(limit + 1)
         )
+        if cursor is not None:
+            query = query.where(local_tracks_table.c.id > cursor)
 
         with self._engine.connect() as connection:
             rows = connection.execute(query).mappings()
@@ -162,7 +170,56 @@ class LibraryStore:
                 )
                 for row in rows
             ]
-            return LibraryTracksResult(stats=_library_stats(tracks), tracks=tracks)
+            next_cursor = tracks[limit - 1].id if len(tracks) > limit else None
+            return LibraryTracksPage(tracks=tracks[:limit], next_cursor=next_cursor)
+
+    def compute_stats(self) -> LibraryStatsRecord:
+        pending_suggestion_ids = (
+            select(
+                suggested_links_table.c.local_track_id,
+                func.min(suggested_links_table.c.id).label("suggestion_id"),
+            )
+            .where(suggested_links_table.c.status == SUGGESTED_LINK_STATUS_PENDING)
+            .group_by(suggested_links_table.c.local_track_id)
+            .subquery()
+        )
+        linked_case = case((final_links_table.c.id.is_not(None), 1), else_=0)
+        pending_case = case(
+            (
+                and_(
+                    final_links_table.c.id.is_(None),
+                    pending_suggestion_ids.c.suggestion_id.is_not(None),
+                ),
+                1,
+            ),
+            else_=0,
+        )
+        query = select(
+            func.count(local_tracks_table.c.id).label("total"),
+            func.sum(linked_case).label("linked"),
+            func.sum(pending_case).label("pending"),
+        ).select_from(
+            local_tracks_table.outerjoin(
+                final_links_table,
+                final_links_table.c.local_track_id == local_tracks_table.c.id,
+            ).outerjoin(
+                pending_suggestion_ids,
+                pending_suggestion_ids.c.local_track_id == local_tracks_table.c.id,
+            )
+        )
+
+        with self._engine.connect() as connection:
+            row = connection.execute(query).mappings().one()
+
+        total = int(row["total"] or 0)
+        linked = int(row["linked"] or 0)
+        pending = int(row["pending"] or 0)
+        return LibraryStatsRecord(
+            total=total,
+            linked=linked,
+            pending=pending,
+            unlinked=total - linked - pending,
+        )
 
 
 def _display_filename(path: str) -> str:
@@ -175,15 +232,3 @@ def _link_status(row: object) -> str:
     if row["pending_suggestion_id"] is not None:
         return "pending"
     return "unlinked"
-
-
-def _library_stats(tracks: list[LibraryTrackRecord]) -> LibraryStatsRecord:
-    linked = sum(1 for track in tracks if track.link_status == "linked")
-    pending = sum(1 for track in tracks if track.link_status == "pending")
-    unlinked = sum(1 for track in tracks if track.link_status == "unlinked")
-    return LibraryStatsRecord(
-        total=len(tracks),
-        linked=linked,
-        pending=pending,
-        unlinked=unlinked,
-    )

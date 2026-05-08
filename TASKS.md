@@ -116,7 +116,7 @@ Each task is sized to fit comfortably in one Codex 5.5-xhigh context window.
 
 ---
 
-## - [ ] T6. Paginate library listing
+## - [x] T6. Paginate library listing
 
 **Why**: `app/app/library/store.py:51-137` runs an unbounded 7-table outer join with no `LIMIT`/`OFFSET`. Fine today, dies at large libraries.
 

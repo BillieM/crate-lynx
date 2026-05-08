@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useInfiniteQuery } from "@tanstack/react-query";
 
 import { endpoints, fetchJson } from "../../lib/api";
 
@@ -28,6 +28,7 @@ export type LibraryTrack = {
 };
 
 export type LibraryTracksResponse = {
+  next_cursor: number | null;
   stats: LibraryStats;
   tracks: LibraryTrack[];
 };
@@ -37,13 +38,41 @@ export const libraryQueryKeys = {
   tracks: () => ["library", "tracks"] as const,
 };
 
-export async function fetchLibraryTracks(): Promise<LibraryTracksResponse> {
-  return fetchJson<LibraryTracksResponse>(endpoints.api("/library/tracks"));
+type FetchLibraryTracksOptions = {
+  cursor?: number | null;
+  limit?: number;
+};
+
+type UseLibraryTracksQueryOptions = {
+  enabled?: boolean;
+};
+
+function libraryTracksUrl({ cursor, limit }: FetchLibraryTracksOptions = {}) {
+  const params = new URLSearchParams();
+
+  if (cursor !== null && cursor !== undefined) {
+    params.set("cursor", String(cursor));
+  }
+
+  if (limit !== undefined) {
+    params.set("limit", String(limit));
+  }
+
+  const query = params.toString();
+
+  return query ? `${endpoints.api("/library/tracks")}?${query}` : endpoints.api("/library/tracks");
 }
 
-export function useLibraryTracksQuery() {
-  return useQuery({
+export async function fetchLibraryTracks(options: FetchLibraryTracksOptions = {}): Promise<LibraryTracksResponse> {
+  return fetchJson<LibraryTracksResponse>(libraryTracksUrl(options));
+}
+
+export function useLibraryTracksQuery({ enabled = true }: UseLibraryTracksQueryOptions = {}) {
+  return useInfiniteQuery({
     queryKey: libraryQueryKeys.tracks(),
-    queryFn: fetchLibraryTracks,
+    queryFn: ({ pageParam }) => fetchLibraryTracks({ cursor: pageParam }),
+    initialPageParam: null as number | null,
+    getNextPageParam: (lastPage) => lastPage.next_cursor ?? undefined,
+    enabled,
   });
 }

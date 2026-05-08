@@ -25,3 +25,4 @@ class LibraryStatsResponse(BaseModel):
 class LibraryTracksResponse(BaseModel):
     stats: LibraryStatsResponse
     tracks: list[LibraryTrackResponse]
+    next_cursor: int | None

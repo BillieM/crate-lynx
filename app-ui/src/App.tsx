@@ -45,9 +45,10 @@ function App() {
   const unidentifiedQuery = useUnidentifiedTracksQuery();
   const streamingPlaylists = playlistsQuery.data?.playlists ?? emptyStreamingPlaylists;
   const defaultPlaylistViewId = streamingPlaylists[0] ? getPlaylistViewId(streamingPlaylists[0].id) : settingsSyncYoutubeMusicViewId;
+  const libraryStats = libraryTracksQuery.data?.pages[0]?.stats;
   const libraryItems = useMemo(
-    () => buildLibraryNavItems(libraryTracksQuery.data?.stats.total),
-    [libraryTracksQuery.data?.stats.total],
+    () => buildLibraryNavItems(libraryStats?.total),
+    [libraryStats?.total],
   );
   const maintenanceItems = useMemo(
     () =>

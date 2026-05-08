@@ -1136,7 +1136,98 @@ def test_library_tracks_endpoint_returns_linked_pending_unlinked_and_no_match_ro
                 "file_status": "available",
             },
         ],
+        "next_cursor": None,
     }
+
+
+def test_library_tracks_endpoint_returns_empty_page(
+    monkeypatch, tmp_path: Path
+) -> None:
+    database_url = f"sqlite:///{tmp_path / 'library-empty.db'}"
+    engine = create_engine(database_url)
+    metadata.create_all(engine)
+    local_tracks_metadata.create_all(engine)
+    links_metadata.create_all(engine)
+    suggested_links_metadata.create_all(engine)
+    monkeypatch.setenv("DATABASE_URL", database_url)
+
+    app = create_app()
+    route = next(
+        route
+        for route in app.routes
+        if getattr(route, "path", None) == "/api/library/tracks"
+        and "GET" in getattr(route, "methods", set())
+    )
+
+    response = _call_endpoint(route.endpoint)
+
+    assert response.model_dump(mode="json") == {
+        "stats": {
+            "total": 0,
+            "linked": 0,
+            "pending": 0,
+            "unlinked": 0,
+        },
+        "tracks": [],
+        "next_cursor": None,
+    }
+
+
+def test_library_tracks_endpoint_paginates_by_local_track_id(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite:///{tmp_path / 'library-pages.db'}"
+    engine = create_engine(database_url)
+    metadata.create_all(engine)
+    local_tracks_metadata.create_all(engine)
+    links_metadata.create_all(engine)
+    suggested_links_metadata.create_all(engine)
+    monkeypatch.setenv("DATABASE_URL", database_url)
+
+    with engine.begin() as connection:
+        connection.execute(
+            insert(local_tracks_table),
+            [
+                {
+                    "id": 5,
+                    "file_path": "Artist/first.mp3",
+                    "library_root_rel_path": "Artist/first.mp3",
+                },
+                {
+                    "id": 6,
+                    "file_path": "Artist/second.mp3",
+                    "library_root_rel_path": "Artist/second.mp3",
+                },
+                {
+                    "id": 7,
+                    "file_path": "Artist/third.mp3",
+                    "library_root_rel_path": "Artist/third.mp3",
+                },
+            ],
+        )
+
+    app = create_app()
+    route = next(
+        route
+        for route in app.routes
+        if getattr(route, "path", None) == "/api/library/tracks"
+        and "GET" in getattr(route, "methods", set())
+    )
+
+    first_page = _call_endpoint(route.endpoint, None, 2)
+    second_page = _call_endpoint(route.endpoint, first_page.next_cursor, 2)
+    end_page = _call_endpoint(route.endpoint, 7, 2)
+
+    assert [track.id for track in first_page.tracks] == [5, 6]
+    assert first_page.next_cursor == 6
+    assert first_page.stats.total == 3
+    assert [track.id for track in second_page.tracks] == [7]
+    assert second_page.next_cursor is None
+    assert second_page.stats.total == 3
+    assert end_page.tracks == []
+    assert end_page.next_cursor is None
+    assert end_page.stats.total == 3
 
 
 def test_missing_locally_endpoint_aggregates_playlist_usage_and_excludes_links(

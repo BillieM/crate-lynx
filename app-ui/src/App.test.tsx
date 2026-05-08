@@ -184,6 +184,7 @@ const linkProposalsResponse: LinkProposalsResponse = {
 };
 
 const libraryTracksResponse: LibraryTracksResponse = {
+  next_cursor: null,
   stats: {
     linked: 244,
     pending: 43,

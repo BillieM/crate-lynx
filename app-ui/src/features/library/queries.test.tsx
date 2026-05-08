@@ -32,6 +32,7 @@ describe("library queries", () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({
       ok: true,
       json: async () => ({
+        next_cursor: null,
         stats: {
           total: 3,
           linked: 1,
@@ -56,6 +57,7 @@ describe("library queries", () => {
     } as Response);
 
     await expect(fetchLibraryTracks()).resolves.toEqual({
+      next_cursor: null,
       stats: {
         total: 3,
         linked: 1,
@@ -80,6 +82,26 @@ describe("library queries", () => {
     expect(fetchMock).toHaveBeenCalledWith("/api/library/tracks");
   });
 
+  it("adds cursor and limit parameters when fetching later library pages", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        next_cursor: null,
+        stats: {
+          total: 0,
+          linked: 0,
+          pending: 0,
+          unlinked: 0,
+        },
+        tracks: [],
+      }),
+    } as Response);
+
+    await fetchLibraryTracks({ cursor: 1001, limit: 250 });
+
+    expect(fetchMock).toHaveBeenCalledWith("/api/library/tracks?cursor=1001&limit=250");
+  });
+
   it("throws a status-coded error when the library request fails", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue({
       ok: false,
@@ -93,6 +115,7 @@ describe("library queries", () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue({
       ok: true,
       json: async () => ({
+        next_cursor: null,
         stats: {
           total: 1,
           linked: 0,
@@ -124,8 +147,8 @@ describe("library queries", () => {
       expect(result.current.isSuccess).toBe(true);
     });
 
-    expect(result.current.data?.stats.total).toBe(1);
-    expect(result.current.data?.tracks[0]).toMatchObject({
+    expect(result.current.data?.pages[0]?.stats.total).toBe(1);
+    expect(result.current.data?.pages[0]?.tracks[0]).toMatchObject({
       id: 1002,
       link_status: "unlinked",
     });

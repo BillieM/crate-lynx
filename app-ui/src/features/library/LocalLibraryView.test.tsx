@@ -7,6 +7,7 @@ import { LocalLibraryView } from "./LocalLibraryView";
 import type { LibraryTracksResponse } from "./queries";
 
 const libraryTracksResponse: LibraryTracksResponse = {
+  next_cursor: null,
   stats: {
     linked: 2,
     pending: 2,
@@ -110,6 +111,36 @@ function mockLibraryFetchWithRematch({
   });
 }
 
+function mockPaginatedLibraryFetch() {
+  return vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+    const url = String(input);
+
+    if (url === "/api/library/tracks") {
+      return {
+        ok: true,
+        json: async () => ({
+          next_cursor: 1001,
+          stats: libraryTracksResponse.stats,
+          tracks: [libraryTracksResponse.tracks[0]],
+        }),
+      } as Response;
+    }
+
+    if (url === "/api/library/tracks?cursor=1001") {
+      return {
+        ok: true,
+        json: async () => ({
+          next_cursor: null,
+          stats: libraryTracksResponse.stats,
+          tracks: libraryTracksResponse.tracks.slice(1),
+        }),
+      } as Response;
+    }
+
+    throw new Error(`Unexpected fetch ${url}`);
+  });
+}
+
 function renderWithQueryClient(ui: ReactElement) {
   const queryClient = new QueryClient({
     defaultOptions: {
@@ -189,6 +220,26 @@ describe("LocalLibraryView", () => {
     expect(within(trackList).getAllByText("4:05")).toHaveLength(1);
     expect(within(trackList).getByText("Artist unavailable")).toBeInTheDocument();
     expect(within(trackList).getByText("Album unavailable")).toBeInTheDocument();
+  });
+
+  it("loads additional library pages on demand", async () => {
+    const fetchMock = mockPaginatedLibraryFetch();
+
+    renderWithQueryClient(<LocalLibraryView />);
+
+    const trackList = await screen.findByRole("region", { name: "Local library tracks" });
+
+    expect(await within(trackList).findByText("Showing 1 of 5 rows")).toBeInTheDocument();
+    expect(within(trackList).getByText("Night Shift")).toBeInTheDocument();
+    expect(within(trackList).queryByText("A Real Hero")).not.toBeInTheDocument();
+
+    fireEvent.click(within(trackList).getByRole("button", { name: "Load more" }));
+
+    expect(await within(trackList).findByText("A Real Hero")).toBeInTheDocument();
+    expect(within(trackList).getByText("Showing 5 of 5 rows")).toBeInTheDocument();
+    expect(within(trackList).queryByRole("button", { name: "Load more" })).not.toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledWith("/api/library/tracks");
+    expect(fetchMock).toHaveBeenCalledWith("/api/library/tracks?cursor=1001");
   });
 
   it("omits per-row detail and re-match actions", async () => {
@@ -406,6 +457,7 @@ describe("LocalLibraryView", () => {
 
   it("renders the library loading, error, and empty states", async () => {
     mockLibraryFetch({
+      next_cursor: null,
       stats: {
         linked: 0,
         pending: 0,
@@ -425,7 +477,7 @@ describe("LocalLibraryView", () => {
     expect(screen.getByRole("alert")).toHaveTextContent("Library unavailable");
     expect(screen.getByRole("region", { name: "Library filters" })).toBeInTheDocument();
 
-    rerender(<LocalLibraryView tracksResponse={{ stats: libraryTracksResponse.stats, tracks: [] }} />);
+    rerender(<LocalLibraryView tracksResponse={{ next_cursor: null, stats: libraryTracksResponse.stats, tracks: [] }} />);
 
     expect(await screen.findByRole("heading", { name: "No matching library tracks" })).toBeInTheDocument();
     expect(screen.getByText("No tracks match the selected link-status filter.")).toBeInTheDocument();

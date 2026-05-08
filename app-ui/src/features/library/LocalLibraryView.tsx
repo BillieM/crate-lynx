@@ -196,11 +196,22 @@ export function LocalLibraryView({ isPending = false, state, tracksResponse }: L
   const [bulkStatus, setBulkStatus] = useState<BulkLibraryStatus | null>(null);
   const [isBulkRematching, setIsBulkRematching] = useState(false);
   const [isBulkUnlinking, setIsBulkUnlinking] = useState(false);
-  const libraryTracksQuery = useLibraryTracksQuery();
+  const libraryTracksQuery = useLibraryTracksQuery({ enabled: tracksResponse === undefined });
+  const queryTracks = useMemo(
+    () => libraryTracksQuery.data?.pages.flatMap((page) => page.tracks) ?? emptyLibraryTracks,
+    [libraryTracksQuery.data?.pages],
+  );
   const resolvedState =
-    state ?? (libraryTracksQuery.isPending ? "loading" : libraryTracksQuery.isError ? "error" : "ready");
-  const stats = tracksResponse?.stats ?? libraryTracksQuery.data?.stats ?? defaultLibraryStats;
-  const tracks = tracksResponse?.tracks ?? libraryTracksQuery.data?.tracks ?? emptyLibraryTracks;
+    state ??
+    (tracksResponse
+      ? "ready"
+      : libraryTracksQuery.isPending
+        ? "loading"
+        : libraryTracksQuery.isError
+          ? "error"
+          : "ready");
+  const stats = tracksResponse?.stats ?? libraryTracksQuery.data?.pages[0]?.stats ?? defaultLibraryStats;
+  const tracks = tracksResponse?.tracks ?? queryTracks;
   const activeLinkStatusFilter =
     (columnFilters.find((filter) => filter.id === "link_status")?.value as LibraryLinkStatusFilter | undefined) ?? "all";
   const hasMatchingTracks =
@@ -425,7 +436,9 @@ export function LocalLibraryView({ isPending = false, state, tracksResponse }: L
                   <div className="flex items-center justify-between gap-3 px-1">
                     <h2 className={textClasses.label}>Local library track list</h2>
                     <p className={`${textClasses.caption} tabular-nums`}>
-                      Showing {filteredRowCount} of {totalRowCount} rows
+                      {activeLinkStatusFilter === "all" && stats.total > totalRowCount
+                        ? `Showing ${totalRowCount} of ${stats.total} rows`
+                        : `Showing ${filteredRowCount} of ${totalRowCount} rows`}
                     </p>
                   </div>
                 )}
@@ -438,6 +451,19 @@ export function LocalLibraryView({ isPending = false, state, tracksResponse }: L
                 onRowSelectionChange={setRowSelection}
                 onSortingChange={setSorting}
               />
+              {tracksResponse === undefined && libraryTracksQuery.hasNextPage ? (
+                <div className="flex justify-center">
+                  <ActionButton
+                    className="inline-flex items-center gap-1.5"
+                    disabled={libraryTracksQuery.isFetchingNextPage || controlsDisabled}
+                    onClick={() => {
+                      void libraryTracksQuery.fetchNextPage();
+                    }}
+                  >
+                    {libraryTracksQuery.isFetchingNextPage ? "Loading..." : "Load more"}
+                  </ActionButton>
+                </div>
+              ) : null}
             </div>
           ) : (
             <EmptyStateCard
