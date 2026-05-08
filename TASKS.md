@@ -134,7 +134,7 @@ Each task is sized to fit comfortably in one Codex 5.5-xhigh context window.
 
 ---
 
-## - [ ] T7. Set TanStack Query defaults
+## - [x] T7. Set TanStack Query defaults
 
 **Why**: `app-ui/src/main.tsx:8` instantiates `new QueryClient()` with no `defaultOptions`. Default `staleTime` is `0` so every component remount refetches — unnecessary network chatter.
 
