@@ -237,6 +237,84 @@ def test_schema_integrity_migration_deduplicates_provider_rows(
     }
 
 
+def test_local_track_beets_id_migration_deduplicates_and_enforces_unique(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite:///{tmp_path / 'local-track-beets-id.db'}"
+    monkeypatch.setenv("DATABASE_URL", database_url)
+
+    alembic_config = _alembic_config()
+    command.upgrade(alembic_config, "c6d5f8a1b2c3")
+
+    engine = create_engine(database_url)
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                """
+                INSERT INTO local_tracks
+                    (id, file_path, library_root_rel_path, fingerprint, beets_id)
+                VALUES
+                    (1, 'kept.mp3', 'kept.mp3', 'old-fp', 42),
+                    (2, 'duplicate.mp3', 'duplicate.mp3', 'duplicate-fp', 42),
+                    (3, 'legacy-one.mp3', 'legacy-one.mp3', NULL, NULL),
+                    (4, 'legacy-two.mp3', 'legacy-two.mp3', NULL, NULL)
+                """
+            )
+        )
+
+    command.upgrade(alembic_config, "head")
+
+    with engine.connect() as connection:
+        rows = (
+            connection.execute(
+                text(
+                    """
+                    SELECT id, file_path, beets_id
+                    FROM local_tracks
+                    ORDER BY id
+                    """
+                )
+            )
+            .mappings()
+            .all()
+        )
+
+    with engine.begin() as connection:
+        try:
+            connection.execute(
+                text(
+                    """
+                    INSERT INTO local_tracks
+                        (file_path, library_root_rel_path, fingerprint, beets_id)
+                    VALUES
+                        ('rejected.mp3', 'rejected.mp3', NULL, 42)
+                    """
+                )
+            )
+        except IntegrityError:
+            pass
+        else:
+            raise AssertionError("duplicate beets_id was accepted")
+
+        connection.execute(
+            text(
+                """
+                INSERT INTO local_tracks
+                    (file_path, library_root_rel_path, fingerprint, beets_id)
+                VALUES
+                    ('legacy-three.mp3', 'legacy-three.mp3', NULL, NULL)
+                """
+            )
+        )
+
+    assert [dict(row) for row in rows] == [
+        {"id": 1, "file_path": "kept.mp3", "beets_id": 42},
+        {"id": 3, "file_path": "legacy-one.mp3", "beets_id": None},
+        {"id": 4, "file_path": "legacy-two.mp3", "beets_id": None},
+    ]
+
+
 def test_remove_streaming_fingerprints_migration_normalizes_acoustic_suggestions(
     monkeypatch,
     tmp_path: Path,

@@ -77,7 +77,7 @@ Each task is sized to fit comfortably in one Codex 5.5-xhigh context window.
 
 ---
 
-## - [ ] T3. Make ingestion idempotent
+## - [x] T3. Make ingestion idempotent
 
 **Why**: In `app/app/ingestion/pipeline.py:212-233`, beets import happens before mirror, persist, enqueue, and source cleanup. A crash between import (`:212`) and source cleanup (`:233`) leaves the source file in place — the watcher re-ingests on next pass and can produce duplicate `local_tracks`.
 

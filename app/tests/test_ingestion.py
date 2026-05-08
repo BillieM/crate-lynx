@@ -1211,6 +1211,88 @@ def test_ingestion_processor_enqueues_matching_job_after_persisting(
     enqueuer.enqueue.assert_called_once_with(result.local_track_id)
 
 
+def test_ingestion_processor_retry_updates_existing_local_track_by_beets_id(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "ingestion" / "track.mp3"
+    source.parent.mkdir()
+    source.write_bytes(b"mp3")
+    prepared_tracks = [
+        PreparedTrack(
+            source_path=source,
+            prepared_path=tmp_path / "staging" / "track-first.mp3",
+            transcoded=False,
+        ),
+        PreparedTrack(
+            source_path=source,
+            prepared_path=tmp_path / "staging" / "track-retry.mp3",
+            transcoded=False,
+        ),
+    ]
+    for prepared in prepared_tracks:
+        prepared.prepared_path.parent.mkdir(parents=True, exist_ok=True)
+        prepared.prepared_path.write_bytes(b"mp3")
+
+    preparer = Mock(spec=AudioPreparer)
+    preparer.prepare.side_effect = prepared_tracks
+    library_root = tmp_path / "library"
+    importer = Mock(spec=BeetsImporter)
+    importer.library_root = library_root
+    importer.import_file.return_value = ImportedTrack(
+        library_path=library_root / "Artist" / "track.mp3",
+        beets_id=42,
+    )
+    fingerprint_generator = Mock(spec=FingerprintGenerator)
+    fingerprint_generator.generate.side_effect = ["fp-before-crash", "fp-after-retry"]
+    enqueuer = Mock(spec=MatchingJobEnqueuer)
+    enqueuer.enqueue.side_effect = [ValueError("job enqueue crashed"), "job-456"]
+
+    database_url = f"sqlite:///{tmp_path / 'app.db'}"
+    engine = create_engine(database_url)
+    metadata.create_all(engine)
+    processor = IngestionProcessor(
+        staging_root=tmp_path / "staging",
+        audio_preparer=preparer,
+        beets_importer=importer,
+        fingerprint_generator=fingerprint_generator,
+        track_store=LocalTrackStore(database_url),
+        matching_job_enqueuer=enqueuer,
+    )
+
+    try:
+        processor.process(source)
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("Expected mid-pipeline failure")
+
+    assert source.exists()
+
+    result = processor.process(source)
+
+    with engine.connect() as connection:
+        rows = (
+            connection.execute(
+                select(local_tracks_table).order_by(local_tracks_table.c.id)
+            )
+            .mappings()
+            .all()
+        )
+
+    assert len(rows) == 1
+    row = rows[0]
+    assert result.local_track_id == row["id"]
+    assert result.matching_job_id == "job-456"
+    assert row["file_path"] == "Artist/track.mp3"
+    assert row["fingerprint"] == "fp-after-retry"
+    assert row["beets_id"] == 42
+    assert [call.args[0] for call in enqueuer.enqueue.call_args_list] == [
+        row["id"],
+        row["id"],
+    ]
+    assert source.exists() is False
+
+
 def test_ingestion_processor_persists_failed_attempt_with_fingerprint(
     tmp_path: Path,
     caplog,

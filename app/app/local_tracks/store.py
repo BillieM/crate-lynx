@@ -12,13 +12,15 @@ from sqlalchemy import (
     MetaData,
     String,
     Table,
+    UniqueConstraint,
     column,
     create_engine,
     func,
-    insert,
     select,
     table,
 )
+from sqlalchemy.dialects.postgresql import insert as postgresql_insert
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 metadata = MetaData()
 
@@ -36,6 +38,7 @@ local_tracks_table = Table(
     Column(
         "updated_at", DateTime(timezone=True), server_default=func.now(), nullable=False
     ),
+    UniqueConstraint("beets_id", name="uq_local_tracks_beets_id"),
     Index("ix_local_tracks_fingerprint", "fingerprint"),
     Index("ix_local_tracks_beets_id", "beets_id"),
 )
@@ -127,20 +130,37 @@ class LocalTrackStore:
         relative_path = _relative_library_path(library_root, library_path)
 
         with self._engine.begin() as connection:
-            result = connection.execute(
-                insert(local_tracks_table).values(
-                    file_path=relative_path,
-                    library_root_rel_path=relative_path,
-                    fingerprint=fingerprint,
-                    beets_id=beets_id,
+            statement = _conflict_insert(
+                local_tracks_table,
+                connection.dialect.name,
+            ).values(
+                file_path=relative_path,
+                library_root_rel_path=relative_path,
+                fingerprint=fingerprint,
+                beets_id=beets_id,
+            )
+            row = (
+                connection.execute(
+                    statement.on_conflict_do_update(
+                        index_elements=[local_tracks_table.c.beets_id],
+                        set_={
+                            "file_path": statement.excluded.file_path,
+                            "library_root_rel_path": (
+                                statement.excluded.library_root_rel_path
+                            ),
+                            "fingerprint": statement.excluded.fingerprint,
+                            "updated_at": func.now(),
+                        },
+                    ).returning(
+                        local_tracks_table.c.id,
+                        local_tracks_table.c.file_path,
+                    )
                 )
+                .mappings()
+                .one()
             )
 
-        inserted_id = result.inserted_primary_key[0]
-        if not isinstance(inserted_id, int):
-            raise ValueError("Failed to persist local track")
-
-        return PersistedLocalTrack(id=inserted_id, file_path=relative_path)
+        return PersistedLocalTrack(id=row["id"], file_path=row["file_path"])
 
     def get_detail(self, local_track_id: int) -> LocalTrackDetailRecord | None:
         with self._engine.connect() as connection:
@@ -261,6 +281,16 @@ class LocalTrackStore:
                 for row in failed_ingestion_rows
             ],
         )
+
+
+def _conflict_insert(target_table, dialect_name: str):
+    if dialect_name == "postgresql":
+        return postgresql_insert(target_table)
+    if dialect_name == "sqlite":
+        return sqlite_insert(target_table)
+    raise ValueError(
+        f"Unsupported database dialect for local track upsert: {dialect_name}"
+    )
 
 
 def _relative_library_path(library_root: Path | str, library_path: Path | str) -> str:
