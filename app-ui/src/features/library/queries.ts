@@ -2,6 +2,7 @@ import { type QueryClient, type QueryKey, useInfiniteQuery } from "@tanstack/rea
 
 import { endpoints, fetchJson } from "../../lib/api";
 import { invalidateQueryKeys } from "../../lib/queryInvalidation";
+import { playlistLinkInvalidationKeys } from "../playlists/queries";
 
 export type LibraryLinkStatus = "linked" | "pending" | "unlinked";
 export type LibraryFileStatus = "available" | "missing" | "beets_failed";
@@ -43,8 +44,16 @@ export function libraryInvalidationKeys(): QueryKey[] {
   return [libraryQueryKeys.all, libraryQueryKeys.tracks()];
 }
 
+export function libraryLinkMutationInvalidationKeys(): QueryKey[] {
+  return [...libraryInvalidationKeys(), ...playlistLinkInvalidationKeys()];
+}
+
 export async function invalidateLibraryQueries(queryClient: QueryClient): Promise<void> {
   await invalidateQueryKeys(queryClient, libraryInvalidationKeys());
+}
+
+export async function invalidateLibraryLinkMutationQueries(queryClient: QueryClient): Promise<void> {
+  await invalidateQueryKeys(queryClient, libraryLinkMutationInvalidationKeys());
 }
 
 type FetchLibraryTracksOptions = {

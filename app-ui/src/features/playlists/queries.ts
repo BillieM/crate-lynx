@@ -4,6 +4,7 @@ import { z } from "zod";
 import { deleteJson, endpoints, fetchBlob, fetchJson, patchJson, postJson } from "../../lib/api";
 import type { components } from "../../lib/api-types";
 import { invalidateQueryKeys } from "../../lib/queryInvalidation";
+import { missingLocallyInvalidationKeys } from "../maintenance/queries";
 
 type ApiSchemas = components["schemas"];
 
@@ -198,6 +199,10 @@ export function playlistConfigurationInvalidationKeys(): QueryKey[] {
   return [playlistQueryKeys.list(), playlistQueryKeys.config()];
 }
 
+export function playlistConfigurationMutationInvalidationKeys(): QueryKey[] {
+  return [...playlistConfigurationInvalidationKeys(), ...missingLocallyInvalidationKeys()];
+}
+
 export function playlistContentInvalidationKeys(playlistIds: readonly (number | string)[]): QueryKey[] {
   return [
     playlistQueryKeys.list(),
@@ -208,12 +213,28 @@ export function playlistContentInvalidationKeys(playlistIds: readonly (number | 
   ];
 }
 
+export function playlistCollectionJobInvalidationKeys(): QueryKey[] {
+  return [...playlistConfigurationInvalidationKeys(), ...missingLocallyInvalidationKeys()];
+}
+
+export function playlistSyncJobInvalidationKeys(playlistIds: readonly (number | string)[]): QueryKey[] {
+  return [
+    ...playlistContentInvalidationKeys(playlistIds),
+    playlistQueryKeys.config(),
+    ...missingLocallyInvalidationKeys(),
+  ];
+}
+
 export function playlistLinkInvalidationKeys(): QueryKey[] {
   return [playlistQueryKeys.all];
 }
 
 export async function invalidatePlaylistConfigurationQueries(queryClient: QueryClient): Promise<void> {
   await invalidateQueryKeys(queryClient, playlistConfigurationInvalidationKeys());
+}
+
+export async function invalidatePlaylistConfigurationMutationQueries(queryClient: QueryClient): Promise<void> {
+  await invalidateQueryKeys(queryClient, playlistConfigurationMutationInvalidationKeys());
 }
 
 export async function invalidatePlaylistContentQueries(

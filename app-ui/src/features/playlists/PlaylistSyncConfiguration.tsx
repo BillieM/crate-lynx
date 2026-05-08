@@ -11,18 +11,14 @@ import { settleInChunks } from "../../lib/settleInChunks";
 import { useDelayedInvalidate } from "../../lib/useDelayedInvalidate";
 import { controlClasses, layoutClasses, textClasses } from "../../styles/componentClasses";
 import { actionButtonToneClasses } from "../../styles/toneClasses";
-import {
-  invalidateMissingLocallyQueries,
-  missingLocallyInvalidationKeys,
-} from "../maintenance/queries";
 import { PlaylistActionStatus } from "../shell/Topbar";
 import {
-  streamingAccountInvalidationKeys,
+  streamingAccountCollectionJobInvalidationKeys,
+  streamingAccountPlaylistSyncJobInvalidationKeys,
   useStreamingAccountsQuery,
 } from "../streamingAccounts/queries";
 import {
-  invalidatePlaylistConfigurationQueries,
-  playlistConfigurationInvalidationKeys,
+  invalidatePlaylistConfigurationMutationQueries,
   refreshStreamingAccountMetadata,
   syncStreamingAccount,
   syncStreamingPlaylist,
@@ -120,24 +116,21 @@ export function PlaylistSyncConfiguration() {
   const selectedSyncMutation = useMutation({
     mutationFn: syncStreamingAccount,
     onSuccess: async () => {
-      await invalidatePlaylistConfigurationQueries(queryClient);
-      scheduleStreamingSyncRefresh();
+      await invalidatePlaylistConfigurationMutationQueries(queryClient);
+      scheduleStreamingSyncRefresh(getEnabledPlaylistIds());
     },
   });
   const metadataRefreshMutation = useMutation({
     mutationFn: refreshStreamingAccountMetadata,
     onSuccess: async () => {
-      await invalidatePlaylistConfigurationQueries(queryClient);
-      scheduleStreamingSyncRefresh();
+      await invalidatePlaylistConfigurationMutationQueries(queryClient);
+      schedulePlaylistCollectionJobRefresh();
     },
   });
   const toggleMutation = useMutation({
     mutationFn: updateStreamingPlaylistConfig,
     onSuccess: async () => {
-      await Promise.all([
-        invalidatePlaylistConfigurationQueries(queryClient),
-        invalidateMissingLocallyQueries(queryClient),
-      ]);
+      await invalidatePlaylistConfigurationMutationQueries(queryClient);
     },
   });
   const playlists = configQuery.data?.playlists ?? emptyPlaylistConfigs;
@@ -297,18 +290,19 @@ export function PlaylistSyncConfiguration() {
   );
 
   async function refreshPlaylistQueries() {
-    await Promise.all([
-      invalidatePlaylistConfigurationQueries(queryClient),
-      invalidateMissingLocallyQueries(queryClient),
-    ]);
+    await invalidatePlaylistConfigurationMutationQueries(queryClient);
   }
 
-  function scheduleStreamingSyncRefresh() {
-    delayedInvalidate([
-      ...playlistConfigurationInvalidationKeys(),
-      ...missingLocallyInvalidationKeys(),
-      ...streamingAccountInvalidationKeys(),
-    ]);
+  function getEnabledPlaylistIds() {
+    return playlists.filter((playlist) => playlist.selected_for_sync).map((playlist) => playlist.id);
+  }
+
+  function schedulePlaylistCollectionJobRefresh() {
+    delayedInvalidate(streamingAccountCollectionJobInvalidationKeys());
+  }
+
+  function scheduleStreamingSyncRefresh(playlistIds: readonly (number | string)[]) {
+    delayedInvalidate(streamingAccountPlaylistSyncJobInvalidationKeys(playlistIds));
   }
 
   async function handleBulkSelectionUpdate(selectedForSync: boolean) {
@@ -356,7 +350,7 @@ export function PlaylistSyncConfiguration() {
     const failureCount = results.filter((result) => result.status === "rejected").length;
 
     await refreshPlaylistQueries();
-    scheduleStreamingSyncRefresh();
+    scheduleStreamingSyncRefresh(selectedRows.map((playlist) => playlist.id));
 
     setRowSelection({});
     setIsBulkSyncingRows(false);

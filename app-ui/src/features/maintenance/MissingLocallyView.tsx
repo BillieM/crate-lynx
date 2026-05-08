@@ -11,12 +11,11 @@ import { settleInChunks } from "../../lib/settleInChunks";
 import { useDelayedInvalidate } from "../../lib/useDelayedInvalidate";
 import { surfaceClasses, textClasses } from "../../styles/componentClasses";
 import {
-  playlistContentInvalidationKeys,
+  playlistSyncJobInvalidationKeys,
   syncStreamingPlaylist,
 } from "../playlists/queries";
 import {
   invalidateMissingLocallyQueries,
-  missingLocallyInvalidationKeys,
   type MissingLocallyResponse,
   type MissingLocallyTrack,
   useMissingLocallyTracksQuery,
@@ -178,10 +177,7 @@ export function MissingLocallyView({ isPending = false, state, tracksResponse }:
     const failureCount = results.filter((result) => result.status === "rejected").length;
 
     await invalidateMissingLocallyQueries(queryClient);
-    delayedInvalidate([
-      ...missingLocallyInvalidationKeys(),
-      ...playlistContentInvalidationKeys(selectedPlaylistIds),
-    ]);
+    delayedInvalidate(playlistSyncJobInvalidationKeys(selectedPlaylistIds));
 
     setRowSelection({});
     setIsSyncing(false);

@@ -6,11 +6,10 @@ import { controlClasses, shellClasses, textClasses } from "../../styles/componen
 import {
   exportPlaylistM3u,
   invalidatePlaylistContentQueries,
-  playlistContentInvalidationKeys,
   syncStreamingPlaylist,
   usePlaylistDetailQuery,
 } from "../playlists/queries";
-import { streamingAccountInvalidationKeys } from "../streamingAccounts/queries";
+import { streamingAccountPlaylistSyncJobInvalidationKeys } from "../streamingAccounts/queries";
 import type { PlaylistSyncViewState, ViewConfig } from "./types";
 
 function downloadBlob(blob: Blob, filename: string) {
@@ -114,10 +113,7 @@ export function Topbar({
     onSuccess: async (_data, playlistId) => {
       onPlaylistSyncStateChange({ playlistId: Number(playlistId), status: "success" });
       await invalidatePlaylistContentQueries(queryClient, [playlistId]);
-      delayedInvalidate([
-        ...playlistContentInvalidationKeys([playlistId]),
-        ...streamingAccountInvalidationKeys(),
-      ]);
+      delayedInvalidate(streamingAccountPlaylistSyncJobInvalidationKeys([playlistId]));
     },
   });
 

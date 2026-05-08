@@ -4,7 +4,11 @@ import { z } from "zod";
 import { endpoints, fetchJson, patchJson, postJson } from "../../lib/api";
 import type { components } from "../../lib/api-types";
 import { invalidateQueryKeys } from "../../lib/queryInvalidation";
-import { playlistConfigurationInvalidationKeys } from "../playlists/queries";
+import {
+  playlistCollectionJobInvalidationKeys,
+  playlistConfigurationInvalidationKeys,
+  playlistSyncJobInvalidationKeys,
+} from "../playlists/queries";
 
 type ApiSchemas = components["schemas"];
 
@@ -41,6 +45,16 @@ export function streamingAccountInvalidationKeys(): QueryKey[] {
 
 export function streamingAccountMutationInvalidationKeys(): QueryKey[] {
   return [...streamingAccountInvalidationKeys(), ...playlistConfigurationInvalidationKeys()];
+}
+
+export function streamingAccountCollectionJobInvalidationKeys(): QueryKey[] {
+  return [...streamingAccountInvalidationKeys(), ...playlistCollectionJobInvalidationKeys()];
+}
+
+export function streamingAccountPlaylistSyncJobInvalidationKeys(
+  playlistIds: readonly (number | string)[],
+): QueryKey[] {
+  return [...streamingAccountInvalidationKeys(), ...playlistSyncJobInvalidationKeys(playlistIds)];
 }
 
 export async function invalidateStreamingAccountMutationQueries(queryClient: QueryClient): Promise<void> {

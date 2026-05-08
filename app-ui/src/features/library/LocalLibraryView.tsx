@@ -14,18 +14,14 @@ import { useDelayedInvalidate } from "../../lib/useDelayedInvalidate";
 import { controlClasses, surfaceClasses, textClasses } from "../../styles/componentClasses";
 import { trackStatusDotClasses } from "../../styles/toneClasses";
 import { LocalTrackDetailDrawer } from "../localTracks/LocalTrackDetailDrawer";
-import {
-  deleteFinalLink,
-  invalidatePlaylistLinkQueries,
-  playlistLinkInvalidationKeys,
-} from "../playlists/queries";
+import { deleteFinalLink } from "../playlists/queries";
 import {
   type LibraryLinkStatus,
   type LibraryStats,
   type LibraryTrack,
   type LibraryTracksResponse,
-  invalidateLibraryQueries,
-  libraryInvalidationKeys,
+  invalidateLibraryLinkMutationQueries,
+  libraryLinkMutationInvalidationKeys,
   useLibraryTracksQuery,
 } from "./queries";
 
@@ -287,14 +283,11 @@ export function LocalLibraryView({ isPending = false, state, tracksResponse }: L
   }
 
   async function invalidateLibraryTables() {
-    await Promise.all([
-      invalidateLibraryQueries(queryClient),
-      invalidatePlaylistLinkQueries(queryClient),
-    ]);
+    await invalidateLibraryLinkMutationQueries(queryClient);
   }
 
   function scheduleRematchRefresh() {
-    delayedInvalidate([...libraryInvalidationKeys(), ...playlistLinkInvalidationKeys()]);
+    delayedInvalidate(libraryLinkMutationInvalidationKeys());
   }
 
   async function handleBulkRematch() {
