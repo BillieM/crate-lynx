@@ -225,7 +225,7 @@ Each task is sized to fit comfortably in one Codex 5.5-xhigh context window.
 
 ---
 
-## - [ ] T12. Standardize cache invalidation
+## - [x] T12. Standardize cache invalidation
 
 **Why**: Some sites use feature-level helpers (`invalidateStreamingAccountMutationQueries`); others inline 2-3 `queryClient.invalidateQueries()` calls. `Topbar.tsx:120-125` uses `delayedInvalidate` while `PlaylistSyncConfiguration.tsx:136-151` does not despite a similar workflow.
 
