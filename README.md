@@ -61,19 +61,21 @@ docker-compose ps
 | `TOKEN_ENCRYPTION_KEY` | Fernet key for encrypting streaming auth tokens. Generate one with `python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())'` |
 | `LIBRARY_ROOT` | Container path where processed music is stored. Defaults to `/music` |
 | `BEETS_LIBRARY` | Container path for the Beets SQLite database. Defaults to `/data/beets/library.db` |
+| `CRATE_LYNX_STAGING_DIR` | Container base path for temporary app outputs. Defaults to `/tmp/crate-lynx` in Compose |
+| `M3U_OUTPUT_DIR` | Container path for generated M3U exports. Defaults to `/data/m3u` in Compose |
 
 ## Storage and mounts
 
-Docker Compose expects explicit host paths for ingestion, processed music, and application data:
+Docker Compose reads host paths from `.env`, with production-friendly defaults:
 
-| Host path | Container path | Purpose |
+| Env var | Default host path | Container path | Purpose |
 |---|---|---|
-| `/srv/mergerfs/hdds/music-in` | `/ingestion` | Default manual ingest input |
-| `/srv/mergerfs/hdds/soulseek/downloads` | `/soulseek` | Default Soulseek download ingest input |
-| `/srv/mergerfs/hdds/media/music` | `/music` | Processed library output managed by Beets |
-| `/docker/appdata/cratelynx` | `/data` | Application-owned data, including the Beets database |
+| `INGESTION_HOST_PATH` | `/srv/mergerfs/hdds/music-in` | `/ingestion` | Default manual ingest input |
+| `SOULSEEK_HOST_PATH` | `/srv/mergerfs/hdds/soulseek/downloads` | `/soulseek` | Default Soulseek download ingest input |
+| `MUSIC_HOST_PATH` | `/srv/mergerfs/hdds/media/music` | `/music` | Processed library output managed by Beets |
+| `APP_DATA_HOST_PATH` | `/docker/appdata/cratelynx` | `/data` | Application-owned data, including the Beets database and M3U exports |
 
-Create those host directories before starting the stack, or edit `docker-compose.yml` to point at equivalent host paths on your machine. The paths configured in Settings are container paths, so any useful ingest folder should also be mounted into the `app` container.
+Create those host directories before starting the stack, or override the host path variables in `.env`. The paths configured in Settings are container paths, so any useful ingest folder should also be mounted into the `app` container.
 
 `/music` is output only. Do not add it as an ingest folder, because completed imports are moved there and watching it would re-ingest files that Beets has already processed.
 

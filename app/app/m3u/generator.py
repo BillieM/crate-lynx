@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 import re
 from pathlib import Path
 
@@ -8,6 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.engine import Engine
 
 from app.core.db import create_database_engine
+from app.core.paths import default_staging_path, resolve_staging_path
 from app.links.store import final_links_table
 from app.local_tracks.store import local_tracks_table
 from app.streaming.models import (
@@ -16,11 +16,11 @@ from app.streaming.models import (
     streaming_tracks_table,
 )
 
-DEFAULT_M3U_OUTPUT_DIR = Path("/tmp/crate-lynx-m3u")
+DEFAULT_M3U_OUTPUT_DIR = default_staging_path("m3u")
 
 
 def get_m3u_output_dir() -> Path:
-    return Path(os.environ.get("M3U_OUTPUT_DIR", str(DEFAULT_M3U_OUTPUT_DIR)))
+    return resolve_staging_path("M3U_OUTPUT_DIR", "m3u")
 
 
 def generate_m3u(
@@ -83,11 +83,11 @@ def write_m3u(
     playlist_id: int,
     playlist_title: str,
     base_path: Path | str,
-    output_dir: Path | str = DEFAULT_M3U_OUTPUT_DIR,
+    output_dir: Path | str | None = None,
     *,
     engine: Engine | None = None,
 ) -> Path:
-    resolved_output_dir = Path(output_dir).resolve()
+    resolved_output_dir = Path(output_dir or get_m3u_output_dir()).resolve()
     resolved_output_dir.mkdir(parents=True, exist_ok=True)
     output_path = resolved_output_dir / build_m3u_filename(playlist_title)
     output_path.write_text(
@@ -102,7 +102,7 @@ def regenerate_m3us_for_streaming_track(
     *,
     engine: Engine | None = None,
     base_path: Path | str,
-    output_dir: Path | str = DEFAULT_M3U_OUTPUT_DIR,
+    output_dir: Path | str | None = None,
 ) -> list[Path]:
     engine = engine or create_database_engine()
     query = (

@@ -285,7 +285,7 @@ Each task is sized to fit comfortably in one Codex 5.5-xhigh context window.
 
 ---
 
-## - [ ] T16. Deployment & ops polish
+## - [x] T16. Deployment & ops polish
 
 **Why**: Four small deployment-time gaps:
 - Hardcoded `/tmp/crate-lynx-*` staging dirs in `app/app/main.py:34-35` and `app/app/m3u/generator.py`.

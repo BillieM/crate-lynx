@@ -4,9 +4,13 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
+from sqlalchemy import text
 from sqlalchemy.engine import Engine
+from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.db import create_database_engine
+from app.core.paths import resolve_staging_path
 from app.ingestion import BeetsImporter, IngestionProcessor, IngestionWatcher
 from app.ingestion.failures import FailedIngestionAttemptStore
 from app.library.router import create_router as create_library_router
@@ -27,14 +31,15 @@ from app.system.router import router as system_router
 logger = logging.getLogger(__name__)
 
 
+class HealthzResponse(BaseModel):
+    ok: bool
+    database: str
+
+
 def create_app() -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        staging_root = Path(
-            os.environ.get(
-                "INGESTION_STAGING_ROOT", "/tmp/crate-lynx-ingestion-staging"
-            )
-        )
+        staging_root = get_ingestion_staging_root()
         library_root = Path(os.environ.get("LIBRARY_ROOT", "/music"))
         database_url = os.environ.get("DATABASE_URL")
         redis_url = os.environ.get("REDIS_URL")
@@ -89,6 +94,29 @@ def create_app() -> FastAPI:
 
     app = FastAPI(title="crate-lynx", lifespan=lifespan)
 
+    @app.get("/healthz", response_model=HealthzResponse)
+    def healthz() -> HealthzResponse:
+        database_engine = getattr(app.state, "database_engine", None)
+        if database_engine is None:
+            if os.environ.get("DATABASE_URL"):
+                raise HTTPException(
+                    status_code=503,
+                    detail={"ok": False, "database": "unavailable"},
+                )
+            return HealthzResponse(ok=True, database="not_configured")
+
+        try:
+            with database_engine.connect() as connection:
+                connection.execute(text("SELECT 1"))
+        except SQLAlchemyError as exc:
+            logger.exception("Health check database ping failed")
+            raise HTTPException(
+                status_code=503,
+                detail={"ok": False, "database": "unavailable"},
+            ) from exc
+
+        return HealthzResponse(ok=True, database="ok")
+
     def require_redis_url() -> str:
         redis_url = os.environ.get("REDIS_URL")
         if not redis_url:
@@ -140,6 +168,10 @@ def create_app() -> FastAPI:
     )
 
     return app
+
+
+def get_ingestion_staging_root() -> Path:
+    return resolve_staging_path("INGESTION_STAGING_ROOT", "ingestion-staging")
 
 
 def _resolve_ingest_roots(database_engine: Engine | None) -> list[Path]:

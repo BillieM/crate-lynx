@@ -101,7 +101,38 @@ def test_links_routes_are_mounted_under_api_prefix() -> None:
     assert "/api/settings/general" in route_paths
     assert "/api/settings/ingest-folders" in route_paths
     assert "/api/settings/ingest-folders/{folder_id}" in route_paths
+    assert "/healthz" in route_paths
     assert "/ingest/status" not in route_paths
+
+
+def test_healthz_pings_database(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite:///{tmp_path / 'health.db'}"
+    engine = create_engine(database_url)
+    monkeypatch.setenv("DATABASE_URL", database_url)
+    app = create_app()
+    app.state.database_engine = engine
+    route = _route("GET", "/healthz", app)
+
+    response = _call_endpoint(route.endpoint)
+
+    assert response.ok is True
+    assert response.database == "ok"
+
+
+def test_healthz_allows_unconfigured_database(
+    monkeypatch,
+) -> None:
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    app = create_app()
+    route = _route("GET", "/healthz", app)
+
+    response = _call_endpoint(route.endpoint)
+
+    assert response.ok is True
+    assert response.database == "not_configured"
 
 
 def test_startup_seeds_persisted_ingest_folders_and_watches_them(
@@ -149,6 +180,39 @@ def test_startup_falls_back_to_env_ingestion_root_without_database_url(
             assert watcher.root == [Path("/tmp/local-ingestion")]
 
     asyncio.run(run_lifespan())
+
+
+def test_startup_uses_configured_staging_base(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    seen: dict[str, object] = {}
+
+    class StubIngestionProcessor:
+        def __init__(self, **kwargs) -> None:
+            seen["processor_kwargs"] = kwargs
+
+        def process(self, path: Path):
+            raise AssertionError(f"unexpected process call for {path}")
+
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.delenv("TOKEN_ENCRYPTION_KEY", raising=False)
+    monkeypatch.setenv("CRATE_LYNX_STAGING_DIR", str(tmp_path / "stage"))
+    monkeypatch.setenv("INGESTION_ROOT", str(tmp_path / "incoming"))
+    monkeypatch.setattr("app.main.IngestionProcessor", StubIngestionProcessor)
+    monkeypatch.setattr("app.main.IngestionWatcher", StubIngestionWatcher)
+    StubIngestionWatcher.instances = []
+    app = create_app()
+
+    async def run_lifespan() -> None:
+        async with app.router.lifespan_context(app):
+            pass
+
+    asyncio.run(run_lifespan())
+
+    assert seen["processor_kwargs"]["staging_root"] == (
+        tmp_path / "stage" / "ingestion-staging"
+    )
 
 
 def test_startup_allows_missing_token_encryption_key_without_database_url(

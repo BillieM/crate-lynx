@@ -9,6 +9,7 @@ import sqlite3
 from sqlalchemy import delete, select, update
 
 from app.core.db import create_database_engine
+from app.core.paths import resolve_staging_path
 from app.ingestion.beets_mirror_backfill import backfill_beets_mirror
 from app.ingestion.beets_mirror_sync import decode_beets_path
 from app.ingestion.failures import failed_ingestion_attempts_table
@@ -27,9 +28,7 @@ def main() -> None:
     database_url = os.environ["DATABASE_URL"]
     library_root = Path(os.environ.get("LIBRARY_ROOT", "/music")).resolve()
     beets_library = Path(os.environ.get("BEETS_LIBRARY", "/data/beets/library.db"))
-    staging_root = Path(
-        os.environ.get("INGESTION_STAGING_ROOT", "/tmp/crate-lynx-ingestion-staging")
-    )
+    staging_root = resolve_staging_path("INGESTION_STAGING_ROOT", "ingestion-staging")
 
     engine = create_database_engine(database_url)
     actions: list[str] = []

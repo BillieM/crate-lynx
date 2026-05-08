@@ -50,20 +50,23 @@ services:
       TOKEN_ENCRYPTION_KEY: ${TOKEN_ENCRYPTION_KEY:?set TOKEN_ENCRYPTION_KEY in .env with a Fernet key}
       LIBRARY_ROOT: ${LIBRARY_ROOT:-/music}
       BEETS_LIBRARY: ${BEETS_LIBRARY:-/data/beets/library.db}
-      INGESTION_ROOT: /ingestion
+      CRATE_LYNX_STAGING_DIR: ${CRATE_LYNX_STAGING_DIR:-/tmp/crate-lynx}
+      INGESTION_ROOT: ${INGESTION_ROOT:-/ingestion}
+      M3U_OUTPUT_DIR: ${M3U_OUTPUT_DIR:-/data/m3u}
     ports:
       - "18101:8000"
     volumes:
-      - /srv/mergerfs/hdds/music-in:/ingestion
-      - /srv/mergerfs/hdds/soulseek/downloads:/soulseek
-      - /srv/mergerfs/hdds/media/music:/music
-      - /docker/appdata/cratelynx:/data
+      # Keep /ingestion and /soulseek in sync with DEFAULT_INGEST_FOLDER_PATHS in app/app/settings/models.py.
+      - ${INGESTION_HOST_PATH:-/srv/mergerfs/hdds/music-in}:/ingestion
+      - ${SOULSEEK_HOST_PATH:-/srv/mergerfs/hdds/soulseek/downloads}:/soulseek
+      - ${MUSIC_HOST_PATH:-/srv/mergerfs/hdds/media/music}:/music
+      - ${APP_DATA_HOST_PATH:-/docker/appdata/cratelynx}:/data
     healthcheck:
       test:
         - CMD
         - python
         - -c
-        - import urllib.request; urllib.request.urlopen("http://127.0.0.1:8000/health")
+        - import urllib.request; urllib.request.urlopen("http://127.0.0.1:8000/healthz")
       interval: 10s
       timeout: 5s
       retries: 5

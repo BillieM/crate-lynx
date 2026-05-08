@@ -9,7 +9,7 @@ from app.links.router import create_router
 from app.links.store import final_links_table, metadata as links_metadata
 from app.local_tracks.store import local_tracks_table, metadata as local_tracks_metadata
 from app.matching.pipeline import SUGGESTED_LINK_STATUS_APPROVED
-from app.m3u.generator import generate_m3u
+from app.m3u.generator import generate_m3u, get_m3u_output_dir
 from app.streaming.models import (
     metadata as streaming_metadata,
     playlist_membership_table,
@@ -133,6 +133,16 @@ def test_generate_m3u_returns_only_final_linked_tracks_in_playlist_order(
         "#EXTINF:121,Artist - First",
         str((tmp_path / "exports" / "Artist/first.mp3").resolve()),
     ]
+
+
+def test_get_m3u_output_dir_uses_configured_staging_base(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.delenv("M3U_OUTPUT_DIR", raising=False)
+    monkeypatch.setenv("CRATE_LYNX_STAGING_DIR", str(tmp_path / "stage"))
+
+    assert get_m3u_output_dir() == tmp_path / "stage" / "m3u"
 
 
 def test_generate_m3u_returns_header_only_for_playlist_without_final_links(
