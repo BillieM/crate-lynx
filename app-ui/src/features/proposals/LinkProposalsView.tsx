@@ -4,19 +4,21 @@ import { CheckCircle2, XCircle } from "lucide-react";
 import { ActionButton } from "../../components/ActionButton";
 import { EmptyStateCard } from "../../components/EmptyStateCard";
 import { Pill, type PillTone } from "../../components/Pill";
+import { getLocalTrackLabel, getMatchMethodLabel } from "../../lib/formatters";
+import { createOptimisticMutation, type OptimisticMutationSnapshot } from "../../lib/optimisticMutation";
 import { controlClasses, layoutClasses, surfaceClasses, textClasses } from "../../styles/componentClasses";
 import {
+  type ApproveLinkProposalResponse,
   approveLinkProposal,
-  playlistQueryKeys,
-  rejectLinkProposal,
   type LinkProposal,
   type LinkProposalsResponse,
+  playlistQueryKeys,
+  rejectLinkProposal,
+  type RejectLinkProposalResponse,
   useLinkProposalsQuery,
 } from "../playlists/queries";
 
-type OptimisticProposalMutationContext = {
-  previousProposalQueries: [readonly unknown[], LinkProposalsResponse | undefined][];
-};
+const proposalsQueryKey = ["playlists", "proposals"] as const;
 
 function clampPercentage(matchPercentage: number) {
   return Math.max(0, Math.min(100, matchPercentage));
@@ -32,54 +34,33 @@ function sortLinkProposals(proposals: LinkProposal[]) {
   });
 }
 
-async function removeProposalCandidateFromCache(
-  queryClient: ReturnType<typeof useQueryClient>,
+function removeProposalCandidateFromCache(
+  current: LinkProposalsResponse | undefined,
   proposalId: number | string,
+  snapshots: OptimisticMutationSnapshot<LinkProposalsResponse>[],
   options: { removeLocalTrackGroup: boolean },
-): Promise<OptimisticProposalMutationContext> {
-  await queryClient.cancelQueries({ queryKey: ["playlists", "proposals"] });
+): LinkProposalsResponse | undefined {
+  if (!current) {
+    return current;
+  }
 
-  const previousProposalQueries = queryClient.getQueriesData<LinkProposalsResponse>({
-    queryKey: ["playlists", "proposals"],
-  });
   const targetLocalTrackIds = new Set(
-    previousProposalQueries.flatMap(([, data]) =>
+    snapshots.flatMap(([, data]) =>
       data?.proposals
         .filter((proposal) => String(proposal.id) === String(proposalId))
         .map((proposal) => proposal.local_track_id) ?? [],
     ),
   );
 
-  queryClient.setQueriesData<LinkProposalsResponse>({ queryKey: ["playlists", "proposals"] }, (current) => {
-    if (!current) {
-      return current;
-    }
+  return {
+    proposals: current.proposals.filter((proposal) => {
+      if (String(proposal.id) === String(proposalId)) {
+        return false;
+      }
 
-    return {
-      proposals: current.proposals.filter((proposal) => {
-        if (String(proposal.id) === String(proposalId)) {
-          return false;
-        }
-
-        return !options.removeLocalTrackGroup || !targetLocalTrackIds.has(proposal.local_track_id);
-      }),
-    };
-  });
-
-  return { previousProposalQueries };
-}
-
-function restoreProposalCache(
-  queryClient: ReturnType<typeof useQueryClient>,
-  context: OptimisticProposalMutationContext | undefined,
-) {
-  context?.previousProposalQueries.forEach(([queryKey, data]) => {
-    queryClient.setQueryData(queryKey, data);
-  });
-}
-
-function getLocalTrackLabel(proposal: LinkProposal) {
-  return proposal.local_file_path.split("/").pop() || proposal.local_file_path;
+      return !options.removeLocalTrackGroup || !targetLocalTrackIds.has(proposal.local_track_id);
+    }),
+  };
 }
 
 function MetadataValue({ fallback = "—", value }: { fallback?: string; value: string | null }) {
@@ -126,20 +107,6 @@ function ProposalComparisonField({
       </dd>
     </div>
   );
-}
-
-function getMatchMethodLabel(matchMethod: string) {
-  const normalizedMethod = matchMethod.toLowerCase();
-
-  if (normalizedMethod === "isrc") {
-    return "ISRC";
-  }
-
-  if (normalizedMethod === "tag") {
-    return "Tag";
-  }
-
-  return matchMethod;
 }
 
 function getMatchMethodTone(matchMethod: string): PillTone {
@@ -200,21 +167,25 @@ export function LinkProposalsView() {
   const queryClient = useQueryClient();
   const proposalsQuery = useLinkProposalsQuery();
   const approveMutation = useMutation({
-    mutationFn: approveLinkProposal,
-    onMutate: (proposalId) => removeProposalCandidateFromCache(queryClient, proposalId, { removeLocalTrackGroup: true }),
-    onError: (_error, _proposalId, context) => {
-      restoreProposalCache(queryClient, context);
-    },
+    ...createOptimisticMutation<ApproveLinkProposalResponse, Error, number | string, LinkProposalsResponse>({
+      mutationFn: approveLinkProposal,
+      optimisticUpdate: (current, proposalId, snapshots) =>
+        removeProposalCandidateFromCache(current, proposalId, snapshots, { removeLocalTrackGroup: true }),
+      queryClient,
+      queryKey: proposalsQueryKey,
+    }),
     onSettled: async () => {
       await queryClient.invalidateQueries({ queryKey: playlistQueryKeys.all });
     },
   });
   const rejectMutation = useMutation({
-    mutationFn: rejectLinkProposal,
-    onMutate: (proposalId) => removeProposalCandidateFromCache(queryClient, proposalId, { removeLocalTrackGroup: false }),
-    onError: (_error, _proposalId, context) => {
-      restoreProposalCache(queryClient, context);
-    },
+    ...createOptimisticMutation<RejectLinkProposalResponse, Error, number | string, LinkProposalsResponse>({
+      mutationFn: rejectLinkProposal,
+      optimisticUpdate: (current, proposalId, snapshots) =>
+        removeProposalCandidateFromCache(current, proposalId, snapshots, { removeLocalTrackGroup: false }),
+      queryClient,
+      queryKey: proposalsQueryKey,
+    }),
     onSettled: async () => {
       await queryClient.invalidateQueries({ queryKey: playlistQueryKeys.all });
     },

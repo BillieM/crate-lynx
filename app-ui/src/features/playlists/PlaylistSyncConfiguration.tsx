@@ -6,6 +6,8 @@ import { ActionButton } from "../../components/ActionButton";
 import { DataTable } from "../../components/DataTable";
 import { EmptyStateCard } from "../../components/EmptyStateCard";
 import { StatusMessage, type OperationStatus } from "../../components/StatusMessage";
+import { formatPlaylistTimestamp } from "../../lib/formatters";
+import { settleInChunks } from "../../lib/settleInChunks";
 import { useDelayedInvalidate } from "../../lib/useDelayedInvalidate";
 import { controlClasses, layoutClasses, textClasses } from "../../styles/componentClasses";
 import { actionButtonToneClasses } from "../../styles/toneClasses";
@@ -25,14 +27,6 @@ import {
 type PlaylistCollectionStatus = "empty" | "error" | "loading" | "ready";
 const emptyPlaylistConfigs: StreamingPlaylistConfig[] = [];
 
-function formatPlaylistTimestamp(timestamp: string | null) {
-  if (!timestamp) {
-    return "Not synced yet";
-  }
-
-  return timestamp.replace("T", " ").replace(/(?:\.\d+)?Z?$/, "");
-}
-
 function getSelectedPlaylistCount(playlists: StreamingPlaylistConfig[]) {
   return playlists.filter((playlist) => playlist.selected_for_sync).length;
 }
@@ -44,20 +38,6 @@ type BulkPlaylistConfigStatus = {
   status: "error" | "success";
   title: string;
 };
-
-async function settleInChunks<TItem, TResult>(
-  items: TItem[],
-  chunkSize: number,
-  worker: (item: TItem) => Promise<TResult>,
-): Promise<PromiseSettledResult<TResult>[]> {
-  const settledResults: PromiseSettledResult<TResult>[] = [];
-
-  for (let index = 0; index < items.length; index += chunkSize) {
-    settledResults.push(...(await Promise.allSettled(items.slice(index, index + chunkSize).map(worker))));
-  }
-
-  return settledResults;
-}
 
 function PlaylistCollectionState({ status }: { status: PlaylistCollectionStatus }) {
   const copy = {

@@ -6,6 +6,7 @@ import { ActionButton } from "../../components/ActionButton";
 import { DataTable } from "../../components/DataTable";
 import { EmptyStateCard } from "../../components/EmptyStateCard";
 import { StatusMessage } from "../../components/StatusMessage";
+import { settleInChunks } from "../../lib/settleInChunks";
 import { surfaceClasses, textClasses } from "../../styles/componentClasses";
 import {
   maintenanceQueryKeys,
@@ -28,20 +29,6 @@ type BulkRescueStatus = {
 
 function formatFailedAt(failedAt: string) {
   return failedAt.replace("T", " ").replace("Z", "").slice(0, 16);
-}
-
-async function settleInChunks<TItem, TResult>(
-  items: TItem[],
-  chunkSize: number,
-  worker: (item: TItem) => Promise<TResult>,
-): Promise<PromiseSettledResult<TResult>[]> {
-  const settledResults: PromiseSettledResult<TResult>[] = [];
-
-  for (let index = 0; index < items.length; index += chunkSize) {
-    settledResults.push(...(await Promise.allSettled(items.slice(index, index + chunkSize).map(worker))));
-  }
-
-  return settledResults;
 }
 
 function RescueAction({ rescueDisabled = false, track }: { rescueDisabled?: boolean; track: UnidentifiedTrack }) {

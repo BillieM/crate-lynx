@@ -8,6 +8,8 @@ import { DataTable } from "../../components/DataTable";
 import { EmptyStateCard } from "../../components/EmptyStateCard";
 import { FilterChipGroup, type FilterChipOption } from "../../components/FilterChipGroup";
 import { StatusMessage } from "../../components/StatusMessage";
+import { formatDuration } from "../../lib/formatters";
+import { settleInChunks } from "../../lib/settleInChunks";
 import { controlClasses, surfaceClasses, textClasses } from "../../styles/componentClasses";
 import { trackStatusDotClasses } from "../../styles/toneClasses";
 import { LocalTrackDetailDrawer } from "../localTracks/LocalTrackDetailDrawer";
@@ -55,20 +57,6 @@ async function rematchLocalTrack(localTrackId: number): Promise<RematchResponse>
   return (await response.json()) as RematchResponse;
 }
 
-async function settleInChunks<TItem, TResult>(
-  items: TItem[],
-  chunkSize: number,
-  worker: (item: TItem) => Promise<TResult>,
-): Promise<PromiseSettledResult<TResult>[]> {
-  const settledResults: PromiseSettledResult<TResult>[] = [];
-
-  for (let index = 0; index < items.length; index += chunkSize) {
-    settledResults.push(...(await Promise.allSettled(items.slice(index, index + chunkSize).map(worker))));
-  }
-
-  return settledResults;
-}
-
 const linkStatusLabels = {
   linked: "Linked",
   pending: "Pending",
@@ -104,18 +92,6 @@ function buildLinkStatusFilters(stats: LibraryStats) {
       value: "unlinked",
     },
   ] satisfies FilterChipOption<LibraryLinkStatusFilter>[];
-}
-
-function formatDuration(durationMs: number | null) {
-  if (durationMs === null || durationMs < 0) {
-    return "Unknown";
-  }
-
-  const totalSeconds = Math.floor(durationMs / 1000);
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-
-  return `${minutes}:${String(seconds).padStart(2, "0")}`;
 }
 
 function LibraryFilterBar({

@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 
+import { formatDuration } from "../../lib/formatters";
 import { surfaceClasses, textClasses } from "../../styles/componentClasses";
 import { TrackStatusDot } from "./TrackStatusDot";
 import type { PlaylistTrack } from "./queries";
@@ -8,18 +9,6 @@ type PlaylistTrackRowProps = {
   actionSlot?: ReactNode;
   track: PlaylistTrack;
 };
-
-function formatDuration(durationMs: number | null) {
-  if (durationMs === null || durationMs < 0) {
-    return "Unknown";
-  }
-
-  const totalSeconds = Math.floor(durationMs / 1000);
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-
-  return `${minutes}:${String(seconds).padStart(2, "0")}`;
-}
 
 function getAlbumLabel(album: string | null) {
   if (album === null || album.trim().length === 0) {

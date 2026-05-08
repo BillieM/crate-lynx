@@ -7,6 +7,8 @@ import { ActionButton } from "../../components/ActionButton";
 import { DataTable } from "../../components/DataTable";
 import { EmptyStateCard } from "../../components/EmptyStateCard";
 import { StatusMessage } from "../../components/StatusMessage";
+import { formatDuration } from "../../lib/formatters";
+import { settleInChunks } from "../../lib/settleInChunks";
 import { textClasses } from "../../styles/componentClasses";
 import { LocalTrackDetailDrawer } from "../localTracks/LocalTrackDetailDrawer";
 import { useStreamingAccountsQuery } from "../streamingAccounts/queries";
@@ -32,18 +34,6 @@ type BulkUnlinkStatus = {
 
 const columnHelper = createColumnHelper<PlaylistTrack>();
 
-function formatDuration(durationMs: number | null) {
-  if (durationMs === null || durationMs < 0) {
-    return "Unknown";
-  }
-
-  const totalSeconds = Math.floor(durationMs / 1000);
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-
-  return `${minutes}:${String(seconds).padStart(2, "0")}`;
-}
-
 function getAlbumLabel(album: string | null) {
   if (album === null || album.trim().length === 0) {
     return "Single / unknown release";
@@ -58,20 +48,6 @@ function formatAuthErrorTimestamp(timestamp: string | null) {
   }
 
   return timestamp.replace("T", " ").replace(/(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?$/, "");
-}
-
-async function settleInChunks<TItem, TResult>(
-  items: TItem[],
-  chunkSize: number,
-  worker: (item: TItem) => Promise<TResult>,
-): Promise<PromiseSettledResult<TResult>[]> {
-  const settledResults: PromiseSettledResult<TResult>[] = [];
-
-  for (let index = 0; index < items.length; index += chunkSize) {
-    settledResults.push(...(await Promise.allSettled(items.slice(index, index + chunkSize).map(worker))));
-  }
-
-  return settledResults;
 }
 
 export function PlaylistView({

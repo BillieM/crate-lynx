@@ -205,7 +205,7 @@ Each task is sized to fit comfortably in one Codex 5.5-xhigh context window.
 
 ---
 
-## - [ ] T11. Extract shared frontend helpers to lib/
+## - [x] T11. Extract shared frontend helpers to lib/
 
 **Why**: Three duplicated patterns across feature files:
 - `settleInChunks` is identical in 5 files: `features/playlists/PlaylistView.tsx:63`, `features/playlists/PlaylistSyncConfiguration.tsx:48`, `features/library/LocalLibraryView.tsx:58`, `features/maintenance/UnidentifiedView.tsx:33`, `features/maintenance/MissingLocallyView.tsx:55`.
