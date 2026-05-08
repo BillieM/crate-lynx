@@ -32,7 +32,7 @@ Each task is sized to fit comfortably in one Codex 5.5-xhigh context window.
 
 ---
 
-## T1. Tighten crypto, validate at startup, narrow ingestion exceptions
+## - [x] T1. Tighten crypto, validate at startup, narrow ingestion exceptions
 
 **Why**: Three related error-handling weaknesses:
 - `app/app/streaming/crypto.py` raises only on first `encrypt_token`/`decrypt_token` call. The app boots fine without `TOKEN_ENCRYPTION_KEY` and fails later on user auth — confusing failure mode, easy to miss in deploy validation.
@@ -51,7 +51,7 @@ Each task is sized to fit comfortably in one Codex 5.5-xhigh context window.
 
 ---
 
-## T2. Schema integrity: indexes + unique constraints + migration
+## - [ ] T2. Schema integrity: indexes + unique constraints + migration
 
 **Why**: Two correctness/perf gaps share one migration:
 - Concurrent sync jobs can create duplicate rows. `streaming_playlists.provider_playlist_id` and `streaming_tracks.provider_track_id` are bare columns; the store does select-then-insert at `app/app/streaming/store.py:262` and `:573`.
@@ -77,7 +77,7 @@ Each task is sized to fit comfortably in one Codex 5.5-xhigh context window.
 
 ---
 
-## T3. Make ingestion idempotent
+## - [ ] T3. Make ingestion idempotent
 
 **Why**: In `app/app/ingestion/pipeline.py:212-233`, beets import happens before mirror, persist, enqueue, and source cleanup. A crash between import (`:212`) and source cleanup (`:233`) leaves the source file in place — the watcher re-ingests on next pass and can produce duplicate `local_tracks`.
 
@@ -92,7 +92,7 @@ Each task is sized to fit comfortably in one Codex 5.5-xhigh context window.
 
 ---
 
-## T4. Fix tag-matching N+1
+## - [ ] T4. Fix tag-matching N+1
 
 **Why**: `app/app/matching/tags.py:69-117` loads every streaming track into Python and scores in-memory — `O(local × streaming)`. Fine on dev fixtures; cliff at scale.
 
@@ -104,7 +104,7 @@ Each task is sized to fit comfortably in one Codex 5.5-xhigh context window.
 
 ---
 
-## T5. Fix playlist-tracks triple-scan
+## - [ ] T5. Fix playlist-tracks triple-scan
 
 **Why**: `/playlists/{id}/tracks` at `app/app/streaming/router.py:210` calls `get_playlist_detail()` (which iterates `list_playlist_tracks()` to compute counts), then `:216` calls `list_playlist_tracks()` again. Frontend separately requests detail. Three scans per request on large playlists.
 
@@ -116,7 +116,7 @@ Each task is sized to fit comfortably in one Codex 5.5-xhigh context window.
 
 ---
 
-## T6. Paginate library listing
+## - [ ] T6. Paginate library listing
 
 **Why**: `app/app/library/store.py:51-137` runs an unbounded 7-table outer join with no `LIMIT`/`OFFSET`. Fine today, dies at large libraries.
 
@@ -134,7 +134,7 @@ Each task is sized to fit comfortably in one Codex 5.5-xhigh context window.
 
 ---
 
-## T7. Set TanStack Query defaults
+## - [ ] T7. Set TanStack Query defaults
 
 **Why**: `app-ui/src/main.tsx:8` instantiates `new QueryClient()` with no `defaultOptions`. Default `staleTime` is `0` so every component remount refetches — unnecessary network chatter.
 
@@ -146,7 +146,7 @@ Each task is sized to fit comfortably in one Codex 5.5-xhigh context window.
 
 ---
 
-## T8. Centralize SQLAlchemy engine, inject via Depends, drop blocking async
+## - [ ] T8. Centralize SQLAlchemy engine, inject via Depends, drop blocking async
 
 **Why**: Three coupled problems on the same files:
 - 17 `create_engine()` call sites. Each Store class instantiates its own engine in `__init__`, so connection-pool isolation is per-store — multiplies pool exhaustion risk under load.
@@ -167,7 +167,7 @@ Each task is sized to fit comfortably in one Codex 5.5-xhigh context window.
 
 ---
 
-## T9. End-to-end type safety: response_model → OpenAPI → openapi-typescript → fetchJson + zod
+## - [ ] T9. End-to-end type safety: response_model → OpenAPI → openapi-typescript → fetchJson + zod
 
 **Why**: Four tightly coupled gaps that all touch the same boundary code — doing them separately means re-touching the same 2 feature files three times:
 - `app/app/streaming/router.py` returns raw `dict[str, object]`; `app/app/links/router.py` already uses typed Pydantic responses. Inconsistent.
@@ -193,7 +193,7 @@ Each task is sized to fit comfortably in one Codex 5.5-xhigh context window.
 
 ---
 
-## T10. Codify connection-context rule
+## - [ ] T10. Codify connection-context rule
 
 **Why**: `.connect()` vs `.begin()` are used interchangeably across stores (e.g., `app/app/matching/pipeline.py`). No documented rule.
 
@@ -205,7 +205,7 @@ Each task is sized to fit comfortably in one Codex 5.5-xhigh context window.
 
 ---
 
-## T11. Extract shared frontend helpers to lib/
+## - [ ] T11. Extract shared frontend helpers to lib/
 
 **Why**: Three duplicated patterns across feature files:
 - `settleInChunks` is identical in 5 files: `features/playlists/PlaylistView.tsx:63`, `features/playlists/PlaylistSyncConfiguration.tsx:48`, `features/library/LocalLibraryView.tsx:58`, `features/maintenance/UnidentifiedView.tsx:33`, `features/maintenance/MissingLocallyView.tsx:55`.
@@ -225,7 +225,7 @@ Each task is sized to fit comfortably in one Codex 5.5-xhigh context window.
 
 ---
 
-## T12. Standardize cache invalidation
+## - [ ] T12. Standardize cache invalidation
 
 **Why**: Some sites use feature-level helpers (`invalidateStreamingAccountMutationQueries`); others inline 2-3 `queryClient.invalidateQueries()` calls. `Topbar.tsx:120-125` uses `delayedInvalidate` while `PlaylistSyncConfiguration.tsx:136-151` does not despite a similar workflow.
 
@@ -237,7 +237,7 @@ Each task is sized to fit comfortably in one Codex 5.5-xhigh context window.
 
 ---
 
-## T13. A11y on PlaylistTrackActions popover
+## - [ ] T13. A11y on PlaylistTrackActions popover
 
 **Why**: Popover at `app-ui/src/features/playlists/PlaylistTrackActions.tsx:42-50` lacks ESC dismiss, `aria-modal`, and focus trap.
 
@@ -249,7 +249,7 @@ Each task is sized to fit comfortably in one Codex 5.5-xhigh context window.
 
 ---
 
-## T14. Test infra overhaul: testcontainers + conftest cleanup + m3u coverage
+## - [ ] T14. Test infra overhaul: testcontainers + conftest cleanup + m3u coverage
 
 **Why**: Three test-infra issues converge on `conftest.py`:
 - `app/tests/conftest.py:25` uses SQLite. Schema features (CHECK constraints, partial unique indexes, FK ON DELETE) silently differ from prod — T2 (uniqueness) and T3 (idempotence) cannot be tested under SQLite.
@@ -269,7 +269,7 @@ Each task is sized to fit comfortably in one Codex 5.5-xhigh context window.
 
 ---
 
-## T15. Logging standardization
+## - [ ] T15. Logging standardization
 
 **Why**: Two adjacent gaps:
 - `app/app/matching/jobs.py:run_matching_pipeline` doesn't include `job_id` or `local_track_id` in log records, so worker output can't be correlated with an enqueue.
@@ -285,7 +285,7 @@ Each task is sized to fit comfortably in one Codex 5.5-xhigh context window.
 
 ---
 
-## T16. Deployment & ops polish
+## - [ ] T16. Deployment & ops polish
 
 **Why**: Four small deployment-time gaps:
 - Hardcoded `/tmp/crate-lynx-*` staging dirs in `app/app/main.py:34-35` and `app/app/m3u/generator.py`.
@@ -305,7 +305,7 @@ Each task is sized to fit comfortably in one Codex 5.5-xhigh context window.
 
 ---
 
-## T17. Backend code-quality cleanup: f-strings, view consolidation, migration safety
+## - [ ] T17. Backend code-quality cleanup: f-strings, view consolidation, migration safety
 
 **Why**: Three small backend hygiene items:
 - `app/app/ingestion/beets_mirror_sync.py:144, 154` interpolates `table_name` into SQL via f-string. Not a vulnerability (callers are internal, args are string literals) but ugly.
@@ -323,7 +323,7 @@ Each task is sized to fit comfortably in one Codex 5.5-xhigh context window.
 
 ---
 
-## T18. Replace `as number | string` casts in frontend
+## - [ ] T18. Replace `as number | string` casts in frontend
 
 **Why**: `app-ui/src/features/library/LocalLibraryView.tsx:46-56` and `features/playlists/queries.ts:160-161` use repeated unsafe casts that hide bugs if upstream guards break.
 
