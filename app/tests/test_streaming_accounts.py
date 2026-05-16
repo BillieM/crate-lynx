@@ -258,10 +258,12 @@ def test_streaming_account_store_upserts_playlists(
             YouTubeMusicPlaylist(
                 provider_playlist_id="PL1",
                 title="Morning Mix",
+                provider_track_count=12,
             ),
             YouTubeMusicPlaylist(
                 provider_playlist_id="PL2",
                 title="Evening Mix",
+                provider_track_count=8,
             ),
         ],
     )
@@ -274,6 +276,7 @@ def test_streaming_account_store_upserts_playlists(
             YouTubeMusicPlaylist(
                 provider_playlist_id="PL1",
                 title="Morning Mix Updated",
+                provider_track_count=14,
             )
         ],
     )
@@ -293,11 +296,12 @@ def test_streaming_account_store_upserts_playlists(
     assert stored_playlist_rows[0]["provider_playlist_id"] == "PL1"
     assert stored_playlist_rows[0]["title"] == "Morning Mix Updated"
     assert stored_playlist_rows[0]["sync_mode"] == PLAYLIST_SYNC_MODE_OFF
-    assert stored_playlist_rows[0]["provider_track_count"] is None
+    assert stored_playlist_rows[0]["provider_track_count"] == 14
     assert stored_playlist_rows[0]["metadata_synced_at"] is not None
     assert stored_playlist_rows[0]["tracks_synced_at"] is None
     assert stored_playlist_rows[1]["provider_playlist_id"] == "PL2"
     assert stored_playlist_rows[1]["title"] == "Evening Mix"
+    assert stored_playlist_rows[1]["provider_track_count"] == 8
 
 
 def test_streaming_account_store_concurrent_upserts_reuse_provider_rows(
@@ -496,20 +500,52 @@ def test_streaming_account_store_syncs_youtube_music_playlists(
         display_name="Listener",
         browser_headers={"refresh_token": "refresh-token"},
     )
-    playlist = store.upsert_playlists(
+    playlists = store.upsert_playlists(
         account_id=account.id,
-        playlists=[YouTubeMusicPlaylist(provider_playlist_id="PL9", title="Gym")],
-    )[0]
+        playlists=[
+            YouTubeMusicPlaylist(provider_playlist_id="PL9", title="Gym"),
+            YouTubeMusicPlaylist(provider_playlist_id="PL10", title="Focus"),
+        ],
+    )
     store.set_playlist_selected_for_sync(
-        playlist_id=playlist.id,
+        playlist_id=playlists[0].id,
         selected_for_sync=True,
+    )
+    store.set_playlist_sync_mode(
+        playlist_id=playlists[1].id,
+        sync_mode=PLAYLIST_SYNC_MODE_MATCH_ONLY,
+    )
+    store.replace_playlist_membership(
+        playlist_id=playlists[0].id,
+        tracks=[
+            YouTubeMusicTrack(
+                provider_track_id="track-existing",
+                title="Existing Track",
+                artist="Artist",
+                album=None,
+                year=None,
+                isrc=None,
+                duration_ms=120000,
+            )
+        ],
     )
 
     seen: dict[str, object] = {}
 
     class FakeAdapter:
         def list_library_playlists(self):
-            return [YouTubeMusicPlaylist(provider_playlist_id="PL9", title="Gym")]
+            return [
+                YouTubeMusicPlaylist(
+                    provider_playlist_id="PL9",
+                    title="Gym Updated",
+                    provider_track_count=41,
+                ),
+                YouTubeMusicPlaylist(
+                    provider_playlist_id="PL10",
+                    title="Focus Updated",
+                    provider_track_count=12,
+                ),
+            ]
 
     def fake_from_browser_auth(auth, *, user=None, language="en", location=""):
         seen["auth"] = auth
@@ -527,13 +563,32 @@ def test_streaming_account_store_syncs_youtube_music_playlists(
         account_id=account.id,
     )
 
-    assert len(synced) == 1
+    assert len(synced) == 2
     assert synced[0].provider_playlist_id == "PL9"
-    assert synced[0].title == "Gym"
+    assert synced[0].title == "Gym Updated"
+    assert synced[0].sync_mode == PLAYLIST_SYNC_MODE_FULL
+    assert synced[0].provider_track_count == 41
+    assert synced[0].metadata_synced_at is not None
+    assert synced[0].tracks_synced_at is None
+    assert synced[1].provider_playlist_id == "PL10"
+    assert synced[1].title == "Focus Updated"
+    assert synced[1].sync_mode == PLAYLIST_SYNC_MODE_MATCH_ONLY
+    assert synced[1].provider_track_count == 12
+    assert synced[1].metadata_synced_at is not None
+    assert synced[1].tracks_synced_at is None
     assert seen["auth"] == {"refresh_token": "refresh-token"}
     assert seen["user"] is None
     assert seen["language"] == "en"
     assert seen["location"] == ""
+
+    with engine.connect() as connection:
+        stored_memberships = list(
+            connection.execute(select(playlist_membership_table)).mappings()
+        )
+
+    assert [membership["playlist_id"] for membership in stored_memberships] == [
+        playlists[0].id
+    ]
 
 
 def test_streaming_account_store_lists_playlists_with_track_counts(

@@ -239,6 +239,49 @@ def test_list_library_playlists_normalizes_valid_rows_only() -> None:
     ]
 
 
+@pytest.mark.parametrize(
+    ("count_fields", "expected_count"),
+    [
+        ({"count": 5}, 5),
+        ({"count": "42"}, 42),
+        ({"count": "1,234"}, 1234),
+        ({"count": "", "trackCount": 9}, 9),
+        ({"count": "unknown", "trackCount": "17"}, 17),
+        ({"trackCount": 8}, 8),
+        ({}, None),
+        ({"count": "  "}, None),
+        ({"count": True, "trackCount": False}, None),
+        ({"count": -1, "trackCount": "2"}, 2),
+    ],
+)
+def test_list_library_playlists_normalizes_provider_track_count(
+    count_fields: dict[str, object],
+    expected_count: int | None,
+) -> None:
+    class FakeYTMusic:
+        def get_library_playlists(
+            self, *, limit: int | None
+        ) -> list[dict[str, object]]:
+            assert limit is None
+            return [
+                {
+                    "playlistId": "PL1",
+                    "title": "Road Trip",
+                    **count_fields,
+                }
+            ]
+
+    adapter = YouTubeMusicAdapter(FakeYTMusic())  # type: ignore[arg-type]
+
+    assert adapter.list_library_playlists() == [
+        YouTubeMusicPlaylist(
+            provider_playlist_id="PL1",
+            title="Road Trip",
+            provider_track_count=expected_count,
+        )
+    ]
+
+
 def test_list_playlist_tracks_normalizes_valid_rows_only() -> None:
     class FakeYTMusic:
         def get_playlist(

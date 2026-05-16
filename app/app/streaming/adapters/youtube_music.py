@@ -32,6 +32,7 @@ class YouTubeMusicAuthValidationError(ValueError):
 class YouTubeMusicPlaylist:
     provider_playlist_id: str
     title: str
+    provider_track_count: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -142,6 +143,7 @@ class YouTubeMusicAdapter(StreamingAdapter):
                 YouTubeMusicPlaylist(
                     provider_playlist_id=playlist_id,
                     title=title,
+                    provider_track_count=_normalize_playlist_count(playlist),
                 )
             )
 
@@ -526,6 +528,29 @@ def _normalize_album(track: JsonMapping) -> str | None:
         title = album.get("name") or album.get("title")
         if isinstance(title, str) and title:
             return title
+
+    return None
+
+
+def _normalize_playlist_count(playlist: JsonMapping) -> int | None:
+    count = _normalize_count_value(playlist.get("count"))
+    if count is not None:
+        return count
+
+    return _normalize_count_value(playlist.get("trackCount"))
+
+
+def _normalize_count_value(value: object) -> int | None:
+    if isinstance(value, bool):
+        return None
+
+    if isinstance(value, int):
+        return value if value >= 0 else None
+
+    if isinstance(value, str):
+        normalized = value.strip().replace(",", "")
+        if normalized.isdecimal():
+            return int(normalized)
 
     return None
 

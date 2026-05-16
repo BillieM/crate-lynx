@@ -11,7 +11,7 @@
   - Backfill `tracks_synced_at = synced_at` only for playlists with existing memberships.
   - Add migration/model tests for the new fields and backfill behavior.
 
-- [ ] Update playlist metadata refresh to store provider counts and metadata timestamps
+- [x] Update playlist metadata refresh to store provider counts and metadata timestamps
   - Keep metadata refresh limited to discovering/upserting playlist rows, provider counts, and `metadata_synced_at`.
   - Store provider counts from YouTube Music metadata without importing playlist tracks.
   - Preserve existing playlist `sync_mode` values during metadata refresh.

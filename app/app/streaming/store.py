@@ -265,7 +265,7 @@ class StreamingAccountStore:
                     provider_playlist_id=playlist.provider_playlist_id,
                     title=playlist.title,
                     sync_mode=PLAYLIST_SYNC_MODE_OFF,
-                    provider_track_count=None,
+                    provider_track_count=playlist.provider_track_count,
                     metadata_synced_at=sync_timestamp,
                     tracks_synced_at=None,
                     last_sync_error=None,
@@ -280,6 +280,9 @@ class StreamingAccountStore:
                             ],
                             set_={
                                 "title": statement.excluded.title,
+                                "provider_track_count": (
+                                    statement.excluded.provider_track_count
+                                ),
                                 "metadata_synced_at": (
                                     statement.excluded.metadata_synced_at
                                 ),
