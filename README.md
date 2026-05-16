@@ -34,13 +34,25 @@ The UI is served at `http://localhost:18100` (Nginx). The API is available at `h
 
 ## Deployment
 
-Production runs on a remote Docker host via the `gluesoup-1` SSH context. Switch to it with:
+Production runs on a remote Docker host via the `gluesoup-0-docker-1` SSH context. If the context is missing locally, create it with:
 
 ```bash
-docker context use gluesoup-1
+docker context create gluesoup-0-docker-1 --docker host=ssh://gluesoup-0-docker-1
 ```
 
-The remote host does not have the Docker Compose plugin installed, so use `docker-compose` rather than `docker compose`:
+Switch to it with:
+
+```bash
+docker context use gluesoup-0-docker-1
+```
+
+Deploy with Docker Compose through the active context. On machines with the Docker CLI Compose plugin:
+
+```bash
+docker compose up --build -d
+```
+
+If `docker compose version` is not available locally, use the standalone Compose command:
 
 ```bash
 docker-compose up --build -d
@@ -49,8 +61,24 @@ docker-compose up --build -d
 Services are exposed on the same ports as local development (`18100`–`18103`). To verify the deploy, check that all containers are healthy:
 
 ```bash
-docker-compose ps
+docker compose ps
+# or: docker-compose ps
 ```
+
+The public UI is routed through Traefik at `https://cratelynx.billiem.uk`. The Crate Lynx Compose stack creates a fixed-name Docker network, `cratelynx`, and attaches only `app-ui` to it. Traefik should join that network as an external network:
+
+```yaml
+services:
+  traefik:
+    networks:
+      - cratelynx
+
+networks:
+  cratelynx:
+    external: true
+```
+
+Backend services (`app`, `db`, and `redis`) stay on the internal Compose network. The browser calls `/api/...` on the same origin, and Nginx in `app-ui` proxies those requests to FastAPI internally.
 
 ---
 
@@ -59,9 +87,9 @@ docker-compose ps
 | Variable | Purpose |
 |---|---|
 | `TOKEN_ENCRYPTION_KEY` | Fernet key for encrypting streaming auth tokens. Generate one with `python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())'` |
-| `LIBRARY_ROOT` | Container path where processed music is stored. Defaults to `/music` |
+| `LIBRARY_ROOT` | Container path where processed music is stored. Defaults to `/nas/media/music` |
 | `BEETS_LIBRARY` | Container path for the Beets SQLite database. Defaults to `/data/beets/library.db` |
-| `CRATE_LYNX_STAGING_DIR` | Container base path for temporary app outputs. Defaults to `/tmp/crate-lynx` in Compose |
+| `CRATE_LYNX_STAGING_DIR` | Container base path for temporary app outputs. Defaults to `/nas/cratelynx/staging` in Compose |
 | `M3U_OUTPUT_DIR` | Container path for generated M3U exports. Defaults to `/data/m3u` in Compose |
 
 ## Storage and mounts
@@ -70,14 +98,29 @@ Docker Compose reads host paths from `.env`, with production-friendly defaults:
 
 | Env var | Default host path | Container path | Purpose |
 |---|---|---|
-| `INGESTION_HOST_PATH` | `/srv/mergerfs/hdds/music-in` | `/ingestion` | Default manual ingest input |
-| `SOULSEEK_HOST_PATH` | `/srv/mergerfs/hdds/soulseek/downloads` | `/soulseek` | Default Soulseek download ingest input |
-| `MUSIC_HOST_PATH` | `/srv/mergerfs/hdds/media/music` | `/music` | Processed library output managed by Beets |
-| `APP_DATA_HOST_PATH` | `/docker/appdata/cratelynx` | `/data` | Application-owned data, including the Beets database and M3U exports |
+| `NAS_DATA_HOST_PATH` | `/mnt/nas_data` | `/nas` | NAS root containing ingest inputs, staging, Soulseek downloads, and processed music |
+| `APP_DATA_HOST_PATH` | `/docker/appdata/cratelynx` | service-specific paths | Application-owned state for the app, Postgres, and Redis |
 
 Create those host directories before starting the stack, or override the host path variables in `.env`. The paths configured in Settings are container paths, so any useful ingest folder should also be mounted into the `app` container.
 
-`/music` is output only. Do not add it as an ingest folder, because completed imports are moved there and watching it would re-ingest files that Beets has already processed.
+`/nas/media/music` is output only. Do not add it as an ingest folder, because completed imports are moved there and watching it would re-ingest files that Beets has already processed.
+
+For same-filesystem moves and MP3 hardlinks, keep ingest inputs, staging, and the final music library under `NAS_DATA_HOST_PATH`. The production layout is:
+
+| Host path | Container path | Purpose |
+|---|---|---|
+| `/mnt/nas_data/cratelynx/music-in` | `/nas/cratelynx/music-in` | Default manual ingest input |
+| `/mnt/nas_data/soulseek/downloads` | `/nas/soulseek/downloads` | Default Soulseek download ingest input |
+| `/mnt/nas_data/cratelynx/staging` | `/nas/cratelynx/staging` | Temporary ingestion staging |
+| `/mnt/nas_data/media/music` | `/nas/media/music` | Processed library output managed by Beets |
+
+Application state is stored under `APP_DATA_HOST_PATH`:
+
+| Host path | Container path | Purpose |
+|---|---|---|
+| `/docker/appdata/cratelynx/app` | `/data` in `app` | Beets SQLite database and generated M3U exports |
+| `/docker/appdata/cratelynx/postgres` | `/var/lib/postgresql/data` in `db` | Postgres data directory |
+| `/docker/appdata/cratelynx/redis` | `/data` in `redis` | Redis data directory |
 
 ---
 
@@ -108,9 +151,9 @@ npm run build
 
 ### Ingestion
 
-Ingest folders are configured in **Settings > General** and persisted in the application database. New installs seed two default container inputs: `/ingestion` and `/soulseek`.
+Ingest folders are configured in **Settings > General** and persisted in the application database. New installs seed two default container inputs: `/nas/cratelynx/music-in` and `/nas/soulseek/downloads`.
 
-Drop a file into one of the configured ingest folders. Watchdog picks it up, transcodes lossless formats to MP3 via FFmpeg, runs Beets for metadata enrichment, moves the processed track under `/music`, generates a Chromaprint fingerprint, and kicks off the matching pipeline.
+Drop a file into one of the configured ingest folders. Watchdog picks it up, transcodes lossless formats to MP3 via FFmpeg, runs Beets for metadata enrichment, moves the processed track under `/nas/media/music`, generates a Chromaprint fingerprint, and kicks off the matching pipeline.
 
 Adding or removing ingest folders in Settings updates the active watcher immediately. If you add a path that is not backed by a Docker host mount, the app can create and watch that directory inside the container, but files placed on the host will not appear there unless the path is mounted.
 

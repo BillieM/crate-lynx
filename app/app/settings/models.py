@@ -6,8 +6,11 @@ from datetime import datetime
 from sqlalchemy import Column, DateTime, Integer, MetaData, String, Table, func
 
 
-# Keep these container paths in sync with the app service mounts in docker-compose.yml.
-DEFAULT_INGEST_FOLDER_PATHS = ("/ingestion", "/soulseek")
+# Keep these container paths in sync with the app service /nas mount in docker-compose.yml.
+DEFAULT_INGEST_FOLDER_PATHS = (
+    "/nas/cratelynx/music-in",
+    "/nas/soulseek/downloads",
+)
 
 metadata = MetaData()
 

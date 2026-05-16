@@ -601,6 +601,30 @@ def test_audio_preparer_passes_mp3_through_unchanged(
     )
     assert output_root.is_dir()
     assert prepared.prepared_path.read_bytes() == b"mp3"
+    assert prepared.prepared_path.stat().st_ino == source.stat().st_ino
+
+
+def test_audio_preparer_copies_mp3_when_hardlink_fails(
+    tmp_path: Path, monkeypatch
+) -> None:
+    source = tmp_path / "track.mp3"
+    source.write_bytes(b"mp3")
+    output_root = tmp_path / "staging"
+
+    monkeypatch.setattr(
+        "app.ingestion.pipeline.uuid.uuid4",
+        lambda: type("StubUUID", (), {"hex": "abc123"})(),
+    )
+    monkeypatch.setattr(
+        "app.ingestion.pipeline.os.link",
+        Mock(side_effect=OSError("cross-device link")),
+    )
+
+    prepared = AudioPreparer().prepare(source, output_root)
+
+    assert prepared.prepared_path == output_root / "abc123_track.mp3"
+    assert prepared.prepared_path.read_bytes() == b"mp3"
+    assert prepared.prepared_path.stat().st_ino != source.stat().st_ino
 
 
 def test_audio_preparer_uses_unique_staging_paths_for_same_basename_mp3s(

@@ -11,7 +11,7 @@ services:
     ports:
       - "18102:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - ${APP_DATA_HOST_PATH:-/docker/appdata/cratelynx}/postgres:/var/lib/postgresql/data
     healthcheck:
       test:
         - CMD-SHELL
@@ -28,7 +28,7 @@ services:
       - "18103:6379"
     volumes:
       - ./redis/redis.conf:/usr/local/etc/redis/redis.conf:ro
-      - redis_data:/data
+      - ${APP_DATA_HOST_PATH:-/docker/appdata/cratelynx}/redis:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -48,19 +48,17 @@ services:
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-crate_lynx}:${POSTGRES_PASSWORD:-crate_lynx}@db:5432/${POSTGRES_DB:-crate_lynx}
       REDIS_URL: redis://redis:6379/0
       TOKEN_ENCRYPTION_KEY: ${TOKEN_ENCRYPTION_KEY:?set TOKEN_ENCRYPTION_KEY in .env with a Fernet key}
-      LIBRARY_ROOT: ${LIBRARY_ROOT:-/music}
+      LIBRARY_ROOT: ${LIBRARY_ROOT:-/nas/media/music}
       BEETS_LIBRARY: ${BEETS_LIBRARY:-/data/beets/library.db}
-      CRATE_LYNX_STAGING_DIR: ${CRATE_LYNX_STAGING_DIR:-/tmp/crate-lynx}
-      INGESTION_ROOT: ${INGESTION_ROOT:-/ingestion}
+      CRATE_LYNX_STAGING_DIR: ${CRATE_LYNX_STAGING_DIR:-/nas/cratelynx/staging}
+      INGESTION_ROOT: ${INGESTION_ROOT:-/nas/cratelynx/music-in}
       M3U_OUTPUT_DIR: ${M3U_OUTPUT_DIR:-/data/m3u}
     ports:
       - "18101:8000"
     volumes:
-      # Keep /ingestion and /soulseek in sync with DEFAULT_INGEST_FOLDER_PATHS in app/app/settings/models.py.
-      - ${INGESTION_HOST_PATH:-/srv/mergerfs/hdds/music-in}:/ingestion
-      - ${SOULSEEK_HOST_PATH:-/srv/mergerfs/hdds/soulseek/downloads}:/soulseek
-      - ${MUSIC_HOST_PATH:-/srv/mergerfs/hdds/media/music}:/music
-      - ${APP_DATA_HOST_PATH:-/docker/appdata/cratelynx}:/data
+      # Keep /nas paths in sync with DEFAULT_INGEST_FOLDER_PATHS in app/app/settings/models.py.
+      - ${NAS_DATA_HOST_PATH:-/mnt/nas_data}:/nas
+      - ${APP_DATA_HOST_PATH:-/docker/appdata/cratelynx}/app:/data
     healthcheck:
       test:
         - CMD
@@ -78,6 +76,16 @@ services:
     depends_on:
       app:
         condition: service_healthy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.cratelynx.rule=Host(`cratelynx.billiem.uk`)"
+      - "traefik.http.routers.cratelynx.entrypoints=websecure"
+      - "traefik.http.services.cratelynx.loadbalancer.server.port=80"
+      - "traefik.http.routers.cratelynx.tls.certresolver=myresolver"
+      - "traefik.docker.network=cratelynx"
+    networks:
+      - default
+      - cratelynx
     ports:
       - "18100:80"
     healthcheck:
@@ -87,6 +95,6 @@ services:
       retries: 5
       start_period: 5s
 
-volumes:
-  postgres_data:
-  redis_data:
+networks:
+  cratelynx:
+    name: cratelynx

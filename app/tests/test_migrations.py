@@ -434,7 +434,10 @@ def test_ingest_folders_migration_seeds_default_unique_paths(
             .all()
         )
 
-    assert [row["path"] for row in rows] == ["/ingestion", "/soulseek"]
+    assert [row["path"] for row in rows] == [
+        "/nas/cratelynx/music-in",
+        "/nas/soulseek/downloads",
+    ]
     assert all(row["created_at"] is not None for row in rows)
     assert all(row["updated_at"] is not None for row in rows)
 
@@ -442,7 +445,7 @@ def test_ingest_folders_migration_seeds_default_unique_paths(
         try:
             connection.execute(
                 text("INSERT INTO ingest_folders (path) VALUES (:path)"),
-                {"path": "/ingestion"},
+                {"path": "/nas/cratelynx/music-in"},
             )
         except IntegrityError:
             pass

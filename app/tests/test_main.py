@@ -152,7 +152,10 @@ def test_startup_seeds_persisted_ingest_folders_and_watches_them(
         async with app.router.lifespan_context(app):
             watcher = StubIngestionWatcher.instances[-1]
             assert watcher.started is True
-            assert watcher.root == [Path("/ingestion"), Path("/soulseek")]
+            assert watcher.root == [
+                Path("/nas/cratelynx/music-in"),
+                Path("/nas/soulseek/downloads"),
+            ]
             assert watcher.recursive is True
 
     asyncio.run(run_lifespan())
@@ -162,7 +165,7 @@ def test_startup_seeds_persisted_ingest_folders_and_watches_them(
     assert [
         folder.path
         for folder in GeneralSettingsStore(database_url).list_ingest_folders()
-    ] == ["/ingestion", "/soulseek"]
+    ] == ["/nas/cratelynx/music-in", "/nas/soulseek/downloads"]
 
 
 def test_startup_falls_back_to_env_ingestion_root_without_database_url(
@@ -314,7 +317,7 @@ def test_startup_defaults_beets_imports_to_music_and_data(
     asyncio.run(run_lifespan())
 
     beets_importer = seen["beets_importer"]
-    assert beets_importer.library_root == Path("/music")
+    assert beets_importer.library_root == Path("/nas/media/music")
     assert beets_importer.library_database == "/data/beets/library.db"
     assert seen["processor_kwargs"]["beets_importer"] is beets_importer
 

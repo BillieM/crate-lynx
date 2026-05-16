@@ -47,7 +47,7 @@ def create_router(
         regenerate_m3us_for_streaming_track(
             streaming_track_id,
             engine=engine,
-            base_path=Path(os.environ.get("LIBRARY_ROOT", "/music")),
+            base_path=Path(os.environ.get("LIBRARY_ROOT", "/nas/media/music")),
             output_dir=get_m3u_output_dir(),
         )
 

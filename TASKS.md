@@ -301,7 +301,7 @@ Each task is sized to fit comfortably in one Codex 5.5-xhigh context window.
 - Use `${VAR:-default}` syntax in compose with documented `.env.example` for host paths.
 - Add `/healthz` endpoint to `main.py` returning `{"ok": true}` plus a DB ping; add `healthcheck:` to the api compose service.
 
-**Definition of done**: `docker-compose ps` shows `(healthy)` for the api service. Staging dir override works. Fresh clone with documented `.env` builds and runs. Deployment to gluesoup-1 unchanged. `cd app && pytest`.
+**Definition of done**: Compose `ps` shows `(healthy)` for the api service. Staging dir override works. Fresh clone with documented `.env` builds and runs. Deployment to gluesoup-0-docker-1 unchanged. `cd app && pytest`.
 
 ---
 

@@ -68,7 +68,7 @@ def create_router(
             rescue_metadata(
                 local_track_id,
                 engine=engine,
-                library_root=Path(os.environ.get("LIBRARY_ROOT", "/music")),
+                library_root=Path(os.environ.get("LIBRARY_ROOT", "/nas/media/music")),
             )
         except MetadataRescueError as exc:
             raise HTTPException(status_code=500, detail=str(exc)) from exc

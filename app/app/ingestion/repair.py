@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 def main() -> None:
     args = _parse_args()
     database_url = os.environ["DATABASE_URL"]
-    library_root = Path(os.environ.get("LIBRARY_ROOT", "/music")).resolve()
+    library_root = Path(os.environ.get("LIBRARY_ROOT", "/nas/media/music")).resolve()
     beets_library = Path(os.environ.get("BEETS_LIBRARY", "/data/beets/library.db"))
     staging_root = resolve_staging_path("INGESTION_STAGING_ROOT", "ingestion-staging")
 

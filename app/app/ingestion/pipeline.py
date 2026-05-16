@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 import json
 import logging
+import os
 from pathlib import Path
 import shutil
 import sqlite3
@@ -76,7 +77,7 @@ class AudioPreparer:
 
         if extension == ".mp3":
             prepared_path = output_root / f"{uuid.uuid4().hex}_{source.name}"
-            shutil.copy2(source, prepared_path)
+            _link_or_copy(source, prepared_path)
             return PreparedTrack(
                 source_path=source,
                 prepared_path=prepared_path,
@@ -109,7 +110,7 @@ class AudioPreparer:
 @dataclass(slots=True)
 class BeetsImporter:
     beet_binary: str = "beet"
-    library_root: Path | str = "/music"
+    library_root: Path | str = "/nas/media/music"
     library_database: Path | str = "/data/beets/library.db"
     _import_lock: threading.Lock = field(
         default_factory=threading.Lock, init=False, repr=False
@@ -324,3 +325,10 @@ def _format_process_output(exc: subprocess.CalledProcessError) -> str:
     if stdout:
         return stdout
     return "no output captured"
+
+
+def _link_or_copy(source: Path, destination: Path) -> None:
+    try:
+        os.link(source, destination)
+    except OSError:
+        shutil.copy2(source, destination)

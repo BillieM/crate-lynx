@@ -14,6 +14,9 @@ from app.settings.store import (
 )
 
 
+DEFAULT_INGEST_PATHS = ["/nas/cratelynx/music-in", "/nas/soulseek/downloads"]
+
+
 def test_general_settings_store_seeds_default_ingest_folders_when_empty(
     tmp_path: Path,
 ) -> None:
@@ -23,7 +26,7 @@ def test_general_settings_store_seeds_default_ingest_folders_when_empty(
 
     folders = GeneralSettingsStore(database_url).seed_default_ingest_folders()
 
-    assert [folder.path for folder in folders] == ["/ingestion", "/soulseek"]
+    assert [folder.path for folder in folders] == DEFAULT_INGEST_PATHS
     assert all(folder.created_at is not None for folder in folders)
     assert all(folder.updated_at is not None for folder in folders)
 
@@ -35,7 +38,7 @@ def test_general_settings_store_seeds_default_ingest_folders_when_empty(
             ).mappings()
         ]
 
-    assert stored_paths == ["/ingestion", "/soulseek"]
+    assert stored_paths == DEFAULT_INGEST_PATHS
 
 
 def test_general_settings_store_does_not_seed_defaults_when_table_has_rows(

@@ -40,7 +40,7 @@ def create_app() -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         staging_root = get_ingestion_staging_root()
-        library_root = Path(os.environ.get("LIBRARY_ROOT", "/music"))
+        library_root = Path(os.environ.get("LIBRARY_ROOT", "/nas/media/music"))
         database_url = os.environ.get("DATABASE_URL")
         redis_url = os.environ.get("REDIS_URL")
         if database_url or os.environ.get("TOKEN_ENCRYPTION_KEY"):
@@ -176,7 +176,7 @@ def get_ingestion_staging_root() -> Path:
 
 def _resolve_ingest_roots(database_engine: Engine | None) -> list[Path]:
     if database_engine is None:
-        return [Path(os.environ.get("INGESTION_ROOT", "/ingestion"))]
+        return [Path(os.environ.get("INGESTION_ROOT", "/nas/cratelynx/music-in"))]
 
     folders = GeneralSettingsStore(engine=database_engine).seed_default_ingest_folders()
     return [Path(folder.path) for folder in folders]
