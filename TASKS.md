@@ -47,7 +47,7 @@
   - Preserve existing stale M3U files when a playlist leaves `full`; prevent future non-full writes instead of deleting old files.
   - Add backend tests for reporting, playlist navigation/detail, Missing Locally, stale M3U preservation, and future M3U writes.
 
-- [ ] Regenerate OpenAPI/frontend types and update playlist settings UI
+- [x] Regenerate OpenAPI/frontend types and update playlist settings UI
   - Regenerate OpenAPI/frontend types and keep codegen consistency checks passing.
   - Remove frontend usage of `selected_for_sync`, `track_count`, and `synced_at`.
   - Replace checkbox selection with mode controls for `Off`, `Match only`, and `Full sync`.

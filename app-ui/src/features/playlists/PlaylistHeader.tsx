@@ -93,7 +93,7 @@ export function PlaylistHeader({ playlist }: PlaylistHeaderProps) {
     >
       <div className="min-w-0">
         <h2 className={`truncate ${textClasses.playlistTitle}`}>{playlist.name}</h2>
-        <p className={textClasses.bodyMuted}>{formatRelativeSyncTime(playlist.synced_at)}</p>
+        <p className={textClasses.bodyMuted}>{formatRelativeSyncTime(playlist.tracks_synced_at)}</p>
       </div>
 
       <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">

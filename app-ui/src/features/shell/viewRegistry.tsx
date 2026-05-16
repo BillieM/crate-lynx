@@ -128,14 +128,14 @@ export function getViewIdFromPath(pathname: string) {
 }
 
 function getPlaylistTone(playlist: StreamingPlaylist): NavItem["tone"] {
-  return playlist.track_count > 0 ? "accent" : "unlinked";
+  return playlist.imported_track_count > 0 ? "accent" : "unlinked";
 }
 
 export function buildPlaylistNavItems(playlists: StreamingPlaylist[]): NavItem[] {
   return playlists.map((playlist) => ({
     id: getPlaylistViewId(playlist.id),
     label: playlist.title,
-    badge: playlist.track_count,
+    badge: playlist.imported_track_count,
     tone: getPlaylistTone(playlist),
   }));
 }

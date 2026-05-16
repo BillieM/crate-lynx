@@ -10,11 +10,14 @@ function buildPlaylist(overrides: Partial<PlaylistDetail> = {}): PlaylistDetail 
     provider_playlist_id: "PL12",
     name: "Late Night Drive",
     cover_art_url: "https://cdn.example.test/cover.jpg",
-    track_count: 62,
+    sync_mode: "full",
+    provider_track_count: 70,
+    imported_track_count: 62,
     linked_count: 58,
     pending_count: 3,
     unlinked_count: 1,
-    synced_at: "2026-05-01T09:00:00Z",
+    metadata_synced_at: "2026-05-01T08:55:00Z",
+    tracks_synced_at: "2026-05-01T09:00:00Z",
     last_sync_error: null,
     last_sync_error_at: null,
     ...overrides,
@@ -37,7 +40,7 @@ describe("PlaylistHeader", () => {
   });
 
   it("renders the first sync fallback without cover art", () => {
-    render(<PlaylistHeader playlist={buildPlaylist({ cover_art_url: null, synced_at: null })} />);
+    render(<PlaylistHeader playlist={buildPlaylist({ cover_art_url: null, tracks_synced_at: null })} />);
 
     expect(screen.queryByRole("img")).not.toBeInTheDocument();
     expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();

@@ -643,16 +643,25 @@ export interface components {
             name: string;
             /** Cover Art Url */
             cover_art_url: string | null;
-            /** Track Count */
-            track_count: number;
+            /**
+             * Sync Mode
+             * @enum {string}
+             */
+            sync_mode: "off" | "match_only" | "full";
+            /** Provider Track Count */
+            provider_track_count: number | null;
+            /** Imported Track Count */
+            imported_track_count: number;
             /** Linked Count */
             linked_count: number;
             /** Pending Count */
             pending_count: number;
             /** Unlinked Count */
             unlinked_count: number;
-            /** Synced At */
-            synced_at: string | null;
+            /** Metadata Synced At */
+            metadata_synced_at: string | null;
+            /** Tracks Synced At */
+            tracks_synced_at: string | null;
             /** Last Sync Error */
             last_sync_error: string | null;
             /** Last Sync Error At */
@@ -775,16 +784,23 @@ export interface components {
             provider_playlist_id: string;
             /** Title */
             title: string;
-            /** Track Count */
-            track_count: number;
-            /** Synced At */
-            synced_at: string | null;
+            /**
+             * Sync Mode
+             * @enum {string}
+             */
+            sync_mode: "off" | "match_only" | "full";
+            /** Provider Track Count */
+            provider_track_count: number | null;
+            /** Imported Track Count */
+            imported_track_count: number;
+            /** Metadata Synced At */
+            metadata_synced_at: string | null;
+            /** Tracks Synced At */
+            tracks_synced_at: string | null;
             /** Last Sync Error */
             last_sync_error: string | null;
             /** Last Sync Error At */
             last_sync_error_at: string | null;
-            /** Selected For Sync */
-            selected_for_sync: boolean;
         };
         /** StreamingPlaylistResponse */
         StreamingPlaylistResponse: {
@@ -796,10 +812,19 @@ export interface components {
             provider_playlist_id: string;
             /** Title */
             title: string;
-            /** Track Count */
-            track_count: number;
-            /** Synced At */
-            synced_at: string | null;
+            /**
+             * Sync Mode
+             * @enum {string}
+             */
+            sync_mode: "off" | "match_only" | "full";
+            /** Provider Track Count */
+            provider_track_count: number | null;
+            /** Imported Track Count */
+            imported_track_count: number;
+            /** Metadata Synced At */
+            metadata_synced_at: string | null;
+            /** Tracks Synced At */
+            tracks_synced_at: string | null;
             /** Last Sync Error */
             last_sync_error: string | null;
             /** Last Sync Error At */
@@ -846,8 +871,11 @@ export interface components {
         };
         /** UpdateStreamingPlaylistRequest */
         UpdateStreamingPlaylistRequest: {
-            /** Selected For Sync */
-            selected_for_sync: boolean;
+            /**
+             * Sync Mode
+             * @enum {string}
+             */
+            sync_mode: "off" | "match_only" | "full";
         };
         /** ValidationError */
         ValidationError: {

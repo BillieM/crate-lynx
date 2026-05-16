@@ -76,7 +76,7 @@ function App() {
     ? "Loading playlists..."
     : playlistsQuery.isError
       ? "Playlists unavailable."
-      : "No selected playlists. Configure YouTube Music sync to choose playlists.";
+      : "No full-sync playlists. Configure YouTube Music sync to choose playlists.";
   const playlistEmptyActionLabel = !playlistsQuery.isPending && !playlistsQuery.isError ? "Sync settings" : undefined;
   const routedViewId = useMemo(() => getViewIdFromPath(location.pathname), [location.pathname]);
 

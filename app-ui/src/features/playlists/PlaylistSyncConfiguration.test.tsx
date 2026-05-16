@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 
 import { maintenanceQueryKeys } from "../maintenance/queries";
 import {
@@ -9,6 +9,8 @@ import {
 } from "../streamingAccounts/queries";
 import { PlaylistSyncConfiguration } from "./PlaylistSyncConfiguration";
 import { playlistQueryKeys, type StreamingPlaylistConfigResponse, useStreamingPlaylistsQuery } from "./queries";
+
+type PlaylistSyncMode = StreamingPlaylistConfigResponse["playlists"][number]["sync_mode"];
 
 const connectedStreamingAccount: StreamingAccount = {
   auth_error: null,
@@ -36,22 +38,39 @@ const playlistConfigResponse: StreamingPlaylistConfigResponse = {
       id: 12,
       last_sync_error: null,
       last_sync_error_at: null,
+      imported_track_count: 62,
+      metadata_synced_at: "2026-05-01T08:55:00Z",
       provider_playlist_id: "PL12",
-      selected_for_sync: true,
-      synced_at: "2026-05-01T09:00:00Z",
+      provider_track_count: 70,
+      sync_mode: "full",
       title: "Late Night Drive",
-      track_count: 62,
+      tracks_synced_at: "2026-05-01T09:00:00Z",
     },
     {
       account_id: 4,
       id: 31,
       last_sync_error: "Malformed playlist payload",
       last_sync_error_at: "2026-05-02T10:30:00Z",
+      imported_track_count: 0,
+      metadata_synced_at: null,
       provider_playlist_id: "PL31",
-      selected_for_sync: false,
-      synced_at: null,
+      provider_track_count: 12,
+      sync_mode: "off",
       title: "Fresh Discoveries",
-      track_count: 0,
+      tracks_synced_at: null,
+    },
+    {
+      account_id: 4,
+      id: 44,
+      last_sync_error: null,
+      last_sync_error_at: null,
+      imported_track_count: 9,
+      metadata_synced_at: "2026-05-01T09:10:00Z",
+      provider_playlist_id: "PL44",
+      provider_track_count: 18,
+      sync_mode: "match_only",
+      title: "Matcher Seeds",
+      tracks_synced_at: "2026-05-01T09:20:00Z",
     },
   ],
 };
@@ -72,7 +91,7 @@ function renderPlaylistSyncConfiguration({ includeSyncRefreshObservers = false }
     },
   });
   queryClient.setQueryData(playlistQueryKeys.list(), {
-    playlists: playlistConfigResponse.playlists.filter((playlist) => playlist.selected_for_sync),
+    playlists: playlistConfigResponse.playlists.filter((playlist) => playlist.sync_mode === "full"),
   });
   queryClient.setQueryData(maintenanceQueryKeys.missingLocally(), { tracks: [] });
 
@@ -106,7 +125,7 @@ function mockConfigFetch(
       return {
         ok: true,
         json: async () => ({
-          playlists: response.playlists.filter((playlist) => playlist.selected_for_sync),
+          playlists: response.playlists.filter((playlist) => playlist.sync_mode === "full"),
         }),
       } as Response;
     }
@@ -120,17 +139,17 @@ function mockConfigFetch(
       } as Response;
     }
 
-    if ((url === "/api/streaming/playlists/12" || url === "/api/streaming/playlists/31") && init?.method === "PATCH") {
-      const requestBody = JSON.parse(String(init.body)) as { selected_for_sync: boolean };
+    if (/^\/api\/streaming\/playlists\/\d+$/.test(url) && init?.method === "PATCH") {
+      const requestBody = JSON.parse(String(init.body)) as { sync_mode: PlaylistSyncMode };
       const playlist = response.playlists.find((candidate) => url.endsWith(`/${candidate.id}`));
 
       return {
         ok: true,
-        json: async () => ({ ...playlist, selected_for_sync: requestBody.selected_for_sync }),
+        json: async () => ({ ...playlist, sync_mode: requestBody.sync_mode }),
       } as Response;
     }
 
-    if ((url === "/api/streaming/playlists/12/sync" || url === "/api/streaming/playlists/31/sync") && init?.method === "POST") {
+    if (/^\/api\/streaming\/playlists\/\d+\/sync$/.test(url) && init?.method === "POST") {
       const playlistId = Number(url.split("/").at(-2));
 
       return {
@@ -179,15 +198,25 @@ describe("PlaylistSyncConfiguration", () => {
     vi.useRealTimers();
   });
 
-  it("renders discovered playlists with selection state and last sync errors", async () => {
+  it("renders discovered playlists with mode controls, summary counts, split columns, and last sync errors", async () => {
     mockConfigFetch();
 
     renderPlaylistSyncConfiguration();
 
     expect(await screen.findByRole("heading", { level: 2, name: "Playlist sync configuration" })).toBeInTheDocument();
-    expect(screen.getByText("1 of 2 discovered playlists selected for sync.")).toBeInTheDocument();
-    expect(screen.getByRole("checkbox", { name: "Select Late Night Drive for sync" })).toBeChecked();
-    expect(screen.getByRole("checkbox", { name: "Select Fresh Discoveries for sync" })).not.toBeChecked();
+    expect(screen.getByText("3 discovered")).toBeInTheDocument();
+    expect(screen.getByText("1 full sync")).toBeInTheDocument();
+    expect(screen.getByText("1 match only")).toBeInTheDocument();
+    const fullModeControl = screen.getByRole("group", { name: "Sync mode for Late Night Drive" });
+    expect(within(fullModeControl).getByRole("button", { name: "Full sync" })).toHaveAttribute("aria-pressed", "true");
+    const offModeControl = screen.getByRole("group", { name: "Sync mode for Fresh Discoveries" });
+    expect(within(offModeControl).getByRole("button", { name: "Off" })).toHaveAttribute("aria-pressed", "true");
+    const matchModeControl = screen.getByRole("group", { name: "Sync mode for Matcher Seeds" });
+    expect(within(matchModeControl).getByRole("button", { name: "Match only" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("columnheader", { name: /YouTube count/ })).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: /Imported/ })).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: /Metadata refreshed/ })).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: /Tracks synced/ })).toBeInTheDocument();
     expect(screen.getByRole("columnheader", { name: /Provider ID/ })).toBeInTheDocument();
     expect(screen.getByText("PL31")).toBeInTheDocument();
     expect(screen.getByText("Malformed playlist payload")).toBeInTheDocument();
@@ -198,25 +227,25 @@ describe("PlaylistSyncConfiguration", () => {
 
     renderPlaylistSyncConfiguration();
 
-    expect(await screen.findByRole("heading", { name: "No selected playlists" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "No playlists discovered" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Authentication" })).toHaveAttribute("href", "/settings/authentication");
   });
 
-  it("patches playlist selection and invalidates config, sidebar, and missing-locally queries", async () => {
+  it("patches playlist sync mode and invalidates config, sidebar, and missing-locally queries", async () => {
     const fetchMock = mockConfigFetch();
 
     const { queryClient } = renderPlaylistSyncConfiguration();
 
-    expect(await screen.findByRole("checkbox", { name: "Select Fresh Discoveries for sync" })).toBeInTheDocument();
+    const modeControl = await screen.findByRole("group", { name: "Sync mode for Fresh Discoveries" });
     const configFetchCountBeforeToggle = fetchMock.mock.calls.filter(
       ([input]) => String(input) === "/api/streaming/playlists/config",
     ).length;
 
-    fireEvent.click(screen.getByRole("checkbox", { name: "Select Fresh Discoveries for sync" }));
+    fireEvent.click(within(modeControl).getByRole("button", { name: "Match only" }));
 
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith("/api/streaming/playlists/31", {
-        body: JSON.stringify({ selected_for_sync: true }),
+        body: JSON.stringify({ sync_mode: "match_only" }),
         headers: {
           "Content-Type": "application/json",
         },
@@ -237,12 +266,12 @@ describe("PlaylistSyncConfiguration", () => {
 
     renderPlaylistSyncConfiguration();
 
-    fireEvent.click(await screen.findByRole("button", { name: "Sync enabled" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Sync Full + Match" }));
 
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith("/api/streaming/accounts/4/sync", { method: "POST" });
     });
-    expect(await screen.findByText("Enabled playlist sync queued.")).toBeInTheDocument();
+    expect(await screen.findByText("Full + Match playlist sync queued.")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Refresh playlist metadata" }));
 
@@ -263,12 +292,12 @@ describe("PlaylistSyncConfiguration", () => {
       "href",
       "/settings/authentication",
     );
-    expect(screen.getByRole("button", { name: "Sync enabled" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Sync Full + Match" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Refresh playlist metadata" })).toBeDisabled();
 
     fireEvent.click(screen.getAllByRole("checkbox", { name: /^Select row/ })[0]);
 
-    expect(screen.getByRole("button", { name: /Sync rows/ })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /Sync active rows/ })).toBeDisabled();
   });
 
   it("delays sidebar and config refetches after enabled sync and metadata refresh queue", async () => {
@@ -276,13 +305,13 @@ describe("PlaylistSyncConfiguration", () => {
 
     renderPlaylistSyncConfiguration({ includeSyncRefreshObservers: true });
 
-    await screen.findByRole("button", { name: "Sync enabled" });
+    await screen.findByRole("button", { name: "Sync Full + Match" });
     vi.useFakeTimers();
 
-    fireEvent.click(screen.getByRole("button", { name: "Sync enabled" }));
+    fireEvent.click(screen.getByRole("button", { name: "Sync Full + Match" }));
     await flushAsyncWork();
 
-    expect(screen.getByText("Enabled playlist sync queued.")).toBeInTheDocument();
+    expect(screen.getByText("Full + Match playlist sync queued.")).toBeInTheDocument();
     const listFetchesAfterSyncQueued = countFetches(fetchMock, "/api/streaming/playlists");
     const configFetchesAfterSyncQueued = countFetches(fetchMock, "/api/streaming/playlists/config");
     const accountFetchesAfterSyncQueued = countFetches(fetchMock, "/api/streaming/accounts");
@@ -336,13 +365,13 @@ describe("PlaylistSyncConfiguration", () => {
 
     const { queryClient } = renderPlaylistSyncConfiguration();
 
-    await screen.findByRole("button", { name: "Sync enabled" });
+    await screen.findByRole("button", { name: "Sync Full + Match" });
     vi.useFakeTimers();
 
-    fireEvent.click(screen.getByRole("button", { name: "Sync enabled" }));
+    fireEvent.click(screen.getByRole("button", { name: "Sync Full + Match" }));
     await flushAsyncWork();
 
-    expect(screen.getByText("Enabled playlist sync queued.")).toBeInTheDocument();
+    expect(screen.getByText("Full + Match playlist sync queued.")).toBeInTheDocument();
     expect(screen.queryByText("YouTube Music authentication needs attention")).not.toBeInTheDocument();
     const accountFetchesAfterQueued = countFetches(fetchMock, "/api/streaming/accounts");
 
@@ -359,54 +388,55 @@ describe("PlaylistSyncConfiguration", () => {
     expect(screen.getByText("Browser headers expired. Reported 2026-05-02 10:30:00+00:00.")).toBeInTheDocument();
   });
 
-  it("runs bulk enable, disable, and row sync actions for selected rows", async () => {
+  it("runs bulk mode changes and syncs only selected active rows", async () => {
     const fetchMock = mockConfigFetch();
 
     renderPlaylistSyncConfiguration();
 
     await screen.findByRole("cell", { name: "Fresh Discoveries" });
-    expect(screen.queryByRole("button", { name: /Enable sync/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Set Match only/ })).not.toBeInTheDocument();
 
     fireEvent.click(screen.getAllByRole("checkbox", { name: /^Select row/ })[1]);
 
-    expect(screen.getByRole("button", { name: /Enable sync/ })).toBeEnabled();
-    expect(screen.getByRole("button", { name: /Disable sync/ })).toBeEnabled();
-    expect(screen.getByRole("button", { name: /Sync rows/ })).toBeEnabled();
+    expect(screen.getByRole("button", { name: /Set Off/ })).toBeEnabled();
+    expect(screen.getByRole("button", { name: /Set Match only/ })).toBeEnabled();
+    expect(screen.getByRole("button", { name: /Set Full sync/ })).toBeEnabled();
+    expect(screen.getByRole("button", { name: /Sync active rows/ })).toBeDisabled();
 
-    fireEvent.click(screen.getByRole("button", { name: /Enable sync/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Set Match only/ }));
 
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith("/api/streaming/playlists/31", {
-        body: JSON.stringify({ selected_for_sync: true }),
+        body: JSON.stringify({ sync_mode: "match_only" }),
         headers: {
           "Content-Type": "application/json",
         },
         method: "PATCH",
       });
     });
-    expect(await screen.findByText("1 playlist was enabled.")).toBeInTheDocument();
+    expect(await screen.findByText("1 playlist was set to Match only.")).toBeInTheDocument();
 
     fireEvent.click(screen.getAllByRole("checkbox", { name: /^Select row/ })[0]);
-    fireEvent.click(screen.getByRole("button", { name: /Disable sync/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Set Off/ }));
 
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith("/api/streaming/playlists/12", {
-        body: JSON.stringify({ selected_for_sync: false }),
+        body: JSON.stringify({ sync_mode: "off" }),
         headers: {
           "Content-Type": "application/json",
         },
         method: "PATCH",
       });
     });
-    expect(await screen.findByText("1 playlist was disabled.")).toBeInTheDocument();
+    expect(await screen.findByText("1 playlist was set to Off.")).toBeInTheDocument();
 
     fireEvent.click(screen.getAllByRole("checkbox", { name: /^Select row/ })[0]);
-    fireEvent.click(screen.getByRole("button", { name: /Sync rows/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Sync active rows/ }));
 
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith("/api/streaming/playlists/12/sync", { method: "POST" });
     });
-    expect(await screen.findByText("1 playlist was queued for sync.")).toBeInTheDocument();
+    expect(await screen.findByText("1 active playlist was queued for sync.")).toBeInTheDocument();
   });
 
   it("delays sidebar and config refetches after row sync queues", async () => {
@@ -418,10 +448,10 @@ describe("PlaylistSyncConfiguration", () => {
     vi.useFakeTimers();
 
     fireEvent.click(screen.getAllByRole("checkbox", { name: /^Select row/ })[0]);
-    fireEvent.click(screen.getByRole("button", { name: /Sync rows/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Sync active rows/ }));
     await flushAsyncWork();
 
-    expect(screen.getByText("1 playlist was queued for sync.")).toBeInTheDocument();
+    expect(screen.getByText("1 active playlist was queued for sync.")).toBeInTheDocument();
     const listFetchesAfterQueued = countFetches(fetchMock, "/api/streaming/playlists");
     const configFetchesAfterQueued = countFetches(fetchMock, "/api/streaming/playlists/config");
     const accountFetchesAfterQueued = countFetches(fetchMock, "/api/streaming/accounts");

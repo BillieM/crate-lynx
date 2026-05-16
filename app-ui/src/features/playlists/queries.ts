@@ -14,6 +14,7 @@ export type LinkProposalConfidenceBand = ApiSchemas["ConfidenceBand"];
 export type PlaylistDetail = ApiSchemas["PlaylistDetail"];
 export type StreamingPlaylist = ApiSchemas["StreamingPlaylistResponse"];
 export type StreamingPlaylistConfig = ApiSchemas["StreamingPlaylistConfigResponse"];
+export type PlaylistSyncMode = StreamingPlaylistConfig["sync_mode"];
 export type PlaylistTrack = Omit<ApiSchemas["PlaylistTrackResponse"], "status"> & {
   status: PlaylistTrackStatus;
 };
@@ -61,6 +62,7 @@ export type DeleteFinalLinkResponse = {
 };
 
 const nullableStringSchema = z.string().nullable();
+const playlistSyncModeSchema = z.enum(["off", "match_only", "full"]);
 
 const playlistDetailSchema: z.ZodType<PlaylistDetail> = z.object({
   account_id: z.number(),
@@ -68,12 +70,15 @@ const playlistDetailSchema: z.ZodType<PlaylistDetail> = z.object({
   id: z.number(),
   last_sync_error: nullableStringSchema,
   last_sync_error_at: nullableStringSchema,
+  imported_track_count: z.number(),
   linked_count: z.number(),
+  metadata_synced_at: nullableStringSchema,
   name: z.string(),
   pending_count: z.number(),
+  provider_track_count: z.number().nullable(),
   provider_playlist_id: z.string(),
-  synced_at: nullableStringSchema,
-  track_count: z.number(),
+  sync_mode: playlistSyncModeSchema,
+  tracks_synced_at: nullableStringSchema,
   unlinked_count: z.number(),
 });
 
@@ -86,10 +91,13 @@ const streamingPlaylistSchema: z.ZodType<StreamingPlaylist> = z.object({
   id: z.number(),
   last_sync_error: nullableStringSchema,
   last_sync_error_at: nullableStringSchema,
+  imported_track_count: z.number(),
+  metadata_synced_at: nullableStringSchema,
+  provider_track_count: z.number().nullable(),
   provider_playlist_id: z.string(),
-  synced_at: nullableStringSchema,
+  sync_mode: playlistSyncModeSchema,
   title: z.string(),
-  track_count: z.number(),
+  tracks_synced_at: nullableStringSchema,
 });
 
 const streamingPlaylistConfigSchema: z.ZodType<StreamingPlaylistConfig> = z.object({
@@ -97,11 +105,13 @@ const streamingPlaylistConfigSchema: z.ZodType<StreamingPlaylistConfig> = z.obje
   id: z.number(),
   last_sync_error: nullableStringSchema,
   last_sync_error_at: nullableStringSchema,
+  imported_track_count: z.number(),
+  metadata_synced_at: nullableStringSchema,
+  provider_track_count: z.number().nullable(),
   provider_playlist_id: z.string(),
-  selected_for_sync: z.boolean(),
-  synced_at: nullableStringSchema,
+  sync_mode: playlistSyncModeSchema,
   title: z.string(),
-  track_count: z.number(),
+  tracks_synced_at: nullableStringSchema,
 });
 
 const streamingPlaylistsResponseSchema: z.ZodType<StreamingPlaylistsResponse> = z.object({
@@ -284,10 +294,10 @@ export async function fetchStreamingPlaylistConfig(): Promise<StreamingPlaylistC
 
 export async function updateStreamingPlaylistConfig({
   playlistId,
-  selected_for_sync,
+  sync_mode,
 }: UpdateStreamingPlaylistConfigInput): Promise<StreamingPlaylistConfig> {
   return patchJson(endpoints.api(`/streaming/playlists/${encodeURIComponent(String(playlistId))}`), {
-    body: { selected_for_sync },
+    body: { sync_mode },
     errorMessage: "Playlist update request failed",
     schema: streamingPlaylistConfigSchema,
   });
