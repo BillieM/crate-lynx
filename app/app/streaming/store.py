@@ -321,45 +321,51 @@ class StreamingAccountStore:
 
         return playlist_rows
 
-    def list_playlists(self) -> list[StreamingPlaylistSummary]:
+    def list_playlists(
+        self, *, sync_mode: str | None = None
+    ) -> list[StreamingPlaylistSummary]:
+        query = (
+            select(
+                streaming_playlists_table.c.id,
+                streaming_playlists_table.c.account_id,
+                streaming_playlists_table.c.provider_playlist_id,
+                streaming_playlists_table.c.title,
+                streaming_playlists_table.c.sync_mode,
+                streaming_playlists_table.c.provider_track_count,
+                streaming_playlists_table.c.metadata_synced_at,
+                streaming_playlists_table.c.tracks_synced_at,
+                streaming_playlists_table.c.last_sync_error,
+                streaming_playlists_table.c.last_sync_error_at,
+                func.count(playlist_membership_table.c.id).label(
+                    "imported_track_count"
+                ),
+            )
+            .select_from(
+                streaming_playlists_table.outerjoin(
+                    playlist_membership_table,
+                    playlist_membership_table.c.playlist_id
+                    == streaming_playlists_table.c.id,
+                )
+            )
+            .group_by(
+                streaming_playlists_table.c.id,
+                streaming_playlists_table.c.account_id,
+                streaming_playlists_table.c.provider_playlist_id,
+                streaming_playlists_table.c.title,
+                streaming_playlists_table.c.sync_mode,
+                streaming_playlists_table.c.provider_track_count,
+                streaming_playlists_table.c.metadata_synced_at,
+                streaming_playlists_table.c.tracks_synced_at,
+                streaming_playlists_table.c.last_sync_error,
+                streaming_playlists_table.c.last_sync_error_at,
+            )
+            .order_by(streaming_playlists_table.c.id.asc())
+        )
+        if sync_mode is not None:
+            query = query.where(streaming_playlists_table.c.sync_mode == sync_mode)
+
         with self._engine.connect() as connection:
-            rows = connection.execute(
-                select(
-                    streaming_playlists_table.c.id,
-                    streaming_playlists_table.c.account_id,
-                    streaming_playlists_table.c.provider_playlist_id,
-                    streaming_playlists_table.c.title,
-                    streaming_playlists_table.c.sync_mode,
-                    streaming_playlists_table.c.provider_track_count,
-                    streaming_playlists_table.c.metadata_synced_at,
-                    streaming_playlists_table.c.tracks_synced_at,
-                    streaming_playlists_table.c.last_sync_error,
-                    streaming_playlists_table.c.last_sync_error_at,
-                    func.count(playlist_membership_table.c.id).label(
-                        "imported_track_count"
-                    ),
-                )
-                .select_from(
-                    streaming_playlists_table.outerjoin(
-                        playlist_membership_table,
-                        playlist_membership_table.c.playlist_id
-                        == streaming_playlists_table.c.id,
-                    )
-                )
-                .group_by(
-                    streaming_playlists_table.c.id,
-                    streaming_playlists_table.c.account_id,
-                    streaming_playlists_table.c.provider_playlist_id,
-                    streaming_playlists_table.c.title,
-                    streaming_playlists_table.c.sync_mode,
-                    streaming_playlists_table.c.provider_track_count,
-                    streaming_playlists_table.c.metadata_synced_at,
-                    streaming_playlists_table.c.tracks_synced_at,
-                    streaming_playlists_table.c.last_sync_error,
-                    streaming_playlists_table.c.last_sync_error_at,
-                )
-                .order_by(streaming_playlists_table.c.id.asc())
-            ).mappings()
+            rows = connection.execute(query).mappings()
 
             return [
                 StreamingPlaylistSummary(
@@ -378,8 +384,10 @@ class StreamingAccountStore:
                 for row in rows
             ]
 
-    def get_playlist_detail(self, playlist_id: int) -> StreamingPlaylistDetail | None:
-        playlist = self._get_playlist_summary(playlist_id)
+    def get_playlist_detail(
+        self, playlist_id: int, *, sync_mode: str | None = None
+    ) -> StreamingPlaylistDetail | None:
+        playlist = self._get_playlist_summary(playlist_id, sync_mode=sync_mode)
         if playlist is None:
             return None
 
@@ -433,16 +441,17 @@ class StreamingAccountStore:
 
         return self._get_playlist_summary(playlist_id)
 
-    def playlist_exists(self, playlist_id: int) -> bool:
+    def playlist_exists(
+        self, playlist_id: int, *, sync_mode: str | None = None
+    ) -> bool:
+        query = select(streaming_playlists_table.c.id).where(
+            streaming_playlists_table.c.id == playlist_id
+        )
+        if sync_mode is not None:
+            query = query.where(streaming_playlists_table.c.sync_mode == sync_mode)
+
         with self._engine.connect() as connection:
-            return (
-                connection.execute(
-                    select(streaming_playlists_table.c.id).where(
-                        streaming_playlists_table.c.id == playlist_id
-                    )
-                ).scalar_one_or_none()
-                is not None
-            )
+            return connection.execute(query).scalar_one_or_none() is not None
 
     def list_playlist_tracks(self, playlist_id: int) -> list[StreamingPlaylistTrack]:
         pending_link_ids = (
@@ -500,50 +509,50 @@ class StreamingAccountStore:
             return [self._playlist_track_from_row(row) for row in rows]
 
     def _get_playlist_summary(
-        self, playlist_id: int
+        self, playlist_id: int, *, sync_mode: str | None = None
     ) -> StreamingPlaylistSummary | None:
-        with self._engine.connect() as connection:
-            row = (
-                connection.execute(
-                    select(
-                        streaming_playlists_table.c.id,
-                        streaming_playlists_table.c.account_id,
-                        streaming_playlists_table.c.provider_playlist_id,
-                        streaming_playlists_table.c.title,
-                        streaming_playlists_table.c.sync_mode,
-                        streaming_playlists_table.c.provider_track_count,
-                        streaming_playlists_table.c.metadata_synced_at,
-                        streaming_playlists_table.c.tracks_synced_at,
-                        streaming_playlists_table.c.last_sync_error,
-                        streaming_playlists_table.c.last_sync_error_at,
-                        func.count(playlist_membership_table.c.id).label(
-                            "imported_track_count"
-                        ),
-                    )
-                    .select_from(
-                        streaming_playlists_table.outerjoin(
-                            playlist_membership_table,
-                            playlist_membership_table.c.playlist_id
-                            == streaming_playlists_table.c.id,
-                        )
-                    )
-                    .where(streaming_playlists_table.c.id == playlist_id)
-                    .group_by(
-                        streaming_playlists_table.c.id,
-                        streaming_playlists_table.c.account_id,
-                        streaming_playlists_table.c.provider_playlist_id,
-                        streaming_playlists_table.c.title,
-                        streaming_playlists_table.c.sync_mode,
-                        streaming_playlists_table.c.provider_track_count,
-                        streaming_playlists_table.c.metadata_synced_at,
-                        streaming_playlists_table.c.tracks_synced_at,
-                        streaming_playlists_table.c.last_sync_error,
-                        streaming_playlists_table.c.last_sync_error_at,
-                    )
-                )
-                .mappings()
-                .one_or_none()
+        query = (
+            select(
+                streaming_playlists_table.c.id,
+                streaming_playlists_table.c.account_id,
+                streaming_playlists_table.c.provider_playlist_id,
+                streaming_playlists_table.c.title,
+                streaming_playlists_table.c.sync_mode,
+                streaming_playlists_table.c.provider_track_count,
+                streaming_playlists_table.c.metadata_synced_at,
+                streaming_playlists_table.c.tracks_synced_at,
+                streaming_playlists_table.c.last_sync_error,
+                streaming_playlists_table.c.last_sync_error_at,
+                func.count(playlist_membership_table.c.id).label(
+                    "imported_track_count"
+                ),
             )
+            .select_from(
+                streaming_playlists_table.outerjoin(
+                    playlist_membership_table,
+                    playlist_membership_table.c.playlist_id
+                    == streaming_playlists_table.c.id,
+                )
+            )
+            .where(streaming_playlists_table.c.id == playlist_id)
+            .group_by(
+                streaming_playlists_table.c.id,
+                streaming_playlists_table.c.account_id,
+                streaming_playlists_table.c.provider_playlist_id,
+                streaming_playlists_table.c.title,
+                streaming_playlists_table.c.sync_mode,
+                streaming_playlists_table.c.provider_track_count,
+                streaming_playlists_table.c.metadata_synced_at,
+                streaming_playlists_table.c.tracks_synced_at,
+                streaming_playlists_table.c.last_sync_error,
+                streaming_playlists_table.c.last_sync_error_at,
+            )
+        )
+        if sync_mode is not None:
+            query = query.where(streaming_playlists_table.c.sync_mode == sync_mode)
+
+        with self._engine.connect() as connection:
+            row = connection.execute(query).mappings().one_or_none()
 
         if row is None:
             return None

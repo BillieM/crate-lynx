@@ -19,6 +19,7 @@ from app.matching.pipeline import (
 )
 from app.streaming.models import metadata as streaming_metadata
 from app.streaming.models import (
+    PLAYLIST_SYNC_MODE_FULL,
     playlist_membership_table,
     streaming_playlists_table,
     streaming_tracks_table,
@@ -448,6 +449,7 @@ def test_approve_proposal_regenerates_playlist_m3u(
                 account_id=1,
                 provider_playlist_id="PL7",
                 title="Road Trip Mix",
+                sync_mode=PLAYLIST_SYNC_MODE_FULL,
             )
         )
         connection.execute(
@@ -812,6 +814,7 @@ def test_reject_proposal_regenerates_playlist_m3u(
                 account_id=1,
                 provider_playlist_id="PL7",
                 title="Road Trip Mix",
+                sync_mode=PLAYLIST_SYNC_MODE_FULL,
             )
         )
         connection.execute(
@@ -988,6 +991,7 @@ def test_break_final_link_regenerates_playlist_m3u(
                 account_id=1,
                 provider_playlist_id="PL7",
                 title="Road Trip Mix",
+                sync_mode=PLAYLIST_SYNC_MODE_FULL,
             )
         )
         connection.execute(

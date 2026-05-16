@@ -134,13 +134,9 @@ def create_router(
     def list_streaming_playlists(
         engine: Engine = Depends(get_engine),
     ) -> StreamingPlaylistsResponse:
-        playlists = _store(engine).list_playlists()
+        playlists = _store(engine).list_playlists(sync_mode=PLAYLIST_SYNC_MODE_FULL)
         return StreamingPlaylistsResponse(
-            playlists=[
-                serialize_streaming_playlist(playlist)
-                for playlist in playlists
-                if playlist.sync_mode == PLAYLIST_SYNC_MODE_FULL
-            ]
+            playlists=[serialize_streaming_playlist(playlist) for playlist in playlists]
         )
 
     @router.get(
@@ -180,7 +176,10 @@ def create_router(
         playlist_id: int,
         engine: Engine = Depends(get_engine),
     ) -> PlaylistDetailResponse:
-        playlist = _store(engine).get_playlist_detail(playlist_id)
+        playlist = _store(engine).get_playlist_detail(
+            playlist_id,
+            sync_mode=PLAYLIST_SYNC_MODE_FULL,
+        )
         if playlist is None:
             raise HTTPException(status_code=404, detail="Playlist not found")
 
@@ -194,7 +193,10 @@ def create_router(
         engine: Engine = Depends(get_engine),
     ) -> PlaylistTracksResponse:
         store = _store(engine)
-        if not store.playlist_exists(playlist_id):
+        if not store.playlist_exists(
+            playlist_id,
+            sync_mode=PLAYLIST_SYNC_MODE_FULL,
+        ):
             raise HTTPException(status_code=404, detail="Playlist not found")
 
         return PlaylistTracksResponse(
@@ -227,7 +229,7 @@ def create_router(
         playlist = next(
             (
                 playlist
-                for playlist in store.list_playlists()
+                for playlist in store.list_playlists(sync_mode=PLAYLIST_SYNC_MODE_FULL)
                 if playlist.id == playlist_id
             ),
             None,

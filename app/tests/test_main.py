@@ -442,6 +442,10 @@ def test_streaming_playlists_endpoint_lists_synced_playlists(
                 provider_playlist_id="PL2",
                 title="Empty Playlist",
             ),
+            YouTubeMusicPlaylist(
+                provider_playlist_id="PL3",
+                title="Match Candidates",
+            ),
         ],
         synced_at=datetime(2026, 5, 1, 9, 0, tzinfo=UTC),
     )
@@ -471,6 +475,10 @@ def test_streaming_playlists_endpoint_lists_synced_playlists(
     store.set_playlist_sync_mode(
         playlist_id=playlists[0].id,
         sync_mode=PLAYLIST_SYNC_MODE_FULL,
+    )
+    store.set_playlist_sync_mode(
+        playlist_id=playlists[2].id,
+        sync_mode=PLAYLIST_SYNC_MODE_MATCH_ONLY,
     )
 
     app = create_app()
@@ -944,6 +952,7 @@ def test_playlist_detail_endpoint_returns_real_link_counts(
                 account_id=1,
                 provider_playlist_id="PL7",
                 title="Road Trip Mix",
+                sync_mode=PLAYLIST_SYNC_MODE_FULL,
                 metadata_synced_at=datetime(2026, 5, 1, 9, 0, tzinfo=UTC),
             )
         )
@@ -1024,7 +1033,7 @@ def test_playlist_detail_endpoint_returns_real_link_counts(
     assert response.playlist.id == 7
     assert response.playlist.name == "Road Trip Mix"
     assert response.playlist.cover_art_url is None
-    assert response.playlist.sync_mode == PLAYLIST_SYNC_MODE_OFF
+    assert response.playlist.sync_mode == PLAYLIST_SYNC_MODE_FULL
     assert response.playlist.provider_track_count is None
     assert response.playlist.imported_track_count == 3
     assert response.playlist.linked_count == 1
@@ -1032,6 +1041,47 @@ def test_playlist_detail_endpoint_returns_real_link_counts(
     assert response.playlist.unlinked_count == 1
     assert response.playlist.metadata_synced_at == "2026-05-01T09:00:00"
     assert response.playlist.tracks_synced_at is None
+
+
+@pytest.mark.parametrize(
+    "sync_mode",
+    [PLAYLIST_SYNC_MODE_OFF, PLAYLIST_SYNC_MODE_MATCH_ONLY],
+)
+def test_wanted_playlist_endpoints_return_404_for_non_full_playlists(
+    monkeypatch,
+    sync_mode: str,
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite:///{tmp_path / f'wanted-playlist-{sync_mode}.db'}"
+    engine = create_engine(database_url)
+    metadata.create_all(engine)
+    local_tracks_metadata.create_all(engine)
+    links_metadata.create_all(engine)
+    monkeypatch.setenv("DATABASE_URL", database_url)
+
+    with engine.begin() as connection:
+        connection.execute(
+            insert(streaming_playlists_table).values(
+                id=7,
+                account_id=1,
+                provider_playlist_id="PL7",
+                title="Match Candidates",
+                sync_mode=sync_mode,
+            )
+        )
+
+    app = create_app()
+    for path in (
+        "/api/playlists/{playlist_id}",
+        "/api/playlists/{playlist_id}/tracks",
+        "/api/playlists/{playlist_id}/m3u",
+    ):
+        route = _route("GET", path, app)
+        with pytest.raises(StarletteHTTPException) as exc_info:
+            _call_endpoint(route.endpoint, 7)
+
+        assert exc_info.value.status_code == 404
+        assert exc_info.value.detail == "Playlist not found"
 
 
 def test_playlist_tracks_endpoint_returns_rows_with_link_status(
@@ -1053,6 +1103,7 @@ def test_playlist_tracks_endpoint_returns_rows_with_link_status(
                 account_id=1,
                 provider_playlist_id="PL7",
                 title="Road Trip Mix",
+                sync_mode=PLAYLIST_SYNC_MODE_FULL,
             )
         )
         connection.execute(
@@ -1487,6 +1538,13 @@ def test_missing_locally_endpoint_aggregates_playlist_usage_and_excludes_links(
                     "title": "Road Trip",
                     "sync_mode": PLAYLIST_SYNC_MODE_OFF,
                 },
+                {
+                    "id": 3,
+                    "account_id": 1,
+                    "provider_playlist_id": "PL3",
+                    "title": "Match Candidates",
+                    "sync_mode": PLAYLIST_SYNC_MODE_MATCH_ONLY,
+                },
             ],
         )
         connection.execute(
@@ -1524,6 +1582,14 @@ def test_missing_locally_endpoint_aggregates_playlist_usage_and_excludes_links(
                     "album": "Album D",
                     "duration_ms": 220000,
                 },
+                {
+                    "id": 14,
+                    "provider_track_id": "ytm-14",
+                    "title": "Match Only Playlist Song",
+                    "artist": "Artist E",
+                    "album": "Album E",
+                    "duration_ms": 240000,
+                },
             ],
         )
         connection.execute(
@@ -1534,6 +1600,8 @@ def test_missing_locally_endpoint_aggregates_playlist_usage_and_excludes_links(
                 {"playlist_id": 2, "streaming_track_id": 11, "position": 1},
                 {"playlist_id": 2, "streaming_track_id": 12, "position": 2},
                 {"playlist_id": 1, "streaming_track_id": 13, "position": 3},
+                {"playlist_id": 3, "streaming_track_id": 11, "position": 1},
+                {"playlist_id": 3, "streaming_track_id": 14, "position": 2},
             ],
         )
         connection.execute(
@@ -1704,6 +1772,7 @@ def test_playlist_m3u_export_endpoint_returns_attachment(
                 account_id=1,
                 provider_playlist_id="PL7",
                 title="Road Trip Mix",
+                sync_mode=PLAYLIST_SYNC_MODE_FULL,
                 metadata_synced_at=datetime(2026, 5, 1, 9, 0, tzinfo=UTC),
             )
         )

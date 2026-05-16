@@ -41,7 +41,7 @@
   - Ensure tracks remain matchable when they belong to at least one `full` or `match_only` playlist.
   - Add matcher tests for off-only, match-only, full, and mixed-membership cases.
 
-- [ ] Restrict wanted-playlist, reporting, and M3U backend surfaces to full playlists
+- [x] Restrict wanted-playlist, reporting, and M3U backend surfaces to full playlists
   - Filter sidebar playlists, playlist navigation, playlist detail access, Missing Locally, and wanted-music reporting to `full` playlists only.
   - Restrict M3U export and regeneration writes to `full` playlists only.
   - Preserve existing stale M3U files when a playlist leaves `full`; prevent future non-full writes instead of deleting old files.

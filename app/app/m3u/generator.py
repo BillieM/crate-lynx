@@ -11,6 +11,7 @@ from app.core.paths import default_staging_path, resolve_staging_path
 from app.links.store import final_links_table
 from app.local_tracks.store import local_tracks_table
 from app.streaming.models import (
+    PLAYLIST_SYNC_MODE_FULL,
     playlist_membership_table,
     streaming_playlists_table,
     streaming_tracks_table,
@@ -118,6 +119,7 @@ def regenerate_m3us_for_streaming_track(
             )
         )
         .where(playlist_membership_table.c.streaming_track_id == streaming_track_id)
+        .where(streaming_playlists_table.c.sync_mode == PLAYLIST_SYNC_MODE_FULL)
         .distinct()
         .order_by(streaming_playlists_table.c.id.asc())
     )
