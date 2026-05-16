@@ -8,9 +8,24 @@ import {
   type StreamingAccount,
 } from "../streamingAccounts/queries";
 import { PlaylistSyncConfiguration } from "./PlaylistSyncConfiguration";
-import { playlistQueryKeys, type StreamingPlaylistConfigResponse, useStreamingPlaylistsQuery } from "./queries";
+import {
+  playlistQueryKeys,
+  type StreamingPlaylistConfigResponse,
+  type StreamingPlaylistsResponse,
+  useStreamingPlaylistsQuery,
+} from "./queries";
 
 type PlaylistSyncMode = StreamingPlaylistConfigResponse["playlists"][number]["sync_mode"];
+type PlaylistConfigRow = StreamingPlaylistConfigResponse["playlists"][number];
+type PlaylistPatchHandler = ({
+  playlist,
+  syncMode,
+  url,
+}: {
+  playlist: PlaylistConfigRow;
+  syncMode: PlaylistSyncMode;
+  url: string;
+}) => Promise<Response> | Response;
 
 const connectedStreamingAccount: StreamingAccount = {
   auth_error: null,
@@ -109,7 +124,8 @@ function mockConfigFetch(
   response: StreamingPlaylistConfigResponse = playlistConfigResponse,
   {
     accounts = [connectedStreamingAccount],
-  }: { accounts?: StreamingAccount[] | (() => StreamingAccount[]) } = {},
+    patchHandler,
+  }: { accounts?: StreamingAccount[] | (() => StreamingAccount[]); patchHandler?: PlaylistPatchHandler } = {},
 ) {
   return vi.spyOn(globalThis, "fetch").mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
@@ -143,6 +159,14 @@ function mockConfigFetch(
       const requestBody = JSON.parse(String(init.body)) as { sync_mode: PlaylistSyncMode };
       const playlist = response.playlists.find((candidate) => url.endsWith(`/${candidate.id}`));
 
+      if (playlist === undefined) {
+        throw new Error(`Unexpected playlist PATCH URL: ${url}`);
+      }
+
+      if (patchHandler !== undefined) {
+        return patchHandler({ playlist, syncMode: requestBody.sync_mode, url });
+      }
+
       return {
         ok: true,
         json: async () => ({ ...playlist, sync_mode: requestBody.sync_mode }),
@@ -174,6 +198,15 @@ function mockConfigFetch(
 
     throw new Error(`Unexpected fetch request: ${init?.method ?? "GET"} ${url}`);
   });
+}
+
+function createDeferredResponse() {
+  let resolve: (response: Response) => void = () => {};
+  const promise = new Promise<Response>((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+
+  return { promise, resolve };
 }
 
 function countFetches(fetchMock: ReturnType<typeof mockConfigFetch>, url: string) {
@@ -264,15 +297,13 @@ describe("PlaylistSyncConfiguration", () => {
     expect(screen.getByRole("link", { name: "Authentication" })).toHaveAttribute("href", "/settings/authentication");
   });
 
-  it("patches playlist sync mode and invalidates config, sidebar, and missing-locally queries", async () => {
+  it("patches playlist sync mode with cache updates instead of refetching the config list", async () => {
     const fetchMock = mockConfigFetch();
 
     const { queryClient } = renderPlaylistSyncConfiguration();
 
     const modeControl = await screen.findByRole("group", { name: "Sync mode for Fresh Discoveries" });
-    const configFetchCountBeforeToggle = fetchMock.mock.calls.filter(
-      ([input]) => String(input) === "/api/streaming/playlists/config",
-    ).length;
+    const configFetchCountBeforeToggle = countFetches(fetchMock, "/api/streaming/playlists/config");
 
     fireEvent.click(within(modeControl).getByRole("button", { name: "Match only" }));
 
@@ -286,11 +317,142 @@ describe("PlaylistSyncConfiguration", () => {
       });
     });
     await waitFor(() => {
-      expect(
-        fetchMock.mock.calls.filter(([input]) => String(input) === "/api/streaming/playlists/config").length,
-      ).toBeGreaterThan(configFetchCountBeforeToggle);
-      expect(queryClient.getQueryState(playlistQueryKeys.list())?.isInvalidated).toBe(true);
+      const refreshedModeControl = screen.getByRole("group", { name: "Sync mode for Fresh Discoveries" });
+      expect(within(refreshedModeControl).getByRole("button", { name: "Match only" })).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      );
+      expect(countFetches(fetchMock, "/api/streaming/playlists/config")).toBe(configFetchCountBeforeToggle);
+      expect(queryClient.getQueryState(playlistQueryKeys.config())?.isInvalidated).not.toBe(true);
       expect(queryClient.getQueryState(maintenanceQueryKeys.missingLocally())?.isInvalidated).toBe(true);
+    });
+    expect(
+      queryClient
+        .getQueryData<StreamingPlaylistConfigResponse>(playlistQueryKeys.config())
+        ?.playlists.find((playlist) => playlist.id === 31)?.sync_mode,
+    ).toBe("match_only");
+  });
+
+  it("keeps the table rendered while a mode patch is pending and after it succeeds", async () => {
+    const deferredPatch = createDeferredResponse();
+    let pendingPatch: { playlist: PlaylistConfigRow; syncMode: PlaylistSyncMode } | undefined;
+    const fetchMock = mockConfigFetch(playlistConfigResponse, {
+      patchHandler: ({ playlist, syncMode }) => {
+        pendingPatch = { playlist, syncMode };
+        return deferredPatch.promise;
+      },
+    });
+
+    renderPlaylistSyncConfiguration();
+
+    const modeControl = await screen.findByRole("group", { name: "Sync mode for Fresh Discoveries" });
+
+    fireEvent.click(within(modeControl).getByRole("button", { name: "Match only" }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith("/api/streaming/playlists/31", {
+        body: JSON.stringify({ sync_mode: "match_only" }),
+        headers: {
+          "Content-Type": "application/json",
+        },
+        method: "PATCH",
+      });
+    });
+    expect(screen.getByRole("region", { name: "Playlist sync configuration list" })).toBeInTheDocument();
+    expect(screen.getByRole("cell", { name: "Fresh Discoveries" })).toBeInTheDocument();
+    await waitFor(() => {
+      const refreshedModeControl = screen.getByRole("group", { name: "Sync mode for Fresh Discoveries" });
+      expect(within(refreshedModeControl).getByRole("button", { name: "Updating..." })).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      );
+    });
+
+    await act(async () => {
+      if (pendingPatch === undefined) {
+        throw new Error("Expected a pending playlist mode PATCH");
+      }
+
+      const resolvedPatch = pendingPatch;
+      deferredPatch.resolve({
+        ok: true,
+        json: async () => ({ ...resolvedPatch.playlist, sync_mode: resolvedPatch.syncMode }),
+      } as Response);
+      await deferredPatch.promise;
+    });
+
+    await waitFor(() => {
+      const refreshedModeControl = screen.getByRole("group", { name: "Sync mode for Fresh Discoveries" });
+      expect(within(refreshedModeControl).getByRole("button", { name: "Match only" })).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      );
+    });
+    expect(screen.getByRole("cell", { name: "Fresh Discoveries" })).toBeInTheDocument();
+  });
+
+  it("rolls back a failed mode patch and shows a table-level error", async () => {
+    const fetchMock = mockConfigFetch(playlistConfigResponse, {
+      patchHandler: () =>
+        ({
+          ok: false,
+          status: 500,
+        }) as Response,
+    });
+
+    const { queryClient } = renderPlaylistSyncConfiguration();
+
+    const modeControl = await screen.findByRole("group", { name: "Sync mode for Fresh Discoveries" });
+    const configFetchCountBeforeToggle = countFetches(fetchMock, "/api/streaming/playlists/config");
+
+    fireEvent.click(within(modeControl).getByRole("button", { name: "Match only" }));
+
+    expect(await screen.findByText("Playlist mode update failed")).toBeInTheDocument();
+    expect(
+      screen.getByText("The playlist mode could not be saved. The table was restored to its previous state."),
+    ).toBeInTheDocument();
+    const refreshedModeControl = screen.getByRole("group", { name: "Sync mode for Fresh Discoveries" });
+    expect(within(refreshedModeControl).getByRole("button", { name: "Off" })).toHaveAttribute("aria-pressed", "true");
+    expect(countFetches(fetchMock, "/api/streaming/playlists/config")).toBe(configFetchCountBeforeToggle);
+    expect(
+      queryClient
+        .getQueryData<StreamingPlaylistConfigResponse>(playlistQueryKeys.config())
+        ?.playlists.find((playlist) => playlist.id === 31)?.sync_mode,
+    ).toBe("off");
+    expect(
+      queryClient
+        .getQueryData<StreamingPlaylistsResponse>(playlistQueryKeys.list())
+        ?.playlists.some((playlist) => playlist.id === 31),
+    ).toBe(false);
+  });
+
+  it("adds and removes full playlists in the full-playlist cache after mode patches", async () => {
+    mockConfigFetch();
+
+    const { queryClient } = renderPlaylistSyncConfiguration();
+
+    const offModeControl = await screen.findByRole("group", { name: "Sync mode for Fresh Discoveries" });
+
+    fireEvent.click(within(offModeControl).getByRole("button", { name: "Full sync" }));
+
+    await waitFor(() => {
+      expect(
+        queryClient
+          .getQueryData<StreamingPlaylistsResponse>(playlistQueryKeys.list())
+          ?.playlists.find((playlist) => playlist.id === 31)?.sync_mode,
+      ).toBe("full");
+    });
+
+    const fullModeControl = screen.getByRole("group", { name: "Sync mode for Late Night Drive" });
+
+    fireEvent.click(within(fullModeControl).getByRole("button", { name: "Off" }));
+
+    await waitFor(() => {
+      expect(
+        queryClient
+          .getQueryData<StreamingPlaylistsResponse>(playlistQueryKeys.list())
+          ?.playlists.some((playlist) => playlist.id === 12),
+      ).toBe(false);
     });
   });
 

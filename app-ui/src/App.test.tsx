@@ -493,7 +493,7 @@ describe("App", () => {
     expect(screen.getByText("Local Library")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Link proposals/i })).toBeInTheDocument();
     expect(await screen.findByRole("button", { name: /Late Night Drive/i })).toBeInTheDocument();
-    expect(screen.getByText("62")).toBeInTheDocument();
+    expect(within(sidebar).getByText("62")).toBeInTheDocument();
     expect(await screen.findByText("321")).toBeInTheDocument();
     expect(await screen.findByRole("heading", { level: 1, name: "Late Night Drive" })).toBeInTheDocument();
     expect(screen.getByText("YouTube Music")).toBeInTheDocument();
@@ -969,7 +969,7 @@ describe("App", () => {
     },
   );
 
-  it("updates playlist sync modes and refreshes sidebar and config queries", async () => {
+  it("updates playlist sync modes without refetching sidebar and config queries", async () => {
     const fetchMock = mockPlaylistFetch();
 
     renderApp();
@@ -977,12 +977,9 @@ describe("App", () => {
     expect(await screen.findByRole("heading", { level: 1, name: "Late Night Drive" })).toBeInTheDocument();
     await openYoutubeMusicSettings();
 
-    const playlistListFetchesBeforeToggle = fetchMock.mock.calls.filter(
-      ([input]) => String(input) === "/api/streaming/playlists",
-    ).length;
-    const configFetchesBeforeToggle = fetchMock.mock.calls.filter(
-      ([input]) => String(input) === "/api/streaming/playlists/config",
-    ).length;
+    const playlistListFetchesBeforeToggle = countFetches(fetchMock, "/api/streaming/playlists");
+    const configFetchesBeforeToggle = countFetches(fetchMock, "/api/streaming/playlists/config");
+    const missingLocallyFetchesBeforeToggle = countFetches(fetchMock, "/api/maintenance/missing-locally");
 
     fireEvent.click(
       within(await screen.findByRole("group", { name: "Sync mode for Late Night Drive" })).getByRole("button", {
@@ -998,6 +995,10 @@ describe("App", () => {
         },
         method: "PATCH",
       });
+    });
+    await waitFor(() => {
+      const modeControl = screen.getByRole("group", { name: "Sync mode for Late Night Drive" });
+      expect(within(modeControl).getByRole("button", { name: "Off" })).toHaveAttribute("aria-pressed", "true");
     });
 
     fireEvent.click(
@@ -1016,12 +1017,16 @@ describe("App", () => {
       });
     });
     await waitFor(() => {
-      expect(
-        fetchMock.mock.calls.filter(([input]) => String(input) === "/api/streaming/playlists").length,
-      ).toBeGreaterThan(playlistListFetchesBeforeToggle);
-      expect(
-        fetchMock.mock.calls.filter(([input]) => String(input) === "/api/streaming/playlists/config").length,
-      ).toBeGreaterThan(configFetchesBeforeToggle);
+      const modeControl = screen.getByRole("group", { name: "Sync mode for Fresh Discoveries" });
+      expect(within(modeControl).getByRole("button", { name: "Match only" })).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      );
+      expect(countFetches(fetchMock, "/api/streaming/playlists")).toBe(playlistListFetchesBeforeToggle);
+      expect(countFetches(fetchMock, "/api/streaming/playlists/config")).toBe(configFetchesBeforeToggle);
+      expect(countFetches(fetchMock, "/api/maintenance/missing-locally")).toBeGreaterThan(
+        missingLocallyFetchesBeforeToggle,
+      );
     });
   });
 

@@ -10,6 +10,7 @@ import { formatPlaylistTimestamp } from "../../lib/formatters";
 import { useDelayedInvalidate } from "../../lib/useDelayedInvalidate";
 import { controlClasses, layoutClasses, textClasses } from "../../styles/componentClasses";
 import { actionButtonToneClasses } from "../../styles/toneClasses";
+import { invalidateMissingLocallyQueries } from "../maintenance/queries";
 import { PlaylistActionStatus } from "../shell/Topbar";
 import {
   streamingAccountCollectionJobInvalidationKeys,
@@ -18,10 +19,14 @@ import {
 } from "../streamingAccounts/queries";
 import {
   invalidatePlaylistConfigurationMutationQueries,
+  playlistQueryKeys,
   refreshStreamingAccountMetadata,
   syncStreamingAccount,
   type PlaylistSyncMode,
   type StreamingPlaylistConfig,
+  type StreamingPlaylistConfigResponse,
+  type StreamingPlaylistsResponse,
+  type UpdateStreamingPlaylistConfigInput,
   updateStreamingPlaylistConfig,
   useStreamingPlaylistConfigQuery,
 } from "./queries";
@@ -73,6 +78,67 @@ function getPlaylistModeCounts(playlists: StreamingPlaylistConfig[]) {
 
 function formatOptionalCount(value: number | null) {
   return value === null ? "Unknown" : value.toLocaleString();
+}
+
+type PlaylistModeMutationContext = {
+  configSnapshot: StreamingPlaylistConfigResponse | undefined;
+  listSnapshot: StreamingPlaylistsResponse | undefined;
+};
+
+function playlistIdMatches(playlist: { id: number }, playlistId: number | string) {
+  return String(playlist.id) === String(playlistId);
+}
+
+function findPlaylistForModeUpdate(
+  configSnapshot: StreamingPlaylistConfigResponse | undefined,
+  listSnapshot: StreamingPlaylistsResponse | undefined,
+  playlistId: number | string,
+): StreamingPlaylistConfig | undefined {
+  return (
+    configSnapshot?.playlists.find((playlist) => playlistIdMatches(playlist, playlistId)) ??
+    listSnapshot?.playlists.find((playlist) => playlistIdMatches(playlist, playlistId))
+  );
+}
+
+function updatePlaylistConfigCache(
+  current: StreamingPlaylistConfigResponse | undefined,
+  updatedPlaylist: StreamingPlaylistConfig,
+): StreamingPlaylistConfigResponse | undefined {
+  if (current === undefined) {
+    return current;
+  }
+
+  return {
+    ...current,
+    playlists: current.playlists.map((playlist) =>
+      playlistIdMatches(playlist, updatedPlaylist.id) ? updatedPlaylist : playlist,
+    ),
+  };
+}
+
+function updateFullPlaylistListCache(
+  current: StreamingPlaylistsResponse | undefined,
+  updatedPlaylist: StreamingPlaylistConfig,
+): StreamingPlaylistsResponse | undefined {
+  if (current === undefined) {
+    return current;
+  }
+
+  if (updatedPlaylist.sync_mode !== "full") {
+    return {
+      ...current,
+      playlists: current.playlists.filter((playlist) => !playlistIdMatches(playlist, updatedPlaylist.id)),
+    };
+  }
+
+  const hasPlaylist = current.playlists.some((playlist) => playlistIdMatches(playlist, updatedPlaylist.id));
+
+  return {
+    ...current,
+    playlists: hasPlaylist
+      ? current.playlists.map((playlist) => (playlistIdMatches(playlist, updatedPlaylist.id) ? updatedPlaylist : playlist))
+      : [...current.playlists, updatedPlaylist],
+  };
 }
 
 const columnHelper = createColumnHelper<StreamingPlaylistConfig>();
@@ -163,6 +229,7 @@ export function PlaylistSyncConfiguration() {
   const configQuery = useStreamingPlaylistConfigQuery();
   const accountsQuery = useStreamingAccountsQuery();
   const [sorting, setSorting] = useState<SortingState>([]);
+  const [modeUpdateFailed, setModeUpdateFailed] = useState(false);
   const selectedSyncMutation = useMutation({
     mutationFn: syncStreamingAccount,
     onSuccess: async () => {
@@ -179,8 +246,43 @@ export function PlaylistSyncConfiguration() {
   });
   const toggleMutation = useMutation({
     mutationFn: updateStreamingPlaylistConfig,
-    onSuccess: async () => {
-      await invalidatePlaylistConfigurationMutationQueries(queryClient);
+    onError: (_error, _variables, context: PlaylistModeMutationContext | undefined) => {
+      queryClient.setQueryData(playlistQueryKeys.config(), context?.configSnapshot);
+      queryClient.setQueryData(playlistQueryKeys.list(), context?.listSnapshot);
+      setModeUpdateFailed(true);
+    },
+    onMutate: async (variables: UpdateStreamingPlaylistConfigInput) => {
+      setModeUpdateFailed(false);
+      await Promise.all([
+        queryClient.cancelQueries({ queryKey: playlistQueryKeys.config() }),
+        queryClient.cancelQueries({ queryKey: playlistQueryKeys.list() }),
+      ]);
+
+      const configSnapshot = queryClient.getQueryData<StreamingPlaylistConfigResponse>(playlistQueryKeys.config());
+      const listSnapshot = queryClient.getQueryData<StreamingPlaylistsResponse>(playlistQueryKeys.list());
+      const playlist = findPlaylistForModeUpdate(configSnapshot, listSnapshot, variables.playlistId);
+
+      if (playlist !== undefined) {
+        const optimisticPlaylist = { ...playlist, sync_mode: variables.sync_mode };
+
+        queryClient.setQueryData<StreamingPlaylistConfigResponse>(playlistQueryKeys.config(), (current) =>
+          updatePlaylistConfigCache(current, optimisticPlaylist),
+        );
+        queryClient.setQueryData<StreamingPlaylistsResponse>(playlistQueryKeys.list(), (current) =>
+          updateFullPlaylistListCache(current, optimisticPlaylist),
+        );
+      }
+
+      return { configSnapshot, listSnapshot };
+    },
+    onSuccess: async (updatedPlaylist) => {
+      queryClient.setQueryData<StreamingPlaylistConfigResponse>(playlistQueryKeys.config(), (current) =>
+        updatePlaylistConfigCache(current, updatedPlaylist),
+      );
+      queryClient.setQueryData<StreamingPlaylistsResponse>(playlistQueryKeys.list(), (current) =>
+        updateFullPlaylistListCache(current, updatedPlaylist),
+      );
+      await invalidateMissingLocallyQueries(queryClient);
     },
   });
   const accounts = accountsQuery.data?.accounts ?? [];
@@ -484,6 +586,14 @@ export function PlaylistSyncConfiguration() {
               </div>
               <p className={`${textClasses.caption} tabular-nums`}>{playlists.length} rows</p>
             </div>
+            {modeUpdateFailed ? (
+              <StatusMessage
+                body="The playlist mode could not be saved. The table was restored to its previous state."
+                className="max-w-2xl"
+                status="error"
+                title="Playlist mode update failed"
+              />
+            ) : null}
             <DataTable
               columns={columns}
               data={playlists}

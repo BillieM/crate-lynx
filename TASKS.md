@@ -60,7 +60,7 @@
     - playlist sync configuration renders no row checkboxes or selected-row action bar
     - top-level sync/metadata buttons and per-row mode controls still render
 
-- [ ] Make playlist sync mode changes update without visibly refreshing the full settings view
+- [x] Make playlist sync mode changes update without visibly refreshing the full settings view
   - Replace the playlist mode mutation's immediate full query invalidation with direct React Query cache updates.
   - On mode click, optimistically update the changed row's `sync_mode` in `playlistQueryKeys.config()`.
   - On mode click, also update `playlistQueryKeys.list()` so full-playlist surfaces stay consistent:
