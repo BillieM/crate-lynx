@@ -854,8 +854,9 @@ def test_streaming_account_store_syncs_youtube_music_playlist_tracks(
         def list_library_playlists(self):
             return [YouTubeMusicPlaylist(provider_playlist_id="PL9", title="Gym")]
 
-        def list_playlist_tracks(self, playlist_id):
+        def list_playlist_tracks(self, playlist_id, *, limit=100):
             seen["playlist_id"] = playlist_id
+            seen["limit"] = limit
             return [
                 YouTubeMusicTrack(
                     provider_track_id="track-9",
@@ -887,6 +888,7 @@ def test_streaming_account_store_syncs_youtube_music_playlist_tracks(
     assert len(synced) == 1
     assert synced[0].position == 1
     assert seen["playlist_id"] == "PL9"
+    assert seen["limit"] is None
     assert seen["auth"] == {"refresh_token": "refresh-token"}
     assert seen["user"] is None
     assert seen["language"] == "en"
@@ -903,13 +905,15 @@ def test_streaming_account_store_syncs_youtube_music_playlist_tracks(
     assert len(stored_tracks) == 1
     assert stored_tracks[0]["provider_track_id"] == "track-9"
     assert len(stored_memberships) == 1
+    persisted_playlist = store.list_playlists()[0]
+    assert persisted_playlist.tracks_synced_at is not None
 
 
-def test_streaming_account_store_syncs_only_selected_playlist_tracks(
+def test_streaming_account_store_syncs_only_active_playlist_tracks(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
-    database_url = f"sqlite:///{tmp_path / 'streaming-selected-sync.db'}"
+    database_url = f"sqlite:///{tmp_path / 'streaming-active-mode-sync.db'}"
     engine = create_engine(database_url)
     metadata.create_all(engine)
     monkeypatch.setenv("TOKEN_ENCRYPTION_KEY", Fernet.generate_key().decode("utf-8"))
@@ -922,26 +926,32 @@ def test_streaming_account_store_syncs_only_selected_playlist_tracks(
     playlists = store.upsert_playlists(
         account_id=account.id,
         playlists=[
-            YouTubeMusicPlaylist(provider_playlist_id="PL1", title="Selected Mix"),
-            YouTubeMusicPlaylist(provider_playlist_id="PL2", title="Skipped Mix"),
+            YouTubeMusicPlaylist(provider_playlist_id="PL1", title="Full Mix"),
+            YouTubeMusicPlaylist(provider_playlist_id="PL2", title="Match Mix"),
+            YouTubeMusicPlaylist(provider_playlist_id="PL3", title="Skipped Mix"),
         ],
     )
     store.set_playlist_selected_for_sync(
         playlist_id=playlists[0].id,
         selected_for_sync=True,
     )
+    store.set_playlist_sync_mode(
+        playlist_id=playlists[1].id,
+        sync_mode=PLAYLIST_SYNC_MODE_MATCH_ONLY,
+    )
 
-    seen: dict[str, list[str]] = {"playlist_ids": []}
+    seen: dict[str, list[object]] = {"playlist_fetches": []}
 
     class FakeAdapter:
         def list_library_playlists(self):
             return [
-                YouTubeMusicPlaylist(provider_playlist_id="PL1", title="Selected Mix"),
-                YouTubeMusicPlaylist(provider_playlist_id="PL2", title="Skipped Mix"),
+                YouTubeMusicPlaylist(provider_playlist_id="PL1", title="Full Mix"),
+                YouTubeMusicPlaylist(provider_playlist_id="PL2", title="Match Mix"),
+                YouTubeMusicPlaylist(provider_playlist_id="PL3", title="Skipped Mix"),
             ]
 
-        def list_playlist_tracks(self, playlist_id):
-            seen["playlist_ids"].append(playlist_id)
+        def list_playlist_tracks(self, playlist_id, *, limit=100):
+            seen["playlist_fetches"].append((playlist_id, limit))
             return [
                 YouTubeMusicTrack(
                     provider_track_id=f"{playlist_id}-track",
@@ -963,13 +973,21 @@ def test_streaming_account_store_syncs_only_selected_playlist_tracks(
 
     with engine.connect() as connection:
         stored_memberships = list(
-            connection.execute(select(playlist_membership_table)).mappings()
+            connection.execute(
+                select(playlist_membership_table).order_by(
+                    playlist_membership_table.c.playlist_id.asc()
+                )
+            ).mappings()
         )
 
-    assert seen["playlist_ids"] == ["PL1"]
-    assert [membership.playlist_id for membership in synced] == [playlists[0].id]
+    assert seen["playlist_fetches"] == [("PL1", None), ("PL2", None)]
+    assert [membership.playlist_id for membership in synced] == [
+        playlists[0].id,
+        playlists[1].id,
+    ]
     assert [membership["playlist_id"] for membership in stored_memberships] == [
-        playlists[0].id
+        playlists[0].id,
+        playlists[1].id,
     ]
 
 
@@ -995,8 +1013,9 @@ def test_streaming_account_store_syncs_single_playlist_ignoring_selected_flag(
     seen: dict[str, object] = {}
 
     class FakeAdapter:
-        def list_playlist_tracks(self, playlist_id):
+        def list_playlist_tracks(self, playlist_id, *, limit=100):
             seen["playlist_id"] = playlist_id
+            seen["limit"] = limit
             return [
                 YouTubeMusicTrack(
                     provider_track_id="track-9",
@@ -1022,6 +1041,7 @@ def test_streaming_account_store_syncs_single_playlist_ignoring_selected_flag(
         )
 
     assert seen["playlist_id"] == "PL9"
+    assert seen["limit"] is None
     assert [membership.playlist_id for membership in synced] == [playlist.id]
     assert [membership["playlist_id"] for membership in stored_memberships] == [
         playlist.id
@@ -1079,7 +1099,8 @@ def test_streaming_account_store_preserves_membership_for_malformed_playlist(
                 YouTubeMusicPlaylist(provider_playlist_id="PL2", title="Fresh Mix"),
             ]
 
-        def list_playlist_tracks(self, playlist_id):
+        def list_playlist_tracks(self, playlist_id, *, limit=100):
+            assert limit is None
             if playlist_id == "PL1":
                 raise MalformedPlaylistPayloadError("invalid tracks payload")
             return [
@@ -1185,7 +1206,8 @@ def test_streaming_account_store_empty_playlist_clears_membership_and_error(
         def list_library_playlists(self):
             return [YouTubeMusicPlaylist(provider_playlist_id="PL1", title="Saved Mix")]
 
-        def list_playlist_tracks(self, playlist_id):
+        def list_playlist_tracks(self, playlist_id, *, limit=100):
+            assert limit is None
             return []
 
     monkeypatch.setattr(
@@ -1268,7 +1290,8 @@ def test_streaming_account_store_marks_logged_out_playlist_response_as_auth_erro
     )
 
     class FakeAdapter:
-        def list_playlist_tracks(self, playlist_id):
+        def list_playlist_tracks(self, playlist_id, *, limit=100):
+            assert limit is None
             raise YouTubeMusicAuthenticationError(
                 "Playlist response reported logged_in: 0"
             )
@@ -1317,7 +1340,8 @@ def test_streaming_account_store_clears_auth_errors_after_successful_sync(
         def list_library_playlists(self):
             return [YouTubeMusicPlaylist(provider_playlist_id="PL9", title="Gym")]
 
-        def list_playlist_tracks(self, playlist_id):
+        def list_playlist_tracks(self, playlist_id, *, limit=100):
+            assert limit is None
             return []
 
     monkeypatch.setattr(

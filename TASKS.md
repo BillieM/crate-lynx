@@ -19,7 +19,7 @@
   - Tolerate missing, blank, or non-numeric provider counts.
   - Test provider count normalization and metadata refresh persistence.
 
-- [ ] Update active playlist track import behavior for off, match-only, and full modes
+- [x] Update active playlist track import behavior for off, match-only, and full modes
   - Import tracks for active modes only: `full` and `match_only`.
   - Skip `off` playlists during account sync.
   - Fetch all tracks for active playlist imports with `get_playlist(..., limit=None)`.

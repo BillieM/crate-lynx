@@ -11,11 +11,16 @@ from app.streaming.adapters.youtube_music import (
     YouTubeMusicAuthenticationError,
     YouTubeMusicAdapter,
     YouTubeMusicPlaylist,
-    YouTubeMusicTrackMetadata,
     YouTubeMusicTrack,
+    YouTubeMusicTrackMetadata,
     sync_library_playlists,
     sync_library_playlist_tracks,
     validate_youtube_music_browser_auth,
+)
+from app.streaming.models import (
+    PLAYLIST_SYNC_MODE_FULL,
+    PLAYLIST_SYNC_MODE_MATCH_ONLY,
+    PLAYLIST_SYNC_MODE_OFF,
 )
 
 
@@ -752,7 +757,7 @@ def test_sync_library_playlists_uses_adapter_and_store() -> None:
     assert seen["synced_at"] is not None
 
 
-def test_sync_library_playlist_tracks_uses_adapter_and_store() -> None:
+def test_sync_library_playlist_tracks_uses_active_sync_modes_and_full_fetches() -> None:
     seen: dict[str, object] = {}
 
     class FakePlaylistStore:
@@ -762,10 +767,19 @@ def test_sync_library_playlist_tracks_uses_adapter_and_store() -> None:
             seen["synced_at"] = synced_at
             return [
                 SimpleNamespace(
-                    id=11, provider_playlist_id="PL1", selected_for_sync=True
+                    id=11,
+                    provider_playlist_id="PL1",
+                    sync_mode=PLAYLIST_SYNC_MODE_FULL,
                 ),
                 SimpleNamespace(
-                    id=12, provider_playlist_id="PL2", selected_for_sync=True
+                    id=12,
+                    provider_playlist_id="PL2",
+                    sync_mode=PLAYLIST_SYNC_MODE_MATCH_ONLY,
+                ),
+                SimpleNamespace(
+                    id=13,
+                    provider_playlist_id="PL3",
+                    sync_mode=PLAYLIST_SYNC_MODE_OFF,
                 ),
             ]
 
@@ -788,9 +802,12 @@ def test_sync_library_playlist_tracks_uses_adapter_and_store() -> None:
             return [
                 YouTubeMusicPlaylist(provider_playlist_id="PL1", title="Road Trip"),
                 YouTubeMusicPlaylist(provider_playlist_id="PL2", title="Focus"),
+                YouTubeMusicPlaylist(provider_playlist_id="PL3", title="Archived"),
             ]
 
-        def list_playlist_tracks(self, playlist_id):
+        def list_playlist_tracks(self, playlist_id, *, limit=100):
+            track_fetches = seen.setdefault("track_fetches", [])
+            track_fetches.append({"playlist_id": playlist_id, "limit": limit})
             return [
                 YouTubeMusicTrack(
                     provider_track_id=f"{playlist_id}-track-1",
@@ -814,8 +831,13 @@ def test_sync_library_playlist_tracks_uses_adapter_and_store() -> None:
     assert seen["playlists"] == [
         YouTubeMusicPlaylist(provider_playlist_id="PL1", title="Road Trip"),
         YouTubeMusicPlaylist(provider_playlist_id="PL2", title="Focus"),
+        YouTubeMusicPlaylist(provider_playlist_id="PL3", title="Archived"),
     ]
     assert seen["synced_at"] is not None
+    assert seen["track_fetches"] == [
+        {"playlist_id": "PL1", "limit": None},
+        {"playlist_id": "PL2", "limit": None},
+    ]
     assert seen["memberships"] == [
         {
             "playlist_id": 11,
@@ -859,10 +881,14 @@ def test_sync_library_playlist_tracks_skips_malformed_playlist_payload() -> None
         def upsert_playlists(self, *, account_id, playlists, synced_at):
             return [
                 SimpleNamespace(
-                    id=11, provider_playlist_id="PL1", selected_for_sync=True
+                    id=11,
+                    provider_playlist_id="PL1",
+                    sync_mode=PLAYLIST_SYNC_MODE_FULL,
                 ),
                 SimpleNamespace(
-                    id=12, provider_playlist_id="PL2", selected_for_sync=True
+                    id=12,
+                    provider_playlist_id="PL2",
+                    sync_mode=PLAYLIST_SYNC_MODE_MATCH_ONLY,
                 ),
             ]
 
@@ -886,7 +912,8 @@ def test_sync_library_playlist_tracks_skips_malformed_playlist_payload() -> None
                 YouTubeMusicPlaylist(provider_playlist_id="PL2", title="Focus"),
             ]
 
-        def list_playlist_tracks(self, playlist_id):
+        def list_playlist_tracks(self, playlist_id, *, limit=100):
+            assert limit is None
             if playlist_id == "PL1":
                 raise MalformedPlaylistPayloadError("invalid tracks payload")
             return [
@@ -923,10 +950,14 @@ def test_sync_library_playlist_tracks_isolates_playlist_failures() -> None:
         def upsert_playlists(self, *, account_id, playlists, synced_at):
             return [
                 SimpleNamespace(
-                    id=11, provider_playlist_id="PL1", selected_for_sync=True
+                    id=11,
+                    provider_playlist_id="PL1",
+                    sync_mode=PLAYLIST_SYNC_MODE_FULL,
                 ),
                 SimpleNamespace(
-                    id=12, provider_playlist_id="PL2", selected_for_sync=True
+                    id=12,
+                    provider_playlist_id="PL2",
+                    sync_mode=PLAYLIST_SYNC_MODE_MATCH_ONLY,
                 ),
             ]
 
@@ -950,7 +981,8 @@ def test_sync_library_playlist_tracks_isolates_playlist_failures() -> None:
                 YouTubeMusicPlaylist(provider_playlist_id="PL2", title="Focus"),
             ]
 
-        def list_playlist_tracks(self, playlist_id):
+        def list_playlist_tracks(self, playlist_id, *, limit=100):
+            assert limit is None
             if playlist_id == "PL1":
                 raise RuntimeError("upstream request failed")
             return [

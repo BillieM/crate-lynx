@@ -1,19 +1,27 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from collections.abc import Mapping
 from http.cookies import SimpleCookie
 from typing import Any
 
 from ytmusicapi import YTMusic
 
 from app.streaming.adapters.base import StreamingAdapter
+from app.streaming.models import (
+    PLAYLIST_SYNC_MODE_FULL,
+    PLAYLIST_SYNC_MODE_MATCH_ONLY,
+)
 
 
 JsonMapping = dict[str, Any]
 logger = logging.getLogger(__name__)
+ACTIVE_PLAYLIST_SYNC_MODES = {
+    PLAYLIST_SYNC_MODE_FULL,
+    PLAYLIST_SYNC_MODE_MATCH_ONLY,
+}
 
 
 class MalformedPlaylistPayloadError(RuntimeError):
@@ -353,15 +361,18 @@ def sync_library_playlist_tracks(
     )
 
     synced_memberships: list[Any] = []
-    selected_playlists = [
+    active_playlists = [
         playlist
         for playlist in stored_playlists
-        if getattr(playlist, "selected_for_sync", False)
+        if _playlist_import_is_active(playlist)
     ]
 
-    for playlist in selected_playlists:
+    for playlist in active_playlists:
         try:
-            tracks = adapter.list_playlist_tracks(playlist.provider_playlist_id)
+            tracks = adapter.list_playlist_tracks(
+                playlist.provider_playlist_id,
+                limit=None,
+            )
             synced_memberships.extend(
                 playlist_store.replace_playlist_membership(
                     playlist_id=playlist.id,
@@ -412,7 +423,10 @@ def sync_single_library_playlist_tracks(
 ) -> list[Any]:
     sync_timestamp = datetime.now(UTC)
     try:
-        tracks = adapter.list_playlist_tracks(playlist.provider_playlist_id)
+        tracks = adapter.list_playlist_tracks(
+            playlist.provider_playlist_id,
+            limit=None,
+        )
         synced_memberships = playlist_store.replace_playlist_membership(
             playlist_id=playlist.id,
             tracks=tracks,
@@ -450,6 +464,14 @@ def sync_single_library_playlist_tracks(
             playlist.provider_playlist_id,
         )
         return []
+
+
+def _playlist_import_is_active(playlist: Any) -> bool:
+    sync_mode = getattr(playlist, "sync_mode", None)
+    if isinstance(sync_mode, str):
+        return sync_mode in ACTIVE_PLAYLIST_SYNC_MODES
+
+    return bool(getattr(playlist, "selected_for_sync", False))
 
 
 def _mark_playlist_sync_failure(
