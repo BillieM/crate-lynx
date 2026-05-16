@@ -1,7 +1,7 @@
 import { createColumnHelper, type RowSelectionState, type SortingState } from "@tanstack/react-table";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { CheckCircle2, RefreshCw, Search, Settings2, XCircle } from "lucide-react";
-import { useMemo, useState } from "react";
+import { type ReactNode, useMemo, useState } from "react";
 import { ActionButton } from "../../components/ActionButton";
 import { DataTable } from "../../components/DataTable";
 import { EmptyStateCard } from "../../components/EmptyStateCard";
@@ -85,7 +85,15 @@ type BulkPlaylistConfigStatus = {
   title: string;
 };
 
-function PlaylistCollectionState({ status }: { status: PlaylistCollectionStatus }) {
+function PlaylistCollectionState({
+  actionSlot,
+  status,
+  statusSlot,
+}: {
+  actionSlot?: ReactNode;
+  status: PlaylistCollectionStatus;
+  statusSlot?: ReactNode;
+}) {
   const copy = {
     empty: {
       title: "No playlists discovered",
@@ -109,14 +117,8 @@ function PlaylistCollectionState({ status }: { status: PlaylistCollectionStatus 
     <section className="flex min-h-0 flex-1 items-center justify-center">
       <div className="grid justify-items-center gap-3">
         <EmptyStateCard body={copy[status].body} className={layoutClasses.emptyStateNarrow} title={copy[status].title} />
-        {status === "empty" ? (
-          <a
-            className={`${controlClasses.actionButton} ${actionButtonToneClasses.neutral}`}
-            href="/settings/authentication"
-          >
-            Authentication
-          </a>
-        ) : null}
+        {statusSlot}
+        {actionSlot}
       </div>
     </section>
   );
@@ -193,14 +195,15 @@ export function PlaylistSyncConfiguration() {
       await invalidatePlaylistConfigurationMutationQueries(queryClient);
     },
   });
+  const accounts = accountsQuery.data?.accounts ?? [];
   const playlists = configQuery.data?.playlists ?? emptyPlaylistConfigs;
   const modeCounts = getPlaylistModeCounts(playlists);
-  const accountId = playlists[0]?.account_id;
-  const accounts = accountsQuery.data?.accounts ?? [];
+  const playlistAccountId = playlists[0]?.account_id;
   const activeAccount =
-    accounts.find((account) => account.id === accountId) ??
+    accounts.find((account) => account.id === playlistAccountId) ??
     accounts.find((account) => account.provider === "youtube_music") ??
     null;
+  const accountId = playlistAccountId ?? activeAccount?.id;
   const accountAuthError =
     activeAccount && (activeAccount.auth_state === "error" || activeAccount.auth_error !== null)
       ? {
@@ -427,7 +430,49 @@ export function PlaylistSyncConfiguration() {
   }
 
   if (playlists.length === 0) {
-    return <PlaylistCollectionState status="empty" />;
+    const emptyActionSlot =
+      activeAccount === null ? (
+        <a className={`${controlClasses.actionButton} ${actionButtonToneClasses.neutral}`} href="/settings/authentication">
+          Authentication
+        </a>
+      ) : accountAuthError ? (
+        <a className={`${controlClasses.actionButton} ${actionButtonToneClasses.danger}`} href="/settings/authentication">
+          Refresh authentication
+        </a>
+      ) : (
+        <ActionButton
+          disabled={accountId === undefined || metadataRefreshMutation.isPending}
+          onClick={() => {
+            if (accountId !== undefined) {
+              metadataRefreshMutation.mutate(accountId);
+            }
+          }}
+        >
+          {metadataRefreshMutation.isPending ? "Refreshing..." : "Refresh playlist metadata"}
+        </ActionButton>
+      );
+
+    return (
+      <PlaylistCollectionState
+        actionSlot={emptyActionSlot}
+        status="empty"
+        statusSlot={
+          <>
+            {accountAuthError ? (
+              <StatusMessage body={accountAuthError.body} status="error" title={accountAuthError.title} />
+            ) : null}
+            <PlaylistActionStatus
+              errorText="Metadata refresh failed."
+              isError={metadataRefreshMutation.isError}
+              isPending={metadataRefreshMutation.isPending}
+              isSuccess={metadataRefreshMutation.isSuccess}
+              pendingText="Refreshing playlist metadata..."
+              successText="Metadata refresh queued."
+            />
+          </>
+        }
+      />
+    );
   }
 
   return (

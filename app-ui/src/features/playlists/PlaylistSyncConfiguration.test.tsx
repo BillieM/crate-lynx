@@ -222,8 +222,23 @@ describe("PlaylistSyncConfiguration", () => {
     expect(screen.getByText("Malformed playlist payload")).toBeInTheDocument();
   });
 
-  it("links empty playlist configuration to authentication settings", async () => {
-    mockConfigFetch({ playlists: [] });
+  it("queues metadata refresh from an empty playlist configuration when an account exists", async () => {
+    const fetchMock = mockConfigFetch({ playlists: [] });
+
+    renderPlaylistSyncConfiguration();
+
+    expect(await screen.findByRole("heading", { name: "No playlists discovered" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Refresh playlist metadata" }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith("/api/streaming/accounts/4/refresh-metadata", { method: "POST" });
+    });
+    expect(await screen.findByText("Metadata refresh queued.")).toBeInTheDocument();
+  });
+
+  it("links empty playlist configuration to authentication settings when no account exists", async () => {
+    mockConfigFetch({ playlists: [] }, { accounts: [] });
 
     renderPlaylistSyncConfiguration();
 
