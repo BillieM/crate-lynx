@@ -33,7 +33,12 @@ from app.streaming.schemas import (
     UpdateStreamingAccountAuthRequest,
     UpdateStreamingPlaylistRequest,
 )
-from app.streaming.models import metadata, streaming_accounts_table
+from app.streaming.models import (
+    PLAYLIST_SYNC_MODE_FULL,
+    PLAYLIST_SYNC_MODE_OFF,
+    metadata,
+    streaming_accounts_table,
+)
 from app.streaming.models import (
     playlist_membership_table,
     streaming_playlists_table,
@@ -900,7 +905,7 @@ def test_playlist_detail_endpoint_returns_real_link_counts(
                 account_id=1,
                 provider_playlist_id="PL7",
                 title="Road Trip Mix",
-                synced_at=datetime(2026, 5, 1, 9, 0, tzinfo=UTC),
+                metadata_synced_at=datetime(2026, 5, 1, 9, 0, tzinfo=UTC),
             )
         )
         connection.execute(
@@ -1431,14 +1436,14 @@ def test_missing_locally_endpoint_aggregates_playlist_usage_and_excludes_links(
                     "account_id": 1,
                     "provider_playlist_id": "PL1",
                     "title": "Morning Mix",
-                    "selected_for_sync": True,
+                    "sync_mode": PLAYLIST_SYNC_MODE_FULL,
                 },
                 {
                     "id": 2,
                     "account_id": 1,
                     "provider_playlist_id": "PL2",
                     "title": "Road Trip",
-                    "selected_for_sync": False,
+                    "sync_mode": PLAYLIST_SYNC_MODE_OFF,
                 },
             ],
         )
@@ -1657,7 +1662,7 @@ def test_playlist_m3u_export_endpoint_returns_attachment(
                 account_id=1,
                 provider_playlist_id="PL7",
                 title="Road Trip Mix",
-                synced_at=datetime(2026, 5, 1, 9, 0, tzinfo=UTC),
+                metadata_synced_at=datetime(2026, 5, 1, 9, 0, tzinfo=UTC),
             )
         )
         connection.execute(

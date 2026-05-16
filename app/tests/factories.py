@@ -17,6 +17,8 @@ from app.matching.pipeline import (
     suggested_links_table,
 )
 from app.streaming.models import (
+    PLAYLIST_SYNC_MODE_FULL,
+    PLAYLIST_SYNC_MODE_OFF,
     YOUTUBE_MUSIC_PROVIDER,
     playlist_membership_table,
     streaming_accounts_table,
@@ -52,6 +54,7 @@ class TestDataFactory:
         last_sync_error: str | None = None,
         last_sync_error_at: datetime | None = None,
         provider_playlist_id: str = "PL1",
+        sync_mode: str | None = None,
         selected_for_sync: bool = False,
         synced_at: datetime | None = None,
         title: str = "Morning Mix",
@@ -61,10 +64,14 @@ class TestDataFactory:
             account_id=account_id,
             last_sync_error=last_sync_error,
             last_sync_error_at=last_sync_error_at,
+            metadata_synced_at=synced_at,
             provider_playlist_id=provider_playlist_id,
-            selected_for_sync=selected_for_sync,
-            synced_at=synced_at,
+            sync_mode=sync_mode
+            or (
+                PLAYLIST_SYNC_MODE_FULL if selected_for_sync else PLAYLIST_SYNC_MODE_OFF
+            ),
             title=title,
+            tracks_synced_at=synced_at,
         )
 
     def streaming_track(

@@ -7,8 +7,10 @@ import os
 from pathlib import Path
 from threading import Barrier
 
+import pytest
 from cryptography.fernet import Fernet
-from sqlalchemy import create_engine, select
+from sqlalchemy import create_engine, insert, select
+from sqlalchemy.exc import IntegrityError
 from ytmusicapi.exceptions import YTMusicUserError
 
 from app.streaming.jobs import (
@@ -17,6 +19,9 @@ from app.streaming.jobs import (
     run_youtube_music_sync_job,
 )
 from app.streaming.models import (
+    PLAYLIST_SYNC_MODE_FULL,
+    PLAYLIST_SYNC_MODE_MATCH_ONLY,
+    PLAYLIST_SYNC_MODE_OFF,
     YOUTUBE_MUSIC_PROVIDER,
     metadata,
     playlist_membership_table,
@@ -287,7 +292,10 @@ def test_streaming_account_store_upserts_playlists(
     assert len(stored_playlist_rows) == 2
     assert stored_playlist_rows[0]["provider_playlist_id"] == "PL1"
     assert stored_playlist_rows[0]["title"] == "Morning Mix Updated"
-    assert stored_playlist_rows[0]["synced_at"] is not None
+    assert stored_playlist_rows[0]["sync_mode"] == PLAYLIST_SYNC_MODE_OFF
+    assert stored_playlist_rows[0]["provider_track_count"] is None
+    assert stored_playlist_rows[0]["metadata_synced_at"] is not None
+    assert stored_playlist_rows[0]["tracks_synced_at"] is None
     assert stored_playlist_rows[1]["provider_playlist_id"] == "PL2"
     assert stored_playlist_rows[1]["title"] == "Evening Mix"
 
@@ -377,6 +385,7 @@ def test_streaming_account_store_updates_playlist_selected_for_sync(
     )[0]
 
     assert playlist.selected_for_sync is False
+    assert playlist.sync_mode == PLAYLIST_SYNC_MODE_OFF
 
     selected = store.set_playlist_selected_for_sync(
         playlist_id=playlist.id,
@@ -384,6 +393,7 @@ def test_streaming_account_store_updates_playlist_selected_for_sync(
     )
     assert selected is not None
     assert selected.selected_for_sync is True
+    assert selected.sync_mode == PLAYLIST_SYNC_MODE_FULL
 
     updated = store.upsert_playlists(
         account_id=account.id,
@@ -396,6 +406,7 @@ def test_streaming_account_store_updates_playlist_selected_for_sync(
     )[0]
 
     assert updated.selected_for_sync is True
+    assert updated.sync_mode == PLAYLIST_SYNC_MODE_FULL
     assert (
         store.set_playlist_selected_for_sync(
             playlist_id=999,
@@ -403,6 +414,72 @@ def test_streaming_account_store_updates_playlist_selected_for_sync(
         )
         is None
     )
+
+
+def test_streaming_account_store_updates_playlist_sync_mode(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite:///{tmp_path / 'streaming-playlist-sync-mode.db'}"
+    engine = create_engine(database_url)
+    metadata.create_all(engine)
+    monkeypatch.setenv("TOKEN_ENCRYPTION_KEY", Fernet.generate_key().decode("utf-8"))
+
+    store = StreamingAccountStore(database_url)
+    account = store.create_youtube_music_account(
+        display_name="Listener",
+        browser_headers={"refresh_token": "refresh-token"},
+    )
+    playlist = store.upsert_playlists(
+        account_id=account.id,
+        playlists=[
+            YouTubeMusicPlaylist(
+                provider_playlist_id="PL1",
+                title="Morning Mix",
+            )
+        ],
+    )[0]
+
+    match_only = store.set_playlist_sync_mode(
+        playlist_id=playlist.id,
+        sync_mode=PLAYLIST_SYNC_MODE_MATCH_ONLY,
+    )
+
+    assert match_only is not None
+    assert match_only.sync_mode == PLAYLIST_SYNC_MODE_MATCH_ONLY
+    assert match_only.selected_for_sync is False
+    assert (
+        store.set_playlist_sync_mode(
+            playlist_id=999,
+            sync_mode=PLAYLIST_SYNC_MODE_FULL,
+        )
+        is None
+    )
+
+
+def test_streaming_playlist_sync_mode_is_constrained(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite:///{tmp_path / 'streaming-playlist-sync-constraint.db'}"
+    engine = create_engine(database_url)
+    metadata.create_all(engine)
+    monkeypatch.setenv("TOKEN_ENCRYPTION_KEY", Fernet.generate_key().decode("utf-8"))
+
+    account = StreamingAccountStore(database_url).create_youtube_music_account(
+        display_name="Listener",
+        browser_headers={"refresh_token": "refresh-token"},
+    )
+
+    with pytest.raises(IntegrityError), engine.begin() as connection:
+        connection.execute(
+            insert(streaming_playlists_table).values(
+                account_id=account.id,
+                provider_playlist_id="PL-invalid",
+                sync_mode="selected",
+                title="Invalid Mode",
+            )
+        )
 
 
 def test_streaming_account_store_syncs_youtube_music_playlists(
@@ -520,9 +597,15 @@ def test_streaming_account_store_lists_playlists_with_track_counts(
     assert listed[0].account_id == account.id
     assert listed[0].title == "Morning Mix"
     assert listed[0].track_count == 2
+    assert listed[0].provider_track_count is None
+    assert listed[0].metadata_synced_at == synced_at.replace(tzinfo=None)
+    assert listed[0].tracks_synced_at is None
     assert listed[0].synced_at == synced_at.replace(tzinfo=None)
     assert listed[1].title == "Empty Playlist"
     assert listed[1].track_count == 0
+    assert listed[1].provider_track_count is None
+    assert listed[1].metadata_synced_at == synced_at.replace(tzinfo=None)
+    assert listed[1].tracks_synced_at is None
     assert listed[1].synced_at == synced_at.replace(tzinfo=None)
 
 
@@ -571,6 +654,7 @@ def test_streaming_account_store_persists_playlist_sync_failures(
     store.mark_playlist_sync_success(playlist_id=playlist.id, synced_at=synced_at)
 
     synced_playlist = store.list_playlists()[0]
+    assert synced_playlist.tracks_synced_at == synced_at.replace(tzinfo=None)
     assert synced_playlist.synced_at == synced_at.replace(tzinfo=None)
     assert synced_playlist.last_sync_error is None
     assert synced_playlist.last_sync_error_at is None

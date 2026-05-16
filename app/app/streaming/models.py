@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from datetime import datetime
 
 from sqlalchemy import (
-    Boolean,
+    CheckConstraint,
     Column,
     DateTime,
     Index,
@@ -13,14 +13,22 @@ from sqlalchemy import (
     String,
     Table,
     UniqueConstraint,
-    false,
     func,
+    text,
 )
 
 
 YOUTUBE_MUSIC_PROVIDER = "youtube_music"
 STREAMING_ACCOUNT_AUTH_STATE_CONNECTED = "connected"
 STREAMING_ACCOUNT_AUTH_STATE_ERROR = "error"
+PLAYLIST_SYNC_MODE_OFF = "off"
+PLAYLIST_SYNC_MODE_MATCH_ONLY = "match_only"
+PLAYLIST_SYNC_MODE_FULL = "full"
+PLAYLIST_SYNC_MODES = (
+    PLAYLIST_SYNC_MODE_OFF,
+    PLAYLIST_SYNC_MODE_MATCH_ONLY,
+    PLAYLIST_SYNC_MODE_FULL,
+)
 
 metadata = MetaData()
 
@@ -49,10 +57,21 @@ streaming_playlists_table = Table(
     Column("account_id", Integer, nullable=False),
     Column("provider_playlist_id", String, nullable=False),
     Column("title", String, nullable=False),
-    Column("selected_for_sync", Boolean, nullable=False, server_default=false()),
-    Column("synced_at", DateTime(timezone=True), nullable=True),
+    Column(
+        "sync_mode",
+        String,
+        nullable=False,
+        server_default=text(f"'{PLAYLIST_SYNC_MODE_OFF}'"),
+    ),
+    Column("provider_track_count", Integer, nullable=True),
+    Column("metadata_synced_at", DateTime(timezone=True), nullable=True),
+    Column("tracks_synced_at", DateTime(timezone=True), nullable=True),
     Column("last_sync_error", String, nullable=True),
     Column("last_sync_error_at", DateTime(timezone=True), nullable=True),
+    CheckConstraint(
+        "sync_mode IN ('off', 'match_only', 'full')",
+        name="ck_streaming_playlists_sync_mode",
+    ),
     UniqueConstraint(
         "account_id",
         "provider_playlist_id",
@@ -129,10 +148,20 @@ class StreamingPlaylistRecord:
     account_id: int
     provider_playlist_id: str
     title: str
-    selected_for_sync: bool
-    synced_at: datetime | None
+    sync_mode: str
+    provider_track_count: int | None
+    metadata_synced_at: datetime | None
+    tracks_synced_at: datetime | None
     last_sync_error: str | None
     last_sync_error_at: datetime | None
+
+    @property
+    def selected_for_sync(self) -> bool:
+        return self.sync_mode == PLAYLIST_SYNC_MODE_FULL
+
+    @property
+    def synced_at(self) -> datetime | None:
+        return self.tracks_synced_at or self.metadata_synced_at
 
 
 @dataclass(frozen=True, slots=True)
@@ -141,11 +170,21 @@ class StreamingPlaylistSummary:
     account_id: int
     provider_playlist_id: str
     title: str
-    selected_for_sync: bool
+    sync_mode: str
+    provider_track_count: int | None
     track_count: int
-    synced_at: datetime | None
+    metadata_synced_at: datetime | None
+    tracks_synced_at: datetime | None
     last_sync_error: str | None
     last_sync_error_at: datetime | None
+
+    @property
+    def selected_for_sync(self) -> bool:
+        return self.sync_mode == PLAYLIST_SYNC_MODE_FULL
+
+    @property
+    def synced_at(self) -> datetime | None:
+        return self.tracks_synced_at or self.metadata_synced_at
 
 
 @dataclass(frozen=True, slots=True)

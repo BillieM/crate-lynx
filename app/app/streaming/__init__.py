@@ -6,6 +6,10 @@ from app.streaming.jobs import (
     run_youtube_music_sync_job,
 )
 from app.streaming.models import (
+    PLAYLIST_SYNC_MODE_FULL,
+    PLAYLIST_SYNC_MODE_MATCH_ONLY,
+    PLAYLIST_SYNC_MODE_OFF,
+    PLAYLIST_SYNC_MODES,
     PlaylistMembershipRecord,
     PersistedStreamingAccount,
     StoredStreamingAccount,
@@ -60,6 +64,10 @@ __all__ = [
     "PlaylistSyncResponse",
     "PlaylistTrackResponse",
     "PlaylistTracksResponse",
+    "PLAYLIST_SYNC_MODE_FULL",
+    "PLAYLIST_SYNC_MODE_MATCH_ONLY",
+    "PLAYLIST_SYNC_MODE_OFF",
+    "PLAYLIST_SYNC_MODES",
     "StreamingAccountResponse",
     "StreamingPlaylistConfigResponse",
     "StreamingPlaylistResponse",

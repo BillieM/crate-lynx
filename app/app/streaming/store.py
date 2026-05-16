@@ -30,6 +30,9 @@ from app.streaming.adapters.youtube_music import (
 )
 from app.streaming.crypto import decrypt_token, encrypt_token
 from app.streaming.models import (
+    PLAYLIST_SYNC_MODE_FULL,
+    PLAYLIST_SYNC_MODE_OFF,
+    PLAYLIST_SYNC_MODES,
     PlaylistMembershipRecord,
     PersistedStreamingAccount,
     StoredStreamingAccount,
@@ -261,8 +264,10 @@ class StreamingAccountStore:
                     account_id=account_id,
                     provider_playlist_id=playlist.provider_playlist_id,
                     title=playlist.title,
-                    selected_for_sync=False,
-                    synced_at=sync_timestamp,
+                    sync_mode=PLAYLIST_SYNC_MODE_OFF,
+                    provider_track_count=None,
+                    metadata_synced_at=sync_timestamp,
+                    tracks_synced_at=None,
                     last_sync_error=None,
                     last_sync_error_at=None,
                 )
@@ -275,15 +280,19 @@ class StreamingAccountStore:
                             ],
                             set_={
                                 "title": statement.excluded.title,
-                                "synced_at": statement.excluded.synced_at,
+                                "metadata_synced_at": (
+                                    statement.excluded.metadata_synced_at
+                                ),
                             },
                         ).returning(
                             streaming_playlists_table.c.id,
                             streaming_playlists_table.c.account_id,
                             streaming_playlists_table.c.provider_playlist_id,
                             streaming_playlists_table.c.title,
-                            streaming_playlists_table.c.selected_for_sync,
-                            streaming_playlists_table.c.synced_at,
+                            streaming_playlists_table.c.sync_mode,
+                            streaming_playlists_table.c.provider_track_count,
+                            streaming_playlists_table.c.metadata_synced_at,
+                            streaming_playlists_table.c.tracks_synced_at,
                             streaming_playlists_table.c.last_sync_error,
                             streaming_playlists_table.c.last_sync_error_at,
                         )
@@ -298,8 +307,10 @@ class StreamingAccountStore:
                         account_id=row["account_id"],
                         provider_playlist_id=row["provider_playlist_id"],
                         title=row["title"],
-                        selected_for_sync=row["selected_for_sync"],
-                        synced_at=row["synced_at"],
+                        sync_mode=row["sync_mode"],
+                        provider_track_count=row["provider_track_count"],
+                        metadata_synced_at=row["metadata_synced_at"],
+                        tracks_synced_at=row["tracks_synced_at"],
                         last_sync_error=row["last_sync_error"],
                         last_sync_error_at=row["last_sync_error_at"],
                     )
@@ -315,8 +326,10 @@ class StreamingAccountStore:
                     streaming_playlists_table.c.account_id,
                     streaming_playlists_table.c.provider_playlist_id,
                     streaming_playlists_table.c.title,
-                    streaming_playlists_table.c.selected_for_sync,
-                    streaming_playlists_table.c.synced_at,
+                    streaming_playlists_table.c.sync_mode,
+                    streaming_playlists_table.c.provider_track_count,
+                    streaming_playlists_table.c.metadata_synced_at,
+                    streaming_playlists_table.c.tracks_synced_at,
                     streaming_playlists_table.c.last_sync_error,
                     streaming_playlists_table.c.last_sync_error_at,
                     func.count(playlist_membership_table.c.id).label("track_count"),
@@ -333,8 +346,10 @@ class StreamingAccountStore:
                     streaming_playlists_table.c.account_id,
                     streaming_playlists_table.c.provider_playlist_id,
                     streaming_playlists_table.c.title,
-                    streaming_playlists_table.c.selected_for_sync,
-                    streaming_playlists_table.c.synced_at,
+                    streaming_playlists_table.c.sync_mode,
+                    streaming_playlists_table.c.provider_track_count,
+                    streaming_playlists_table.c.metadata_synced_at,
+                    streaming_playlists_table.c.tracks_synced_at,
                     streaming_playlists_table.c.last_sync_error,
                     streaming_playlists_table.c.last_sync_error_at,
                 )
@@ -347,9 +362,11 @@ class StreamingAccountStore:
                     account_id=row["account_id"],
                     provider_playlist_id=row["provider_playlist_id"],
                     title=row["title"],
-                    selected_for_sync=row["selected_for_sync"],
+                    sync_mode=row["sync_mode"],
+                    provider_track_count=row["provider_track_count"],
                     track_count=row["track_count"],
-                    synced_at=row["synced_at"],
+                    metadata_synced_at=row["metadata_synced_at"],
+                    tracks_synced_at=row["tracks_synced_at"],
                     last_sync_error=row["last_sync_error"],
                     last_sync_error_at=row["last_sync_error_at"],
                 )
@@ -370,9 +387,11 @@ class StreamingAccountStore:
             account_id=playlist.account_id,
             provider_playlist_id=playlist.provider_playlist_id,
             title=playlist.title,
-            selected_for_sync=playlist.selected_for_sync,
+            sync_mode=playlist.sync_mode,
+            provider_track_count=playlist.provider_track_count,
             track_count=playlist.track_count,
-            synced_at=playlist.synced_at,
+            metadata_synced_at=playlist.metadata_synced_at,
+            tracks_synced_at=playlist.tracks_synced_at,
             last_sync_error=playlist.last_sync_error,
             last_sync_error_at=playlist.last_sync_error_at,
             cover_art_url=None,
@@ -384,11 +403,24 @@ class StreamingAccountStore:
     def set_playlist_selected_for_sync(
         self, *, playlist_id: int, selected_for_sync: bool
     ) -> StreamingPlaylistSummary | None:
+        return self.set_playlist_sync_mode(
+            playlist_id=playlist_id,
+            sync_mode=(
+                PLAYLIST_SYNC_MODE_FULL if selected_for_sync else PLAYLIST_SYNC_MODE_OFF
+            ),
+        )
+
+    def set_playlist_sync_mode(
+        self, *, playlist_id: int, sync_mode: str
+    ) -> StreamingPlaylistSummary | None:
+        if sync_mode not in PLAYLIST_SYNC_MODES:
+            raise ValueError(f"Unsupported playlist sync mode: {sync_mode}")
+
         with self._engine.begin() as connection:
             result = connection.execute(
                 update(streaming_playlists_table)
                 .where(streaming_playlists_table.c.id == playlist_id)
-                .values(selected_for_sync=selected_for_sync)
+                .values(sync_mode=sync_mode)
             )
 
         if result.rowcount == 0:
@@ -473,8 +505,10 @@ class StreamingAccountStore:
                         streaming_playlists_table.c.account_id,
                         streaming_playlists_table.c.provider_playlist_id,
                         streaming_playlists_table.c.title,
-                        streaming_playlists_table.c.selected_for_sync,
-                        streaming_playlists_table.c.synced_at,
+                        streaming_playlists_table.c.sync_mode,
+                        streaming_playlists_table.c.provider_track_count,
+                        streaming_playlists_table.c.metadata_synced_at,
+                        streaming_playlists_table.c.tracks_synced_at,
                         streaming_playlists_table.c.last_sync_error,
                         streaming_playlists_table.c.last_sync_error_at,
                         func.count(playlist_membership_table.c.id).label("track_count"),
@@ -492,8 +526,10 @@ class StreamingAccountStore:
                         streaming_playlists_table.c.account_id,
                         streaming_playlists_table.c.provider_playlist_id,
                         streaming_playlists_table.c.title,
-                        streaming_playlists_table.c.selected_for_sync,
-                        streaming_playlists_table.c.synced_at,
+                        streaming_playlists_table.c.sync_mode,
+                        streaming_playlists_table.c.provider_track_count,
+                        streaming_playlists_table.c.metadata_synced_at,
+                        streaming_playlists_table.c.tracks_synced_at,
                         streaming_playlists_table.c.last_sync_error,
                         streaming_playlists_table.c.last_sync_error_at,
                     )
@@ -510,9 +546,11 @@ class StreamingAccountStore:
             account_id=row["account_id"],
             provider_playlist_id=row["provider_playlist_id"],
             title=row["title"],
-            selected_for_sync=row["selected_for_sync"],
+            sync_mode=row["sync_mode"],
+            provider_track_count=row["provider_track_count"],
             track_count=row["track_count"],
-            synced_at=row["synced_at"],
+            metadata_synced_at=row["metadata_synced_at"],
+            tracks_synced_at=row["tracks_synced_at"],
             last_sync_error=row["last_sync_error"],
             last_sync_error_at=row["last_sync_error_at"],
         )
@@ -693,7 +731,7 @@ class StreamingAccountStore:
                 update(streaming_playlists_table)
                 .where(streaming_playlists_table.c.id == playlist_id)
                 .values(
-                    synced_at=synced_at or datetime.now(UTC),
+                    tracks_synced_at=synced_at or datetime.now(UTC),
                     last_sync_error=None,
                     last_sync_error_at=None,
                 )

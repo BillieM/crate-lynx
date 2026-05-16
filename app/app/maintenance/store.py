@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from sqlalchemy import select, true
+from sqlalchemy import select
 from sqlalchemy.engine import Engine
 
 from app.core.db import create_database_engine
@@ -10,6 +10,7 @@ from app.ingestion.failures import failed_ingestion_attempts_table
 from app.ingestion.pipeline import SUPPORTED_AUDIO_EXTENSIONS
 from app.links.store import final_links_table
 from app.streaming.models import (
+    PLAYLIST_SYNC_MODE_FULL,
     playlist_membership_table,
     streaming_playlists_table,
     streaming_tracks_table,
@@ -100,7 +101,7 @@ class MaintenanceStore:
             )
             .where(
                 final_links_table.c.id.is_(None),
-                streaming_playlists_table.c.selected_for_sync.is_(true()),
+                streaming_playlists_table.c.sync_mode == PLAYLIST_SYNC_MODE_FULL,
             )
             .order_by(
                 streaming_tracks_table.c.id.asc(),

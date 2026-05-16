@@ -13,6 +13,8 @@ from sqlalchemy.exc import IntegrityError
 
 from app.schema import build_app_metadata
 from app.streaming.models import (
+    PLAYLIST_SYNC_MODE_FULL,
+    PLAYLIST_SYNC_MODE_OFF,
     playlist_membership_table,
     streaming_accounts_table,
     streaming_playlists_table,
@@ -74,15 +76,15 @@ def _alembic_config() -> Config:
     return config
 
 
-def test_selected_for_sync_migration_backfills_playlists_with_memberships(
+def test_playlist_sync_mode_migration_backfills_modes_and_timestamps(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
-    database_url = f"sqlite:///{tmp_path / 'migration.db'}"
+    database_url = f"sqlite:///{tmp_path / 'playlist-sync-modes.db'}"
     monkeypatch.setenv("DATABASE_URL", database_url)
 
     alembic_config = _alembic_config()
-    command.upgrade(alembic_config, "7a90b6dfc1e2")
+    command.upgrade(alembic_config, "8d1f6a3c4b2e")
 
     engine = create_engine(database_url)
     with engine.begin() as connection:
@@ -94,20 +96,27 @@ def test_selected_for_sync_migration_backfills_playlists_with_memberships(
                 auth_state="connected",
             )
         ).inserted_primary_key[0]
-        playlist_with_membership_id = connection.execute(
-            insert(streaming_playlists_table).values(
-                account_id=account_id,
-                provider_playlist_id="PL1",
-                title="Synced Mix",
-            )
-        ).inserted_primary_key[0]
-        playlist_without_membership_id = connection.execute(
-            insert(streaming_playlists_table).values(
-                account_id=account_id,
-                provider_playlist_id="PL2",
-                title="Discovered Mix",
-            )
-        ).inserted_primary_key[0]
+        connection.execute(
+            text(
+                """
+                INSERT INTO streaming_playlists
+                    (
+                        id, account_id, provider_playlist_id, title,
+                        selected_for_sync, synced_at
+                    )
+                VALUES
+                    (10, :account_id, 'PL1', 'Selected Mix', TRUE, :selected_synced_at),
+                    (11, :account_id, 'PL2', 'Imported Off Mix', FALSE, :off_synced_at),
+                    (12, :account_id, 'PL3', 'Metadata Only Mix', FALSE, :metadata_synced_at)
+                """
+            ),
+            {
+                "account_id": account_id,
+                "selected_synced_at": "2026-05-01 09:00:00",
+                "off_synced_at": "2026-05-02 10:00:00",
+                "metadata_synced_at": "2026-05-03 11:00:00",
+            },
+        )
         track_id = connection.execute(
             insert(streaming_tracks_table).values(
                 provider_track_id="track-1",
@@ -115,10 +124,24 @@ def test_selected_for_sync_migration_backfills_playlists_with_memberships(
                 artist="Artist 1",
             )
         ).inserted_primary_key[0]
+        second_track_id = connection.execute(
+            insert(streaming_tracks_table).values(
+                provider_track_id="track-2",
+                title="Track 2",
+                artist="Artist 2",
+            )
+        ).inserted_primary_key[0]
         connection.execute(
             insert(playlist_membership_table).values(
-                playlist_id=playlist_with_membership_id,
+                playlist_id=10,
                 streaming_track_id=track_id,
+                position=1,
+            )
+        )
+        connection.execute(
+            insert(playlist_membership_table).values(
+                playlist_id=11,
+                streaming_track_id=second_track_id,
                 position=1,
             )
         )
@@ -126,20 +149,39 @@ def test_selected_for_sync_migration_backfills_playlists_with_memberships(
     command.upgrade(alembic_config, "head")
 
     with engine.connect() as connection:
+        playlist_columns = {
+            row["name"]
+            for row in connection.execute(
+                text("PRAGMA table_info(streaming_playlists)")
+            )
+            .mappings()
+            .all()
+        }
         rows = {
-            row["id"]: row["selected_for_sync"]
+            row["id"]: dict(row)
             for row in connection.execute(
                 select(
                     streaming_playlists_table.c.id,
-                    streaming_playlists_table.c.selected_for_sync,
-                )
+                    streaming_playlists_table.c.sync_mode,
+                    streaming_playlists_table.c.provider_track_count,
+                    streaming_playlists_table.c.metadata_synced_at,
+                    streaming_playlists_table.c.tracks_synced_at,
+                ).order_by(streaming_playlists_table.c.id.asc())
             ).mappings()
         }
 
-    assert rows == {
-        playlist_with_membership_id: True,
-        playlist_without_membership_id: False,
-    }
+    assert "selected_for_sync" not in playlist_columns
+    assert "synced_at" not in playlist_columns
+    assert rows[10]["sync_mode"] == PLAYLIST_SYNC_MODE_FULL
+    assert rows[10]["provider_track_count"] is None
+    assert rows[10]["metadata_synced_at"] == rows[10]["tracks_synced_at"]
+    assert rows[11]["sync_mode"] == PLAYLIST_SYNC_MODE_OFF
+    assert rows[11]["provider_track_count"] is None
+    assert rows[11]["metadata_synced_at"] == rows[11]["tracks_synced_at"]
+    assert rows[12]["sync_mode"] == PLAYLIST_SYNC_MODE_OFF
+    assert rows[12]["provider_track_count"] is None
+    assert rows[12]["metadata_synced_at"] is not None
+    assert rows[12]["tracks_synced_at"] is None
 
 
 def test_schema_integrity_migration_deduplicates_provider_rows(
