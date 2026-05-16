@@ -591,7 +591,7 @@ def test_streaming_account_store_syncs_youtube_music_playlists(
     ]
 
 
-def test_streaming_account_store_lists_playlists_with_track_counts(
+def test_streaming_account_store_lists_playlists_with_imported_track_counts(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
@@ -651,13 +651,13 @@ def test_streaming_account_store_lists_playlists_with_track_counts(
     assert [playlist.provider_playlist_id for playlist in listed] == ["PL1", "PL2"]
     assert listed[0].account_id == account.id
     assert listed[0].title == "Morning Mix"
-    assert listed[0].track_count == 2
+    assert listed[0].imported_track_count == 2
     assert listed[0].provider_track_count is None
     assert listed[0].metadata_synced_at == synced_at.replace(tzinfo=None)
     assert listed[0].tracks_synced_at is None
     assert listed[0].synced_at == synced_at.replace(tzinfo=None)
     assert listed[1].title == "Empty Playlist"
-    assert listed[1].track_count == 0
+    assert listed[1].imported_track_count == 0
     assert listed[1].provider_track_count is None
     assert listed[1].metadata_synced_at == synced_at.replace(tzinfo=None)
     assert listed[1].tracks_synced_at is None

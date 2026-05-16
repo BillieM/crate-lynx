@@ -1,4 +1,8 @@
+from typing import Literal
+
 from pydantic import BaseModel
+
+PlaylistSyncMode = Literal["off", "match_only", "full"]
 
 
 class StreamingAccountResponse(BaseModel):
@@ -21,14 +25,17 @@ class StreamingPlaylistResponse(BaseModel):
     account_id: int
     provider_playlist_id: str
     title: str
-    track_count: int
-    synced_at: str | None
+    sync_mode: PlaylistSyncMode
+    provider_track_count: int | None
+    imported_track_count: int
+    metadata_synced_at: str | None
+    tracks_synced_at: str | None
     last_sync_error: str | None
     last_sync_error_at: str | None
 
 
 class StreamingPlaylistConfigResponse(StreamingPlaylistResponse):
-    selected_for_sync: bool
+    pass
 
 
 class StreamingPlaylistsResponse(BaseModel):
@@ -40,7 +47,7 @@ class StreamingPlaylistConfigListResponse(BaseModel):
 
 
 class UpdateStreamingPlaylistRequest(BaseModel):
-    selected_for_sync: bool
+    sync_mode: PlaylistSyncMode
 
 
 class PlaylistDetail(BaseModel):
@@ -49,11 +56,14 @@ class PlaylistDetail(BaseModel):
     provider_playlist_id: str
     name: str
     cover_art_url: str | None
-    track_count: int
+    sync_mode: PlaylistSyncMode
+    provider_track_count: int | None
+    imported_track_count: int
     linked_count: int
     pending_count: int
     unlinked_count: int
-    synced_at: str | None
+    metadata_synced_at: str | None
+    tracks_synced_at: str | None
     last_sync_error: str | None
     last_sync_error_at: str | None
 

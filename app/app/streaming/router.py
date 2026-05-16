@@ -28,6 +28,7 @@ from app.streaming.adapters.youtube_music import (
     YouTubeMusicAuthValidationError,
     validate_youtube_music_browser_auth,
 )
+from app.streaming.models import PLAYLIST_SYNC_MODE_FULL
 from app.streaming.store import StreamingAccountStore
 
 
@@ -39,6 +40,11 @@ def create_router(
 
     def _store(engine: Engine) -> StreamingAccountStore:
         return StreamingAccountStore(engine=engine)
+
+    def serialize_datetime(value: object) -> str | None:
+        if value is None:
+            return None
+        return value.isoformat()
 
     def serialize_streaming_account(account: object) -> StreamingAccountResponse:
         return StreamingAccountResponse(
@@ -62,18 +68,13 @@ def create_router(
             account_id=playlist.account_id,
             provider_playlist_id=playlist.provider_playlist_id,
             title=playlist.title,
-            track_count=playlist.track_count,
-            synced_at=(
-                playlist.synced_at.isoformat()
-                if playlist.synced_at is not None
-                else None
-            ),
+            sync_mode=playlist.sync_mode,
+            provider_track_count=playlist.provider_track_count,
+            imported_track_count=playlist.imported_track_count,
+            metadata_synced_at=serialize_datetime(playlist.metadata_synced_at),
+            tracks_synced_at=serialize_datetime(playlist.tracks_synced_at),
             last_sync_error=playlist.last_sync_error,
-            last_sync_error_at=(
-                playlist.last_sync_error_at.isoformat()
-                if playlist.last_sync_error_at is not None
-                else None
-            ),
+            last_sync_error_at=serialize_datetime(playlist.last_sync_error_at),
         )
 
     def serialize_streaming_playlist_config(
@@ -84,19 +85,13 @@ def create_router(
             account_id=playlist.account_id,
             provider_playlist_id=playlist.provider_playlist_id,
             title=playlist.title,
-            selected_for_sync=playlist.selected_for_sync,
-            track_count=playlist.track_count,
-            synced_at=(
-                playlist.synced_at.isoformat()
-                if playlist.synced_at is not None
-                else None
-            ),
+            sync_mode=playlist.sync_mode,
+            provider_track_count=playlist.provider_track_count,
+            imported_track_count=playlist.imported_track_count,
+            metadata_synced_at=serialize_datetime(playlist.metadata_synced_at),
+            tracks_synced_at=serialize_datetime(playlist.tracks_synced_at),
             last_sync_error=playlist.last_sync_error,
-            last_sync_error_at=(
-                playlist.last_sync_error_at.isoformat()
-                if playlist.last_sync_error_at is not None
-                else None
-            ),
+            last_sync_error_at=serialize_datetime(playlist.last_sync_error_at),
         )
 
     def serialize_playlist_detail(playlist: object) -> PlaylistDetailResponse:
@@ -107,21 +102,16 @@ def create_router(
                 provider_playlist_id=playlist.provider_playlist_id,
                 name=playlist.title,
                 cover_art_url=playlist.cover_art_url,
-                track_count=playlist.track_count,
+                sync_mode=playlist.sync_mode,
+                provider_track_count=playlist.provider_track_count,
+                imported_track_count=playlist.imported_track_count,
                 linked_count=playlist.linked_count,
                 pending_count=playlist.pending_count,
                 unlinked_count=playlist.unlinked_count,
-                synced_at=(
-                    playlist.synced_at.isoformat()
-                    if playlist.synced_at is not None
-                    else None
-                ),
+                metadata_synced_at=serialize_datetime(playlist.metadata_synced_at),
+                tracks_synced_at=serialize_datetime(playlist.tracks_synced_at),
                 last_sync_error=playlist.last_sync_error,
-                last_sync_error_at=(
-                    playlist.last_sync_error_at.isoformat()
-                    if playlist.last_sync_error_at is not None
-                    else None
-                ),
+                last_sync_error_at=serialize_datetime(playlist.last_sync_error_at),
             )
         )
 
@@ -149,7 +139,7 @@ def create_router(
             playlists=[
                 serialize_streaming_playlist(playlist)
                 for playlist in playlists
-                if playlist.selected_for_sync
+                if playlist.sync_mode == PLAYLIST_SYNC_MODE_FULL
             ]
         )
 
@@ -176,9 +166,9 @@ def create_router(
         payload: UpdateStreamingPlaylistRequest,
         engine: Engine = Depends(get_engine),
     ) -> StreamingPlaylistConfigResponse:
-        playlist = _store(engine).set_playlist_selected_for_sync(
+        playlist = _store(engine).set_playlist_sync_mode(
             playlist_id=playlist_id,
-            selected_for_sync=payload.selected_for_sync,
+            sync_mode=payload.sync_mode,
         )
         if playlist is None:
             raise HTTPException(status_code=404, detail="Playlist not found")

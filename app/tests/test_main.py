@@ -35,6 +35,7 @@ from app.streaming.schemas import (
 )
 from app.streaming.models import (
     PLAYLIST_SYNC_MODE_FULL,
+    PLAYLIST_SYNC_MODE_MATCH_ONLY,
     PLAYLIST_SYNC_MODE_OFF,
     metadata,
     streaming_accounts_table,
@@ -417,17 +418,21 @@ def test_streaming_accounts_endpoint_lists_persisted_accounts(
 
 def test_streaming_playlists_endpoint_lists_synced_playlists(
     monkeypatch,
-    migrated_database,
-    test_data,
+    tmp_path: Path,
 ) -> None:
-    database_url, _ = migrated_database
+    database_url = f"sqlite:///{tmp_path / 'streaming-playlists.db'}"
+    engine = create_engine(database_url)
+    metadata.create_all(engine)
     monkeypatch.setenv("DATABASE_URL", database_url)
     monkeypatch.setenv("TOKEN_ENCRYPTION_KEY", Fernet.generate_key().decode("utf-8"))
-    account_id = test_data.streaming_account()
 
     store = StreamingAccountStore(database_url)
+    account = store.create_youtube_music_account(
+        display_name="Listener",
+        browser_headers={"refresh_token": "refresh-token"},
+    )
     playlists = store.upsert_playlists(
-        account_id=account_id,
+        account_id=account.id,
         playlists=[
             YouTubeMusicPlaylist(
                 provider_playlist_id="PL1",
@@ -463,9 +468,9 @@ def test_streaming_playlists_endpoint_lists_synced_playlists(
             ),
         ],
     )
-    store.set_playlist_selected_for_sync(
+    store.set_playlist_sync_mode(
         playlist_id=playlists[0].id,
-        selected_for_sync=True,
+        sync_mode=PLAYLIST_SYNC_MODE_FULL,
     )
 
     app = create_app()
@@ -479,26 +484,41 @@ def test_streaming_playlists_endpoint_lists_synced_playlists(
 
     assert len(response.playlists) == 1
     playlist = response.playlists[0]
-    assert playlist.account_id == 1
+    assert playlist.account_id == account.id
     assert playlist.provider_playlist_id == "PL1"
     assert playlist.title == "Morning Mix"
-    assert playlist.track_count == 2
-    assert playlist.synced_at == "2026-05-01T09:00:00"
+    assert playlist.model_dump(mode="json") == {
+        "id": playlists[0].id,
+        "account_id": account.id,
+        "provider_playlist_id": "PL1",
+        "title": "Morning Mix",
+        "sync_mode": PLAYLIST_SYNC_MODE_FULL,
+        "provider_track_count": None,
+        "imported_track_count": 2,
+        "metadata_synced_at": "2026-05-01T09:00:00",
+        "tracks_synced_at": None,
+        "last_sync_error": None,
+        "last_sync_error_at": None,
+    }
 
 
 def test_streaming_playlists_config_endpoint_lists_all_discovered_playlists(
     monkeypatch,
-    migrated_database,
-    test_data,
+    tmp_path: Path,
 ) -> None:
-    database_url, _ = migrated_database
+    database_url = f"sqlite:///{tmp_path / 'streaming-playlists-config.db'}"
+    engine = create_engine(database_url)
+    metadata.create_all(engine)
     monkeypatch.setenv("DATABASE_URL", database_url)
     monkeypatch.setenv("TOKEN_ENCRYPTION_KEY", Fernet.generate_key().decode("utf-8"))
-    account_id = test_data.streaming_account()
 
     store = StreamingAccountStore(database_url)
+    account = store.create_youtube_music_account(
+        display_name="Listener",
+        browser_headers={"refresh_token": "refresh-token"},
+    )
     playlists = store.upsert_playlists(
-        account_id=account_id,
+        account_id=account.id,
         playlists=[
             YouTubeMusicPlaylist(
                 provider_playlist_id="PL1",
@@ -525,9 +545,9 @@ def test_streaming_playlists_config_endpoint_lists_all_discovered_playlists(
             )
         ],
     )
-    store.set_playlist_selected_for_sync(
+    store.set_playlist_sync_mode(
         playlist_id=playlists[0].id,
-        selected_for_sync=True,
+        sync_mode=PLAYLIST_SYNC_MODE_FULL,
     )
 
     app = create_app()
@@ -544,16 +564,35 @@ def test_streaming_playlists_config_endpoint_lists_all_discovered_playlists(
         "PL2",
     ]
     selected, unselected = response.playlists
-    assert selected.selected_for_sync is True
-    assert selected.track_count == 1
-    assert selected.synced_at == "2026-05-01T09:00:00"
-    assert selected.last_sync_error is None
-    assert selected.last_sync_error_at is None
-    assert unselected.selected_for_sync is False
-    assert unselected.track_count == 0
+    assert selected.model_dump(mode="json") == {
+        "id": playlists[0].id,
+        "account_id": account.id,
+        "provider_playlist_id": "PL1",
+        "title": "Morning Mix",
+        "sync_mode": PLAYLIST_SYNC_MODE_FULL,
+        "provider_track_count": None,
+        "imported_track_count": 1,
+        "metadata_synced_at": "2026-05-01T09:00:00",
+        "tracks_synced_at": None,
+        "last_sync_error": None,
+        "last_sync_error_at": None,
+    }
+    assert unselected.model_dump(mode="json") == {
+        "id": playlists[1].id,
+        "account_id": account.id,
+        "provider_playlist_id": "PL2",
+        "title": "Empty Playlist",
+        "sync_mode": PLAYLIST_SYNC_MODE_OFF,
+        "provider_track_count": None,
+        "imported_track_count": 0,
+        "metadata_synced_at": "2026-05-01T09:00:00",
+        "tracks_synced_at": None,
+        "last_sync_error": None,
+        "last_sync_error_at": None,
+    }
 
 
-def test_streaming_playlist_patch_endpoint_toggles_selection(
+def test_streaming_playlist_patch_endpoint_updates_sync_mode(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
@@ -595,9 +634,9 @@ def test_streaming_playlist_patch_endpoint_toggles_selection(
             )
         ],
     )
-    store.set_playlist_selected_for_sync(
+    store.set_playlist_sync_mode(
         playlist_id=playlist.id,
-        selected_for_sync=True,
+        sync_mode=PLAYLIST_SYNC_MODE_FULL,
     )
 
     app = create_app()
@@ -610,12 +649,12 @@ def test_streaming_playlist_patch_endpoint_toggles_selection(
     response = _call_endpoint(
         route.endpoint,
         playlist.id,
-        UpdateStreamingPlaylistRequest(selected_for_sync=False),
+        UpdateStreamingPlaylistRequest(sync_mode=PLAYLIST_SYNC_MODE_MATCH_ONLY),
     )
 
     assert response.id == playlist.id
-    assert response.selected_for_sync is False
-    assert response.track_count == 1
+    assert response.sync_mode == PLAYLIST_SYNC_MODE_MATCH_ONLY
+    assert response.imported_track_count == 1
     with engine.connect() as connection:
         memberships = connection.execute(select(playlist_membership_table)).all()
     assert len(memberships) == 1
@@ -643,7 +682,7 @@ def test_streaming_playlist_patch_endpoint_returns_404_for_missing_playlist(
         _call_endpoint(
             route.endpoint,
             999,
-            UpdateStreamingPlaylistRequest(selected_for_sync=True),
+            UpdateStreamingPlaylistRequest(sync_mode=PLAYLIST_SYNC_MODE_FULL),
         )
     except StarletteHTTPException as exc:
         assert exc.status_code == 404
@@ -985,11 +1024,14 @@ def test_playlist_detail_endpoint_returns_real_link_counts(
     assert response.playlist.id == 7
     assert response.playlist.name == "Road Trip Mix"
     assert response.playlist.cover_art_url is None
-    assert response.playlist.track_count == 3
+    assert response.playlist.sync_mode == PLAYLIST_SYNC_MODE_OFF
+    assert response.playlist.provider_track_count is None
+    assert response.playlist.imported_track_count == 3
     assert response.playlist.linked_count == 1
     assert response.playlist.pending_count == 1
     assert response.playlist.unlinked_count == 1
-    assert response.playlist.synced_at == "2026-05-01T09:00:00"
+    assert response.playlist.metadata_synced_at == "2026-05-01T09:00:00"
+    assert response.playlist.tracks_synced_at is None
 
 
 def test_playlist_tracks_endpoint_returns_rows_with_link_status(

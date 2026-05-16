@@ -27,7 +27,7 @@
   - Keep direct playlist sync endpoint behavior permissive unless a later task explicitly changes API enforcement.
   - Test account sync mode filtering, full-track fetches, and successful `tracks_synced_at` updates.
 
-- [ ] Replace backend API fields and PATCH contract with explicit sync mode fields
+- [x] Replace backend API fields and PATCH contract with explicit sync mode fields
   - Expose playlist response fields as `sync_mode`, `provider_track_count`, `imported_track_count`, `metadata_synced_at`, `tracks_synced_at`, `last_sync_error`, and `last_sync_error_at`.
   - Remove `selected_for_sync`, `track_count`, and `synced_at` from backend API schemas and query schemas.
   - Compute `imported_track_count` from `playlist_membership` joins on read instead of storing it.

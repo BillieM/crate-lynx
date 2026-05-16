@@ -335,7 +335,9 @@ class StreamingAccountStore:
                     streaming_playlists_table.c.tracks_synced_at,
                     streaming_playlists_table.c.last_sync_error,
                     streaming_playlists_table.c.last_sync_error_at,
-                    func.count(playlist_membership_table.c.id).label("track_count"),
+                    func.count(playlist_membership_table.c.id).label(
+                        "imported_track_count"
+                    ),
                 )
                 .select_from(
                     streaming_playlists_table.outerjoin(
@@ -367,7 +369,7 @@ class StreamingAccountStore:
                     title=row["title"],
                     sync_mode=row["sync_mode"],
                     provider_track_count=row["provider_track_count"],
-                    track_count=row["track_count"],
+                    imported_track_count=row["imported_track_count"],
                     metadata_synced_at=row["metadata_synced_at"],
                     tracks_synced_at=row["tracks_synced_at"],
                     last_sync_error=row["last_sync_error"],
@@ -392,7 +394,7 @@ class StreamingAccountStore:
             title=playlist.title,
             sync_mode=playlist.sync_mode,
             provider_track_count=playlist.provider_track_count,
-            track_count=playlist.track_count,
+            imported_track_count=playlist.imported_track_count,
             metadata_synced_at=playlist.metadata_synced_at,
             tracks_synced_at=playlist.tracks_synced_at,
             last_sync_error=playlist.last_sync_error,
@@ -514,7 +516,9 @@ class StreamingAccountStore:
                         streaming_playlists_table.c.tracks_synced_at,
                         streaming_playlists_table.c.last_sync_error,
                         streaming_playlists_table.c.last_sync_error_at,
-                        func.count(playlist_membership_table.c.id).label("track_count"),
+                        func.count(playlist_membership_table.c.id).label(
+                            "imported_track_count"
+                        ),
                     )
                     .select_from(
                         streaming_playlists_table.outerjoin(
@@ -551,7 +555,7 @@ class StreamingAccountStore:
             title=row["title"],
             sync_mode=row["sync_mode"],
             provider_track_count=row["provider_track_count"],
-            track_count=row["track_count"],
+            imported_track_count=row["imported_track_count"],
             metadata_synced_at=row["metadata_synced_at"],
             tracks_synced_at=row["tracks_synced_at"],
             last_sync_error=row["last_sync_error"],

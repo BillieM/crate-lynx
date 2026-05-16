@@ -172,7 +172,7 @@ class StreamingPlaylistSummary:
     title: str
     sync_mode: str
     provider_track_count: int | None
-    track_count: int
+    imported_track_count: int
     metadata_synced_at: datetime | None
     tracks_synced_at: datetime | None
     last_sync_error: str | None
