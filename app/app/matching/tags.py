@@ -11,6 +11,7 @@ from sqlalchemy.engine import Engine
 from app.core.db import create_database_engine
 from app.core.tables import beets_items_view
 from app.local_tracks.store import local_tracks_table
+from app.matching.candidates import active_playlist_streaming_track_filter
 from app.matching.models import ConfidenceBand, MatchResult
 from app.streaming.models import streaming_tracks_table
 
@@ -228,6 +229,8 @@ def _streaming_tracks_select():
         streaming_tracks_table.c.artist,
         streaming_tracks_table.c.album,
         streaming_tracks_table.c.duration_ms,
+    ).where(
+        active_playlist_streaming_track_filter(),
     )
 
 

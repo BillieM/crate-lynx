@@ -34,7 +34,7 @@
   - Change playlist config PATCH behavior to accept `{ sync_mode }`.
   - Add router/API tests for the new response shape and PATCH behavior.
 
-- [ ] Scope ISRC and tag matching to active playlist modes
+- [x] Scope ISRC and tag matching to active playlist modes
   - Scope ISRC matcher candidates to streaming tracks that belong to at least one active playlist (`full` or `match_only`).
   - Scope tag matcher candidates to streaming tracks that belong to at least one active playlist (`full` or `match_only`).
   - Ensure off-only streaming tracks are ignored by matchers.

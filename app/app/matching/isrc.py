@@ -6,6 +6,7 @@ from sqlalchemy.engine import Engine
 from app.core.db import create_database_engine
 from app.core.tables import beets_items_view
 from app.local_tracks.store import local_tracks_table
+from app.matching.candidates import active_playlist_streaming_track_filter
 from app.matching.models import ConfidenceBand, MatchResult
 from app.streaming.models import streaming_tracks_table
 
@@ -61,7 +62,10 @@ class IsrcMatcher:
             row = (
                 connection.execute(
                     select(streaming_tracks_table.c.id)
-                    .where(func.upper(streaming_tracks_table.c.isrc) == isrc)
+                    .where(
+                        func.upper(streaming_tracks_table.c.isrc) == isrc,
+                        active_playlist_streaming_track_filter(),
+                    )
                     .order_by(streaming_tracks_table.c.id.asc())
                 )
                 .mappings()
