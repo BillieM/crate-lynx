@@ -30,7 +30,6 @@ from app.streaming.adapters.youtube_music import (
 )
 from app.streaming.crypto import decrypt_token, encrypt_token
 from app.streaming.models import (
-    PLAYLIST_SYNC_MODE_FULL,
     PLAYLIST_SYNC_MODE_OFF,
     PLAYLIST_SYNC_MODES,
     PlaylistMembershipRecord,
@@ -250,10 +249,10 @@ class StreamingAccountStore:
         *,
         account_id: int,
         playlists: list[YouTubeMusicPlaylist],
-        synced_at: datetime | None = None,
+        metadata_synced_at: datetime | None = None,
     ) -> list[StreamingPlaylistRecord]:
         playlist_rows: list[StreamingPlaylistRecord] = []
-        sync_timestamp = synced_at or datetime.now(UTC)
+        sync_timestamp = metadata_synced_at or datetime.now(UTC)
 
         with self._engine.begin() as connection:
             for playlist in playlists:
@@ -411,16 +410,6 @@ class StreamingAccountStore:
             linked_count=counts["linked"],
             pending_count=counts["pending"],
             unlinked_count=counts["unlinked"],
-        )
-
-    def set_playlist_selected_for_sync(
-        self, *, playlist_id: int, selected_for_sync: bool
-    ) -> StreamingPlaylistSummary | None:
-        return self.set_playlist_sync_mode(
-            playlist_id=playlist_id,
-            sync_mode=(
-                PLAYLIST_SYNC_MODE_FULL if selected_for_sync else PLAYLIST_SYNC_MODE_OFF
-            ),
         )
 
     def set_playlist_sync_mode(
@@ -740,14 +729,14 @@ class StreamingAccountStore:
         self,
         *,
         playlist_id: int,
-        synced_at: datetime | None = None,
+        tracks_synced_at: datetime | None = None,
     ) -> None:
         with self._engine.begin() as connection:
             connection.execute(
                 update(streaming_playlists_table)
                 .where(streaming_playlists_table.c.id == playlist_id)
                 .values(
-                    tracks_synced_at=synced_at or datetime.now(UTC),
+                    tracks_synced_at=tracks_synced_at or datetime.now(UTC),
                     last_sync_error=None,
                     last_sync_error_at=None,
                 )

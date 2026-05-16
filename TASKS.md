@@ -58,7 +58,7 @@
   - Ensure settings-table row sync queues only active rows, with off rows excluded or disabled.
   - Add frontend tests for rendering, split columns, bulk mode changes, row sync behavior, sync action copy, and generated API type consistency.
 
-- [ ] Add final regression coverage and remove stale selected/synced references
+- [x] Add final regression coverage and remove stale selected/synced references
   - Search backend, frontend, generated types, tests, and docs for stale `selected_for_sync`, `track_count`, and `synced_at` usage.
   - Confirm old `selected_for_sync` and `synced_at` fields are removed from schemas/types.
   - Fill any remaining test gaps from the full feature detail before marking the epic complete.

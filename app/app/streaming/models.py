@@ -155,14 +155,6 @@ class StreamingPlaylistRecord:
     last_sync_error: str | None
     last_sync_error_at: datetime | None
 
-    @property
-    def selected_for_sync(self) -> bool:
-        return self.sync_mode == PLAYLIST_SYNC_MODE_FULL
-
-    @property
-    def synced_at(self) -> datetime | None:
-        return self.tracks_synced_at or self.metadata_synced_at
-
 
 @dataclass(frozen=True, slots=True)
 class StreamingPlaylistSummary:
@@ -177,14 +169,6 @@ class StreamingPlaylistSummary:
     tracks_synced_at: datetime | None
     last_sync_error: str | None
     last_sync_error_at: datetime | None
-
-    @property
-    def selected_for_sync(self) -> bool:
-        return self.sync_mode == PLAYLIST_SYNC_MODE_FULL
-
-    @property
-    def synced_at(self) -> datetime | None:
-        return self.tracks_synced_at or self.metadata_synced_at
 
 
 @dataclass(frozen=True, slots=True)

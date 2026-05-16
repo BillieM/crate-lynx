@@ -364,11 +364,11 @@ def test_streaming_account_store_concurrent_upserts_reuse_provider_rows(
     assert len(stored_tracks) == 1
 
 
-def test_streaming_account_store_updates_playlist_selected_for_sync(
+def test_streaming_account_store_preserves_playlist_sync_mode_on_metadata_refresh(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
-    database_url = f"sqlite:///{tmp_path / 'streaming-playlist-selection.db'}"
+    database_url = f"sqlite:///{tmp_path / 'streaming-playlist-mode.db'}"
     engine = create_engine(database_url)
     metadata.create_all(engine)
     monkeypatch.setenv("TOKEN_ENCRYPTION_KEY", Fernet.generate_key().decode("utf-8"))
@@ -388,15 +388,13 @@ def test_streaming_account_store_updates_playlist_selected_for_sync(
         ],
     )[0]
 
-    assert playlist.selected_for_sync is False
     assert playlist.sync_mode == PLAYLIST_SYNC_MODE_OFF
 
-    selected = store.set_playlist_selected_for_sync(
+    selected = store.set_playlist_sync_mode(
         playlist_id=playlist.id,
-        selected_for_sync=True,
+        sync_mode=PLAYLIST_SYNC_MODE_FULL,
     )
     assert selected is not None
-    assert selected.selected_for_sync is True
     assert selected.sync_mode == PLAYLIST_SYNC_MODE_FULL
 
     updated = store.upsert_playlists(
@@ -409,12 +407,11 @@ def test_streaming_account_store_updates_playlist_selected_for_sync(
         ],
     )[0]
 
-    assert updated.selected_for_sync is True
     assert updated.sync_mode == PLAYLIST_SYNC_MODE_FULL
     assert (
-        store.set_playlist_selected_for_sync(
+        store.set_playlist_sync_mode(
             playlist_id=999,
-            selected_for_sync=True,
+            sync_mode=PLAYLIST_SYNC_MODE_FULL,
         )
         is None
     )
@@ -451,7 +448,6 @@ def test_streaming_account_store_updates_playlist_sync_mode(
 
     assert match_only is not None
     assert match_only.sync_mode == PLAYLIST_SYNC_MODE_MATCH_ONLY
-    assert match_only.selected_for_sync is False
     assert (
         store.set_playlist_sync_mode(
             playlist_id=999,
@@ -507,9 +503,9 @@ def test_streaming_account_store_syncs_youtube_music_playlists(
             YouTubeMusicPlaylist(provider_playlist_id="PL10", title="Focus"),
         ],
     )
-    store.set_playlist_selected_for_sync(
+    store.set_playlist_sync_mode(
         playlist_id=playlists[0].id,
-        selected_for_sync=True,
+        sync_mode=PLAYLIST_SYNC_MODE_FULL,
     )
     store.set_playlist_sync_mode(
         playlist_id=playlists[1].id,
@@ -605,7 +601,7 @@ def test_streaming_account_store_lists_playlists_with_imported_track_counts(
         display_name="Listener",
         browser_headers={"refresh_token": "refresh-token"},
     )
-    synced_at = datetime(2026, 5, 1, 8, 30, tzinfo=UTC)
+    metadata_refresh_time = datetime(2026, 5, 1, 8, 30, tzinfo=UTC)
 
     playlists = store.upsert_playlists(
         account_id=account.id,
@@ -619,7 +615,7 @@ def test_streaming_account_store_lists_playlists_with_imported_track_counts(
                 title="Empty Playlist",
             ),
         ],
-        synced_at=synced_at,
+        metadata_synced_at=metadata_refresh_time,
     )
 
     store.replace_playlist_membership(
@@ -653,15 +649,13 @@ def test_streaming_account_store_lists_playlists_with_imported_track_counts(
     assert listed[0].title == "Morning Mix"
     assert listed[0].imported_track_count == 2
     assert listed[0].provider_track_count is None
-    assert listed[0].metadata_synced_at == synced_at.replace(tzinfo=None)
+    assert listed[0].metadata_synced_at == metadata_refresh_time.replace(tzinfo=None)
     assert listed[0].tracks_synced_at is None
-    assert listed[0].synced_at == synced_at.replace(tzinfo=None)
     assert listed[1].title == "Empty Playlist"
     assert listed[1].imported_track_count == 0
     assert listed[1].provider_track_count is None
-    assert listed[1].metadata_synced_at == synced_at.replace(tzinfo=None)
+    assert listed[1].metadata_synced_at == metadata_refresh_time.replace(tzinfo=None)
     assert listed[1].tracks_synced_at is None
-    assert listed[1].synced_at == synced_at.replace(tzinfo=None)
 
 
 def test_streaming_account_store_persists_playlist_sync_failures(
@@ -705,12 +699,14 @@ def test_streaming_account_store_persists_playlist_sync_failures(
     assert recovered_playlist.last_sync_error is None
     assert recovered_playlist.last_sync_error_at is None
 
-    synced_at = datetime(2026, 5, 2, 12, 30, tzinfo=UTC)
-    store.mark_playlist_sync_success(playlist_id=playlist.id, synced_at=synced_at)
+    track_sync_time = datetime(2026, 5, 2, 12, 30, tzinfo=UTC)
+    store.mark_playlist_sync_success(
+        playlist_id=playlist.id,
+        tracks_synced_at=track_sync_time,
+    )
 
     synced_playlist = store.list_playlists()[0]
-    assert synced_playlist.tracks_synced_at == synced_at.replace(tzinfo=None)
-    assert synced_playlist.synced_at == synced_at.replace(tzinfo=None)
+    assert synced_playlist.tracks_synced_at == track_sync_time.replace(tzinfo=None)
     assert synced_playlist.last_sync_error is None
     assert synced_playlist.last_sync_error_at is None
 
@@ -843,9 +839,9 @@ def test_streaming_account_store_syncs_youtube_music_playlist_tracks(
         account_id=account.id,
         playlists=[YouTubeMusicPlaylist(provider_playlist_id="PL9", title="Gym")],
     )[0]
-    store.set_playlist_selected_for_sync(
+    store.set_playlist_sync_mode(
         playlist_id=playlist.id,
-        selected_for_sync=True,
+        sync_mode=PLAYLIST_SYNC_MODE_FULL,
     )
 
     seen: dict[str, object] = {}
@@ -931,9 +927,9 @@ def test_streaming_account_store_syncs_only_active_playlist_tracks(
             YouTubeMusicPlaylist(provider_playlist_id="PL3", title="Skipped Mix"),
         ],
     )
-    store.set_playlist_selected_for_sync(
+    store.set_playlist_sync_mode(
         playlist_id=playlists[0].id,
-        selected_for_sync=True,
+        sync_mode=PLAYLIST_SYNC_MODE_FULL,
     )
     store.set_playlist_sync_mode(
         playlist_id=playlists[1].id,
@@ -991,7 +987,7 @@ def test_streaming_account_store_syncs_only_active_playlist_tracks(
     ]
 
 
-def test_streaming_account_store_syncs_single_playlist_ignoring_selected_flag(
+def test_streaming_account_store_syncs_single_off_playlist_directly(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
@@ -1047,8 +1043,8 @@ def test_streaming_account_store_syncs_single_playlist_ignoring_selected_flag(
         playlist.id
     ]
     persisted_playlist = store.list_playlists()[0]
-    assert persisted_playlist.selected_for_sync is False
-    assert persisted_playlist.synced_at is not None
+    assert persisted_playlist.sync_mode == PLAYLIST_SYNC_MODE_OFF
+    assert persisted_playlist.tracks_synced_at is not None
 
 
 def test_streaming_account_store_preserves_membership_for_malformed_playlist(
@@ -1073,9 +1069,9 @@ def test_streaming_account_store_preserves_membership_for_malformed_playlist(
         ],
     )
     for playlist in playlists:
-        store.set_playlist_selected_for_sync(
+        store.set_playlist_sync_mode(
             playlist_id=playlist.id,
-            selected_for_sync=True,
+            sync_mode=PLAYLIST_SYNC_MODE_FULL,
         )
     store.replace_playlist_membership(
         playlist_id=playlists[0].id,
@@ -1178,9 +1174,9 @@ def test_streaming_account_store_empty_playlist_clears_membership_and_error(
         account_id=account.id,
         playlists=[YouTubeMusicPlaylist(provider_playlist_id="PL1", title="Saved Mix")],
     )[0]
-    store.set_playlist_selected_for_sync(
+    store.set_playlist_sync_mode(
         playlist_id=playlist.id,
-        selected_for_sync=True,
+        sync_mode=PLAYLIST_SYNC_MODE_FULL,
     )
     store.replace_playlist_membership(
         playlist_id=playlist.id,

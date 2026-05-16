@@ -399,7 +399,7 @@ describe("playlist queries", () => {
     expect(fetchMock).not.toHaveBeenCalledWith("/api/streaming/playlists");
   });
 
-  it("updates a streaming playlist sync selection", async () => {
+  it("updates a streaming playlist sync mode", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
 

@@ -335,13 +335,13 @@ def sync_library_playlists(
     account_id: int,
     adapter: StreamingAdapter,
     playlist_store: Any,
-    synced_at: datetime | None = None,
+    sync_started_at: datetime | None = None,
 ) -> list[Any]:
     playlists = adapter.list_library_playlists()
     return playlist_store.upsert_playlists(
         account_id=account_id,
         playlists=playlists,
-        synced_at=synced_at or datetime.now(UTC),
+        metadata_synced_at=sync_started_at or datetime.now(UTC),
     )
 
 
@@ -350,14 +350,14 @@ def sync_library_playlist_tracks(
     account_id: int,
     adapter: StreamingAdapter,
     playlist_store: Any,
-    synced_at: datetime | None = None,
+    sync_started_at: datetime | None = None,
 ) -> list[Any]:
-    sync_timestamp = synced_at or datetime.now(UTC)
+    sync_timestamp = sync_started_at or datetime.now(UTC)
     playlists = adapter.list_library_playlists()
     stored_playlists = playlist_store.upsert_playlists(
         account_id=account_id,
         playlists=playlists,
-        synced_at=sync_timestamp,
+        metadata_synced_at=sync_timestamp,
     )
 
     synced_memberships: list[Any] = []
@@ -382,7 +382,7 @@ def sync_library_playlist_tracks(
             _mark_playlist_sync_success(
                 playlist_store,
                 playlist_id=playlist.id,
-                synced_at=sync_timestamp,
+                tracks_synced_at=sync_timestamp,
             )
         except MalformedPlaylistPayloadError as exc:
             _mark_playlist_sync_failure(
@@ -434,7 +434,7 @@ def sync_single_library_playlist_tracks(
         _mark_playlist_sync_success(
             playlist_store,
             playlist_id=playlist.id,
-            synced_at=sync_timestamp,
+            tracks_synced_at=sync_timestamp,
         )
         return synced_memberships
     except MalformedPlaylistPayloadError as exc:
@@ -471,7 +471,7 @@ def _playlist_import_is_active(playlist: Any) -> bool:
     if isinstance(sync_mode, str):
         return sync_mode in ACTIVE_PLAYLIST_SYNC_MODES
 
-    return bool(getattr(playlist, "selected_for_sync", False))
+    return False
 
 
 def _mark_playlist_sync_failure(
@@ -490,11 +490,11 @@ def _mark_playlist_sync_success(
     playlist_store: Any,
     *,
     playlist_id: int,
-    synced_at: datetime,
+    tracks_synced_at: datetime,
 ) -> None:
     marker = getattr(playlist_store, "mark_playlist_sync_success", None)
     if marker is not None:
-        marker(playlist_id=playlist_id, synced_at=synced_at)
+        marker(playlist_id=playlist_id, tracks_synced_at=tracks_synced_at)
         return
 
     _clear_playlist_sync_failure(playlist_store, playlist_id=playlist_id)

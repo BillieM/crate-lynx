@@ -733,10 +733,10 @@ def test_sync_library_playlists_uses_adapter_and_store() -> None:
     seen: dict[str, object] = {}
 
     class FakePlaylistStore:
-        def upsert_playlists(self, *, account_id, playlists, synced_at):
+        def upsert_playlists(self, *, account_id, playlists, metadata_synced_at):
             seen["account_id"] = account_id
             seen["playlists"] = playlists
-            seen["synced_at"] = synced_at
+            seen["metadata_synced_at"] = metadata_synced_at
             return ["persisted"]
 
     class FakeAdapter:
@@ -754,17 +754,17 @@ def test_sync_library_playlists_uses_adapter_and_store() -> None:
     assert seen["playlists"] == [
         YouTubeMusicPlaylist(provider_playlist_id="PL1", title="Road Trip")
     ]
-    assert seen["synced_at"] is not None
+    assert seen["metadata_synced_at"] is not None
 
 
 def test_sync_library_playlist_tracks_uses_active_sync_modes_and_full_fetches() -> None:
     seen: dict[str, object] = {}
 
     class FakePlaylistStore:
-        def upsert_playlists(self, *, account_id, playlists, synced_at):
+        def upsert_playlists(self, *, account_id, playlists, metadata_synced_at):
             seen["account_id"] = account_id
             seen["playlists"] = playlists
-            seen["synced_at"] = synced_at
+            seen["metadata_synced_at"] = metadata_synced_at
             return [
                 SimpleNamespace(
                     id=11,
@@ -793,9 +793,11 @@ def test_sync_library_playlist_tracks_uses_active_sync_modes_and_full_fetches() 
             )
             return [f"membership-{playlist_id}"]
 
-        def mark_playlist_sync_success(self, *, playlist_id, synced_at):
+        def mark_playlist_sync_success(self, *, playlist_id, tracks_synced_at):
             successes = seen.setdefault("successes", [])
-            successes.append({"playlist_id": playlist_id, "synced_at": synced_at})
+            successes.append(
+                {"playlist_id": playlist_id, "tracks_synced_at": tracks_synced_at}
+            )
 
     class FakeAdapter:
         def list_library_playlists(self):
@@ -833,7 +835,7 @@ def test_sync_library_playlist_tracks_uses_active_sync_modes_and_full_fetches() 
         YouTubeMusicPlaylist(provider_playlist_id="PL2", title="Focus"),
         YouTubeMusicPlaylist(provider_playlist_id="PL3", title="Archived"),
     ]
-    assert seen["synced_at"] is not None
+    assert seen["metadata_synced_at"] is not None
     assert seen["track_fetches"] == [
         {"playlist_id": "PL1", "limit": None},
         {"playlist_id": "PL2", "limit": None},
@@ -869,8 +871,8 @@ def test_sync_library_playlist_tracks_uses_active_sync_modes_and_full_fetches() 
         },
     ]
     assert seen["successes"] == [
-        {"playlist_id": 11, "synced_at": seen["synced_at"]},
-        {"playlist_id": 12, "synced_at": seen["synced_at"]},
+        {"playlist_id": 11, "tracks_synced_at": seen["metadata_synced_at"]},
+        {"playlist_id": 12, "tracks_synced_at": seen["metadata_synced_at"]},
     ]
 
 
@@ -878,7 +880,7 @@ def test_sync_library_playlist_tracks_skips_malformed_playlist_payload() -> None
     seen: dict[str, object] = {"replaced_playlist_ids": []}
 
     class FakePlaylistStore:
-        def upsert_playlists(self, *, account_id, playlists, synced_at):
+        def upsert_playlists(self, *, account_id, playlists, metadata_synced_at):
             return [
                 SimpleNamespace(
                     id=11,
@@ -901,9 +903,9 @@ def test_sync_library_playlist_tracks_skips_malformed_playlist_payload() -> None
             seen["failure_error"] = error
             seen["failed_at"] = failed_at
 
-        def mark_playlist_sync_success(self, *, playlist_id, synced_at):
+        def mark_playlist_sync_success(self, *, playlist_id, tracks_synced_at):
             seen["successful_playlist_id"] = playlist_id
-            seen["successful_synced_at"] = synced_at
+            seen["successful_tracks_synced_at"] = tracks_synced_at
 
     class FakeAdapter:
         def list_library_playlists(self):
@@ -940,14 +942,14 @@ def test_sync_library_playlist_tracks_skips_malformed_playlist_payload() -> None
     assert seen["failure_error"] == "invalid tracks payload"
     assert isinstance(seen["failed_at"], datetime)
     assert seen["successful_playlist_id"] == 12
-    assert isinstance(seen["successful_synced_at"], datetime)
+    assert isinstance(seen["successful_tracks_synced_at"], datetime)
 
 
 def test_sync_library_playlist_tracks_isolates_playlist_failures() -> None:
     seen: dict[str, object] = {"replaced_playlist_ids": []}
 
     class FakePlaylistStore:
-        def upsert_playlists(self, *, account_id, playlists, synced_at):
+        def upsert_playlists(self, *, account_id, playlists, metadata_synced_at):
             return [
                 SimpleNamespace(
                     id=11,
@@ -970,9 +972,9 @@ def test_sync_library_playlist_tracks_isolates_playlist_failures() -> None:
             seen["failure_error"] = error
             seen["failed_at"] = failed_at
 
-        def mark_playlist_sync_success(self, *, playlist_id, synced_at):
+        def mark_playlist_sync_success(self, *, playlist_id, tracks_synced_at):
             seen["successful_playlist_id"] = playlist_id
-            seen["successful_synced_at"] = synced_at
+            seen["successful_tracks_synced_at"] = tracks_synced_at
 
     class FakeAdapter:
         def list_library_playlists(self):
@@ -1009,4 +1011,4 @@ def test_sync_library_playlist_tracks_isolates_playlist_failures() -> None:
     assert isinstance(seen["failed_at"], datetime)
     assert seen["replaced_playlist_ids"] == [12]
     assert seen["successful_playlist_id"] == 12
-    assert isinstance(seen["successful_synced_at"], datetime)
+    assert isinstance(seen["successful_tracks_synced_at"], datetime)

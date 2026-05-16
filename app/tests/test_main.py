@@ -30,6 +30,9 @@ from app.settings.store import GeneralSettingsStore
 from app.streaming.crypto import TokenEncryptionKeyError
 from app.streaming.schemas import (
     CreateStreamingAccountRequest,
+    PlaylistDetail,
+    StreamingPlaylistConfigResponse,
+    StreamingPlaylistResponse,
     UpdateStreamingAccountAuthRequest,
     UpdateStreamingPlaylistRequest,
 )
@@ -78,6 +81,28 @@ class StubIngestionWatcher:
 
     def remove_root(self, path: str) -> None:
         self.removed_roots.append(path)
+
+
+def test_streaming_playlist_schemas_expose_explicit_sync_fields_only() -> None:
+    expected_sync_fields = {
+        "sync_mode",
+        "provider_track_count",
+        "imported_track_count",
+        "metadata_synced_at",
+        "tracks_synced_at",
+        "last_sync_error",
+        "last_sync_error_at",
+    }
+    removed_fields = {"selected_for_sync", "track_count", "synced_at"}
+
+    for schema in (
+        StreamingPlaylistResponse,
+        StreamingPlaylistConfigResponse,
+        PlaylistDetail,
+    ):
+        schema_fields = set(schema.model_fields)
+        assert expected_sync_fields <= schema_fields
+        assert schema_fields.isdisjoint(removed_fields)
 
 
 def test_links_routes_are_mounted_under_api_prefix() -> None:
@@ -447,7 +472,7 @@ def test_streaming_playlists_endpoint_lists_synced_playlists(
                 title="Match Candidates",
             ),
         ],
-        synced_at=datetime(2026, 5, 1, 9, 0, tzinfo=UTC),
+        metadata_synced_at=datetime(2026, 5, 1, 9, 0, tzinfo=UTC),
     )
     store.replace_playlist_membership(
         playlist_id=playlists[0].id,
@@ -537,7 +562,7 @@ def test_streaming_playlists_config_endpoint_lists_all_discovered_playlists(
                 title="Empty Playlist",
             ),
         ],
-        synced_at=datetime(2026, 5, 1, 9, 0, tzinfo=UTC),
+        metadata_synced_at=datetime(2026, 5, 1, 9, 0, tzinfo=UTC),
     )
     store.replace_playlist_membership(
         playlist_id=playlists[0].id,
@@ -626,7 +651,7 @@ def test_streaming_playlist_patch_endpoint_updates_sync_mode(
                 title="Morning Mix",
             )
         ],
-        synced_at=datetime(2026, 5, 1, 9, 0, tzinfo=UTC),
+        metadata_synced_at=datetime(2026, 5, 1, 9, 0, tzinfo=UTC),
     )[0]
     store.replace_playlist_membership(
         playlist_id=playlist.id,
@@ -1569,7 +1594,7 @@ def test_missing_locally_endpoint_aggregates_playlist_usage_and_excludes_links(
                 {
                     "id": 12,
                     "provider_track_id": "ytm-12",
-                    "title": "Deselected Playlist Song",
+                    "title": "Off Playlist Song",
                     "artist": "Artist C",
                     "album": "Album C",
                     "duration_ms": 200000,

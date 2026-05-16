@@ -969,7 +969,7 @@ describe("App", () => {
     },
   );
 
-  it("updates playlist sync selections and refreshes sidebar and config queries", async () => {
+  it("updates playlist sync modes and refreshes sidebar and config queries", async () => {
     const fetchMock = mockPlaylistFetch();
 
     renderApp();
@@ -1241,7 +1241,7 @@ describe("App", () => {
     }
   });
 
-  it("routes users to configure sync when no selected playlists exist", async () => {
+  it("routes users to configure sync when no full-sync playlists exist", async () => {
     vi.spyOn(globalThis, "fetch").mockImplementation(async (input: RequestInfo | URL) => {
       const url = String(input);
 
