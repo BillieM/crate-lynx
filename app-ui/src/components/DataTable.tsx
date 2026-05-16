@@ -30,7 +30,7 @@ type Density = "compact";
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type DataTableColumn<TRow> = ColumnDef<TRow, any>;
 
-export type DataTableProps<TRow> = {
+type DataTableBaseProps<TRow> = {
   bulkActionSlot?: ReactNode;
   columnFilters?: ColumnFiltersState;
   columns: Array<DataTableColumn<TRow>>;
@@ -39,14 +39,27 @@ export type DataTableProps<TRow> = {
   headerSlot?: (state: { filteredRowCount: number; totalRowCount: number }) => ReactNode;
   onActivate?: (row: TRow) => void;
   onColumnFiltersChange?: OnChangeFn<ColumnFiltersState>;
-  onRowSelectionChange: OnChangeFn<RowSelectionState>;
   onSortingChange: OnChangeFn<SortingState>;
-  rowCanSelect?: (row: TRow) => boolean;
   rowId: (row: TRow) => string;
-  rowSelection: RowSelectionState;
   sorting: SortingState;
   stickyHeader?: boolean;
 };
+
+type DataTableSelectionProps<TRow> =
+  | {
+      enableRowSelection?: true;
+      onRowSelectionChange: OnChangeFn<RowSelectionState>;
+      rowCanSelect?: (row: TRow) => boolean;
+      rowSelection: RowSelectionState;
+    }
+  | {
+      enableRowSelection: false;
+      onRowSelectionChange?: OnChangeFn<RowSelectionState>;
+      rowCanSelect?: (row: TRow) => boolean;
+      rowSelection?: RowSelectionState;
+    };
+
+export type DataTableProps<TRow> = DataTableBaseProps<TRow> & DataTableSelectionProps<TRow>;
 
 type BulkActionBarProps = {
   children?: ReactNode;
@@ -123,6 +136,7 @@ export function DataTable<TRow>({
   columns,
   data,
   density = "compact",
+  enableRowSelection = true,
   headerSlot,
   onActivate,
   onColumnFiltersChange,
@@ -135,20 +149,21 @@ export function DataTable<TRow>({
   stickyHeader = false,
 }: DataTableProps<TRow>) {
   const hasColumnFiltering = columnFilters !== undefined && onColumnFiltersChange !== undefined;
+  const currentRowSelection = rowSelection ?? {};
   const table = useReactTable({
     columns,
     data,
-    enableRowSelection: rowCanSelect ? (row) => rowCanSelect(row.original) : true,
+    enableRowSelection: enableRowSelection ? (rowCanSelect ? (row) => rowCanSelect(row.original) : true) : false,
     getCoreRowModel: getCoreRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
     getRowId: rowId,
     getSortedRowModel: getSortedRowModel(),
     ...(hasColumnFiltering ? { onColumnFiltersChange } : {}),
-    onRowSelectionChange,
+    ...(enableRowSelection && onRowSelectionChange ? { onRowSelectionChange } : {}),
     onSortingChange,
     state: {
       ...(hasColumnFiltering ? { columnFilters } : {}),
-      rowSelection,
+      rowSelection: currentRowSelection,
       sorting,
     },
   });
@@ -161,13 +176,17 @@ export function DataTable<TRow>({
   const visibleRows = table.getRowModel().rows;
   const selectableVisibleRows = useMemo(() => visibleRows.filter((row) => row.getCanSelect()), [visibleRows]);
   const visibleRowIds = useMemo(() => selectableVisibleRows.map((row) => row.id), [selectableVisibleRows]);
-  const selectedVisibleCount = visibleRowIds.filter((rowIdValue) => rowSelection[rowIdValue]).length;
-  const headerSelectionState = getRowSelectionState(visibleRowIds, rowSelection);
+  const selectedVisibleCount = visibleRowIds.filter((rowIdValue) => currentRowSelection[rowIdValue]).length;
+  const headerSelectionState = getRowSelectionState(visibleRowIds, currentRowSelection);
   const tableDensity = densityClasses[density];
   const filteredRowCount = table.getFilteredRowModel().rows.length;
   const totalRowCount = table.getCoreRowModel().rows.length;
 
   useEffect(() => {
+    if (!enableRowSelection || !onRowSelectionChange) {
+      return;
+    }
+
     if (columnFiltersKey === undefined) {
       return;
     }
@@ -178,10 +197,14 @@ export function DataTable<TRow>({
     }
 
     onRowSelectionChange({});
-  }, [columnFiltersKey, onRowSelectionChange]);
+  }, [columnFiltersKey, enableRowSelection, onRowSelectionChange]);
 
   function setRowSelected(rowIndex: number, checked: boolean, shiftKey = false) {
-    const nextSelection = { ...rowSelection };
+    if (!enableRowSelection || !onRowSelectionChange) {
+      return;
+    }
+
+    const nextSelection = { ...currentRowSelection };
     const lastSelectedIndex = lastSelectedIndexRef.current;
 
     if (shiftKey && lastSelectedIndex !== null) {
@@ -210,10 +233,18 @@ export function DataTable<TRow>({
   }
 
   function clearSelection() {
+    if (!enableRowSelection || !onRowSelectionChange) {
+      return;
+    }
+
     onRowSelectionChange({});
   }
 
   function toggleAllVisible(checked: boolean) {
+    if (!enableRowSelection || !onRowSelectionChange) {
+      return;
+    }
+
     onRowSelectionChange((currentSelection) => {
       const nextSelection = { ...currentSelection };
 
@@ -226,6 +257,10 @@ export function DataTable<TRow>({
   }
 
   function toggleRowFromKeyboard(rowIndex: number) {
+    if (!enableRowSelection) {
+      return;
+    }
+
     const visibleRow = visibleRows[rowIndex];
     const selectedRowId = visibleRow?.getCanSelect() ? visibleRow.id : null;
 
@@ -233,7 +268,7 @@ export function DataTable<TRow>({
       return;
     }
 
-    setRowSelected(rowIndex, !rowSelection[selectedRowId]);
+    setRowSelected(rowIndex, !currentRowSelection[selectedRowId]);
   }
 
   function focusSiblingRow(currentTarget: HTMLTableRowElement, direction: "next" | "previous") {
@@ -255,7 +290,7 @@ export function DataTable<TRow>({
       focusSiblingRow(event.currentTarget, "previous");
     }
 
-    if (event.key === " ") {
+    if (event.key === " " && enableRowSelection) {
       event.preventDefault();
       toggleRowFromKeyboard(rowIndex);
     }
@@ -284,9 +319,11 @@ export function DataTable<TRow>({
 
   return (
     <div className="space-y-2">
-      <BulkActionBar selectedCount={selectedVisibleCount} onClearSelection={clearSelection}>
-        {bulkActionSlot}
-      </BulkActionBar>
+      {enableRowSelection ? (
+        <BulkActionBar selectedCount={selectedVisibleCount} onClearSelection={clearSelection}>
+          {bulkActionSlot}
+        </BulkActionBar>
+      ) : null}
       {headerSlot ? headerSlot({ filteredRowCount, totalRowCount }) : null}
       <div
         className={`${surfaceClasses.panelRadius} overflow-x-auto border border-ctp-surface1/80 bg-ctp-mantle/75 shadow-sm shadow-ctp-crust/20`}
@@ -295,20 +332,22 @@ export function DataTable<TRow>({
           <thead className={stickyHeader ? "sticky top-0 z-10" : ""}>
             {table.getHeaderGroups().map((headerGroup) => (
               <tr key={headerGroup.id} className="border-b border-ctp-surface1 bg-ctp-surface0/95">
-                <th className="w-10 px-3 py-2 text-left">
-                  <input
-                    aria-label="Select all visible rows"
-                    checked={headerSelectionState === "all"}
-                    className="h-4 w-4 accent-ctp-mauve"
-                    ref={(input) => {
-                      if (input) {
-                        input.indeterminate = headerSelectionState === "some";
-                      }
-                    }}
-                    type="checkbox"
-                    onChange={(event) => toggleAllVisible(event.currentTarget.checked)}
-                  />
-                </th>
+                {enableRowSelection ? (
+                  <th className="w-10 px-3 py-2 text-left">
+                    <input
+                      aria-label="Select all visible rows"
+                      checked={headerSelectionState === "all"}
+                      className="h-4 w-4 accent-ctp-mauve"
+                      ref={(input) => {
+                        if (input) {
+                          input.indeterminate = headerSelectionState === "some";
+                        }
+                      }}
+                      type="checkbox"
+                      onChange={(event) => toggleAllVisible(event.currentTarget.checked)}
+                    />
+                  </th>
+                ) : null}
                 {headerGroup.headers.map((header) => {
                   const meta = header.column.columnDef.meta;
                   const alignClass = meta?.align === "end" ? "text-right" : "text-left";
@@ -352,22 +391,24 @@ export function DataTable<TRow>({
                 onClick={(event) => handleRowClick(event, row.original)}
                 onKeyDown={(event) => handleRowKeyDown(event, rowIndex, row.original)}
               >
-                <td className="w-10 px-3 py-2">
-                  <input
-                    aria-label={`Select row ${rowIndex + 1}`}
-                    checked={row.getIsSelected()}
-                    className="h-4 w-4 accent-ctp-mauve"
-                    disabled={!row.getCanSelect()}
-                    type="checkbox"
-                    onChange={(event) => {
-                      const nativeEvent = event.nativeEvent;
-                      const shiftKey = "shiftKey" in nativeEvent ? Boolean(nativeEvent.shiftKey) : false;
+                {enableRowSelection ? (
+                  <td className="w-10 px-3 py-2">
+                    <input
+                      aria-label={`Select row ${rowIndex + 1}`}
+                      checked={row.getIsSelected()}
+                      className="h-4 w-4 accent-ctp-mauve"
+                      disabled={!row.getCanSelect()}
+                      type="checkbox"
+                      onChange={(event) => {
+                        const nativeEvent = event.nativeEvent;
+                        const shiftKey = "shiftKey" in nativeEvent ? Boolean(nativeEvent.shiftKey) : false;
 
-                      setRowSelected(rowIndex, event.currentTarget.checked, shiftKey);
-                    }}
-                    onClick={(event) => event.stopPropagation()}
-                  />
-                </td>
+                        setRowSelected(rowIndex, event.currentTarget.checked, shiftKey);
+                      }}
+                      onClick={(event) => event.stopPropagation()}
+                    />
+                  </td>
+                ) : null}
                 {row.getVisibleCells().map((cell) => {
                   const meta = cell.column.columnDef.meta;
                   const alignClass = meta?.align === "end" ? "text-right" : "text-left";

@@ -1,13 +1,12 @@
-import { createColumnHelper, type RowSelectionState, type SortingState } from "@tanstack/react-table";
+import { createColumnHelper, type SortingState } from "@tanstack/react-table";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { CheckCircle2, RefreshCw, Search, Settings2, XCircle } from "lucide-react";
+import { CheckCircle2, Search, Settings2, XCircle } from "lucide-react";
 import { type ReactNode, useMemo, useState } from "react";
 import { ActionButton } from "../../components/ActionButton";
 import { DataTable } from "../../components/DataTable";
 import { EmptyStateCard } from "../../components/EmptyStateCard";
 import { StatusMessage, type OperationStatus } from "../../components/StatusMessage";
 import { formatPlaylistTimestamp } from "../../lib/formatters";
-import { settleInChunks } from "../../lib/settleInChunks";
 import { useDelayedInvalidate } from "../../lib/useDelayedInvalidate";
 import { controlClasses, layoutClasses, textClasses } from "../../styles/componentClasses";
 import { actionButtonToneClasses } from "../../styles/toneClasses";
@@ -21,7 +20,6 @@ import {
   invalidatePlaylistConfigurationMutationQueries,
   refreshStreamingAccountMetadata,
   syncStreamingAccount,
-  syncStreamingPlaylist,
   type PlaylistSyncMode,
   type StreamingPlaylistConfig,
   updateStreamingPlaylistConfig,
@@ -78,12 +76,6 @@ function formatOptionalCount(value: number | null) {
 }
 
 const columnHelper = createColumnHelper<StreamingPlaylistConfig>();
-
-type BulkPlaylistConfigStatus = {
-  body: string;
-  status: "error" | "success";
-  title: string;
-};
 
 function PlaylistCollectionState({
   actionSlot,
@@ -170,11 +162,7 @@ export function PlaylistSyncConfiguration() {
   const delayedInvalidate = useDelayedInvalidate();
   const configQuery = useStreamingPlaylistConfigQuery();
   const accountsQuery = useStreamingAccountsQuery();
-  const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
   const [sorting, setSorting] = useState<SortingState>([]);
-  const [bulkStatus, setBulkStatus] = useState<BulkPlaylistConfigStatus | null>(null);
-  const [isBulkUpdating, setIsBulkUpdating] = useState(false);
-  const [isBulkSyncingRows, setIsBulkSyncingRows] = useState(false);
   const selectedSyncMutation = useMutation({
     mutationFn: syncStreamingAccount,
     onSuccess: async () => {
@@ -214,14 +202,6 @@ export function PlaylistSyncConfiguration() {
         }
       : null;
   const hasAccountAuthError = accountAuthError !== null;
-  const selectedRows = useMemo(
-    () => playlists.filter((playlist) => rowSelection[String(playlist.id)]),
-    [playlists, rowSelection],
-  );
-  const selectedActiveRows = useMemo(
-    () => selectedRows.filter((playlist) => isActiveSyncMode(playlist.sync_mode)),
-    [selectedRows],
-  );
   const operationMessage = selectedSyncMutation.isPending
     ? {
         body: "Full and match-only playlists are being synced. Sidebar counts and playlist views may update when the job finishes.",
@@ -346,10 +326,6 @@ export function PlaylistSyncConfiguration() {
     [toggleMutation],
   );
 
-  async function refreshPlaylistQueries() {
-    await invalidatePlaylistConfigurationMutationQueries(queryClient);
-  }
-
   function getEnabledPlaylistIds() {
     return playlists.filter((playlist) => isActiveSyncMode(playlist.sync_mode)).map((playlist) => playlist.id);
   }
@@ -360,65 +336,6 @@ export function PlaylistSyncConfiguration() {
 
   function scheduleStreamingSyncRefresh(playlistIds: readonly (number | string)[]) {
     delayedInvalidate(streamingAccountPlaylistSyncJobInvalidationKeys(playlistIds));
-  }
-
-  async function handleBulkModeUpdate(syncMode: PlaylistSyncMode) {
-    if (selectedRows.length === 0 || isBulkUpdating) {
-      return;
-    }
-
-    setIsBulkUpdating(true);
-    setBulkStatus(null);
-
-    const results = await settleInChunks(selectedRows, 5, (playlist) =>
-      updateStreamingPlaylistConfig({
-        playlistId: playlist.id,
-        sync_mode: syncMode,
-      }),
-    );
-    const successCount = results.filter((result) => result.status === "fulfilled").length;
-    const failureCount = results.filter((result) => result.status === "rejected").length;
-    const modeLabel = playlistSyncModeLabels[syncMode];
-
-    await refreshPlaylistQueries();
-
-    setRowSelection({});
-    setIsBulkUpdating(false);
-    setBulkStatus({
-      body:
-        failureCount > 0
-          ? `${successCount} ${successCount === 1 ? "playlist was" : "playlists were"} set to ${modeLabel} and ${failureCount} ${failureCount === 1 ? "playlist failed" : "playlists failed"}.`
-          : `${successCount} ${successCount === 1 ? "playlist was" : "playlists were"} set to ${modeLabel}.`,
-      status: failureCount > 0 ? "error" : "success",
-      title: failureCount > 0 ? "Playlist update partially failed" : `Playlist modes updated`,
-    });
-  }
-
-  async function handleBulkRowSync() {
-    if (selectedActiveRows.length === 0 || isBulkSyncingRows) {
-      return;
-    }
-
-    setIsBulkSyncingRows(true);
-    setBulkStatus(null);
-
-    const results = await settleInChunks(selectedActiveRows, 5, (playlist) => syncStreamingPlaylist(playlist.id));
-    const successCount = results.filter((result) => result.status === "fulfilled").length;
-    const failureCount = results.filter((result) => result.status === "rejected").length;
-
-    await refreshPlaylistQueries();
-    scheduleStreamingSyncRefresh(selectedActiveRows.map((playlist) => playlist.id));
-
-    setRowSelection({});
-    setIsBulkSyncingRows(false);
-    setBulkStatus({
-      body:
-        failureCount > 0
-          ? `${successCount} active ${successCount === 1 ? "playlist was" : "playlists were"} queued and ${failureCount} ${failureCount === 1 ? "playlist failed" : "playlists failed"}.`
-          : `${successCount} active ${successCount === 1 ? "playlist was" : "playlists were"} queued for sync.`,
-      status: failureCount > 0 ? "error" : "success",
-      title: failureCount > 0 ? "Playlist sync partially failed" : "Playlist sync queued",
-    });
   }
 
   if (configQuery.isPending) {
@@ -559,7 +476,6 @@ export function PlaylistSyncConfiguration() {
               </a>
             </div>
           ) : null}
-          {bulkStatus ? <StatusMessage body={bulkStatus.body} status={bulkStatus.status} title={bulkStatus.title} /> : null}
           <div className="grid gap-2.5">
             <div className="flex items-center justify-between gap-3 px-1">
               <div className="flex items-center gap-2 text-ctp-subtext0">
@@ -569,49 +485,12 @@ export function PlaylistSyncConfiguration() {
               <p className={`${textClasses.caption} tabular-nums`}>{playlists.length} rows</p>
             </div>
             <DataTable
-              bulkActionSlot={
-                <>
-                  <ActionButton
-                    className="inline-flex items-center gap-1.5"
-                    disabled={selectedRows.length === 0 || isBulkUpdating}
-                    onClick={() => void handleBulkModeUpdate("off")}
-                  >
-                    <XCircle aria-hidden="true" className="h-3.5 w-3.5" strokeWidth={1.9} />
-                    {isBulkUpdating ? "Updating..." : "Set Off"}
-                  </ActionButton>
-                  <ActionButton
-                    className="inline-flex items-center gap-1.5"
-                    disabled={selectedRows.length === 0 || isBulkUpdating}
-                    onClick={() => void handleBulkModeUpdate("match_only")}
-                  >
-                    <Search aria-hidden="true" className="h-3.5 w-3.5" strokeWidth={1.9} />
-                    {isBulkUpdating ? "Updating..." : "Set Match only"}
-                  </ActionButton>
-                  <ActionButton
-                    className="inline-flex items-center gap-1.5"
-                    disabled={selectedRows.length === 0 || isBulkUpdating}
-                    onClick={() => void handleBulkModeUpdate("full")}
-                  >
-                    <CheckCircle2 aria-hidden="true" className="h-3.5 w-3.5" strokeWidth={1.9} />
-                    {isBulkUpdating ? "Updating..." : "Set Full sync"}
-                  </ActionButton>
-                  <ActionButton
-                    className="inline-flex items-center gap-1.5"
-                    disabled={hasAccountAuthError || selectedActiveRows.length === 0 || isBulkSyncingRows}
-                    onClick={() => void handleBulkRowSync()}
-                  >
-                    <RefreshCw aria-hidden="true" className="h-3.5 w-3.5" strokeWidth={1.9} />
-                    {isBulkSyncingRows ? "Syncing..." : "Sync active rows"}
-                  </ActionButton>
-                </>
-              }
               columns={columns}
               data={playlists}
+              enableRowSelection={false}
               rowId={(playlist) => String(playlist.id)}
-              rowSelection={rowSelection}
               sorting={sorting}
               stickyHeader
-              onRowSelectionChange={setRowSelection}
               onSortingChange={setSorting}
             />
           </div>

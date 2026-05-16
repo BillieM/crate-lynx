@@ -74,6 +74,24 @@ function TestDataTable({
   );
 }
 
+function NonSelectableDataTable({ onActivate = vi.fn() }: { onActivate?: (track: TestTrack) => void }) {
+  const [sorting, setSorting] = useState<SortingState>([]);
+
+  return (
+    <DataTable
+      bulkActionSlot={<button type="button">Re-match</button>}
+      columns={columns}
+      data={tracks}
+      enableRowSelection={false}
+      rowId={(track) => track.id}
+      sorting={sorting}
+      stickyHeader
+      onActivate={onActivate}
+      onSortingChange={setSorting}
+    />
+  );
+}
+
 function FilterableDataTable() {
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
@@ -114,6 +132,13 @@ function FilterableDataTable() {
 }
 
 describe("DataTable", () => {
+  it("defaults to selectable rendering", () => {
+    render(<TestDataTable />);
+
+    expect(screen.getByRole("checkbox", { name: "Select all visible rows" })).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: "Select row 1" })).toBeInTheDocument();
+  });
+
   it("selects, deselects, clears, and select-all toggles visible rows", () => {
     render(<TestDataTable />);
 
@@ -188,6 +213,31 @@ describe("DataTable", () => {
     fireEvent.click(screen.getByRole("checkbox", { name: "Select row 2" }));
 
     expect(screen.getByRole("button", { name: "Re-match" })).toBeEnabled();
+  });
+
+  it("renders without selection UI or keyboard row selection when row selection is disabled", () => {
+    const onActivate = vi.fn();
+    render(<NonSelectableDataTable onActivate={onActivate} />);
+
+    expect(screen.queryByRole("checkbox", { name: "Select all visible rows" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("checkbox", { name: "Select row 1" })).not.toBeInTheDocument();
+    expect(screen.queryByText(/rows? selected/)).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Clear selection" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Re-match" })).not.toBeInTheDocument();
+
+    const firstBodyRow = screen.getAllByRole("row")[1];
+    const secondBodyRow = screen.getAllByRole("row")[2];
+
+    firstBodyRow.focus();
+    fireEvent.keyDown(firstBodyRow, { key: " " });
+
+    expect(screen.queryByText(/rows? selected/)).not.toBeInTheDocument();
+
+    fireEvent.keyDown(firstBodyRow, { key: "ArrowDown" });
+    expect(secondBodyRow).toHaveFocus();
+
+    fireEvent.keyDown(secondBodyRow, { key: "Enter" });
+    expect(onActivate).toHaveBeenCalledWith(tracks[1]);
   });
 
   it("supports controlled column filters, header counts, and selection clearing when filters change", () => {

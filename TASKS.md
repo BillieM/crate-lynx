@@ -25,7 +25,7 @@
     - metadata refresh queue failure shows partial-failure copy while preserving saved-auth success and the `Configure playlists` CTA
     - existing-account `Refresh authentication` does not auto-queue metadata refresh
 
-- [ ] Remove row-selection checkboxes from the playlist sync configuration view
+- [x] Remove row-selection checkboxes from the playlist sync configuration view
   - Add a `DataTable` option for non-selectable rendering, for example `enableRowSelection?: boolean`, defaulting to the current selectable behavior.
   - In non-selectable mode, hide:
     - the select-all checkbox header cell
