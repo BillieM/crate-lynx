@@ -1,8 +1,10 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ReactElement } from "react";
 import { MemoryRouter } from "react-router-dom";
 import { jsonResponse } from "../../test/mockApi";
+import { maintenanceQueryKeys } from "../maintenance/queries";
+import { playlistQueryKeys } from "../playlists/queries";
 import {
   buildSettingsNavItems,
   getViewIdFromPath,
@@ -10,7 +12,11 @@ import {
   settingsAuthenticationViewId,
   staticViewRoutes,
 } from "../shell/viewRegistry";
-import type { StreamingAccount, StreamingAccountsResponse } from "../streamingAccounts/queries";
+import {
+  streamingAccountQueryKeys,
+  type StreamingAccount,
+  type StreamingAccountsResponse,
+} from "../streamingAccounts/queries";
 import { AuthenticationSettingsView } from "./AuthenticationSettingsView";
 
 const connectedAccount: StreamingAccount = {
@@ -33,14 +39,25 @@ function renderWithProviders(ui: ReactElement) {
     },
   });
 
-  return render(
+  const result = render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter>{ui}</MemoryRouter>
     </QueryClientProvider>,
   );
+
+  return { queryClient, ...result };
 }
 
-function mockAccountFetch(accounts: StreamingAccountsResponse["accounts"]) {
+type MockAccountFetchOptions = {
+  metadataRefreshHandler?: () => Promise<Response> | Response;
+};
+
+function mockAccountFetch(
+  accounts: StreamingAccountsResponse["accounts"],
+  {
+    metadataRefreshHandler = () => jsonResponse({ account_id: 4, job_id: "metadata-refresh-4" }),
+  }: MockAccountFetchOptions = {},
+) {
   return vi.spyOn(globalThis, "fetch").mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
 
@@ -56,13 +73,34 @@ function mockAccountFetch(accounts: StreamingAccountsResponse["accounts"]) {
       return jsonResponse(connectedAccount);
     }
 
+    if (url === "/api/streaming/accounts/4/refresh-metadata" && init?.method === "POST") {
+      return metadataRefreshHandler();
+    }
+
     throw new Error(`Unexpected fetch request: ${init?.method ?? "GET"} ${url}`);
+  });
+}
+
+function countFetches(fetchMock: ReturnType<typeof mockAccountFetch>, url: string) {
+  return fetchMock.mock.calls.filter(([input]) => String(input) === url).length;
+}
+
+async function flushAsyncWork() {
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(0);
+  });
+}
+
+async function advanceTimers(ms: number) {
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(ms);
   });
 }
 
 describe("AuthenticationSettingsView", () => {
   afterEach(() => {
     vi.restoreAllMocks();
+    vi.useRealTimers();
   });
 
   it("registers the authentication settings route and nav item", () => {
@@ -77,7 +115,7 @@ describe("AuthenticationSettingsView", () => {
     ]);
   });
 
-  it("submits no-account state with the expected POST body and clears the textarea", async () => {
+  it("submits no-account state with the expected POST body, queues metadata refresh, and clears the textarea", async () => {
     const browserHeaders = {
       authorization: "SAPISIDHASH fresh_hash",
       cookie: "__Secure-3PAPISID=fresh; SID=fresh",
@@ -118,11 +156,88 @@ describe("AuthenticationSettingsView", () => {
         method: "POST",
       });
     });
-    expect(await screen.findByText("YouTube Music authentication was saved.")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith("/api/streaming/accounts/4/refresh-metadata", { method: "POST" });
+    });
+    const accountCreateCallIndex = fetchMock.mock.calls.findIndex(
+      ([input, init]) => String(input) === "/api/streaming/accounts" && init?.method === "POST",
+    );
+    const metadataRefreshCallIndex = fetchMock.mock.calls.findIndex(
+      ([input, init]) => String(input) === "/api/streaming/accounts/4/refresh-metadata" && init?.method === "POST",
+    );
+    expect(accountCreateCallIndex).toBeGreaterThanOrEqual(0);
+    expect(metadataRefreshCallIndex).toBeGreaterThan(accountCreateCallIndex);
+    expect(
+      await screen.findByText("YouTube Music authentication was saved and playlist metadata refresh was queued."),
+    ).toBeInTheDocument();
     await waitFor(() => {
       expect(screen.getByLabelText("cURL request")).toHaveValue("");
     });
     expect(screen.getByRole("button", { name: "Configure playlists" })).toBeInTheDocument();
+  });
+
+  it("delays metadata-refresh job invalidations after first-time account connection", async () => {
+    const fetchMock = mockAccountFetch([]);
+    const { queryClient } = renderWithProviders(<AuthenticationSettingsView />);
+
+    expect(await screen.findByText("Not connected")).toBeInTheDocument();
+    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+    vi.useFakeTimers();
+
+    fireEvent.change(screen.getByLabelText("cURL request"), {
+      target: {
+        value:
+          "curl 'https://music.youtube.com/youtubei/v1/browse' " +
+          "-H 'Authorization: SAPISIDHASH fresh_hash' " +
+          "-H 'Cookie: __Secure-3PAPISID=fresh; SID=fresh' " +
+          "-H 'Origin: https://music.youtube.com' " +
+          "-H 'X-Goog-AuthUser: 0'",
+      },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Connect" }));
+    await flushAsyncWork();
+
+    expect(screen.getByText("YouTube Music authentication was saved and playlist metadata refresh was queued.")).toBeInTheDocument();
+    expect(countFetches(fetchMock, "/api/streaming/accounts/4/refresh-metadata")).toBe(1);
+
+    invalidateSpy.mockClear();
+
+    await advanceTimers(3000);
+
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: streamingAccountQueryKeys.list() });
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: playlistQueryKeys.config() });
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: playlistQueryKeys.list() });
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: maintenanceQueryKeys.missingLocally() });
+  });
+
+  it("shows partial success when metadata refresh cannot be queued after account creation", async () => {
+    const fetchMock = mockAccountFetch([], {
+      metadataRefreshHandler: () => jsonResponse({ detail: "queue failed" }, { status: 500 }),
+    });
+
+    renderWithProviders(<AuthenticationSettingsView />);
+
+    expect(await screen.findByText("Not connected")).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("cURL request"), {
+      target: {
+        value:
+          "curl 'https://music.youtube.com/youtubei/v1/browse' " +
+          "-H 'Authorization: SAPISIDHASH fresh_hash' " +
+          "-H 'Cookie: __Secure-3PAPISID=fresh; SID=fresh' " +
+          "-H 'Origin: https://music.youtube.com' " +
+          "-H 'X-Goog-AuthUser: 0'",
+      },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Connect" }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith("/api/streaming/accounts/4/refresh-metadata", { method: "POST" });
+    });
+
+    expect(await screen.findByText("Metadata refresh not queued")).toBeInTheDocument();
+    expect(screen.getByText(/YouTube Music authentication was saved, but playlist metadata refresh could not be queued/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Configure playlists" })).toBeInTheDocument();
+    expect(screen.getByLabelText("cURL request")).toHaveValue("");
   });
 
   it("submits existing-account state with the expected PATCH body", async () => {
@@ -159,6 +274,7 @@ describe("AuthenticationSettingsView", () => {
         method: "PATCH",
       });
     });
+    expect(fetchMock.mock.calls.some(([input]) => String(input).endsWith("/refresh-metadata"))).toBe(false);
   });
 
   it("extracts request headers from a copied cURL command", async () => {

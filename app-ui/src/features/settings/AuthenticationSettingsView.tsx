@@ -1,12 +1,16 @@
+import { useMutation } from "@tanstack/react-query";
 import { FormEvent, useMemo, useState } from "react";
 import { Info } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { ActionButton } from "../../components/ActionButton";
 import { EmptyStateCard } from "../../components/EmptyStateCard";
 import { StatusMessage, type OperationStatus } from "../../components/StatusMessage";
+import { useDelayedInvalidate } from "../../lib/useDelayedInvalidate";
 import { controlClasses, layoutClasses, surfaceClasses, textClasses } from "../../styles/componentClasses";
+import { refreshStreamingAccountMetadata } from "../playlists/queries";
 import {
   type StreamingAccount,
+  streamingAccountCollectionJobInvalidationKeys,
   useCreateStreamingAccountMutation,
   useRefreshStreamingAccountAuthMutation,
   useStreamingAccountsQuery,
@@ -371,9 +375,14 @@ function getAccountStatusMessage(account: StreamingAccount | null): Authenticati
 
 export function AuthenticationSettingsView() {
   const navigate = useNavigate();
+  const delayedInvalidate = useDelayedInvalidate();
   const accountsQuery = useStreamingAccountsQuery();
   const createAccountMutation = useCreateStreamingAccountMutation();
   const refreshAuthMutation = useRefreshStreamingAccountAuthMutation();
+  const metadataRefreshMutation = useMutation({
+    mutationFn: refreshStreamingAccountMetadata,
+    onSuccess: () => delayedInvalidate(streamingAccountCollectionJobInvalidationKeys()),
+  });
   const [displayName, setDisplayName] = useState("YouTube Music");
   const [browserHeaders, setBrowserHeaders] = useState("");
   const [validationError, setValidationError] = useState<string | null>(null);
@@ -383,6 +392,7 @@ export function AuthenticationSettingsView() {
   const isExistingAccount = activeAccount !== null;
   const isSubmitting = createAccountMutation.isPending || refreshAuthMutation.isPending;
   const accountStatusMessage = getAccountStatusMessage(activeAccount);
+  const showConfigurePlaylistsAction = createAccountMutation.isSuccess || refreshAuthMutation.isSuccess;
   const mutationMessage = useMemo<AuthenticationMutationMessage | null>(() => {
     if (validationError) {
       return {
@@ -408,6 +418,14 @@ export function AuthenticationSettingsView() {
       };
     }
 
+    if (createAccountMutation.isSuccess && metadataRefreshMutation.isPending) {
+      return {
+        body: "YouTube Music authentication was saved. Playlist metadata refresh is being queued.",
+        status: "pending",
+        title: "Authentication saved",
+      };
+    }
+
     if (createAccountMutation.isError) {
       return {
         body: getErrorMessage(createAccountMutation.error, "The YouTube Music account could not be connected."),
@@ -421,6 +439,22 @@ export function AuthenticationSettingsView() {
         body: getErrorMessage(refreshAuthMutation.error, "The YouTube Music account authentication could not be refreshed."),
         status: "error",
         title: "Refresh failed",
+      };
+    }
+
+    if (createAccountMutation.isSuccess && metadataRefreshMutation.isError) {
+      return {
+        body: "YouTube Music authentication was saved, but playlist metadata refresh could not be queued. You can configure playlists or refresh metadata again from YouTube Music sync.",
+        status: "error",
+        title: "Metadata refresh not queued",
+      };
+    }
+
+    if (createAccountMutation.isSuccess && metadataRefreshMutation.isSuccess) {
+      return {
+        body: "YouTube Music authentication was saved and playlist metadata refresh was queued.",
+        status: "success",
+        title: "Authentication saved",
       };
     }
 
@@ -438,6 +472,9 @@ export function AuthenticationSettingsView() {
     createAccountMutation.isError,
     createAccountMutation.isPending,
     createAccountMutation.isSuccess,
+    metadataRefreshMutation.isError,
+    metadataRefreshMutation.isPending,
+    metadataRefreshMutation.isSuccess,
     refreshAuthMutation.error,
     refreshAuthMutation.isError,
     refreshAuthMutation.isPending,
@@ -457,6 +494,7 @@ export function AuthenticationSettingsView() {
     try {
       parsedBrowserHeaders = parseBrowserHeaders(browserHeaders);
       setValidationError(null);
+      metadataRefreshMutation.reset();
     } catch (error) {
       setValidationError(getErrorMessage(error, "The cURL request could not be parsed."));
       return;
@@ -481,7 +519,10 @@ export function AuthenticationSettingsView() {
         display_name: trimmedDisplayName || "YouTube Music",
       },
       {
-        onSuccess: () => setBrowserHeaders(""),
+        onSuccess: (createdAccount) => {
+          setBrowserHeaders("");
+          metadataRefreshMutation.mutate(createdAccount.id);
+        },
       },
     );
   }
@@ -501,7 +542,7 @@ export function AuthenticationSettingsView() {
           <h2 className={textClasses.sectionTitle}>Authentication settings</h2>
           <p className={`mt-1 ${textClasses.bodyMuted}`}>YouTube Music authentication from a copied cURL request.</p>
         </div>
-        {mutationMessage?.status === "success" ? (
+        {showConfigurePlaylistsAction ? (
           <ActionButton onClick={() => navigate("/settings/sync/youtube-music")}>Configure playlists</ActionButton>
         ) : null}
       </div>
