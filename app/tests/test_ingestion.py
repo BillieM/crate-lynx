@@ -3,6 +3,7 @@ from concurrent.futures import ThreadPoolExecutor
 import logging
 import sqlite3
 import subprocess
+import threading
 import time
 from types import SimpleNamespace
 from typing import Any
@@ -485,6 +486,44 @@ def test_ingestion_watcher_periodically_scans_for_missed_events(tmp_path: Path) 
     watcher.stop()
 
     assert seen == [track_path]
+
+
+def test_ingestion_watcher_checks_stability_concurrently(tmp_path: Path) -> None:
+    stub_observer = StubObserver()
+    ingestion_root = tmp_path / "ingestion"
+    first_track = ingestion_root / "first.mp3"
+    second_track = ingestion_root / "second.mp3"
+    ingestion_root.mkdir()
+    first_track.write_bytes(b"mp3")
+    second_track.write_bytes(b"mp3")
+    seen: list[Path] = []
+    waiting_workers: list[str] = []
+    both_workers_waiting = threading.Event()
+
+    def sleep_until_both_workers_are_waiting(_interval: float) -> None:
+        waiting_workers.append(threading.current_thread().name)
+        if len(waiting_workers) == 2:
+            both_workers_waiting.set()
+        assert both_workers_waiting.wait(timeout=1.0)
+
+    watcher = IngestionWatcher(
+        root=ingestion_root,
+        on_new_file=seen.append,
+        observer_factory=lambda: stub_observer,
+        stability_observations=2,
+        stability_interval_seconds=0.0,
+        stability_workers=2,
+        sleep=sleep_until_both_workers_are_waiting,
+    )
+    watcher.start()
+
+    deadline = time.monotonic() + 1.0
+    while len(seen) < 2 and time.monotonic() < deadline:
+        time.sleep(0.01)
+    watcher.stop()
+
+    assert sorted(seen, key=str) == [first_track, second_track]
+    assert len(set(waiting_workers)) == 2
 
 
 def test_ingestion_watcher_scans_new_root_when_added_live(tmp_path: Path) -> None:

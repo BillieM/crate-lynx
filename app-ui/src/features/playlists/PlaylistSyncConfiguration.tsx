@@ -1,7 +1,7 @@
 import { createColumnHelper, type SortingState } from "@tanstack/react-table";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { CheckCircle2, Search, Settings2, XCircle } from "lucide-react";
-import { type ReactNode, useMemo, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { ActionButton } from "../../components/ActionButton";
 import { DataTable } from "../../components/DataTable";
 import { EmptyStateCard } from "../../components/EmptyStateCard";
@@ -18,7 +18,6 @@ import {
   useStreamingAccountsQuery,
 } from "../streamingAccounts/queries";
 import {
-  invalidatePlaylistConfigurationMutationQueries,
   playlistQueryKeys,
   refreshStreamingAccountMetadata,
   syncStreamingAccount,
@@ -83,6 +82,7 @@ function formatOptionalCount(value: number | null) {
 type PlaylistModeMutationContext = {
   configSnapshot: StreamingPlaylistConfigResponse | undefined;
   listSnapshot: StreamingPlaylistsResponse | undefined;
+  previousPlaylist: StreamingPlaylistConfig | undefined;
 };
 
 function playlistIdMatches(playlist: { id: number }, playlistId: number | string) {
@@ -124,14 +124,18 @@ function updateFullPlaylistListCache(
     return current;
   }
 
+  const hasPlaylist = current.playlists.some((playlist) => playlistIdMatches(playlist, updatedPlaylist.id));
+
   if (updatedPlaylist.sync_mode !== "full") {
+    if (!hasPlaylist) {
+      return current;
+    }
+
     return {
       ...current,
       playlists: current.playlists.filter((playlist) => !playlistIdMatches(playlist, updatedPlaylist.id)),
     };
   }
-
-  const hasPlaylist = current.playlists.some((playlist) => playlistIdMatches(playlist, updatedPlaylist.id));
 
   return {
     ...current,
@@ -142,6 +146,20 @@ function updateFullPlaylistListCache(
 }
 
 const columnHelper = createColumnHelper<StreamingPlaylistConfig>();
+
+function didFullPlaylistMembershipChange(
+  previousPlaylist: StreamingPlaylistConfig | undefined,
+  updatedPlaylist: StreamingPlaylistConfig,
+) {
+  if (previousPlaylist === undefined) {
+    return false;
+  }
+
+  const wasFullSync = previousPlaylist.sync_mode === "full";
+  const isFullSync = updatedPlaylist.sync_mode === "full";
+
+  return wasFullSync !== isFullSync;
+}
 
 function PlaylistCollectionState({
   actionSlot,
@@ -228,19 +246,18 @@ export function PlaylistSyncConfiguration() {
   const delayedInvalidate = useDelayedInvalidate();
   const configQuery = useStreamingPlaylistConfigQuery();
   const accountsQuery = useStreamingAccountsQuery();
+  const [lastSuccessfulConfig, setLastSuccessfulConfig] = useState<StreamingPlaylistConfigResponse>();
   const [sorting, setSorting] = useState<SortingState>([]);
   const [modeUpdateFailed, setModeUpdateFailed] = useState(false);
   const selectedSyncMutation = useMutation({
     mutationFn: syncStreamingAccount,
-    onSuccess: async () => {
-      await invalidatePlaylistConfigurationMutationQueries(queryClient);
+    onSuccess: () => {
       scheduleStreamingSyncRefresh(getEnabledPlaylistIds());
     },
   });
   const metadataRefreshMutation = useMutation({
     mutationFn: refreshStreamingAccountMetadata,
-    onSuccess: async () => {
-      await invalidatePlaylistConfigurationMutationQueries(queryClient);
+    onSuccess: () => {
       schedulePlaylistCollectionJobRefresh();
     },
   });
@@ -273,20 +290,23 @@ export function PlaylistSyncConfiguration() {
         );
       }
 
-      return { configSnapshot, listSnapshot };
+      return { configSnapshot, listSnapshot, previousPlaylist: playlist };
     },
-    onSuccess: async (updatedPlaylist) => {
+    onSuccess: (updatedPlaylist, _variables, context) => {
       queryClient.setQueryData<StreamingPlaylistConfigResponse>(playlistQueryKeys.config(), (current) =>
         updatePlaylistConfigCache(current, updatedPlaylist),
       );
       queryClient.setQueryData<StreamingPlaylistsResponse>(playlistQueryKeys.list(), (current) =>
         updateFullPlaylistListCache(current, updatedPlaylist),
       );
-      await invalidateMissingLocallyQueries(queryClient);
+      if (didFullPlaylistMembershipChange(context?.previousPlaylist, updatedPlaylist)) {
+        void invalidateMissingLocallyQueries(queryClient);
+      }
     },
   });
+  const visibleConfig = configQuery.data ?? lastSuccessfulConfig;
   const accounts = accountsQuery.data?.accounts ?? [];
-  const playlists = configQuery.data?.playlists ?? emptyPlaylistConfigs;
+  const playlists = visibleConfig?.playlists ?? emptyPlaylistConfigs;
   const modeCounts = getPlaylistModeCounts(playlists);
   const playlistAccountId = playlists[0]?.account_id;
   const activeAccount =
@@ -329,6 +349,11 @@ export function PlaylistSyncConfiguration() {
               title: "Metadata refresh failed",
             }
           : null;
+  const pendingModePlaylistId =
+    toggleMutation.isPending && toggleMutation.variables?.playlistId !== undefined
+      ? String(toggleMutation.variables.playlistId)
+      : null;
+  const updatePlaylistMode = toggleMutation.mutate;
   const columns = useMemo(
     () => [
       columnHelper.accessor("title", {
@@ -341,9 +366,9 @@ export function PlaylistSyncConfiguration() {
       columnHelper.display({
         cell: (info) => (
           <PlaylistSyncModeControl
-            isPending={toggleMutation.isPending && toggleMutation.variables?.playlistId === info.row.original.id}
+            isPending={pendingModePlaylistId !== null && playlistIdMatches(info.row.original, pendingModePlaylistId)}
             onChange={(syncMode) =>
-              toggleMutation.mutate({
+              updatePlaylistMode({
                 playlistId: info.row.original.id,
                 sync_mode: syncMode,
               })
@@ -425,8 +450,14 @@ export function PlaylistSyncConfiguration() {
         },
       }),
     ],
-    [toggleMutation],
+    [pendingModePlaylistId, updatePlaylistMode],
   );
+
+  useEffect(() => {
+    if (configQuery.data !== undefined) {
+      setLastSuccessfulConfig(configQuery.data);
+    }
+  }, [configQuery.data]);
 
   function getEnabledPlaylistIds() {
     return playlists.filter((playlist) => isActiveSyncMode(playlist.sync_mode)).map((playlist) => playlist.id);
@@ -440,11 +471,11 @@ export function PlaylistSyncConfiguration() {
     delayedInvalidate(streamingAccountPlaylistSyncJobInvalidationKeys(playlistIds));
   }
 
-  if (configQuery.isPending) {
+  if (visibleConfig === undefined && configQuery.isPending) {
     return <PlaylistCollectionState status="loading" />;
   }
 
-  if (configQuery.isError) {
+  if (visibleConfig === undefined && configQuery.isError) {
     return <PlaylistCollectionState status="error" />;
   }
 

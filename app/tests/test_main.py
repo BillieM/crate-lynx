@@ -12,6 +12,7 @@ from app.ingestion.failures import (
     failed_ingestion_attempts_table,
     metadata as failed_ingestion_attempts_metadata,
 )
+from app.ingestion.pipeline import build_ingestion_processor
 from app.local_tracks.store import (
     local_tracks_table,
     metadata as local_tracks_metadata,
@@ -60,10 +61,11 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 class StubIngestionWatcher:
     instances: list["StubIngestionWatcher"] = []
 
-    def __init__(self, root, on_new_file, recursive=False) -> None:
+    def __init__(self, root, on_new_file, recursive=False, **kwargs) -> None:
         self.root = root
         self.on_new_file = on_new_file
         self.recursive = recursive
+        self.kwargs = kwargs
         self.added_roots: list[str] = []
         self.removed_roots: list[str] = []
         self.started = False
@@ -188,6 +190,7 @@ def test_startup_seeds_persisted_ingest_folders_and_watches_them(
                 Path("/nas/soulseek/downloads"),
             ]
             assert watcher.recursive is True
+            assert watcher.kwargs["stability_workers"] == 4
 
     asyncio.run(run_lifespan())
 
@@ -216,37 +219,49 @@ def test_startup_falls_back_to_env_ingestion_root_without_database_url(
     asyncio.run(run_lifespan())
 
 
-def test_startup_uses_configured_staging_base(
+def test_startup_watcher_enqueues_ingestion_jobs(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
-    seen: dict[str, object] = {}
+    enqueued_paths: list[Path] = []
 
-    class StubIngestionProcessor:
-        def __init__(self, **kwargs) -> None:
-            seen["processor_kwargs"] = kwargs
+    class StubIngestionJobEnqueuer:
+        def __init__(self, redis_url: str) -> None:
+            assert redis_url == "redis://redis:6379/0"
 
-        def process(self, path: Path):
-            raise AssertionError(f"unexpected process call for {path}")
+        def enqueue(self, path: Path) -> str:
+            enqueued_paths.append(path)
+            return "ingestion-job-123"
 
     monkeypatch.delenv("DATABASE_URL", raising=False)
-    monkeypatch.delenv("TOKEN_ENCRYPTION_KEY", raising=False)
-    monkeypatch.setenv("CRATE_LYNX_STAGING_DIR", str(tmp_path / "stage"))
+    monkeypatch.setenv("REDIS_URL", "redis://redis:6379/0")
     monkeypatch.setenv("INGESTION_ROOT", str(tmp_path / "incoming"))
-    monkeypatch.setattr("app.main.IngestionProcessor", StubIngestionProcessor)
     monkeypatch.setattr("app.main.IngestionWatcher", StubIngestionWatcher)
+    monkeypatch.setattr("app.main.IngestionJobEnqueuer", StubIngestionJobEnqueuer)
     StubIngestionWatcher.instances = []
     app = create_app()
 
     async def run_lifespan() -> None:
         async with app.router.lifespan_context(app):
-            pass
+            watcher = StubIngestionWatcher.instances[-1]
+            watcher.on_new_file(tmp_path / "incoming" / "track.mp3")
 
     asyncio.run(run_lifespan())
 
-    assert seen["processor_kwargs"]["staging_root"] == (
-        tmp_path / "stage" / "ingestion-staging"
-    )
+    assert enqueued_paths == [tmp_path / "incoming" / "track.mp3"]
+
+
+def test_ingestion_processor_factory_uses_configured_staging_base(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.delenv("TOKEN_ENCRYPTION_KEY", raising=False)
+    monkeypatch.setenv("CRATE_LYNX_STAGING_DIR", str(tmp_path / "stage"))
+
+    processor = build_ingestion_processor()
+
+    assert processor.staging_root == tmp_path / "stage" / "ingestion-staging"
 
 
 def test_startup_allows_missing_token_encryption_key_without_database_url(
@@ -308,49 +323,17 @@ def test_startup_rejects_malformed_token_encryption_key(
         asyncio.run(run_lifespan())
 
 
-def test_startup_defaults_beets_imports_to_music_and_data(
+def test_ingestion_processor_factory_defaults_beets_imports_to_music_and_data(
     monkeypatch,
-    tmp_path: Path,
 ) -> None:
-    database_url = f"sqlite:///{tmp_path / 'settings.db'}"
-    engine = create_engine(database_url)
-    settings_metadata.create_all(engine)
-    seen: dict[str, object] = {}
-
-    class StubBeetsImporter:
-        def __init__(self, beet_binary, library_root, library_database) -> None:
-            self.beet_binary = beet_binary
-            self.library_root = library_root
-            self.library_database = library_database
-            seen["beets_importer"] = self
-
-    class StubIngestionProcessor:
-        def __init__(self, **kwargs) -> None:
-            seen["processor_kwargs"] = kwargs
-
-        def process(self, path: Path):
-            raise AssertionError(f"unexpected process call for {path}")
-
-    monkeypatch.setenv("DATABASE_URL", database_url)
-    monkeypatch.setenv("TOKEN_ENCRYPTION_KEY", Fernet.generate_key().decode("utf-8"))
+    monkeypatch.delenv("DATABASE_URL", raising=False)
     monkeypatch.delenv("LIBRARY_ROOT", raising=False)
     monkeypatch.delenv("BEETS_LIBRARY", raising=False)
-    monkeypatch.setattr("app.main.BeetsImporter", StubBeetsImporter)
-    monkeypatch.setattr("app.main.IngestionProcessor", StubIngestionProcessor)
-    monkeypatch.setattr("app.main.IngestionWatcher", StubIngestionWatcher)
-    StubIngestionWatcher.instances = []
-    app = create_app()
 
-    async def run_lifespan() -> None:
-        async with app.router.lifespan_context(app):
-            pass
+    processor = build_ingestion_processor()
 
-    asyncio.run(run_lifespan())
-
-    beets_importer = seen["beets_importer"]
-    assert beets_importer.library_root == Path("/nas/media/music")
-    assert beets_importer.library_database == "/data/beets/library.db"
-    assert seen["processor_kwargs"]["beets_importer"] is beets_importer
+    assert processor.beets_importer.library_root == Path("/nas/media/music")
+    assert processor.beets_importer.library_database == "/data/beets/library.db"
 
 
 def test_settings_ingest_folder_mutations_synchronize_active_watcher(

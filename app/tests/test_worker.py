@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 from types import SimpleNamespace
 
 from app.core.worker import build_worker, main, resolve_queue_names
@@ -70,6 +71,19 @@ def test_main_starts_worker(monkeypatch) -> None:
     main()
 
     assert seen["worked"] is True
+
+
+def test_entrypoint_splits_ingestion_from_matching_and_streaming_workers() -> None:
+    entrypoint = Path(__file__).resolve().parents[1] / "entrypoint.sh"
+    script = entrypoint.read_text()
+
+    assert 'INGESTION_WORKER_COUNT="${INGESTION_WORKER_COUNT:-1}"' in script
+    assert "RQ_QUEUE_NAMES=ingestion python -m app.core.worker &" in script
+    assert (
+        'RQ_QUEUE_NAMES="${RQ_BACKGROUND_QUEUE_NAMES:-matching,streaming}" '
+        "python -m app.core.worker &"
+    ) in script
+    assert 'if [[ -n "${RQ_QUEUE_NAMES:-}" ]]; then' in script
 
 
 def test_run_matching_pipeline_logs_job_context(monkeypatch, caplog) -> None:

@@ -13,7 +13,7 @@ A local-first music asset manager that uses streaming services as a curation lay
 | `db` | PostgreSQL 16+ |
 | `redis` | Message broker for RQ background jobs |
 
-The `app` container runs two processes: the FastAPI server (`uvicorn`) and the RQ worker — both sharing the same codebase and config.
+The `app` container runs the FastAPI server (`uvicorn`) plus dedicated RQ workers: one ingestion worker by default, and one worker for matching/streaming jobs. They share the same codebase and environment config.
 
 ---
 
@@ -89,7 +89,10 @@ Backend services (`app`, `db`, and `redis`) stay on the internal Compose network
 | `TOKEN_ENCRYPTION_KEY` | Fernet key for encrypting streaming auth tokens. Generate one with `python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())'` |
 | `LIBRARY_ROOT` | Container path where processed music is stored. Defaults to `/nas/media/music` |
 | `BEETS_LIBRARY` | Container path for the Beets SQLite database. Defaults to `/data/beets/library.db` |
+| `BEETS_IMPORT_LOCK_PATH` | Optional path for the cross-process Beets import lock. Defaults next to `BEETS_LIBRARY` |
 | `CRATE_LYNX_STAGING_DIR` | Container base path for temporary app outputs. Defaults to `/nas/cratelynx/staging` in Compose |
+| `INGESTION_STABILITY_WORKERS` | Number of concurrent watcher stability checks. Defaults to `4` |
+| `INGESTION_WORKER_COUNT` | Number of RQ workers listening to the ingestion queue. Defaults to `1` |
 | `M3U_OUTPUT_DIR` | Container path for generated M3U exports. Defaults to `/data/m3u` in Compose |
 
 ## Storage and mounts
@@ -154,6 +157,8 @@ npm run build
 Ingest folders are configured in **Settings > General** and persisted in the application database. New installs seed two default container inputs: `/nas/cratelynx/music-in` and `/nas/soulseek/downloads`.
 
 Drop a file into one of the configured ingest folders. Watchdog picks it up, transcodes lossless formats to MP3 via FFmpeg, runs Beets for metadata enrichment, moves the processed track under `/nas/media/music`, generates a Chromaprint fingerprint, and kicks off the matching pipeline.
+
+The watcher only discovers stable candidate files and enqueues ingestion jobs. RQ workers run the expensive ingestion pipeline, with Redis dedupe preventing the same source path from being queued repeatedly while a job is pending or running.
 
 Adding or removing ingest folders in Settings updates the active watcher immediately. If you add a path that is not backed by a Docker host mount, the app can create and watch that directory inside the container, but files placed on the host will not appear there unless the path is mounted.
 

@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass, field
+import fcntl
 import json
 import logging
 import os
@@ -13,6 +16,8 @@ import uuid
 
 from sqlalchemy.engine import Engine
 
+from app.core.db import create_database_engine
+from app.core.paths import resolve_staging_path
 from app.local_tracks.store import LocalTrackStore
 from app.matching.jobs import MatchingJobEnqueuer
 from app.ingestion.beets_mirror_sync import (
@@ -112,6 +117,7 @@ class BeetsImporter:
     beet_binary: str = "beet"
     library_root: Path | str = "/nas/media/music"
     library_database: Path | str = "/data/beets/library.db"
+    import_lock_path: Path | str | None = None
     _import_lock: threading.Lock = field(
         default_factory=threading.Lock, init=False, repr=False
     )
@@ -122,26 +128,31 @@ class BeetsImporter:
 
         library_database = Path(self.library_database)
         library_database.parent.mkdir(parents=True, exist_ok=True)
+        import_lock_path = _resolve_import_lock_path(
+            library_database,
+            self.import_lock_path,
+        )
         with self._import_lock:
-            previous_item_id = self._latest_item_id(library_database)
+            with _exclusive_file_lock(import_lock_path):
+                previous_item_id = self._latest_item_id(library_database)
 
-            _run_checked(
-                "Beets import",
-                [
-                    self.beet_binary,
-                    "-l",
-                    str(library_database),
-                    "-d",
-                    str(library_root),
-                    "import",
-                    "-q",
-                    "--quiet-fallback=asis",
-                    "-m",
-                    "-s",
-                    str(prepared_path),
-                ],
-            )
-            return self._fetch_imported_track(library_database, previous_item_id)
+                _run_checked(
+                    "Beets import",
+                    [
+                        self.beet_binary,
+                        "-l",
+                        str(library_database),
+                        "-d",
+                        str(library_root),
+                        "import",
+                        "-q",
+                        "--quiet-fallback=asis",
+                        "-m",
+                        "-s",
+                        str(prepared_path),
+                    ],
+                )
+                return self._fetch_imported_track(library_database, previous_item_id)
 
     def _latest_item_id(self, library_database: Path) -> int:
         if not library_database.exists():
@@ -300,6 +311,47 @@ class IngestionProcessor:
             prepared_path.unlink()
 
 
+def build_ingestion_processor(
+    *,
+    database_engine: Engine | None = None,
+    database_url: str | None = None,
+    redis_url: str | None = None,
+    staging_root: Path | str | None = None,
+) -> IngestionProcessor:
+    resolved_database_url = (
+        database_url if database_url is not None else os.environ.get("DATABASE_URL")
+    )
+    engine = database_engine
+    if engine is None and resolved_database_url:
+        engine = create_database_engine(resolved_database_url)
+
+    resolved_redis_url = (
+        redis_url if redis_url is not None else os.environ.get("REDIS_URL")
+    )
+
+    return IngestionProcessor(
+        staging_root=(
+            staging_root
+            if staging_root is not None
+            else resolve_staging_path("INGESTION_STAGING_ROOT", "ingestion-staging")
+        ),
+        beets_importer=BeetsImporter(
+            beet_binary=os.environ.get("BEET_BINARY", "beet"),
+            library_root=Path(os.environ.get("LIBRARY_ROOT", "/nas/media/music")),
+            library_database=os.environ.get("BEETS_LIBRARY", "/data/beets/library.db"),
+            import_lock_path=os.environ.get("BEETS_IMPORT_LOCK_PATH"),
+        ),
+        track_store=LocalTrackStore(engine=engine) if engine is not None else None,
+        failed_attempt_store=(
+            FailedIngestionAttemptStore(engine=engine) if engine is not None else None
+        ),
+        matching_job_enqueuer=(
+            MatchingJobEnqueuer(resolved_redis_url) if resolved_redis_url else None
+        ),
+        database_engine=engine,
+    )
+
+
 def _run_checked(
     operation: str, command: list[str]
 ) -> subprocess.CompletedProcess[str]:
@@ -332,3 +384,24 @@ def _link_or_copy(source: Path, destination: Path) -> None:
         os.link(source, destination)
     except OSError:
         shutil.copy2(source, destination)
+
+
+def _resolve_import_lock_path(
+    library_database: Path,
+    configured_lock_path: Path | str | None,
+) -> Path:
+    if configured_lock_path is not None:
+        return Path(configured_lock_path)
+
+    return library_database.with_name(f"{library_database.name}.import.lock")
+
+
+@contextmanager
+def _exclusive_file_lock(lock_path: Path) -> Iterator[None]:
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    with lock_path.open("a+") as lock_file:
+        fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)

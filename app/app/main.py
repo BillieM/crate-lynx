@@ -11,14 +11,11 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.db import create_database_engine
 from app.core.paths import resolve_staging_path
-from app.ingestion import BeetsImporter, IngestionProcessor, IngestionWatcher
-from app.ingestion.failures import FailedIngestionAttemptStore
+from app.ingestion import IngestionJobEnqueuer, IngestionWatcher
 from app.library.router import create_router as create_library_router
 from app.links.router import create_router as create_links_router
 from app.local_tracks.router import create_router as create_local_tracks_router
-from app.local_tracks.store import LocalTrackStore
 from app.maintenance.router import create_router as create_maintenance_router
-from app.matching.jobs import MatchingJobEnqueuer
 from app.matching.router import create_router as create_matching_router
 from app.rescue.router import create_router as create_rescue_router
 from app.settings.router import create_router as create_settings_router
@@ -39,8 +36,6 @@ class HealthzResponse(BaseModel):
 def create_app() -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        staging_root = get_ingestion_staging_root()
-        library_root = Path(os.environ.get("LIBRARY_ROOT", "/nas/media/music"))
         database_url = os.environ.get("DATABASE_URL")
         redis_url = os.environ.get("REDIS_URL")
         if database_url or os.environ.get("TOKEN_ENCRYPTION_KEY"):
@@ -48,37 +43,28 @@ def create_app() -> FastAPI:
         database_engine = create_database_engine(database_url) if database_url else None
         app.state.database_engine = database_engine
         ingest_roots = _resolve_ingest_roots(database_engine)
-        processor = IngestionProcessor(
-            staging_root=staging_root,
-            beets_importer=BeetsImporter(
-                beet_binary=os.environ.get("BEET_BINARY", "beet"),
-                library_root=library_root,
-                library_database=os.environ.get(
-                    "BEETS_LIBRARY", "/data/beets/library.db"
-                ),
-            ),
-            track_store=(
-                LocalTrackStore(engine=database_engine)
-                if database_engine is not None
-                else None
-            ),
-            failed_attempt_store=(
-                FailedIngestionAttemptStore(engine=database_engine)
-                if database_engine is not None
-                else None
-            ),
-            matching_job_enqueuer=MatchingJobEnqueuer(redis_url) if redis_url else None,
-            database_engine=database_engine,
-        )
+        ingestion_enqueuer = IngestionJobEnqueuer(redis_url) if redis_url else None
 
-        def process_new_file(path: Path) -> None:
-            prepared = processor.process(path)
-            logger.info("Ingested track candidate: %s", prepared.library_path)
+        def enqueue_new_file(path: Path) -> None:
+            if ingestion_enqueuer is None:
+                logger.error(
+                    "REDIS_URL is not configured; skipping ingestion candidate: %s",
+                    path,
+                )
+                return
+
+            job_id = ingestion_enqueuer.enqueue(path)
+            if job_id is None:
+                logger.info("Skipped duplicate ingestion candidate: %s", path)
+                return
+
+            logger.info("Queued ingestion candidate: %s job_id=%s", path, job_id)
 
         watcher = IngestionWatcher(
             root=ingest_roots,
-            on_new_file=process_new_file,
+            on_new_file=enqueue_new_file,
             recursive=True,
+            stability_workers=_resolve_int_env("INGESTION_STABILITY_WORKERS", 4),
         )
         app.state.ingestion_watcher = watcher
         watcher.start()
@@ -192,6 +178,20 @@ def _remove_active_ingest_root(app: FastAPI, path: str) -> None:
     watcher = getattr(app.state, "ingestion_watcher", None)
     if watcher is not None:
         watcher.remove_root(path)
+
+
+def _resolve_int_env(name: str, default: int) -> int:
+    raw_value = os.environ.get(name)
+    if raw_value is None:
+        return default
+
+    try:
+        value = int(raw_value)
+    except ValueError:
+        logger.warning("Invalid integer for %s=%r; using %s", name, raw_value, default)
+        return default
+
+    return max(1, value)
 
 
 app = create_app()

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass, field
 import logging
 from pathlib import Path
@@ -22,6 +23,7 @@ DEFAULT_STABILITY_OBSERVATIONS = 10
 DEFAULT_STABILITY_INTERVAL_SECONDS = 0.5
 DEFAULT_RECENTLY_HANDLED_TTL_SECONDS = 30.0
 DEFAULT_SCAN_INTERVAL_SECONDS = 30.0
+DEFAULT_STABILITY_WORKERS = 1
 
 
 @dataclass(frozen=True, slots=True)
@@ -55,12 +57,16 @@ class IngestionWatcher:
     observer_factory: Callable[[], Observer] = Observer
     stability_observations: int = DEFAULT_STABILITY_OBSERVATIONS
     stability_interval_seconds: float = DEFAULT_STABILITY_INTERVAL_SECONDS
+    stability_workers: int = DEFAULT_STABILITY_WORKERS
     recently_handled_ttl_seconds: float = DEFAULT_RECENTLY_HANDLED_TTL_SECONDS
     scan_interval_seconds: float = DEFAULT_SCAN_INTERVAL_SECONDS
     sleep: SleepCallback = time.sleep
     clock: ClockCallback = time.monotonic
     _observer: Observer | None = field(default=None, init=False, repr=False)
     _scan_thread: threading.Thread | None = field(default=None, init=False, repr=False)
+    _candidate_executor: ThreadPoolExecutor | None = field(
+        default=None, init=False, repr=False
+    )
     _stop_scan_event: threading.Event = field(
         default_factory=threading.Event, init=False, repr=False
     )
@@ -70,6 +76,9 @@ class IngestionWatcher:
     _roots: set[Path] = field(default_factory=set, init=False, repr=False)
     _watches: dict[Path, WatchHandle] = field(
         default_factory=dict, init=False, repr=False
+    )
+    _candidate_futures: set[Future[None]] = field(
+        default_factory=set, init=False, repr=False
     )
     _in_flight: set[Path] = field(default_factory=set, init=False, repr=False)
     _recently_handled: dict[Path, float] = field(
@@ -93,6 +102,7 @@ class IngestionWatcher:
         if self._observer is not None:
             return
 
+        self._start_candidate_executor()
         observer = self.observer_factory()
         for root_path in self.roots:
             self._schedule_root(observer, root_path)
@@ -103,6 +113,7 @@ class IngestionWatcher:
 
     def stop(self) -> None:
         if self._observer is None:
+            self._stop_candidate_executor()
             return
 
         self._stop_periodic_scan()
@@ -110,6 +121,7 @@ class IngestionWatcher:
         self._observer.join()
         self._observer = None
         self._watches.clear()
+        self._stop_candidate_executor()
 
     def add_root(self, root: Path | str) -> None:
         root_path = self._normalize_root(root)
@@ -164,6 +176,24 @@ class IngestionWatcher:
         self._scan_thread.join()
         self._scan_thread = None
 
+    def _start_candidate_executor(self) -> None:
+        if self._candidate_executor is not None or self.stability_workers <= 1:
+            return
+
+        self._candidate_executor = ThreadPoolExecutor(
+            max_workers=self.stability_workers,
+            thread_name_prefix="crate-lynx-ingestion-stability",
+        )
+
+    def _stop_candidate_executor(self) -> None:
+        if self._candidate_executor is None:
+            return
+
+        self._candidate_executor.shutdown(wait=True)
+        self._candidate_executor = None
+        with self._state_lock:
+            self._candidate_futures.clear()
+
     def _run_periodic_scan(self) -> None:
         while not self._stop_scan_event.wait(self.scan_interval_seconds):
             self._scan_existing_files()
@@ -187,6 +217,25 @@ class IngestionWatcher:
         if not self._claim_candidate(cache_path):
             return
 
+        if self._candidate_executor is not None:
+            try:
+                future = self._candidate_executor.submit(
+                    self._process_claimed_candidate,
+                    source_path,
+                    cache_path,
+                )
+            except RuntimeError:
+                self._release_candidate(cache_path)
+                raise
+
+            with self._state_lock:
+                self._candidate_futures.add(future)
+            future.add_done_callback(self._discard_candidate_future)
+            return
+
+        self._process_claimed_candidate(source_path, cache_path)
+
+    def _process_claimed_candidate(self, source_path: Path, cache_path: Path) -> None:
         try:
             if not _is_stable_file(
                 source_path,
@@ -202,6 +251,10 @@ class IngestionWatcher:
             logger.exception("Failed to ingest file: %s", source_path)
         finally:
             self._release_candidate(cache_path)
+
+    def _discard_candidate_future(self, future: Future[None]) -> None:
+        with self._state_lock:
+            self._candidate_futures.discard(future)
 
     def _claim_candidate(self, cache_path: Path) -> bool:
         with self._state_lock:

@@ -8,7 +8,9 @@ from app.ingestion.pipeline import (
     IngestionProcessor,
     PreparedTrack,
     UnsupportedAudioFormatError,
+    build_ingestion_processor,
 )
+from app.ingestion.jobs import IngestionJobEnqueuer, run_ingestion_job
 from app.ingestion.failures import (
     FailedIngestionAttempt,
     FailedIngestionAttemptStore,
@@ -30,10 +32,13 @@ __all__ = [
     "FingerprintGenerator",
     "ImportedTrack",
     "IngestionEventHandler",
+    "IngestionJobEnqueuer",
     "IngestionProcessor",
     "IngestionWatcher",
     "PreparedTrack",
     "UnsupportedAudioFormatError",
+    "build_ingestion_processor",
     "failed_ingestion_attempts_metadata",
     "failed_ingestion_attempts_table",
+    "run_ingestion_job",
 ]

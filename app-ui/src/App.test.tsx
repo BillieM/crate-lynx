@@ -1030,13 +1030,14 @@ describe("App", () => {
     });
   });
 
-  it("queues a playlist metadata refresh and refreshes sidebar and config queries", async () => {
+  it("queues a playlist metadata refresh without immediate sidebar or config refetch", async () => {
     const fetchMock = mockPlaylistFetch();
 
     renderApp();
 
     expect(await screen.findByRole("heading", { level: 1, name: "Late Night Drive" })).toBeInTheDocument();
     await openYoutubeMusicSettings();
+    vi.useFakeTimers();
 
     const playlistListFetchesBeforeRefresh = fetchMock.mock.calls.filter(
       ([input]) => String(input) === "/api/streaming/playlists",
@@ -1045,22 +1046,29 @@ describe("App", () => {
       ([input]) => String(input) === "/api/streaming/playlists/config",
     ).length;
 
-    fireEvent.click(await screen.findByRole("button", { name: "Refresh playlist metadata" }));
+    fireEvent.click(screen.getByRole("button", { name: "Refresh playlist metadata" }));
+    await flushAsyncWork();
 
-    await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledWith(metadataRefreshEndpoint, {
-        method: "POST",
-      });
+    expect(fetchMock).toHaveBeenCalledWith(metadataRefreshEndpoint, {
+      method: "POST",
     });
-    expect(await screen.findByText("Metadata refresh queued.")).toBeInTheDocument();
-    await waitFor(() => {
-      expect(
-        fetchMock.mock.calls.filter(([input]) => String(input) === "/api/streaming/playlists").length,
-      ).toBeGreaterThan(playlistListFetchesBeforeRefresh);
-      expect(
-        fetchMock.mock.calls.filter(([input]) => String(input) === "/api/streaming/playlists/config").length,
-      ).toBeGreaterThan(configFetchesBeforeRefresh);
-    });
+    expect(screen.getByText("Metadata refresh queued.")).toBeInTheDocument();
+    expect(fetchMock.mock.calls.filter(([input]) => String(input) === "/api/streaming/playlists").length).toBe(
+      playlistListFetchesBeforeRefresh,
+    );
+    expect(fetchMock.mock.calls.filter(([input]) => String(input) === "/api/streaming/playlists/config").length).toBe(
+      configFetchesBeforeRefresh,
+    );
+
+    await advanceTimers(3000);
+    await flushAsyncWork();
+
+    expect(fetchMock.mock.calls.filter(([input]) => String(input) === "/api/streaming/playlists").length).toBeGreaterThan(
+      playlistListFetchesBeforeRefresh,
+    );
+    expect(fetchMock.mock.calls.filter(([input]) => String(input) === "/api/streaming/playlists/config").length).toBeGreaterThan(
+      configFetchesBeforeRefresh,
+    );
   });
 
   it("shows success state when active playlist sync is queued", async () => {
