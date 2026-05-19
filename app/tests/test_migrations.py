@@ -540,3 +540,92 @@ def test_failed_ingestion_cleanup_migration_removes_non_audio_rows(
         ]
 
     assert filenames == ["track.mp3", "album.FLAC"]
+
+
+def test_failed_ingestion_dedupe_migration_collapses_duplicate_sources(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite:///{tmp_path / 'failed-ingestion-dedupe.db'}"
+    monkeypatch.setenv("DATABASE_URL", database_url)
+
+    alembic_config = _alembic_config()
+    command.upgrade(alembic_config, "1f2a3b4c5d6e")
+
+    engine = create_engine(database_url)
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                """
+                INSERT INTO failed_ingestion_attempts
+                    (id, source_path, filename, fingerprint, failure_reason, failed_at)
+                VALUES
+                    (1, '/ingestion/duplicate.mp3', 'duplicate.mp3', 'fp-old', 'Old failure', '2026-05-01 10:00:00'),
+                    (2, '/ingestion/unique.flac', 'unique.flac', NULL, 'Only failure', '2026-05-01 11:00:00'),
+                    (3, '/ingestion/duplicate.mp3', 'duplicate.mp3', 'fp-new', 'Latest failure', '2026-05-01 12:00:00')
+                """
+            )
+        )
+
+    command.upgrade(alembic_config, "head")
+
+    with engine.connect() as connection:
+        rows = (
+            connection.execute(
+                text(
+                    """
+                    SELECT id, source_path, fingerprint, failure_reason,
+                           first_failed_at, failed_at, attempt_count,
+                           source_size, source_mtime_ns, ignored_at
+                    FROM failed_ingestion_attempts
+                    ORDER BY source_path
+                    """
+                )
+            )
+            .mappings()
+            .all()
+        )
+
+    with engine.begin() as connection:
+        try:
+            connection.execute(
+                text(
+                    """
+                    INSERT INTO failed_ingestion_attempts
+                        (source_path, filename, fingerprint, failure_reason)
+                    VALUES
+                        ('/ingestion/duplicate.mp3', 'duplicate.mp3', NULL, 'Rejected duplicate')
+                    """
+                )
+            )
+        except IntegrityError:
+            pass
+        else:
+            raise AssertionError("duplicate source_path was accepted")
+
+    assert [dict(row) for row in rows] == [
+        {
+            "id": 3,
+            "source_path": "/ingestion/duplicate.mp3",
+            "fingerprint": "fp-new",
+            "failure_reason": "Latest failure",
+            "first_failed_at": "2026-05-01 10:00:00",
+            "failed_at": "2026-05-01 12:00:00",
+            "attempt_count": 2,
+            "source_size": None,
+            "source_mtime_ns": None,
+            "ignored_at": None,
+        },
+        {
+            "id": 2,
+            "source_path": "/ingestion/unique.flac",
+            "fingerprint": None,
+            "failure_reason": "Only failure",
+            "first_failed_at": "2026-05-01 11:00:00",
+            "failed_at": "2026-05-01 11:00:00",
+            "attempt_count": 1,
+            "source_size": None,
+            "source_mtime_ns": None,
+            "ignored_at": None,
+        },
+    ]

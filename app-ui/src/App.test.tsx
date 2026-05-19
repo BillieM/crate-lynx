@@ -239,12 +239,17 @@ const missingLocallyResponse: MissingLocallyResponse = {
 const unidentifiedResponse: UnidentifiedResponse = {
   tracks: [
     {
+      attempt_count: 3,
       failed_at: "2026-05-02T21:44:00Z",
       failure_reason: "Beets could not identify metadata",
       filename: "unknown-import-9a4f.mp3",
+      first_failed_at: "2026-05-01T20:10:00Z",
       id: 4001,
+      ignored_at: null,
       local_track_id: null,
+      source_mtime_ns: 1746217040000000000,
       source_path: "ingestion/failed/unknown-import-9a4f.mp3",
+      source_size: 3210,
     },
   ],
 };

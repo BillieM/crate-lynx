@@ -1,5 +1,6 @@
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
+from datetime import UTC, datetime
 import logging
 import sqlite3
 import subprocess
@@ -1408,6 +1409,111 @@ def test_ingestion_processor_persists_failed_attempt_with_fingerprint(
     assert row["local_track_id"] is None
     assert "Failed to ingest source_path=" in caplog.text
     assert any(record.exc_info is not None for record in caplog.records)
+
+
+def test_failed_ingestion_attempt_store_upserts_duplicate_source_paths(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "ingestion" / "unknown.mp3"
+    source.parent.mkdir()
+    source.write_bytes(b"mp3")
+    database_url = f"sqlite:///{tmp_path / 'app.db'}"
+    engine = create_engine(database_url)
+    failed_ingestion_attempts_metadata.create_all(engine)
+    store = FailedIngestionAttemptStore(database_url)
+
+    store.persist(
+        source_path=source,
+        fingerprint="fp-first",
+        failure_reason="first failure",
+        failed_at=datetime(2026, 5, 1, 10, 0, tzinfo=UTC),
+    )
+    store.persist(
+        source_path=source,
+        fingerprint="fp-second",
+        failure_reason="second failure",
+        failed_at=datetime(2026, 5, 1, 11, 0, tzinfo=UTC),
+    )
+
+    with engine.connect() as connection:
+        rows = (
+            connection.execute(select(failed_ingestion_attempts_table)).mappings().all()
+        )
+
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["source_path"] == str(source)
+    assert row["fingerprint"] == "fp-second"
+    assert row["failure_reason"] == "second failure"
+    assert row["first_failed_at"] == datetime(2026, 5, 1, 10, 0)
+    assert row["failed_at"] == datetime(2026, 5, 1, 11, 0)
+    assert row["attempt_count"] == 2
+    assert row["source_size"] == source.stat().st_size
+    assert row["source_mtime_ns"] == source.stat().st_mtime_ns
+    assert row["ignored_at"] is None
+
+
+def test_failed_ingestion_attempt_store_skips_unchanged_sources_and_clears_changed(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "ingestion" / "unknown.mp3"
+    source.parent.mkdir()
+    source.write_bytes(b"mp3")
+    database_url = f"sqlite:///{tmp_path / 'app.db'}"
+    engine = create_engine(database_url)
+    failed_ingestion_attempts_metadata.create_all(engine)
+    store = FailedIngestionAttemptStore(database_url)
+    store.persist(
+        source_path=source,
+        fingerprint=None,
+        failure_reason="Beets could not identify metadata",
+    )
+
+    assert store.should_skip_auto_enqueue(source) is True
+
+    source.write_bytes(b"changed mp3")
+
+    assert store.should_skip_auto_enqueue(source) is False
+    with engine.connect() as connection:
+        rows = connection.execute(select(failed_ingestion_attempts_table)).all()
+
+    assert rows == []
+
+
+def test_failed_ingestion_attempt_store_ignored_state_is_cleared_by_new_failure(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "ingestion" / "unknown.mp3"
+    source.parent.mkdir()
+    source.write_bytes(b"mp3")
+    database_url = f"sqlite:///{tmp_path / 'app.db'}"
+    engine = create_engine(database_url)
+    failed_ingestion_attempts_metadata.create_all(engine)
+    store = FailedIngestionAttemptStore(database_url)
+    store.persist(
+        source_path=source,
+        fingerprint=None,
+        failure_reason="first failure",
+    )
+    attempt_id = store.get(1).id
+
+    ignored = store.mark_ignored(attempt_id)
+    assert ignored is not None
+    assert ignored.ignored_at is not None
+    store.persist(
+        source_path=source,
+        fingerprint=None,
+        failure_reason="retry failed",
+    )
+
+    with engine.connect() as connection:
+        row = (
+            connection.execute(select(failed_ingestion_attempts_table)).mappings().one()
+        )
+
+    assert row["attempt_count"] == 2
+    assert row["failure_reason"] == "retry failed"
+    assert row["ignored_at"] is None
 
 
 def test_ingestion_processor_clears_prior_failure_after_success(

@@ -40,6 +40,11 @@ failed_ingestion_attempts_view = table(
     column("filename"),
     column("fingerprint"),
     column("failure_reason"),
+    column("first_failed_at"),
     column("failed_at"),
+    column("attempt_count"),
+    column("source_size"),
+    column("source_mtime_ns"),
+    column("ignored_at"),
     column("local_track_id"),
 )

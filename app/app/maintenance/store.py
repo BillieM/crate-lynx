@@ -33,11 +33,16 @@ class MissingLocallyTrackRecord:
 @dataclass(frozen=True, slots=True)
 class UnidentifiedTrackRecord:
     id: int
+    attempt_count: int
     failed_at: str
     failure_reason: str
     filename: str
+    first_failed_at: str
+    ignored_at: str | None
     local_track_id: int | None
+    source_mtime_ns: int | None
     source_path: str
+    source_size: int | None
 
 
 @dataclass(slots=True)
@@ -135,14 +140,20 @@ class MaintenanceStore:
         query = (
             select(
                 failed_ingestion_attempts_table.c.id,
+                failed_ingestion_attempts_table.c.attempt_count,
                 failed_ingestion_attempts_table.c.failed_at,
                 failed_ingestion_attempts_table.c.failure_reason,
                 failed_ingestion_attempts_table.c.filename,
+                failed_ingestion_attempts_table.c.first_failed_at,
+                failed_ingestion_attempts_table.c.ignored_at,
                 failed_ingestion_attempts_table.c.local_track_id,
+                failed_ingestion_attempts_table.c.source_mtime_ns,
                 failed_ingestion_attempts_table.c.source_path,
+                failed_ingestion_attempts_table.c.source_size,
             )
             .select_from(failed_ingestion_attempts_table)
             .order_by(
+                failed_ingestion_attempts_table.c.ignored_at.is_not(None).asc(),
                 failed_ingestion_attempts_table.c.failed_at.desc(),
                 failed_ingestion_attempts_table.c.id.desc(),
             )
@@ -154,11 +165,20 @@ class MaintenanceStore:
         return [
             UnidentifiedTrackRecord(
                 id=row["id"],
+                attempt_count=row["attempt_count"],
                 failed_at=row["failed_at"].isoformat(),
                 failure_reason=row["failure_reason"],
                 filename=row["filename"],
+                first_failed_at=row["first_failed_at"].isoformat(),
+                ignored_at=(
+                    row["ignored_at"].isoformat()
+                    if row["ignored_at"] is not None
+                    else None
+                ),
                 local_track_id=row["local_track_id"],
+                source_mtime_ns=row["source_mtime_ns"],
                 source_path=row["source_path"],
+                source_size=row["source_size"],
             )
             for row in rows
             if _is_supported_audio_filename(row["filename"])

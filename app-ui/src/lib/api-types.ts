@@ -311,6 +311,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/maintenance/unidentified/{attempt_id}/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Retry Unidentified */
+        post: operations["retry_unidentified_api_maintenance_unidentified__attempt_id__retry_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/maintenance/unidentified/{attempt_id}/ignore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Ignore Unidentified */
+        post: operations["ignore_unidentified_api_maintenance_unidentified__attempt_id__ignore_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/proposals": {
         parameters: {
             query?: never;
@@ -842,25 +876,53 @@ export interface components {
             /** Job Id */
             job_id: string;
         };
+        /** UnidentifiedIgnoreResponse */
+        UnidentifiedIgnoreResponse: {
+            /** Id */
+            id: number;
+            /** Ignored At */
+            ignored_at: string;
+            /** Source Path */
+            source_path: string;
+        };
         /** UnidentifiedResponse */
         UnidentifiedResponse: {
             /** Tracks */
             tracks: components["schemas"]["UnidentifiedTrackResponse"][];
         };
+        /** UnidentifiedRetryResponse */
+        UnidentifiedRetryResponse: {
+            /** Id */
+            id: number;
+            /** Job Id */
+            job_id: string | null;
+            /** Source Path */
+            source_path: string;
+        };
         /** UnidentifiedTrackResponse */
         UnidentifiedTrackResponse: {
             /** Id */
             id: number;
+            /** Attempt Count */
+            attempt_count: number;
             /** Failed At */
             failed_at: string;
             /** Failure Reason */
             failure_reason: string;
             /** Filename */
             filename: string;
+            /** First Failed At */
+            first_failed_at: string;
+            /** Ignored At */
+            ignored_at: string | null;
             /** Local Track Id */
             local_track_id: number | null;
+            /** Source Mtime Ns */
+            source_mtime_ns: number | null;
             /** Source Path */
             source_path: string;
+            /** Source Size */
+            source_size: number | null;
         };
         /** UpdateStreamingAccountAuthRequest */
         UpdateStreamingAccountAuthRequest: {
@@ -1418,6 +1480,68 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["UnidentifiedResponse"];
+                };
+            };
+        };
+    };
+    retry_unidentified_api_maintenance_unidentified__attempt_id__retry_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                attempt_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UnidentifiedRetryResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    ignore_unidentified_api_maintenance_unidentified__attempt_id__ignore_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                attempt_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UnidentifiedIgnoreResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

@@ -12,6 +12,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from app.core.db import create_database_engine
 from app.core.paths import resolve_staging_path
 from app.ingestion import IngestionJobEnqueuer, IngestionWatcher
+from app.ingestion.failures import FailedIngestionAttemptStore
 from app.library.router import create_router as create_library_router
 from app.links.router import create_router as create_links_router
 from app.local_tracks.router import create_router as create_local_tracks_router
@@ -44,6 +45,11 @@ def create_app() -> FastAPI:
         app.state.database_engine = database_engine
         ingest_roots = _resolve_ingest_roots(database_engine)
         ingestion_enqueuer = IngestionJobEnqueuer(redis_url) if redis_url else None
+        failed_attempt_store = (
+            FailedIngestionAttemptStore(engine=database_engine)
+            if database_engine is not None
+            else None
+        )
 
         def enqueue_new_file(path: Path) -> None:
             if ingestion_enqueuer is None:
@@ -51,6 +57,13 @@ def create_app() -> FastAPI:
                     "REDIS_URL is not configured; skipping ingestion candidate: %s",
                     path,
                 )
+                return
+
+            if (
+                failed_attempt_store is not None
+                and failed_attempt_store.should_skip_auto_enqueue(path)
+            ):
+                logger.info("Skipped unchanged failed ingestion source: %s", path)
                 return
 
             job_id = ingestion_enqueuer.enqueue(path)
@@ -134,7 +147,9 @@ def create_app() -> FastAPI:
         prefix="/api",
     )
     app.include_router(
-        create_maintenance_router(),
+        create_maintenance_router(
+            require_redis_url=require_redis_url,
+        ),
         prefix="/api",
     )
     app.include_router(

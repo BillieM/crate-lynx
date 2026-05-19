@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 from cryptography.fernet import Fernet
 from app.ingestion.failures import (
+    FailedIngestionAttemptStore,
     failed_ingestion_attempts_table,
     metadata as failed_ingestion_attempts_metadata,
 )
@@ -124,6 +125,8 @@ def test_links_routes_are_mounted_under_api_prefix() -> None:
     assert "/api/local-tracks/{local_track_id}" in route_paths
     assert "/api/maintenance/missing-locally" in route_paths
     assert "/api/maintenance/unidentified" in route_paths
+    assert "/api/maintenance/unidentified/{attempt_id}/retry" in route_paths
+    assert "/api/maintenance/unidentified/{attempt_id}/ignore" in route_paths
     assert "/api/streaming/accounts/{account_id}/auth" in route_paths
     assert "/api/streaming/accounts/{account_id}/sync" in route_paths
     assert "/api/streaming/accounts/{account_id}/refresh-metadata" in route_paths
@@ -249,6 +252,56 @@ def test_startup_watcher_enqueues_ingestion_jobs(
     asyncio.run(run_lifespan())
 
     assert enqueued_paths == [tmp_path / "incoming" / "track.mp3"]
+
+
+def test_startup_watcher_skips_unchanged_failed_sources_and_retries_changed(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite:///{tmp_path / 'settings.db'}"
+    engine = create_engine(database_url)
+    settings_metadata.create_all(engine)
+    failed_ingestion_attempts_metadata.create_all(engine)
+    source = tmp_path / "incoming" / "unknown.mp3"
+    source.parent.mkdir()
+    source.write_bytes(b"mp3")
+    FailedIngestionAttemptStore(database_url).persist(
+        source_path=source,
+        fingerprint=None,
+        failure_reason="Beets could not identify metadata",
+    )
+    enqueued_paths: list[Path] = []
+
+    class StubIngestionJobEnqueuer:
+        def __init__(self, redis_url: str) -> None:
+            assert redis_url == "redis://redis:6379/0"
+
+        def enqueue(self, path: Path) -> str:
+            enqueued_paths.append(path)
+            return "ingestion-job-123"
+
+    monkeypatch.setenv("DATABASE_URL", database_url)
+    monkeypatch.setenv("REDIS_URL", "redis://redis:6379/0")
+    monkeypatch.setenv("TOKEN_ENCRYPTION_KEY", Fernet.generate_key().decode("utf-8"))
+    monkeypatch.setattr("app.main.IngestionWatcher", StubIngestionWatcher)
+    monkeypatch.setattr("app.main.IngestionJobEnqueuer", StubIngestionJobEnqueuer)
+    StubIngestionWatcher.instances = []
+    app = create_app()
+
+    async def run_lifespan() -> None:
+        async with app.router.lifespan_context(app):
+            watcher = StubIngestionWatcher.instances[-1]
+            watcher.on_new_file(source)
+            source.write_bytes(b"changed mp3")
+            watcher.on_new_file(source)
+
+    asyncio.run(run_lifespan())
+
+    assert enqueued_paths == [source]
+    with engine.connect() as connection:
+        rows = connection.execute(select(failed_ingestion_attempts_table)).all()
+
+    assert rows == []
 
 
 def test_ingestion_processor_factory_uses_configured_staging_base(
@@ -1696,7 +1749,12 @@ def test_unidentified_endpoint_lists_durable_failed_ingestion_attempts(
                     "filename": "old.flac",
                     "fingerprint": None,
                     "failure_reason": "Unsupported audio format",
+                    "first_failed_at": datetime(2026, 5, 1, 9, 30, tzinfo=UTC),
                     "failed_at": datetime(2026, 5, 1, 10, 0, tzinfo=UTC),
+                    "attempt_count": 2,
+                    "source_size": 1024,
+                    "source_mtime_ns": 1_746_093_600_000_000_000,
+                    "ignored_at": None,
                     "local_track_id": None,
                 },
                 {
@@ -1705,7 +1763,12 @@ def test_unidentified_endpoint_lists_durable_failed_ingestion_attempts(
                     "filename": "unknown-import-9a4f.mp3",
                     "fingerprint": "fp_7d91c2a8e4b0",
                     "failure_reason": "Beets could not identify metadata",
+                    "first_failed_at": datetime(2026, 5, 2, 21, 30, tzinfo=UTC),
                     "failed_at": datetime(2026, 5, 2, 21, 44, tzinfo=UTC),
+                    "attempt_count": 4,
+                    "source_size": 2048,
+                    "source_mtime_ns": 1_746_222_240_000_000_000,
+                    "ignored_at": None,
                     "local_track_id": 91,
                 },
                 {
@@ -1714,7 +1777,12 @@ def test_unidentified_endpoint_lists_durable_failed_ingestion_attempts(
                     "filename": ".DS_Store",
                     "fingerprint": None,
                     "failure_reason": "Unsupported audio format",
+                    "first_failed_at": datetime(2026, 5, 3, 8, 12, tzinfo=UTC),
                     "failed_at": datetime(2026, 5, 3, 8, 12, tzinfo=UTC),
+                    "attempt_count": 1,
+                    "source_size": None,
+                    "source_mtime_ns": None,
+                    "ignored_at": None,
                     "local_track_id": None,
                 },
                 {
@@ -1723,7 +1791,26 @@ def test_unidentified_endpoint_lists_durable_failed_ingestion_attempts(
                     "filename": "2f940acf775f48998bf67a0866d66d56",
                     "fingerprint": None,
                     "failure_reason": "Unsupported audio format",
+                    "first_failed_at": datetime(2026, 5, 3, 9, 15, tzinfo=UTC),
                     "failed_at": datetime(2026, 5, 3, 9, 15, tzinfo=UTC),
+                    "attempt_count": 1,
+                    "source_size": None,
+                    "source_mtime_ns": None,
+                    "ignored_at": None,
+                    "local_track_id": None,
+                },
+                {
+                    "id": 5,
+                    "source_path": "/ingestion/ignored.wav",
+                    "filename": "ignored.wav",
+                    "fingerprint": None,
+                    "failure_reason": "Ignored failure",
+                    "first_failed_at": datetime(2026, 5, 1, 8, 0, tzinfo=UTC),
+                    "failed_at": datetime(2026, 5, 1, 8, 5, tzinfo=UTC),
+                    "attempt_count": 3,
+                    "source_size": 4096,
+                    "source_mtime_ns": 1_746_086_700_000_000_000,
+                    "ignored_at": datetime(2026, 5, 3, 10, 0, tzinfo=UTC),
                     "local_track_id": None,
                 },
             ],
@@ -1743,22 +1830,126 @@ def test_unidentified_endpoint_lists_durable_failed_ingestion_attempts(
         "tracks": [
             {
                 "id": 2,
+                "attempt_count": 4,
                 "failed_at": "2026-05-02T21:44:00",
                 "failure_reason": "Beets could not identify metadata",
                 "filename": "unknown-import-9a4f.mp3",
+                "first_failed_at": "2026-05-02T21:30:00",
+                "ignored_at": None,
                 "local_track_id": 91,
+                "source_mtime_ns": 1_746_222_240_000_000_000,
                 "source_path": "/ingestion/unknown-import-9a4f.mp3",
+                "source_size": 2048,
             },
             {
                 "id": 1,
+                "attempt_count": 2,
                 "failed_at": "2026-05-01T10:00:00",
                 "failure_reason": "Unsupported audio format",
                 "filename": "old.flac",
+                "first_failed_at": "2026-05-01T09:30:00",
+                "ignored_at": None,
                 "local_track_id": None,
+                "source_mtime_ns": 1_746_093_600_000_000_000,
                 "source_path": "/ingestion/old.flac",
+                "source_size": 1024,
+            },
+            {
+                "id": 5,
+                "attempt_count": 3,
+                "failed_at": "2026-05-01T08:05:00",
+                "failure_reason": "Ignored failure",
+                "filename": "ignored.wav",
+                "first_failed_at": "2026-05-01T08:00:00",
+                "ignored_at": "2026-05-03T10:00:00",
+                "local_track_id": None,
+                "source_mtime_ns": 1_746_086_700_000_000_000,
+                "source_path": "/ingestion/ignored.wav",
+                "source_size": 4096,
             },
         ]
     }
+
+
+def test_unidentified_retry_endpoint_clears_failure_and_enqueues_source(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite:///{tmp_path / 'unidentified-retry.db'}"
+    engine = create_engine(database_url)
+    failed_ingestion_attempts_metadata.create_all(engine)
+    monkeypatch.setenv("DATABASE_URL", database_url)
+    monkeypatch.setenv("REDIS_URL", "redis://redis:6379/0")
+    source = tmp_path / "incoming" / "unknown.mp3"
+    source.parent.mkdir()
+    source.write_bytes(b"mp3")
+    failure_store = FailedIngestionAttemptStore(database_url)
+    failure_store.persist(
+        source_path=source,
+        fingerprint=None,
+        failure_reason="Beets could not identify metadata",
+    )
+    enqueued_paths: list[Path] = []
+
+    class StubIngestionJobEnqueuer:
+        def __init__(self, redis_url: str) -> None:
+            assert redis_url == "redis://redis:6379/0"
+
+        def enqueue(self, path: Path) -> str:
+            enqueued_paths.append(path)
+            return "ingestion-job-123"
+
+    monkeypatch.setattr(
+        "app.maintenance.router.IngestionJobEnqueuer",
+        StubIngestionJobEnqueuer,
+    )
+    app = create_app()
+    route = _route("POST", "/api/maintenance/unidentified/{attempt_id}/retry", app)
+
+    response = _call_endpoint(route.endpoint, 1)
+
+    assert response.model_dump(mode="json") == {
+        "id": 1,
+        "job_id": "ingestion-job-123",
+        "source_path": str(source),
+    }
+    assert enqueued_paths == [source]
+    with engine.connect() as connection:
+        rows = connection.execute(select(failed_ingestion_attempts_table)).all()
+
+    assert rows == []
+
+
+def test_unidentified_ignore_endpoint_marks_failure_ignored(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite:///{tmp_path / 'unidentified-ignore.db'}"
+    engine = create_engine(database_url)
+    failed_ingestion_attempts_metadata.create_all(engine)
+    monkeypatch.setenv("DATABASE_URL", database_url)
+    source = tmp_path / "incoming" / "unknown.mp3"
+    source.parent.mkdir()
+    source.write_bytes(b"mp3")
+    FailedIngestionAttemptStore(database_url).persist(
+        source_path=source,
+        fingerprint=None,
+        failure_reason="Beets could not identify metadata",
+    )
+    app = create_app()
+    route = _route("POST", "/api/maintenance/unidentified/{attempt_id}/ignore", app)
+
+    response = _call_endpoint(route.endpoint, 1)
+
+    assert response.id == 1
+    assert response.source_path == str(source)
+    assert response.ignored_at
+    with engine.connect() as connection:
+        row = (
+            connection.execute(select(failed_ingestion_attempts_table)).mappings().one()
+        )
+
+    assert row["ignored_at"] is not None
 
 
 def test_playlist_m3u_export_endpoint_returns_attachment(

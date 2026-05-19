@@ -5,8 +5,10 @@ import type { PropsWithChildren } from "react";
 import {
   fetchMissingLocallyTracks,
   fetchUnidentifiedTracks,
+  ignoreUnidentifiedTrack,
   maintenanceQueryKeys,
   rescueLocalTrackMetadata,
+  retryUnidentifiedTrack,
   useMissingLocallyTracksQuery,
   useUnidentifiedTracksQuery,
 } from "./queries";
@@ -80,12 +82,17 @@ describe("maintenance queries", () => {
       json: async () => ({
         tracks: [
           {
+            attempt_count: 3,
             failed_at: "2026-05-02T21:44:00Z",
             failure_reason: "Beets could not identify metadata",
             filename: "unknown-import-9a4f.mp3",
+            first_failed_at: "2026-05-01T20:10:00Z",
             id: 4001,
+            ignored_at: null,
             local_track_id: null,
+            source_mtime_ns: 1746217040000000000,
             source_path: "ingestion/failed/unknown-import-9a4f.mp3",
+            source_size: 3210,
           },
         ],
       }),
@@ -94,12 +101,17 @@ describe("maintenance queries", () => {
     await expect(fetchUnidentifiedTracks()).resolves.toEqual({
       tracks: [
         {
+          attempt_count: 3,
           failed_at: "2026-05-02T21:44:00Z",
           failure_reason: "Beets could not identify metadata",
           filename: "unknown-import-9a4f.mp3",
+          first_failed_at: "2026-05-01T20:10:00Z",
           id: 4001,
+          ignored_at: null,
           local_track_id: null,
+          source_mtime_ns: 1746217040000000000,
           source_path: "ingestion/failed/unknown-import-9a4f.mp3",
+          source_size: 3210,
         },
       ],
     });
@@ -126,6 +138,46 @@ describe("maintenance queries", () => {
     });
   });
 
+  it("posts unidentified retry to the durable maintenance endpoint", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        id: 4001,
+        job_id: "ingestion-job-1",
+        source_path: "ingestion/failed/unknown-import-9a4f.mp3",
+      }),
+    } as Response);
+
+    await expect(retryUnidentifiedTrack(4001)).resolves.toEqual({
+      id: 4001,
+      job_id: "ingestion-job-1",
+      source_path: "ingestion/failed/unknown-import-9a4f.mp3",
+    });
+    expect(fetchMock).toHaveBeenCalledWith("/api/maintenance/unidentified/4001/retry", {
+      method: "POST",
+    });
+  });
+
+  it("posts unidentified ignore to the durable maintenance endpoint", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        id: 4001,
+        ignored_at: "2026-05-03T11:00:00Z",
+        source_path: "ingestion/failed/unknown-import-9a4f.mp3",
+      }),
+    } as Response);
+
+    await expect(ignoreUnidentifiedTrack(4001)).resolves.toEqual({
+      id: 4001,
+      ignored_at: "2026-05-03T11:00:00Z",
+      source_path: "ingestion/failed/unknown-import-9a4f.mp3",
+    });
+    expect(fetchMock).toHaveBeenCalledWith("/api/maintenance/unidentified/4001/ignore", {
+      method: "POST",
+    });
+  });
+
   it("throws a status-coded error when a maintenance report request fails", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue({
       ok: false,
@@ -142,6 +194,16 @@ describe("maintenance queries", () => {
     } as Response);
 
     await expect(rescueLocalTrackMetadata(4001)).rejects.toThrow("Metadata rescue request failed with status 409");
+  });
+
+  it("throws status-coded errors when retry or ignore fails", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: false,
+      status: 409,
+    } as Response);
+
+    await expect(retryUnidentifiedTrack(4001)).rejects.toThrow("Unidentified retry request failed with status 409");
+    await expect(ignoreUnidentifiedTrack(4001)).rejects.toThrow("Unidentified ignore request failed with status 409");
   });
 
   it("runs the missing-locally hook", async () => {
@@ -184,12 +246,17 @@ describe("maintenance queries", () => {
       json: async () => ({
         tracks: [
           {
+            attempt_count: 2,
             failed_at: "2026-05-02T22:03:00Z",
             failure_reason: "Multiple low-confidence candidates",
             filename: "side-b-live-rip.flac",
+            first_failed_at: "2026-05-02T21:58:00Z",
             id: 4002,
+            ignored_at: null,
             local_track_id: 1004,
+            source_mtime_ns: 1746218080000000000,
             source_path: "ingestion/failed/side-b-live-rip.flac",
+            source_size: 9812,
           },
         ],
       }),

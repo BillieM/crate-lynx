@@ -44,6 +44,7 @@ function App() {
   const playlistsQuery = useStreamingPlaylistsQuery();
   const unidentifiedQuery = useUnidentifiedTracksQuery();
   const streamingPlaylists = playlistsQuery.data?.playlists ?? emptyStreamingPlaylists;
+  const activeUnidentifiedCount = unidentifiedQuery.data?.tracks.filter((track) => track.ignored_at === null).length;
   const defaultPlaylistViewId = streamingPlaylists[0] ? getPlaylistViewId(streamingPlaylists[0].id) : settingsSyncYoutubeMusicViewId;
   const libraryStats = libraryTracksQuery.data?.pages[0]?.stats;
   const libraryItems = useMemo(
@@ -55,12 +56,12 @@ function App() {
       buildMaintenanceNavItems({
         missingCount: missingLocallyQuery.data?.tracks.length,
         proposalCount: linkProposalsQuery.data?.proposals.length,
-        unidentifiedCount: unidentifiedQuery.data?.tracks.length,
+        unidentifiedCount: activeUnidentifiedCount,
       }),
     [
+      activeUnidentifiedCount,
       linkProposalsQuery.data?.proposals.length,
       missingLocallyQuery.data?.tracks.length,
-      unidentifiedQuery.data?.tracks.length,
     ],
   );
   const playlistItems = useMemo(() => buildPlaylistNavItems(streamingPlaylists), [streamingPlaylists]);
