@@ -430,6 +430,74 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/streaming/relationships/suggestions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Relationship Suggestions */
+        get: operations["list_relationship_suggestions_api_streaming_relationships_suggestions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/streaming/relationships/suggestions/generate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Generate Relationship Suggestions */
+        post: operations["generate_relationship_suggestions_api_streaming_relationships_suggestions_generate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/streaming/relationships/suggestions/{suggestion_id}/accept": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Accept Relationship Suggestion */
+        post: operations["accept_relationship_suggestion_api_streaming_relationships_suggestions__suggestion_id__accept_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/streaming/relationships/suggestions/{suggestion_id}/reject": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reject Relationship Suggestion */
+        post: operations["reject_relationship_suggestion_api_streaming_relationships_suggestions__suggestion_id__reject_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/local-tracks/{local_track_id}": {
         parameters: {
             query?: never;
@@ -502,6 +570,32 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** AcceptStreamingRelationshipSuggestionRequest */
+        AcceptStreamingRelationshipSuggestionRequest: {
+            /** Winning Final Link Id */
+            winning_final_link_id?: number | null;
+        };
+        /** AcceptStreamingRelationshipSuggestionResponse */
+        AcceptStreamingRelationshipSuggestionResponse: {
+            /** Suggestion Id */
+            suggestion_id: number;
+            /** Relationship Id */
+            relationship_id: number;
+            /**
+             * Relationship Type
+             * @enum {string}
+             */
+            relationship_type: "equivalent" | "related";
+            /**
+             * Status
+             * @constant
+             */
+            status: "accepted";
+            /** Accepted At */
+            accepted_at: string;
+            /** Detached Final Link Ids */
+            detached_final_link_ids: number[];
+        };
         /**
          * ConfidenceBand
          * @enum {string}
@@ -525,6 +619,11 @@ export interface components {
         GeneralSettingsResponse: {
             /** Ingest Folders */
             ingest_folders: components["schemas"]["IngestFolderResponse"][];
+        };
+        /** GenerateStreamingRelationshipSuggestionsResponse */
+        GenerateStreamingRelationshipSuggestionsResponse: {
+            /** Created Count */
+            created_count: number;
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -796,6 +895,18 @@ export interface components {
             /** Rejected At */
             rejected_at: string | null;
         };
+        /** RejectStreamingRelationshipSuggestionResponse */
+        RejectStreamingRelationshipSuggestionResponse: {
+            /** Suggestion Id */
+            suggestion_id: number;
+            /**
+             * Status
+             * @constant
+             */
+            status: "rejected";
+            /** Rejected At */
+            rejected_at: string;
+        };
         /** StreamingAccountResponse */
         StreamingAccountResponse: {
             /** Id */
@@ -885,6 +996,100 @@ export interface components {
         StreamingPlaylistsResponse: {
             /** Playlists */
             playlists: components["schemas"]["StreamingPlaylistResponse"][];
+        };
+        /** StreamingRelationshipConflictResponse */
+        StreamingRelationshipConflictResponse: {
+            /** First Group Track Ids */
+            first_group_track_ids: number[];
+            /** Second Group Track Ids */
+            second_group_track_ids: number[];
+            /** Local Track Ids */
+            local_track_ids: number[];
+            /** Final Links */
+            final_links: components["schemas"]["StreamingRelationshipLocalLinkResponse"][];
+        };
+        /** StreamingRelationshipLocalLinkResponse */
+        StreamingRelationshipLocalLinkResponse: {
+            /** Final Link Id */
+            final_link_id: number;
+            /** Local Track Id */
+            local_track_id: number;
+            /** Local File Path */
+            local_file_path: string | null;
+            /** Local Title */
+            local_title: string | null;
+            /** Local Artist */
+            local_artist: string | null;
+            /** Local Album */
+            local_album: string | null;
+            /** Streaming Track Id */
+            streaming_track_id: number;
+            /** Source Streaming Track Id */
+            source_streaming_track_id: number;
+            /**
+             * Resolution Source
+             * @enum {string}
+             */
+            resolution_source: "direct" | "equivalent";
+            /** Approved At */
+            approved_at: string;
+        };
+        /** StreamingRelationshipSuggestionListResponse */
+        StreamingRelationshipSuggestionListResponse: {
+            /** Suggestions */
+            suggestions: components["schemas"]["StreamingRelationshipSuggestionResponse"][];
+        };
+        /** StreamingRelationshipSuggestionResponse */
+        StreamingRelationshipSuggestionResponse: {
+            /** Id */
+            id: number;
+            /**
+             * Relationship Type
+             * @enum {string}
+             */
+            relationship_type: "equivalent" | "related";
+            /** Match Method */
+            match_method: string;
+            /** Score */
+            score: number;
+            /** Confidence */
+            confidence: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "pending" | "accepted" | "rejected";
+            /** Created At */
+            created_at: string;
+            first_track: components["schemas"]["StreamingRelationshipTrackResponse"];
+            second_track: components["schemas"]["StreamingRelationshipTrackResponse"];
+            first_link: components["schemas"]["StreamingRelationshipLocalLinkResponse"] | null;
+            second_link: components["schemas"]["StreamingRelationshipLocalLinkResponse"] | null;
+            /**
+             * Conflict State
+             * @enum {string}
+             */
+            conflict_state: "none" | "different_local_links";
+            conflict: components["schemas"]["StreamingRelationshipConflictResponse"] | null;
+        };
+        /** StreamingRelationshipTrackResponse */
+        StreamingRelationshipTrackResponse: {
+            /** Id */
+            id: number;
+            /** Provider Track Id */
+            provider_track_id: string;
+            /** Title */
+            title: string;
+            /** Artist */
+            artist: string;
+            /** Album */
+            album: string | null;
+            /** Year */
+            year: number | null;
+            /** Isrc */
+            isrc: string | null;
+            /** Duration Ms */
+            duration_ms: number | null;
         };
         /** StreamingSyncResponse */
         StreamingSyncResponse: {
@@ -1724,6 +1929,112 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_relationship_suggestions_api_streaming_relationships_suggestions_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StreamingRelationshipSuggestionListResponse"];
+                };
+            };
+        };
+    };
+    generate_relationship_suggestions_api_streaming_relationships_suggestions_generate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GenerateStreamingRelationshipSuggestionsResponse"];
+                };
+            };
+        };
+    };
+    accept_relationship_suggestion_api_streaming_relationships_suggestions__suggestion_id__accept_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                suggestion_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["AcceptStreamingRelationshipSuggestionRequest"] | null;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AcceptStreamingRelationshipSuggestionResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reject_relationship_suggestion_api_streaming_relationships_suggestions__suggestion_id__reject_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                suggestion_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RejectStreamingRelationshipSuggestionResponse"];
                 };
             };
             /** @description Validation Error */

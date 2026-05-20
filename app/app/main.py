@@ -18,6 +18,7 @@ from app.links.router import create_router as create_links_router
 from app.local_tracks.router import create_router as create_local_tracks_router
 from app.maintenance.router import create_router as create_maintenance_router
 from app.matching.router import create_router as create_matching_router
+from app.relationships.router import create_router as create_relationships_router
 from app.rescue.router import create_router as create_rescue_router
 from app.settings.router import create_router as create_settings_router
 from app.settings.store import GeneralSettingsStore
@@ -154,6 +155,12 @@ def create_app() -> FastAPI:
     )
     app.include_router(
         create_links_router(
+            require_redis_url=require_redis_url,
+        ),
+        prefix="/api",
+    )
+    app.include_router(
+        create_relationships_router(
             require_redis_url=require_redis_url,
         ),
         prefix="/api",

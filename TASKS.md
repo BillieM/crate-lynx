@@ -41,7 +41,7 @@
   - Run generation after playlist sync/metadata refresh and expose a manual generation action.
   - Add backend tests for ISRC, fuzzy scoring, scope, dedupe, accepted suppression, related suppression, and group-aware rejection.
 
-- [ ] Add backend relationship queue actions.
+- [x] Add backend relationship queue actions.
   - Add router, schemas, store/service methods, and app registration for listing, accepting, rejecting, and generating relationship suggestions.
   - Return both track metadata, score, confidence, match method, suggested type, local-link context, and conflict state from the list API.
   - Accepting `equivalent` should create the relationship, handle no-link and one-link groups directly, and require `winning_final_link_id` for different-local conflicts.
