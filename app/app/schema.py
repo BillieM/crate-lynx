@@ -9,6 +9,7 @@ from app.ingestion.beets_mirror import metadata as beets_mirror_metadata
 from app.links.store import metadata as links_metadata
 from app.local_tracks.store import metadata as local_tracks_metadata
 from app.matching.pipeline import metadata as suggested_links_metadata
+from app.relationships.models import metadata as relationships_metadata
 from app.settings.models import metadata as settings_metadata
 from app.streaming.models import metadata as streaming_metadata
 
@@ -39,6 +40,7 @@ def _app_tables() -> Iterable[Table]:
         streaming_metadata,
         links_metadata,
         suggested_links_metadata,
+        relationships_metadata,
         settings_metadata,
         failed_ingestion_attempts_metadata,
     )
@@ -62,16 +64,50 @@ def _add_foreign_keys(metadata: MetaData) -> None:
             ("local_track_id", "local_tracks.id"),
             ("streaming_track_id", "streaming_tracks.id"),
         ),
+        "streaming_relationships": (
+            (
+                "lower_track_id",
+                "streaming_tracks.id",
+                "fk_streaming_relationships_lower_track",
+            ),
+            (
+                "higher_track_id",
+                "streaming_tracks.id",
+                "fk_streaming_relationships_higher_track",
+            ),
+        ),
+        "streaming_relationship_suggestions": (
+            (
+                "lower_track_id",
+                "streaming_tracks.id",
+                "fk_streaming_relationship_suggestions_lower_track",
+            ),
+            (
+                "higher_track_id",
+                "streaming_tracks.id",
+                "fk_streaming_relationship_suggestions_higher_track",
+            ),
+            (
+                "accepted_relationship_id",
+                "streaming_relationships.id",
+                "fk_streaming_relationship_suggestions_accepted_relationship",
+            ),
+        ),
     }
     for table_name, constraints in foreign_keys.items():
         table = metadata.tables[table_name]
-        for column_name, reference in constraints:
+        for constraint in constraints:
+            column_name = constraint[0]
+            reference = constraint[1]
+            name = (
+                constraint[2]
+                if len(constraint) == 3
+                else f"fk_{table_name}_{column_name}_{reference.rsplit('.', 1)[0]}"
+            )
             table.append_constraint(
                 ForeignKeyConstraint(
                     [column_name],
                     [reference],
-                    name=(
-                        f"fk_{table_name}_{column_name}_{reference.rsplit('.', 1)[0]}"
-                    ),
+                    name=name,
                 )
             )

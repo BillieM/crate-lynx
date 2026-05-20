@@ -11,6 +11,14 @@ from sqlalchemy import create_engine, insert, inspect, select, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.exc import IntegrityError
 
+from app.relationships.models import (
+    STREAMING_RELATIONSHIP_CONFIDENCE_HIGH,
+    STREAMING_RELATIONSHIP_SUGGESTION_STATUS_PENDING,
+    STREAMING_RELATIONSHIP_TYPE_EQUIVALENT,
+    STREAMING_RELATIONSHIP_TYPE_RELATED,
+    streaming_relationship_suggestions_table,
+    streaming_relationships_table,
+)
 from app.schema import build_app_metadata
 from app.streaming.models import (
     PLAYLIST_SYNC_MODE_FULL,
@@ -288,6 +296,130 @@ def test_schema_integrity_migration_deduplicates_provider_rows(
         "playlist_id": 10,
         "streaming_track_id": 20,
     }
+
+
+def test_streaming_relationship_migration_enforces_normalized_pairs(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite:///{tmp_path / 'streaming-relationships.db'}"
+    monkeypatch.setenv("DATABASE_URL", database_url)
+
+    alembic_config = _alembic_config()
+    command.upgrade(alembic_config, "head")
+
+    engine = create_engine(database_url)
+    with engine.begin() as connection:
+        first_track_id = connection.execute(
+            insert(streaming_tracks_table).values(
+                provider_track_id="track-1",
+                title="Track 1",
+                artist="Artist",
+            )
+        ).inserted_primary_key[0]
+        second_track_id = connection.execute(
+            insert(streaming_tracks_table).values(
+                provider_track_id="track-2",
+                title="Track 2",
+                artist="Artist",
+            )
+        ).inserted_primary_key[0]
+        third_track_id = connection.execute(
+            insert(streaming_tracks_table).values(
+                provider_track_id="track-3",
+                title="Track 3",
+                artist="Artist",
+            )
+        ).inserted_primary_key[0]
+        relationship_id = connection.execute(
+            insert(streaming_relationships_table).values(
+                lower_track_id=first_track_id,
+                higher_track_id=second_track_id,
+                relationship_type=STREAMING_RELATIONSHIP_TYPE_EQUIVALENT,
+            )
+        ).inserted_primary_key[0]
+        suggestion_id = connection.execute(
+            insert(streaming_relationship_suggestions_table).values(
+                lower_track_id=first_track_id,
+                higher_track_id=third_track_id,
+                relationship_type=STREAMING_RELATIONSHIP_TYPE_RELATED,
+                match_method="fuzzy",
+                score=0.74,
+                confidence=STREAMING_RELATIONSHIP_CONFIDENCE_HIGH,
+                status=STREAMING_RELATIONSHIP_SUGGESTION_STATUS_PENDING,
+            )
+        ).inserted_primary_key[0]
+
+    with engine.connect() as connection:
+        rows = (
+            connection.execute(
+                select(
+                    streaming_relationships_table.c.id,
+                    streaming_relationships_table.c.lower_track_id,
+                    streaming_relationships_table.c.higher_track_id,
+                    streaming_relationships_table.c.relationship_type,
+                )
+            )
+            .mappings()
+            .all()
+        )
+        suggestions = (
+            connection.execute(
+                select(
+                    streaming_relationship_suggestions_table.c.id,
+                    streaming_relationship_suggestions_table.c.lower_track_id,
+                    streaming_relationship_suggestions_table.c.higher_track_id,
+                    streaming_relationship_suggestions_table.c.status,
+                )
+            )
+            .mappings()
+            .all()
+        )
+
+    with engine.begin() as connection:
+        try:
+            connection.execute(
+                insert(streaming_relationships_table).values(
+                    lower_track_id=second_track_id,
+                    higher_track_id=first_track_id,
+                    relationship_type=STREAMING_RELATIONSHIP_TYPE_EQUIVALENT,
+                )
+            )
+        except IntegrityError:
+            pass
+        else:
+            raise AssertionError("reversed relationship pair was accepted")
+
+    with engine.begin() as connection:
+        try:
+            connection.execute(
+                insert(streaming_relationships_table).values(
+                    lower_track_id=first_track_id,
+                    higher_track_id=second_track_id,
+                    relationship_type=STREAMING_RELATIONSHIP_TYPE_RELATED,
+                )
+            )
+        except IntegrityError:
+            pass
+        else:
+            raise AssertionError("duplicate relationship pair was accepted")
+
+    assert [dict(row) for row in rows] == [
+        {
+            "id": relationship_id,
+            "lower_track_id": first_track_id,
+            "higher_track_id": second_track_id,
+            "relationship_type": STREAMING_RELATIONSHIP_TYPE_EQUIVALENT,
+        }
+    ]
+    assert [dict(row) for row in suggestions] == [
+        {
+            "id": suggestion_id,
+            "lower_track_id": first_track_id,
+            "higher_track_id": third_track_id,
+            "status": STREAMING_RELATIONSHIP_SUGGESTION_STATUS_PENDING,
+        }
+    ]
 
 
 def test_local_track_beets_id_migration_deduplicates_and_enforces_unique(

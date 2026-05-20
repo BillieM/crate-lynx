@@ -23,6 +23,31 @@ suggested_links_view = table(
     column("created_at"),
 )
 
+streaming_relationships_view = table(
+    "streaming_relationships",
+    column("id"),
+    column("lower_track_id"),
+    column("higher_track_id"),
+    column("relationship_type"),
+    column("accepted_at"),
+)
+
+streaming_relationship_suggestions_view = table(
+    "streaming_relationship_suggestions",
+    column("id"),
+    column("lower_track_id"),
+    column("higher_track_id"),
+    column("relationship_type"),
+    column("match_method"),
+    column("score"),
+    column("confidence"),
+    column("status"),
+    column("accepted_relationship_id"),
+    column("accepted_at"),
+    column("rejected_at"),
+    column("created_at"),
+)
+
 beets_items_view = table(
     "beets_items",
     column("beets_id"),

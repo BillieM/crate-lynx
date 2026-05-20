@@ -16,6 +16,16 @@ from app.matching.pipeline import (
     SUGGESTED_LINK_STATUS_PENDING,
     suggested_links_table,
 )
+from app.relationships.models import (
+    STREAMING_RELATIONSHIP_CONFIDENCE_HIGH,
+    STREAMING_RELATIONSHIP_SUGGESTION_STATUS_ACCEPTED,
+    STREAMING_RELATIONSHIP_SUGGESTION_STATUS_PENDING,
+    STREAMING_RELATIONSHIP_SUGGESTION_STATUS_REJECTED,
+    STREAMING_RELATIONSHIP_TYPE_EQUIVALENT,
+    normalize_streaming_track_pair,
+    streaming_relationship_suggestions_table,
+    streaming_relationships_table,
+)
 from app.streaming.models import (
     PLAYLIST_SYNC_MODE_OFF,
     YOUTUBE_MUSIC_PROVIDER,
@@ -186,6 +196,64 @@ class TestDataFactory:
             approved_at=approved_at or datetime(2026, 5, 1, tzinfo=UTC),
             local_track_id=local_track_id,
             streaming_track_id=streaming_track_id,
+        )
+
+    def streaming_relationship(
+        self,
+        *,
+        accepted_at: datetime | None = None,
+        first_track_id: int,
+        relationship_type: str = STREAMING_RELATIONSHIP_TYPE_EQUIVALENT,
+        second_track_id: int,
+    ) -> int:
+        pair = normalize_streaming_track_pair(first_track_id, second_track_id)
+        return self._insert(
+            streaming_relationships_table,
+            accepted_at=accepted_at or datetime(2026, 5, 1, tzinfo=UTC),
+            lower_track_id=pair.lower_track_id,
+            higher_track_id=pair.higher_track_id,
+            relationship_type=relationship_type,
+        )
+
+    def streaming_relationship_suggestion(
+        self,
+        *,
+        accepted_at: datetime | None = None,
+        accepted_relationship_id: int | None = None,
+        confidence: str = STREAMING_RELATIONSHIP_CONFIDENCE_HIGH,
+        first_track_id: int,
+        match_method: str = "isrc",
+        rejected_at: datetime | None = None,
+        relationship_type: str = STREAMING_RELATIONSHIP_TYPE_EQUIVALENT,
+        score: float = 0.98,
+        second_track_id: int,
+        status: str = STREAMING_RELATIONSHIP_SUGGESTION_STATUS_PENDING,
+    ) -> int:
+        pair = normalize_streaming_track_pair(first_track_id, second_track_id)
+        timestamp = datetime(2026, 5, 1, tzinfo=UTC)
+        if (
+            status == STREAMING_RELATIONSHIP_SUGGESTION_STATUS_ACCEPTED
+            and accepted_at is None
+        ):
+            accepted_at = timestamp
+        if (
+            status == STREAMING_RELATIONSHIP_SUGGESTION_STATUS_REJECTED
+            and rejected_at is None
+        ):
+            rejected_at = timestamp
+
+        return self._insert(
+            streaming_relationship_suggestions_table,
+            accepted_at=accepted_at,
+            accepted_relationship_id=accepted_relationship_id,
+            confidence=confidence,
+            lower_track_id=pair.lower_track_id,
+            higher_track_id=pair.higher_track_id,
+            match_method=match_method,
+            rejected_at=rejected_at,
+            relationship_type=relationship_type,
+            score=score,
+            status=status,
         )
 
     def _insert(self, table: Any, **values: Any) -> int:
