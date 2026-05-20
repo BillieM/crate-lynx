@@ -41,6 +41,33 @@ class _LocalTags:
     duration_ms: int | None
 
 
+def normalize_match_text(value: object) -> str | None:
+    return _normalize_text(value)
+
+
+def score_track_tags(
+    *,
+    left_title: str,
+    left_artist: str,
+    left_album: str | None,
+    left_duration_ms: int | None,
+    right_title: str,
+    right_artist: str,
+    right_album: str | None,
+    right_duration_ms: int | None,
+) -> float:
+    return _score_tags(
+        local_title=left_title,
+        local_artist=left_artist,
+        local_album=left_album,
+        local_duration_ms=left_duration_ms,
+        streaming_title=right_title,
+        streaming_artist=right_artist,
+        streaming_album=right_album,
+        streaming_duration_ms=right_duration_ms,
+    )
+
+
 class TagMatcher:
     def __init__(
         self, *, database_url: str | None = None, engine: Engine | None = None

@@ -13,6 +13,7 @@ from sqlalchemy import create_engine, insert, select
 from sqlalchemy.exc import IntegrityError
 from ytmusicapi.exceptions import YTMusicUserError
 
+from app.relationships.models import metadata as relationships_metadata
 from app.streaming.jobs import (
     run_youtube_music_playlist_metadata_refresh_job,
     run_youtube_music_playlist_sync_job,
@@ -38,13 +39,18 @@ from app.streaming.adapters.youtube_music import (
 )
 
 
+def _create_streaming_schema(engine) -> None:
+    metadata.create_all(engine)
+    relationships_metadata.create_all(engine)
+
+
 def test_streaming_account_store_encrypts_and_persists_browser_headers(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
     database_url = f"sqlite:///{tmp_path / 'streaming.db'}"
     engine = create_engine(database_url)
-    metadata.create_all(engine)
+    _create_streaming_schema(engine)
     monkeypatch.setenv("TOKEN_ENCRYPTION_KEY", Fernet.generate_key().decode("utf-8"))
 
     browser_headers = {
@@ -88,7 +94,7 @@ def test_streaming_account_store_get_account_returns_browser_headers(
 ) -> None:
     database_url = f"sqlite:///{tmp_path / 'streaming-store.db'}"
     engine = create_engine(database_url)
-    metadata.create_all(engine)
+    _create_streaming_schema(engine)
     monkeypatch.setenv("TOKEN_ENCRYPTION_KEY", Fernet.generate_key().decode("utf-8"))
 
     browser_headers = {
@@ -129,7 +135,7 @@ def test_streaming_account_store_updates_youtube_music_account_auth(
 ) -> None:
     database_url = f"sqlite:///{tmp_path / 'streaming-auth-refresh.db'}"
     engine = create_engine(database_url)
-    metadata.create_all(engine)
+    _create_streaming_schema(engine)
     monkeypatch.setenv("TOKEN_ENCRYPTION_KEY", Fernet.generate_key().decode("utf-8"))
 
     store = StreamingAccountStore(database_url)
@@ -190,7 +196,7 @@ def test_streaming_account_store_refresh_auth_clears_previous_auth_error(
 ) -> None:
     database_url = f"sqlite:///{tmp_path / 'streaming-auth-refresh-error.db'}"
     engine = create_engine(database_url)
-    metadata.create_all(engine)
+    _create_streaming_schema(engine)
     monkeypatch.setenv("TOKEN_ENCRYPTION_KEY", Fernet.generate_key().decode("utf-8"))
 
     store = StreamingAccountStore(database_url)
@@ -225,7 +231,7 @@ def test_streaming_account_store_update_auth_returns_none_for_missing_account(
 ) -> None:
     database_url = f"sqlite:///{tmp_path / 'streaming-auth-refresh-missing.db'}"
     engine = create_engine(database_url)
-    metadata.create_all(engine)
+    _create_streaming_schema(engine)
     monkeypatch.setenv("TOKEN_ENCRYPTION_KEY", Fernet.generate_key().decode("utf-8"))
 
     assert (
@@ -243,7 +249,7 @@ def test_streaming_account_store_upserts_playlists(
 ) -> None:
     database_url = f"sqlite:///{tmp_path / 'streaming-playlists.db'}"
     engine = create_engine(database_url)
-    metadata.create_all(engine)
+    _create_streaming_schema(engine)
     monkeypatch.setenv("TOKEN_ENCRYPTION_KEY", Fernet.generate_key().decode("utf-8"))
 
     store = StreamingAccountStore(database_url)
@@ -310,7 +316,7 @@ def test_streaming_account_store_concurrent_upserts_reuse_provider_rows(
 ) -> None:
     database_url = f"sqlite:///{tmp_path / 'streaming-concurrent-upserts.db'}"
     engine = create_engine(database_url)
-    metadata.create_all(engine)
+    _create_streaming_schema(engine)
     monkeypatch.setenv("TOKEN_ENCRYPTION_KEY", Fernet.generate_key().decode("utf-8"))
 
     account = StreamingAccountStore(database_url).create_youtube_music_account(
@@ -370,7 +376,7 @@ def test_streaming_account_store_preserves_playlist_sync_mode_on_metadata_refres
 ) -> None:
     database_url = f"sqlite:///{tmp_path / 'streaming-playlist-mode.db'}"
     engine = create_engine(database_url)
-    metadata.create_all(engine)
+    _create_streaming_schema(engine)
     monkeypatch.setenv("TOKEN_ENCRYPTION_KEY", Fernet.generate_key().decode("utf-8"))
 
     store = StreamingAccountStore(database_url)
@@ -423,7 +429,7 @@ def test_streaming_account_store_updates_playlist_sync_mode(
 ) -> None:
     database_url = f"sqlite:///{tmp_path / 'streaming-playlist-sync-mode.db'}"
     engine = create_engine(database_url)
-    metadata.create_all(engine)
+    _create_streaming_schema(engine)
     monkeypatch.setenv("TOKEN_ENCRYPTION_KEY", Fernet.generate_key().decode("utf-8"))
 
     store = StreamingAccountStore(database_url)
@@ -463,7 +469,7 @@ def test_streaming_playlist_sync_mode_is_constrained(
 ) -> None:
     database_url = f"sqlite:///{tmp_path / 'streaming-playlist-sync-constraint.db'}"
     engine = create_engine(database_url)
-    metadata.create_all(engine)
+    _create_streaming_schema(engine)
     monkeypatch.setenv("TOKEN_ENCRYPTION_KEY", Fernet.generate_key().decode("utf-8"))
 
     account = StreamingAccountStore(database_url).create_youtube_music_account(
@@ -488,7 +494,7 @@ def test_streaming_account_store_syncs_youtube_music_playlists(
 ) -> None:
     database_url = f"sqlite:///{tmp_path / 'streaming-sync.db'}"
     engine = create_engine(database_url)
-    metadata.create_all(engine)
+    _create_streaming_schema(engine)
     monkeypatch.setenv("TOKEN_ENCRYPTION_KEY", Fernet.generate_key().decode("utf-8"))
 
     store = StreamingAccountStore(database_url)
@@ -593,7 +599,7 @@ def test_streaming_account_store_lists_playlists_with_imported_track_counts(
 ) -> None:
     database_url = f"sqlite:///{tmp_path / 'streaming-playlist-list.db'}"
     engine = create_engine(database_url)
-    metadata.create_all(engine)
+    _create_streaming_schema(engine)
     monkeypatch.setenv("TOKEN_ENCRYPTION_KEY", Fernet.generate_key().decode("utf-8"))
 
     store = StreamingAccountStore(database_url)
@@ -664,7 +670,7 @@ def test_streaming_account_store_persists_playlist_sync_failures(
 ) -> None:
     database_url = f"sqlite:///{tmp_path / 'streaming-playlist-failures.db'}"
     engine = create_engine(database_url)
-    metadata.create_all(engine)
+    _create_streaming_schema(engine)
     monkeypatch.setenv("TOKEN_ENCRYPTION_KEY", Fernet.generate_key().decode("utf-8"))
 
     store = StreamingAccountStore(database_url)
@@ -717,7 +723,7 @@ def test_streaming_account_store_upserts_tracks_and_playlist_membership(
 ) -> None:
     database_url = f"sqlite:///{tmp_path / 'streaming-tracks.db'}"
     engine = create_engine(database_url)
-    metadata.create_all(engine)
+    _create_streaming_schema(engine)
     monkeypatch.setenv("TOKEN_ENCRYPTION_KEY", Fernet.generate_key().decode("utf-8"))
 
     store = StreamingAccountStore(database_url)
@@ -827,7 +833,7 @@ def test_streaming_account_store_syncs_youtube_music_playlist_tracks(
 ) -> None:
     database_url = f"sqlite:///{tmp_path / 'streaming-track-sync.db'}"
     engine = create_engine(database_url)
-    metadata.create_all(engine)
+    _create_streaming_schema(engine)
     monkeypatch.setenv("TOKEN_ENCRYPTION_KEY", Fernet.generate_key().decode("utf-8"))
 
     store = StreamingAccountStore(database_url)
@@ -911,7 +917,7 @@ def test_streaming_account_store_syncs_only_active_playlist_tracks(
 ) -> None:
     database_url = f"sqlite:///{tmp_path / 'streaming-active-mode-sync.db'}"
     engine = create_engine(database_url)
-    metadata.create_all(engine)
+    _create_streaming_schema(engine)
     monkeypatch.setenv("TOKEN_ENCRYPTION_KEY", Fernet.generate_key().decode("utf-8"))
 
     store = StreamingAccountStore(database_url)
@@ -993,7 +999,7 @@ def test_streaming_account_store_syncs_single_off_playlist_directly(
 ) -> None:
     database_url = f"sqlite:///{tmp_path / 'streaming-single-playlist-sync.db'}"
     engine = create_engine(database_url)
-    metadata.create_all(engine)
+    _create_streaming_schema(engine)
     monkeypatch.setenv("TOKEN_ENCRYPTION_KEY", Fernet.generate_key().decode("utf-8"))
 
     store = StreamingAccountStore(database_url)
@@ -1053,7 +1059,7 @@ def test_streaming_account_store_preserves_membership_for_malformed_playlist(
 ) -> None:
     database_url = f"sqlite:///{tmp_path / 'streaming-malformed-playlist.db'}"
     engine = create_engine(database_url)
-    metadata.create_all(engine)
+    _create_streaming_schema(engine)
     monkeypatch.setenv("TOKEN_ENCRYPTION_KEY", Fernet.generate_key().decode("utf-8"))
 
     store = StreamingAccountStore(database_url)
@@ -1162,7 +1168,7 @@ def test_streaming_account_store_empty_playlist_clears_membership_and_error(
 ) -> None:
     database_url = f"sqlite:///{tmp_path / 'streaming-empty-playlist.db'}"
     engine = create_engine(database_url)
-    metadata.create_all(engine)
+    _create_streaming_schema(engine)
     monkeypatch.setenv("TOKEN_ENCRYPTION_KEY", Fernet.generate_key().decode("utf-8"))
 
     store = StreamingAccountStore(database_url)
@@ -1231,7 +1237,7 @@ def test_streaming_account_store_marks_auth_errors_without_crashing(
 ) -> None:
     database_url = f"sqlite:///{tmp_path / 'streaming-auth-error.db'}"
     engine = create_engine(database_url)
-    metadata.create_all(engine)
+    _create_streaming_schema(engine)
     monkeypatch.setenv("TOKEN_ENCRYPTION_KEY", Fernet.generate_key().decode("utf-8"))
 
     store = StreamingAccountStore(database_url)
@@ -1267,7 +1273,7 @@ def test_streaming_account_store_marks_logged_out_playlist_response_as_auth_erro
 ) -> None:
     database_url = f"sqlite:///{tmp_path / 'streaming-playlist-auth-error.db'}"
     engine = create_engine(database_url)
-    metadata.create_all(engine)
+    _create_streaming_schema(engine)
     monkeypatch.setenv("TOKEN_ENCRYPTION_KEY", Fernet.generate_key().decode("utf-8"))
 
     store = StreamingAccountStore(database_url)
@@ -1319,7 +1325,7 @@ def test_streaming_account_store_clears_auth_errors_after_successful_sync(
 ) -> None:
     database_url = f"sqlite:///{tmp_path / 'streaming-auth-recovery.db'}"
     engine = create_engine(database_url)
-    metadata.create_all(engine)
+    _create_streaming_schema(engine)
     monkeypatch.setenv("TOKEN_ENCRYPTION_KEY", Fernet.generate_key().decode("utf-8"))
 
     store = StreamingAccountStore(database_url)

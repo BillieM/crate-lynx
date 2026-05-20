@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from collections.abc import Callable, Mapping
 from datetime import UTC, datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import (
     delete,
@@ -49,6 +49,11 @@ from app.streaming.models import (
     streaming_playlists_table,
     streaming_tracks_table,
 )
+
+if TYPE_CHECKING:
+    from app.relationships.suggestions import (
+        StreamingRelationshipSuggestionGenerationResult,
+    )
 
 PENDING_LINK_STATUS = "pending"
 
@@ -754,6 +759,7 @@ class StreamingAccountStore:
                 adapter=adapter,
                 playlist_store=self,
             ),
+            after_success=self.generate_streaming_relationship_suggestions,
         )
 
     def sync_youtube_music_playlist_tracks(
@@ -768,6 +774,7 @@ class StreamingAccountStore:
                 adapter=adapter,
                 playlist_store=self,
             ),
+            after_success=self.generate_streaming_relationship_suggestions,
         )
 
     def sync_youtube_music_playlist(
@@ -795,6 +802,7 @@ class StreamingAccountStore:
         return self._run_youtube_music_sync(
             account_id=playlist.account_id,
             run_sync=run_single_playlist_sync,
+            after_success=self.generate_streaming_relationship_suggestions,
         )
 
     def sync_youtube_music_account(
@@ -804,11 +812,21 @@ class StreamingAccountStore:
     ) -> list[PlaylistMembershipRecord]:
         return self.sync_youtube_music_playlist_tracks(account_id=account_id)
 
+    def generate_streaming_relationship_suggestions(
+        self,
+    ) -> "StreamingRelationshipSuggestionGenerationResult":
+        from app.relationships.suggestions import (
+            StreamingRelationshipSuggestionGenerator,
+        )
+
+        return StreamingRelationshipSuggestionGenerator(engine=self._engine).generate()
+
     def _run_youtube_music_sync(
         self,
         *,
         account_id: int,
         run_sync: Callable[[YouTubeMusicAdapter], list[Any]],
+        after_success: Callable[[], object] | None = None,
     ) -> list[Any]:
         account = self.get_account(account_id)
         try:
@@ -821,6 +839,8 @@ class StreamingAccountStore:
             return []
 
         self.clear_account_auth_error(account_id=account_id)
+        if after_success is not None:
+            after_success()
         return synced
 
 

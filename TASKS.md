@@ -32,7 +32,7 @@
   - Preserve existing M3U content behavior, playlist order, and full-sync-only output.
   - Add backend tests for affected-playlist calculation and job execution.
 
-- [ ] Generate streaming-to-streaming relationship suggestions.
+- [x] Generate streaming-to-streaming relationship suggestions.
   - Generate candidates across active `full` and `match_only` playlist tracks.
   - Use ISRC matches for highest-confidence equivalent suggestions.
   - Use shared title/artist/album/duration scoring for fuzzy suggestions, suggesting equivalent for high-confidence matches and related for medium-confidence matches.

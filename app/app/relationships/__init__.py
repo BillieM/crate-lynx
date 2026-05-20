@@ -1,5 +1,13 @@
 """Streaming relationship persistence models."""
 
+from app.relationships.suggestions import (
+    ACTIVE_RELATIONSHIP_SUGGESTION_PLAYLIST_MODES,
+    GeneratedStreamingRelationshipSuggestion,
+    MATCH_METHOD_ISRC,
+    MATCH_METHOD_TAGS,
+    StreamingRelationshipSuggestionGenerationResult,
+    StreamingRelationshipSuggestionGenerator,
+)
 from app.relationships.resolver import (
     EquivalentAcceptanceConflict,
     RelationshipFinalLink,
@@ -30,6 +38,10 @@ from app.relationships.models import (
 
 __all__ = [
     "EquivalentAcceptanceConflict",
+    "ACTIVE_RELATIONSHIP_SUGGESTION_PLAYLIST_MODES",
+    "GeneratedStreamingRelationshipSuggestion",
+    "MATCH_METHOD_ISRC",
+    "MATCH_METHOD_TAGS",
     "NormalizedStreamingTrackPair",
     "RelationshipFinalLink",
     "RESOLUTION_SOURCE_DIRECT",
@@ -47,6 +59,8 @@ __all__ = [
     "STREAMING_RELATIONSHIP_TYPE_EQUIVALENT",
     "STREAMING_RELATIONSHIP_TYPE_RELATED",
     "STREAMING_RELATIONSHIP_TYPES",
+    "StreamingRelationshipSuggestionGenerationResult",
+    "StreamingRelationshipSuggestionGenerator",
     "StreamingRelationshipResolver",
     "metadata",
     "normalize_streaming_track_pair",
