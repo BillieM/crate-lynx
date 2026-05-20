@@ -1,5 +1,15 @@
-import { createColumnHelper, type RowSelectionState, type SortingState } from "@tanstack/react-table";
-import { EyeOff, FileQuestion, History, RefreshCcw, WandSparkles, XCircle } from "lucide-react";
+import { createColumnHelper, type SortingState } from "@tanstack/react-table";
+import {
+  EyeOff,
+  FileQuestion,
+  FolderOpen,
+  History,
+  RefreshCcw,
+  RotateCcw,
+  Undo2,
+  WandSparkles,
+  XCircle,
+} from "lucide-react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { ActionButton } from "../../components/ActionButton";
@@ -7,12 +17,15 @@ import { DataTable } from "../../components/DataTable";
 import { EmptyStateCard } from "../../components/EmptyStateCard";
 import { FilterChipGroup, type FilterChipOption } from "../../components/FilterChipGroup";
 import { StatusMessage } from "../../components/StatusMessage";
-import { settleInChunks } from "../../lib/settleInChunks";
 import { surfaceClasses, textClasses } from "../../styles/componentClasses";
+import { LocalTrackDetailDrawer } from "../localTracks/LocalTrackDetailDrawer";
 import {
+  getMaintenanceRequestStatus,
   ignoreUnidentifiedTrack,
   invalidateUnidentifiedQueries,
+  rematchLocalTrack,
   rescueLocalTrackMetadata,
+  restoreUnidentifiedTrack,
   retryUnidentifiedTrack,
   type UnidentifiedResponse,
   type UnidentifiedTrack,
@@ -25,10 +38,9 @@ type UnidentifiedTab = "active" | "ignored";
 const emptyUnidentifiedTracks: UnidentifiedTrack[] = [];
 const columnHelper = createColumnHelper<UnidentifiedTrack>();
 
-type BulkActionStatus = {
-  body: string;
-  status: "error" | "success";
-  title: string;
+type RowActionStatus = {
+  message: string;
+  tone: "error" | "neutral";
 };
 
 function formatTimestamp(timestamp: string | null) {
@@ -49,77 +61,161 @@ function formatSourceSize(sourceSize: number | null) {
 
 function UnidentifiedRowActions({
   actionsDisabled = false,
-  bulkActionRunning = false,
+  onOpenLocalTrack,
   track,
 }: {
   actionsDisabled?: boolean;
-  bulkActionRunning?: boolean;
+  onOpenLocalTrack: (localTrackId: number) => void;
   track: UnidentifiedTrack;
 }) {
   const queryClient = useQueryClient();
-  const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const [statusMessage, setStatusMessage] = useState<RowActionStatus | null>(null);
   const retryMutation = useMutation({
     mutationFn: retryUnidentifiedTrack,
-    onError: () => setStatusMessage("Retry failed"),
+    onError: (error) => {
+      if (getMaintenanceRequestStatus(error) === 404) {
+        setStatusMessage({ message: "Source file missing; row refreshed", tone: "neutral" });
+        void invalidateUnidentifiedQueries(queryClient);
+        return;
+      }
+
+      setStatusMessage({ message: "Retry failed", tone: "error" });
+    },
     onSuccess: async (response) => {
-      setStatusMessage(response.job_id ? "Retry queued" : "Retry already queued");
+      setStatusMessage({ message: response.job_id ? "Retry queued" : "Retry already queued", tone: "neutral" });
       await invalidateUnidentifiedQueries(queryClient);
     },
   });
   const ignoreMutation = useMutation({
     mutationFn: ignoreUnidentifiedTrack,
-    onError: () => setStatusMessage("Ignore failed"),
+    onError: () => setStatusMessage({ message: "Ignore failed", tone: "error" }),
     onSuccess: async () => {
-      setStatusMessage("Source ignored");
+      setStatusMessage({ message: "Source ignored", tone: "neutral" });
+      await invalidateUnidentifiedQueries(queryClient);
+    },
+  });
+  const restoreMutation = useMutation({
+    mutationFn: restoreUnidentifiedTrack,
+    onError: () => setStatusMessage({ message: "Restore failed", tone: "error" }),
+    onSuccess: async () => {
+      setStatusMessage({ message: "Source restored", tone: "neutral" });
+      await invalidateUnidentifiedQueries(queryClient);
+    },
+  });
+  const rematchMutation = useMutation({
+    mutationFn: rematchLocalTrack,
+    onError: () => setStatusMessage({ message: "Re-match failed", tone: "error" }),
+    onSuccess: async () => {
+      setStatusMessage({ message: "Re-match queued", tone: "neutral" });
       await invalidateUnidentifiedQueries(queryClient);
     },
   });
   const rescueMutation = useMutation({
     mutationFn: rescueLocalTrackMetadata,
-    onError: () => setStatusMessage("Rescue failed"),
-    onSuccess: () => setStatusMessage("Rescue complete"),
+    onError: () => setStatusMessage({ message: "Rescue failed", tone: "error" }),
+    onSuccess: async () => {
+      setStatusMessage({ message: "Rescue complete", tone: "neutral" });
+      await invalidateUnidentifiedQueries(queryClient);
+    },
   });
-  const actionPending = retryMutation.isPending || ignoreMutation.isPending || rescueMutation.isPending;
-  const disabled = actionsDisabled || bulkActionRunning || actionPending;
-  const canRescue = track.local_track_id !== null;
+  const actionPending =
+    retryMutation.isPending ||
+    ignoreMutation.isPending ||
+    restoreMutation.isPending ||
+    rematchMutation.isPending ||
+    rescueMutation.isPending;
+  const disabled = actionsDisabled || actionPending;
   const pendingStatus = retryMutation.isPending
     ? "Queueing retry..."
     : ignoreMutation.isPending
       ? "Ignoring..."
-      : rescueMutation.isPending
-        ? "Rescuing metadata..."
-        : null;
-  const hasError = retryMutation.isError || ignoreMutation.isError || rescueMutation.isError;
+      : restoreMutation.isPending
+        ? "Restoring..."
+        : rematchMutation.isPending
+          ? "Queueing re-match..."
+          : rescueMutation.isPending
+            ? "Rescuing metadata..."
+            : null;
+  const hasLocalTrack = track.local_track_id !== null;
+  const visibleStatus = pendingStatus ?? statusMessage?.message;
+  const hasError = statusMessage?.tone === "error" && pendingStatus === null;
 
   return (
     <div className="flex flex-wrap items-center justify-end gap-1.5">
-      <ActionButton
-        aria-label={`Retry ${track.filename}`}
-        className="inline-flex items-center gap-1.5"
-        disabled={disabled}
-        onClick={() => {
-          setStatusMessage(null);
-          retryMutation.mutate(track.id);
-        }}
-      >
-        <RefreshCcw aria-hidden="true" className="h-3.5 w-3.5" strokeWidth={1.9} />
-        {retryMutation.isPending ? "Retrying..." : "Retry"}
-      </ActionButton>
       {track.ignored_at === null ? (
+        <>
+          <ActionButton
+            aria-label={`Retry source ${track.filename}`}
+            className="inline-flex items-center gap-1.5"
+            disabled={disabled}
+            onClick={() => {
+              setStatusMessage(null);
+              retryMutation.mutate(track.id);
+            }}
+          >
+            <RefreshCcw aria-hidden="true" className="h-3.5 w-3.5" strokeWidth={1.9} />
+            {retryMutation.isPending ? "Retrying..." : "Retry source"}
+          </ActionButton>
+          <ActionButton
+            aria-label={`Ignore ${track.filename}`}
+            className="inline-flex items-center gap-1.5"
+            disabled={disabled}
+            onClick={() => {
+              setStatusMessage(null);
+              ignoreMutation.mutate(track.id);
+            }}
+          >
+            <EyeOff aria-hidden="true" className="h-3.5 w-3.5" strokeWidth={1.9} />
+            {ignoreMutation.isPending ? "Ignoring..." : "Ignore"}
+          </ActionButton>
+        </>
+      ) : null}
+      {track.ignored_at !== null ? (
         <ActionButton
-          aria-label={`Ignore ${track.filename}`}
+          aria-label={`Restore ${track.filename}`}
           className="inline-flex items-center gap-1.5"
           disabled={disabled}
           onClick={() => {
             setStatusMessage(null);
-            ignoreMutation.mutate(track.id);
+            restoreMutation.mutate(track.id);
           }}
         >
-          <EyeOff aria-hidden="true" className="h-3.5 w-3.5" strokeWidth={1.9} />
-          {ignoreMutation.isPending ? "Ignoring..." : "Ignore"}
+          <Undo2 aria-hidden="true" className="h-3.5 w-3.5" strokeWidth={1.9} />
+          {restoreMutation.isPending ? "Restoring..." : "Restore"}
         </ActionButton>
       ) : null}
-      {canRescue ? (
+      {hasLocalTrack ? (
+        <ActionButton
+          aria-label={`Open local track ${track.local_track_id} for ${track.filename}`}
+          className="inline-flex items-center gap-1.5"
+          disabled={disabled}
+          onClick={() => {
+            if (track.local_track_id !== null) {
+              onOpenLocalTrack(track.local_track_id);
+            }
+          }}
+        >
+          <FolderOpen aria-hidden="true" className="h-3.5 w-3.5" strokeWidth={1.9} />
+          Open local track
+        </ActionButton>
+      ) : null}
+      {track.can_rematch_local_track && hasLocalTrack ? (
+        <ActionButton
+          aria-label={`Re-match ${track.filename}`}
+          className="inline-flex items-center gap-1.5"
+          disabled={disabled}
+          onClick={() => {
+            if (track.local_track_id !== null) {
+              setStatusMessage(null);
+              rematchMutation.mutate(track.local_track_id);
+            }
+          }}
+        >
+          <RotateCcw aria-hidden="true" className="h-3.5 w-3.5" strokeWidth={1.9} />
+          {rematchMutation.isPending ? "Matching..." : "Re-match"}
+        </ActionButton>
+      ) : null}
+      {track.can_rescue_metadata && hasLocalTrack ? (
         <ActionButton
           aria-label={`Rescue ${track.filename}`}
           className="inline-flex items-center gap-1.5"
@@ -135,13 +231,13 @@ function UnidentifiedRowActions({
           {rescueMutation.isPending ? "Rescuing..." : "Rescue"}
         </ActionButton>
       ) : null}
-      {pendingStatus || statusMessage ? (
+      {visibleStatus ? (
         <span
           aria-live="polite"
           className={`${textClasses.caption} ${hasError ? "text-ctp-red" : "text-ctp-subtext0"}`}
           role="status"
         >
-          {pendingStatus ?? statusMessage}
+          {visibleStatus}
         </span>
       ) : null}
     </div>
@@ -179,13 +275,10 @@ type UnidentifiedViewProps = {
 };
 
 export function UnidentifiedView({ isPending = false, state, tracksResponse }: UnidentifiedViewProps = {}) {
-  const queryClient = useQueryClient();
   const unidentifiedQuery = useUnidentifiedTracksQuery({ enabled: tracksResponse === undefined });
   const [activeTab, setActiveTab] = useState<UnidentifiedTab>("active");
-  const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
   const [sorting, setSorting] = useState<SortingState>([]);
-  const [bulkActionStatus, setBulkActionStatus] = useState<BulkActionStatus | null>(null);
-  const [isBulkActionRunning, setIsBulkActionRunning] = useState(false);
+  const [openLocalTrackId, setOpenLocalTrackId] = useState<number | null>(null);
   const resolvedState =
     state ??
     (tracksResponse
@@ -201,14 +294,6 @@ export function UnidentifiedView({ isPending = false, state, tracksResponse }: U
   const visibleTracks = activeTab === "active" ? activeTracks : ignoredTracks;
   const totalAttemptCount = tracks.reduce((total, track) => total + track.attempt_count, 0);
   const actionsDisabled = resolvedState !== "ready" || isPending;
-  const selectedTracks = useMemo(
-    () => visibleTracks.filter((track) => rowSelection[String(track.id)]),
-    [rowSelection, visibleTracks],
-  );
-  const selectedIgnorableTracks = useMemo(
-    () => selectedTracks.filter((track) => track.ignored_at === null),
-    [selectedTracks],
-  );
   const tabOptions = useMemo<FilterChipOption<UnidentifiedTab>[]>(
     () => [
       { count: activeTracks.length, label: "Active", tone: "unlinked", value: "active" },
@@ -313,7 +398,7 @@ export function UnidentifiedView({ isPending = false, state, tracksResponse }: U
         cell: (info) => (
           <UnidentifiedRowActions
             actionsDisabled={actionsDisabled}
-            bulkActionRunning={isBulkActionRunning}
+            onOpenLocalTrack={setOpenLocalTrackId}
             track={info.row.original}
           />
         ),
@@ -325,68 +410,11 @@ export function UnidentifiedView({ isPending = false, state, tracksResponse }: U
         },
       }),
     ],
-    [actionsDisabled, isBulkActionRunning],
+    [actionsDisabled],
   );
-
-  async function handleBulkRetry() {
-    if (selectedTracks.length === 0 || isBulkActionRunning) {
-      return;
-    }
-
-    setIsBulkActionRunning(true);
-    setBulkActionStatus(null);
-    try {
-      const results = await settleInChunks(selectedTracks, 5, (track) => retryUnidentifiedTrack(track.id));
-      const successCount = results.filter((result) => result.status === "fulfilled").length;
-      const failureCount = results.filter((result) => result.status === "rejected").length;
-
-      await invalidateUnidentifiedQueries(queryClient);
-      setRowSelection({});
-      setBulkActionStatus({
-        body:
-          failureCount > 0
-            ? `${successCount} ${successCount === 1 ? "source was" : "sources were"} queued, and ${failureCount} ${failureCount === 1 ? "failed" : "failed"}.`
-            : `${successCount} ${successCount === 1 ? "source was" : "sources were"} queued for retry.`,
-        status: failureCount > 0 ? "error" : "success",
-        title: failureCount > 0 ? "Bulk retry partially failed" : "Bulk retry queued",
-      });
-    } finally {
-      setIsBulkActionRunning(false);
-    }
-  }
-
-  async function handleBulkIgnore() {
-    if (selectedIgnorableTracks.length === 0 || isBulkActionRunning) {
-      return;
-    }
-
-    setIsBulkActionRunning(true);
-    setBulkActionStatus(null);
-    try {
-      const results = await settleInChunks(selectedIgnorableTracks, 5, (track) => ignoreUnidentifiedTrack(track.id));
-      const skippedCount = selectedTracks.length - selectedIgnorableTracks.length;
-      const successCount = results.filter((result) => result.status === "fulfilled").length;
-      const failureCount = results.filter((result) => result.status === "rejected").length;
-
-      await invalidateUnidentifiedQueries(queryClient);
-      setRowSelection({});
-      setBulkActionStatus({
-        body:
-          failureCount > 0 || skippedCount > 0
-            ? `${successCount} ${successCount === 1 ? "source was" : "sources were"} ignored, ${failureCount} ${failureCount === 1 ? "failed" : "failed"}, and ${skippedCount} ${skippedCount === 1 ? "row was" : "rows were"} skipped.`
-            : `${successCount} ${successCount === 1 ? "source was" : "sources were"} ignored.`,
-        status: failureCount > 0 ? "error" : "success",
-        title: failureCount > 0 ? "Bulk ignore partially failed" : "Bulk ignore complete",
-      });
-    } finally {
-      setIsBulkActionRunning(false);
-    }
-  }
 
   function handleTabChange(nextTab: UnidentifiedTab) {
     setActiveTab(nextTab);
-    setRowSelection({});
-    setBulkActionStatus(null);
   }
 
   return (
@@ -406,9 +434,6 @@ export function UnidentifiedView({ isPending = false, state, tracksResponse }: U
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto pb-1 pr-1" aria-label="Unidentified tracks" role="region">
-        {bulkActionStatus ? (
-          <StatusMessage body={bulkActionStatus.body} status={bulkActionStatus.status} title={bulkActionStatus.title} />
-        ) : null}
         {resolvedState === "loading" ? (
           <EmptyStateCard
             body="Checking Beets-failed imports."
@@ -443,33 +468,12 @@ export function UnidentifiedView({ isPending = false, state, tracksResponse }: U
             </div>
             {visibleTracks.length > 0 ? (
               <DataTable
-                bulkActionSlot={
-                  <>
-                    <ActionButton
-                      className="inline-flex items-center gap-1.5"
-                      disabled={selectedTracks.length === 0 || actionsDisabled || isBulkActionRunning}
-                      onClick={handleBulkRetry}
-                    >
-                      <RefreshCcw aria-hidden="true" className="h-3.5 w-3.5" strokeWidth={1.9} />
-                      {isBulkActionRunning ? "Working..." : "Retry"}
-                    </ActionButton>
-                    <ActionButton
-                      className="inline-flex items-center gap-1.5"
-                      disabled={selectedIgnorableTracks.length === 0 || actionsDisabled || isBulkActionRunning}
-                      onClick={handleBulkIgnore}
-                    >
-                      <EyeOff aria-hidden="true" className="h-3.5 w-3.5" strokeWidth={1.9} />
-                      {isBulkActionRunning ? "Working..." : "Ignore"}
-                    </ActionButton>
-                  </>
-                }
                 columns={columns}
                 data={visibleTracks}
+                enableRowSelection={false}
                 rowId={(track) => String(track.id)}
-                rowSelection={rowSelection}
                 sorting={sorting}
                 stickyHeader
-                onRowSelectionChange={setRowSelection}
                 onSortingChange={setSorting}
               />
             ) : (
@@ -488,6 +492,11 @@ export function UnidentifiedView({ isPending = false, state, tracksResponse }: U
           <EmptyStateCard body="No failed Beets imports need review." className="text-left" title="No unidentified tracks" />
         )}
       </div>
+      <LocalTrackDetailDrawer
+        localTrackId={openLocalTrackId}
+        open={openLocalTrackId !== null}
+        onClose={() => setOpenLocalTrackId(null)}
+      />
     </section>
   );
 }

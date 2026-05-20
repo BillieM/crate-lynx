@@ -240,6 +240,8 @@ const unidentifiedResponse: UnidentifiedResponse = {
   tracks: [
     {
       attempt_count: 3,
+      can_rematch_local_track: false,
+      can_rescue_metadata: false,
       failed_at: "2026-05-02T21:44:00Z",
       failure_reason: "Beets could not identify metadata",
       filename: "unknown-import-9a4f.mp3",

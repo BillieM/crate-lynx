@@ -1,25 +1,23 @@
-Read EPICS.md and TASKS.md from the project root, then do the following steps in order:
+This repository uses TASKS.md as the active planning source.
 
-1. **Confirm tasks are done**: Check that every task in TASKS.md is checked off (all lines starting with `- [x]`). If any unchecked tasks remain, stop and tell the user which ones are incomplete.
+1. **Confirm tasks are done**: Check that every task in TASKS.md is checked off. If any unchecked tasks remain, stop and tell the user which ones are incomplete.
 
-2. **Find the current epic**: Look in EPICS.md for the epic marked `` `in progress` ``. That is the epic we just finished.
+2. **Summarize completion**: Read TASKS.md and summarize the completed work at the tracker-heading level.
 
-3. **Mark it done**: In EPICS.md, replace `` `in progress` `` on that epic's heading with `` `done` ``.
+3. **Ask for the next plan source**: Stop and ask the user for the next goal or planning document to turn into TASKS.md.
 
-4. **Find the next epic**: The epic immediately after the one we just marked done (in document order). If there is no next epic, stop and tell the user that all epics are complete.
-
-5. **Mark it in progress**: In EPICS.md, append `` `in progress` `` to the next epic's heading (it currently has no status badge).
-
-6. **Rewrite TASKS.md**: Clear TASKS.md entirely and replace it with a task breakdown for the new epic. Use this format:
+4. **Rewrite only after user approval**: If the user provides the next goal and approves rewriting TASKS.md, clear TASKS.md and replace it with a task breakdown using this format:
 
 ```
-# <Epic ID> — <Epic Title>
+# TASKS
+
+## <Plan Title>
 
 - [ ] <task>
 - [ ] <task>
 ...
 ```
 
-Break the epic description into concrete, actionable implementation tasks — one per line. Each task should be specific enough to be completable in a single focused session. Derive the tasks from the epic's description in EPICS.md and the subdir layout at the top of that file. Don't include tasks already handled by earlier epics. Do not analyze the codebase for reuse opportunities — that is Codex's job at implementation time.
+Break the goal into concrete, actionable implementation tasks. Each task should be specific enough to be completable in a single focused session without being unnecessarily small.
 
-7. Tell the user: which epic we just completed, which epic is now active, and how many tasks are queued.
+5. Tell the user what was completed, what plan is now active, and how many tasks are queued.

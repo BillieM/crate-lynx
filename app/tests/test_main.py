@@ -127,6 +127,7 @@ def test_links_routes_are_mounted_under_api_prefix() -> None:
     assert "/api/maintenance/unidentified" in route_paths
     assert "/api/maintenance/unidentified/{attempt_id}/retry" in route_paths
     assert "/api/maintenance/unidentified/{attempt_id}/ignore" in route_paths
+    assert "/api/maintenance/unidentified/{attempt_id}/restore" in route_paths
     assert "/api/streaming/accounts/{account_id}/auth" in route_paths
     assert "/api/streaming/accounts/{account_id}/sync" in route_paths
     assert "/api/streaming/accounts/{account_id}/refresh-metadata" in route_paths
@@ -1727,17 +1728,55 @@ def test_unidentified_endpoint_lists_durable_failed_ingestion_attempts(
     database_url = f"sqlite:///{tmp_path / 'unidentified.db'}"
     engine = create_engine(database_url)
     local_tracks_metadata.create_all(engine)
+    links_metadata.create_all(engine)
+    suggested_links_metadata.create_all(engine)
     failed_ingestion_attempts_metadata.create_all(engine)
     monkeypatch.setenv("DATABASE_URL", database_url)
 
     with engine.begin() as connection:
         connection.execute(
-            insert(local_tracks_table).values(
-                id=91,
-                file_path="Imported/rescue.mp3",
-                library_root_rel_path="Imported/rescue.mp3",
-                fingerprint="fp-linked",
-                beets_id=91,
+            insert(local_tracks_table),
+            [
+                {
+                    "id": 91,
+                    "file_path": "Imported/rescue.mp3",
+                    "library_root_rel_path": "Imported/rescue.mp3",
+                    "fingerprint": "fp-linked",
+                    "beets_id": 91,
+                },
+                {
+                    "id": 92,
+                    "file_path": "Imported/unlinked.mp3",
+                    "library_root_rel_path": "Imported/unlinked.mp3",
+                    "fingerprint": "fp-unlinked",
+                    "beets_id": 92,
+                },
+                {
+                    "id": 93,
+                    "file_path": "Imported/pending.mp3",
+                    "library_root_rel_path": "Imported/pending.mp3",
+                    "fingerprint": "fp-pending",
+                    "beets_id": 93,
+                },
+            ],
+        )
+        connection.execute(
+            insert(final_links_table).values(
+                id=901,
+                local_track_id=91,
+                streaming_track_id=9001,
+                approved_at=datetime(2026, 5, 2, 22, 0, tzinfo=UTC),
+            )
+        )
+        connection.execute(
+            insert(suggested_links_table).values(
+                id=902,
+                local_track_id=93,
+                streaming_track_id=9002,
+                match_method="fingerprint",
+                score=0.82,
+                status=SUGGESTED_LINK_STATUS_PENDING,
+                created_at=datetime(2026, 5, 3, 9, 40, tzinfo=UTC),
             )
         )
         connection.execute(
@@ -1813,6 +1852,34 @@ def test_unidentified_endpoint_lists_durable_failed_ingestion_attempts(
                     "ignored_at": datetime(2026, 5, 3, 10, 0, tzinfo=UTC),
                     "local_track_id": None,
                 },
+                {
+                    "id": 6,
+                    "source_path": "/ingestion/unlinked-local.mp3",
+                    "filename": "unlinked-local.mp3",
+                    "fingerprint": "fp-unlinked",
+                    "failure_reason": "Unlinked local track",
+                    "first_failed_at": datetime(2026, 5, 3, 9, 20, tzinfo=UTC),
+                    "failed_at": datetime(2026, 5, 3, 9, 30, tzinfo=UTC),
+                    "attempt_count": 2,
+                    "source_size": 5120,
+                    "source_mtime_ns": 1_746_269_400_000_000_000,
+                    "ignored_at": None,
+                    "local_track_id": 92,
+                },
+                {
+                    "id": 7,
+                    "source_path": "/ingestion/pending-local.mp3",
+                    "filename": "pending-local.mp3",
+                    "fingerprint": "fp-pending",
+                    "failure_reason": "Pending local track",
+                    "first_failed_at": datetime(2026, 5, 3, 9, 35, tzinfo=UTC),
+                    "failed_at": datetime(2026, 5, 3, 9, 45, tzinfo=UTC),
+                    "attempt_count": 1,
+                    "source_size": 6144,
+                    "source_mtime_ns": 1_746_270_300_000_000_000,
+                    "ignored_at": None,
+                    "local_track_id": 93,
+                },
             ],
         )
 
@@ -1829,8 +1896,40 @@ def test_unidentified_endpoint_lists_durable_failed_ingestion_attempts(
     assert response.model_dump(mode="json") == {
         "tracks": [
             {
+                "id": 7,
+                "attempt_count": 1,
+                "can_rematch_local_track": True,
+                "can_rescue_metadata": False,
+                "failed_at": "2026-05-03T09:45:00",
+                "failure_reason": "Pending local track",
+                "filename": "pending-local.mp3",
+                "first_failed_at": "2026-05-03T09:35:00",
+                "ignored_at": None,
+                "local_track_id": 93,
+                "source_mtime_ns": 1_746_270_300_000_000_000,
+                "source_path": "/ingestion/pending-local.mp3",
+                "source_size": 6144,
+            },
+            {
+                "id": 6,
+                "attempt_count": 2,
+                "can_rematch_local_track": True,
+                "can_rescue_metadata": False,
+                "failed_at": "2026-05-03T09:30:00",
+                "failure_reason": "Unlinked local track",
+                "filename": "unlinked-local.mp3",
+                "first_failed_at": "2026-05-03T09:20:00",
+                "ignored_at": None,
+                "local_track_id": 92,
+                "source_mtime_ns": 1_746_269_400_000_000_000,
+                "source_path": "/ingestion/unlinked-local.mp3",
+                "source_size": 5120,
+            },
+            {
                 "id": 2,
                 "attempt_count": 4,
+                "can_rematch_local_track": False,
+                "can_rescue_metadata": True,
                 "failed_at": "2026-05-02T21:44:00",
                 "failure_reason": "Beets could not identify metadata",
                 "filename": "unknown-import-9a4f.mp3",
@@ -1844,6 +1943,8 @@ def test_unidentified_endpoint_lists_durable_failed_ingestion_attempts(
             {
                 "id": 1,
                 "attempt_count": 2,
+                "can_rematch_local_track": False,
+                "can_rescue_metadata": False,
                 "failed_at": "2026-05-01T10:00:00",
                 "failure_reason": "Unsupported audio format",
                 "filename": "old.flac",
@@ -1857,6 +1958,8 @@ def test_unidentified_endpoint_lists_durable_failed_ingestion_attempts(
             {
                 "id": 5,
                 "attempt_count": 3,
+                "can_rematch_local_track": False,
+                "can_rescue_metadata": False,
                 "failed_at": "2026-05-01T08:05:00",
                 "failure_reason": "Ignored failure",
                 "filename": "ignored.wav",
@@ -1920,6 +2023,34 @@ def test_unidentified_retry_endpoint_clears_failure_and_enqueues_source(
     assert rows == []
 
 
+def test_unidentified_retry_endpoint_clears_missing_source_failure(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite:///{tmp_path / 'unidentified-retry-missing.db'}"
+    engine = create_engine(database_url)
+    failed_ingestion_attempts_metadata.create_all(engine)
+    monkeypatch.setenv("DATABASE_URL", database_url)
+    source = tmp_path / "incoming" / "missing.mp3"
+    FailedIngestionAttemptStore(database_url).persist(
+        source_path=source,
+        fingerprint=None,
+        failure_reason="Beets could not identify metadata",
+    )
+    app = create_app()
+    route = _route("POST", "/api/maintenance/unidentified/{attempt_id}/retry", app)
+
+    with pytest.raises(StarletteHTTPException) as exc_info:
+        _call_endpoint(route.endpoint, 1)
+
+    assert exc_info.value.status_code == 404
+    assert exc_info.value.detail == "Source file not found"
+    with engine.connect() as connection:
+        rows = connection.execute(select(failed_ingestion_attempts_table)).all()
+
+    assert rows == []
+
+
 def test_unidentified_ignore_endpoint_marks_failure_ignored(
     monkeypatch,
     tmp_path: Path,
@@ -1950,6 +2081,42 @@ def test_unidentified_ignore_endpoint_marks_failure_ignored(
         )
 
     assert row["ignored_at"] is not None
+
+
+def test_unidentified_restore_endpoint_clears_ignored_at(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite:///{tmp_path / 'unidentified-restore.db'}"
+    engine = create_engine(database_url)
+    failed_ingestion_attempts_metadata.create_all(engine)
+    monkeypatch.setenv("DATABASE_URL", database_url)
+    source = tmp_path / "incoming" / "unknown.mp3"
+    source.parent.mkdir()
+    source.write_bytes(b"mp3")
+    failure_store = FailedIngestionAttemptStore(database_url)
+    failure_store.persist(
+        source_path=source,
+        fingerprint=None,
+        failure_reason="Beets could not identify metadata",
+    )
+    failure_store.mark_ignored(1, ignored_at=datetime(2026, 5, 3, 10, 0, tzinfo=UTC))
+    app = create_app()
+    route = _route("POST", "/api/maintenance/unidentified/{attempt_id}/restore", app)
+
+    response = _call_endpoint(route.endpoint, 1)
+
+    assert response.model_dump(mode="json") == {
+        "id": 1,
+        "ignored_at": None,
+        "source_path": str(source),
+    }
+    with engine.connect() as connection:
+        row = (
+            connection.execute(select(failed_ingestion_attempts_table)).mappings().one()
+        )
+
+    assert row["ignored_at"] is None
 
 
 def test_playlist_m3u_export_endpoint_returns_attachment(

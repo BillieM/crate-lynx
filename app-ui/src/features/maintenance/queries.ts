@@ -21,6 +21,8 @@ export type MissingLocallyResponse = {
 
 export type UnidentifiedTrack = {
   attempt_count: number;
+  can_rematch_local_track: boolean;
+  can_rescue_metadata: boolean;
   failed_at: string;
   failure_reason: string;
   filename: string;
@@ -49,12 +51,49 @@ export type UnidentifiedIgnoreResponse = {
   source_path: string;
 };
 
+export type UnidentifiedRestoreResponse = {
+  id: number;
+  ignored_at: null;
+  source_path: string;
+};
+
 export type RescuedLocalTrack = {
   beets_id: number | null;
   file_path: string;
   id: number;
   library_root_rel_path: string | null;
 };
+
+export type RematchLocalTrackResponse = {
+  job_id: string;
+  local_track_id: number;
+};
+
+export class MaintenanceRequestError extends Error {
+  status: number;
+
+  constructor(message: string, status: number) {
+    super(`${message} with status ${status}`);
+    this.name = "MaintenanceRequestError";
+    this.status = status;
+  }
+}
+
+export function getMaintenanceRequestStatus(error: unknown): number | null {
+  return error instanceof MaintenanceRequestError ? error.status : null;
+}
+
+async function postMaintenanceJson<T>(url: string, errorMessage: string): Promise<T> {
+  const response = await fetch(url, {
+    method: "POST",
+  });
+
+  if (!response.ok) {
+    throw new MaintenanceRequestError(errorMessage, response.status);
+  }
+
+  return (await response.json()) as T;
+}
 
 export const maintenanceQueryKeys = {
   all: ["maintenance"] as const,
@@ -87,39 +126,38 @@ export async function fetchUnidentifiedTracks(): Promise<UnidentifiedResponse> {
 }
 
 export async function rescueLocalTrackMetadata(localTrackId: number | string): Promise<RescuedLocalTrack> {
-  const response = await fetch(`/api/local-tracks/${encodeURIComponent(String(localTrackId))}/rescue`, {
-    method: "POST",
-  });
+  return postMaintenanceJson<RescuedLocalTrack>(
+    `/api/local-tracks/${encodeURIComponent(String(localTrackId))}/rescue`,
+    "Metadata rescue request failed",
+  );
+}
 
-  if (!response.ok) {
-    throw new Error(`Metadata rescue request failed with status ${response.status}`);
-  }
-
-  return (await response.json()) as RescuedLocalTrack;
+export async function rematchLocalTrack(localTrackId: number | string): Promise<RematchLocalTrackResponse> {
+  return postMaintenanceJson<RematchLocalTrackResponse>(
+    `/api/local-tracks/${encodeURIComponent(String(localTrackId))}/rematch`,
+    "Re-match request failed",
+  );
 }
 
 export async function retryUnidentifiedTrack(attemptId: number | string): Promise<UnidentifiedRetryResponse> {
-  const response = await fetch(`/api/maintenance/unidentified/${encodeURIComponent(String(attemptId))}/retry`, {
-    method: "POST",
-  });
-
-  if (!response.ok) {
-    throw new Error(`Unidentified retry request failed with status ${response.status}`);
-  }
-
-  return (await response.json()) as UnidentifiedRetryResponse;
+  return postMaintenanceJson<UnidentifiedRetryResponse>(
+    `/api/maintenance/unidentified/${encodeURIComponent(String(attemptId))}/retry`,
+    "Unidentified retry request failed",
+  );
 }
 
 export async function ignoreUnidentifiedTrack(attemptId: number | string): Promise<UnidentifiedIgnoreResponse> {
-  const response = await fetch(`/api/maintenance/unidentified/${encodeURIComponent(String(attemptId))}/ignore`, {
-    method: "POST",
-  });
+  return postMaintenanceJson<UnidentifiedIgnoreResponse>(
+    `/api/maintenance/unidentified/${encodeURIComponent(String(attemptId))}/ignore`,
+    "Unidentified ignore request failed",
+  );
+}
 
-  if (!response.ok) {
-    throw new Error(`Unidentified ignore request failed with status ${response.status}`);
-  }
-
-  return (await response.json()) as UnidentifiedIgnoreResponse;
+export async function restoreUnidentifiedTrack(attemptId: number | string): Promise<UnidentifiedRestoreResponse> {
+  return postMaintenanceJson<UnidentifiedRestoreResponse>(
+    `/api/maintenance/unidentified/${encodeURIComponent(String(attemptId))}/restore`,
+    "Unidentified restore request failed",
+  );
 }
 
 export function useMissingLocallyTracksQuery() {

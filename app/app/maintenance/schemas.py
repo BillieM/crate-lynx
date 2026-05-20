@@ -20,6 +20,8 @@ class MissingLocallyResponse(BaseModel):
 class UnidentifiedTrackResponse(BaseModel):
     id: int
     attempt_count: int
+    can_rematch_local_track: bool
+    can_rescue_metadata: bool
     failed_at: str
     failure_reason: str
     filename: str
@@ -44,4 +46,10 @@ class UnidentifiedRetryResponse(BaseModel):
 class UnidentifiedIgnoreResponse(BaseModel):
     id: int
     ignored_at: str
+    source_path: str
+
+
+class UnidentifiedRestoreResponse(BaseModel):
+    id: int
+    ignored_at: None
     source_path: str

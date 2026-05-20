@@ -7,7 +7,9 @@ import {
   fetchUnidentifiedTracks,
   ignoreUnidentifiedTrack,
   maintenanceQueryKeys,
+  rematchLocalTrack,
   rescueLocalTrackMetadata,
+  restoreUnidentifiedTrack,
   retryUnidentifiedTrack,
   useMissingLocallyTracksQuery,
   useUnidentifiedTracksQuery,
@@ -83,6 +85,8 @@ describe("maintenance queries", () => {
         tracks: [
           {
             attempt_count: 3,
+            can_rematch_local_track: false,
+            can_rescue_metadata: false,
             failed_at: "2026-05-02T21:44:00Z",
             failure_reason: "Beets could not identify metadata",
             filename: "unknown-import-9a4f.mp3",
@@ -102,6 +106,8 @@ describe("maintenance queries", () => {
       tracks: [
         {
           attempt_count: 3,
+          can_rematch_local_track: false,
+          can_rescue_metadata: false,
           failed_at: "2026-05-02T21:44:00Z",
           failure_reason: "Beets could not identify metadata",
           filename: "unknown-import-9a4f.mp3",
@@ -134,6 +140,24 @@ describe("maintenance queries", () => {
       library_root_rel_path: "Artist/rescue.mp3",
     });
     expect(fetchMock).toHaveBeenCalledWith("/api/local-tracks/4001/rescue", {
+      method: "POST",
+    });
+  });
+
+  it("posts re-match to the API-prefixed local-track endpoint", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        job_id: "matching-job-1",
+        local_track_id: 4001,
+      }),
+    } as Response);
+
+    await expect(rematchLocalTrack(4001)).resolves.toEqual({
+      job_id: "matching-job-1",
+      local_track_id: 4001,
+    });
+    expect(fetchMock).toHaveBeenCalledWith("/api/local-tracks/4001/rematch", {
       method: "POST",
     });
   });
@@ -178,6 +202,26 @@ describe("maintenance queries", () => {
     });
   });
 
+  it("posts unidentified restore to the durable maintenance endpoint", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        id: 4001,
+        ignored_at: null,
+        source_path: "ingestion/failed/unknown-import-9a4f.mp3",
+      }),
+    } as Response);
+
+    await expect(restoreUnidentifiedTrack(4001)).resolves.toEqual({
+      id: 4001,
+      ignored_at: null,
+      source_path: "ingestion/failed/unknown-import-9a4f.mp3",
+    });
+    expect(fetchMock).toHaveBeenCalledWith("/api/maintenance/unidentified/4001/restore", {
+      method: "POST",
+    });
+  });
+
   it("throws a status-coded error when a maintenance report request fails", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue({
       ok: false,
@@ -196,7 +240,7 @@ describe("maintenance queries", () => {
     await expect(rescueLocalTrackMetadata(4001)).rejects.toThrow("Metadata rescue request failed with status 409");
   });
 
-  it("throws status-coded errors when retry or ignore fails", async () => {
+  it("throws status-coded errors when row actions fail", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue({
       ok: false,
       status: 409,
@@ -204,6 +248,8 @@ describe("maintenance queries", () => {
 
     await expect(retryUnidentifiedTrack(4001)).rejects.toThrow("Unidentified retry request failed with status 409");
     await expect(ignoreUnidentifiedTrack(4001)).rejects.toThrow("Unidentified ignore request failed with status 409");
+    await expect(restoreUnidentifiedTrack(4001)).rejects.toThrow("Unidentified restore request failed with status 409");
+    await expect(rematchLocalTrack(4001)).rejects.toThrow("Re-match request failed with status 409");
   });
 
   it("runs the missing-locally hook", async () => {
@@ -247,6 +293,8 @@ describe("maintenance queries", () => {
         tracks: [
           {
             attempt_count: 2,
+            can_rematch_local_track: true,
+            can_rescue_metadata: false,
             failed_at: "2026-05-02T22:03:00Z",
             failure_reason: "Multiple low-confidence candidates",
             filename: "side-b-live-rip.flac",

@@ -345,6 +345,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/maintenance/unidentified/{attempt_id}/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Restore Unidentified */
+        post: operations["restore_unidentified_api_maintenance_unidentified__attempt_id__restore_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/proposals": {
         parameters: {
             query?: never;
@@ -890,6 +907,15 @@ export interface components {
             /** Tracks */
             tracks: components["schemas"]["UnidentifiedTrackResponse"][];
         };
+        /** UnidentifiedRestoreResponse */
+        UnidentifiedRestoreResponse: {
+            /** Id */
+            id: number;
+            /** Ignored At */
+            ignored_at: null;
+            /** Source Path */
+            source_path: string;
+        };
         /** UnidentifiedRetryResponse */
         UnidentifiedRetryResponse: {
             /** Id */
@@ -905,6 +931,10 @@ export interface components {
             id: number;
             /** Attempt Count */
             attempt_count: number;
+            /** Can Rematch Local Track */
+            can_rematch_local_track: boolean;
+            /** Can Rescue Metadata */
+            can_rescue_metadata: boolean;
             /** Failed At */
             failed_at: string;
             /** Failure Reason */
@@ -1533,6 +1563,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["UnidentifiedIgnoreResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    restore_unidentified_api_maintenance_unidentified__attempt_id__restore_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                attempt_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UnidentifiedRestoreResponse"];
                 };
             };
             /** @description Validation Error */

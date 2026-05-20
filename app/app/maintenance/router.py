@@ -9,10 +9,11 @@ from app.core.db import get_engine
 from app.ingestion.failures import FailedIngestionAttemptStore
 from app.ingestion.jobs import IngestionJobEnqueuer
 from app.maintenance.schemas import (
-    UnidentifiedIgnoreResponse,
     MissingLocallyResponse,
     MissingLocallyTrackResponse,
+    UnidentifiedIgnoreResponse,
     UnidentifiedResponse,
+    UnidentifiedRestoreResponse,
     UnidentifiedRetryResponse,
     UnidentifiedTrackResponse,
 )
@@ -69,6 +70,8 @@ def create_router(
                 UnidentifiedTrackResponse(
                     id=track.id,
                     attempt_count=track.attempt_count,
+                    can_rematch_local_track=track.can_rematch_local_track,
+                    can_rescue_metadata=track.can_rescue_metadata,
                     failed_at=track.failed_at,
                     failure_reason=track.failure_reason,
                     filename=track.filename,
@@ -138,6 +141,25 @@ def create_router(
         return UnidentifiedIgnoreResponse(
             id=attempt.id,
             ignored_at=attempt.ignored_at.isoformat(),
+            source_path=attempt.source_path,
+        )
+
+    @router.post(
+        "/maintenance/unidentified/{attempt_id}/restore",
+        response_model=UnidentifiedRestoreResponse,
+    )
+    def restore_unidentified(
+        attempt_id: int,
+        engine: Engine = Depends(get_engine),
+    ) -> UnidentifiedRestoreResponse:
+        failure_store = FailedIngestionAttemptStore(engine=engine)
+        attempt = failure_store.restore(attempt_id)
+        if attempt is None:
+            raise HTTPException(status_code=404, detail="Unidentified source not found")
+
+        return UnidentifiedRestoreResponse(
+            id=attempt.id,
+            ignored_at=None,
             source_path=attempt.source_path,
         )
 

@@ -1,10 +1,10 @@
-Read TASKS.md and EPICS.md from the project root, then do the following steps in order:
+Read TASKS.md from the project root, then do the following steps in order:
 
-1. **Find the next task**: Look in TASKS.md for the first unchecked item (`- [ ]`). If all tasks are checked off, stop and tell the user to run `/next-epic`.
+1. **Find the next task**: Look in TASKS.md for the first unchecked item (`- [ ]`). If all tasks are checked off, stop and tell the user there are no queued tasks.
 
-2. **Get epic context**: In EPICS.md, find the epic marked `` `in progress` `` and read its description for context on what we're building.
+2. **Get task context**: Read the TASKS.md heading, notes, and the selected task's sub-bullets for context on what we're building.
 
-3. **Implement the task**: Do the work. Read relevant source files before writing code. Follow the subdir layout at the top of EPICS.md. When the task is complete, verify it works (run tests if they cover this area).
+3. **Implement the task**: Do the work. Read relevant source files before writing code. Follow AGENTS.md and the repository's existing layout. When the task is complete, verify it works (run tests if they cover this area).
 
 4. **Mark it done**: In TASKS.md, change `- [ ]` to `- [x]` on the task you just completed.
 

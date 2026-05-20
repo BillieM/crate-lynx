@@ -219,6 +219,37 @@ class FailedIngestionAttemptStore:
 
         return _row_to_failed_attempt(updated)
 
+    def restore(self, attempt_id: int) -> FailedIngestionAttempt | None:
+        with self._engine.begin() as connection:
+            row = (
+                connection.execute(
+                    select(failed_ingestion_attempts_table).where(
+                        failed_ingestion_attempts_table.c.id == attempt_id
+                    )
+                )
+                .mappings()
+                .one_or_none()
+            )
+            if row is None:
+                return None
+
+            connection.execute(
+                update(failed_ingestion_attempts_table)
+                .where(failed_ingestion_attempts_table.c.id == attempt_id)
+                .values(ignored_at=None)
+            )
+            updated = (
+                connection.execute(
+                    select(failed_ingestion_attempts_table).where(
+                        failed_ingestion_attempts_table.c.id == attempt_id
+                    )
+                )
+                .mappings()
+                .one()
+            )
+
+        return _row_to_failed_attempt(updated)
+
     def should_skip_auto_enqueue(self, source_path: Path | str) -> bool:
         path = _normalize_source_path(source_path)
         signature = _source_file_signature(path)

@@ -2,9 +2,9 @@ Analyse TASKS.md and propose splits, merges, missing implementation details, and
 
 Steps in order:
 
-1. **Read TASKS.md.** Note which items are checked vs. unchecked. If there are no unchecked tasks, stop and tell the user to run `/next-epic`.
+1. **Read TASKS.md.** Note which items are checked vs. unchecked. If there are no unchecked tasks, stop and tell the user there are no queued tasks to refine.
 
-2. **Get epic context.** In EPICS.md, find the epic marked `` `in progress` `` and read its description.
+2. **Get task context.** Read the TASKS.md heading, notes, and unchecked task details. Use README.md and AGENTS.md only as needed for project conventions.
 
 3. **Ground the analysis in the codebase.** For each unchecked task, locate the files / endpoints / functions it references and read enough of them to make concrete claims. Use the Explore agent for broad lookups and `grep` / Read for targeted ones. Specifically check:
    - File sizes (LOC) of files the task will edit — task scoping depends on this.
@@ -17,7 +17,7 @@ Steps in order:
    - Undefined UX decisions (e.g. selection persistence across filter changes, mobile column hiding).
    - Missing endpoints / data sources implied by the task description.
    - Catch-all "polish" / "validate" tasks that should be folded into per-task definitions of done.
-   - Orphaned items left over from previous epics.
+   - Orphaned items left over from previous plans.
    - Concurrency, error-aggregation, or scale concerns that aren't addressed.
 
 5. **Propose a re-org.** Suggest merges (same file or tightly coupled changes) and splits (any task that won't fit one Codex window — typically because it bundles a foundation + tests + multiple consumers). Aim for fewer, sharper tasks. Present as a small old-→-new table with one-line rationale per change.
@@ -33,9 +33,9 @@ Steps in order:
 
 8. **Present the proposal.** Structured as: overall observations → flaws/gaps → suggested re-org table → per-task implementation details → other suggestions. End with: *"Want me to rewrite TASKS.md to this structure, or would you rather adjust the proposal first?"*
 
-9. **Wait for the user.** If they accept, rewrite TASKS.md preserving the epic header, with one section per task following the format established by the proposal (each task gets a `## T<n>. <title>` heading, body bullets, and a `**Definition of done:**` line). Do not commit — the user will run `/next-task` next.
+9. **Wait for the user.** If they accept, rewrite TASKS.md preserving the current tracker heading, with one section per task following the format established by the proposal (each task gets a `## T<n>. <title>` heading, body bullets, and a `**Definition of done:**` line). Do not commit — the user will run `/next-task` next.
 
 Important:
-- Do NOT modify TASKS.md, EPICS.md, or any source files during analysis.
+- Do NOT modify TASKS.md or any source files during analysis.
 - Do NOT spawn implementation agents — this command is research + planning only.
 - Keep the proposal tight: prefer file:line references over prose, prefer tables over paragraphs, prefer concrete decisions over open questions.
