@@ -72,7 +72,7 @@
   - Invalidate relationship, playlist, proposal, and Missing Locally queries after actions.
   - Add frontend tests for all states, actions, conflict winner selection, and failed mutations.
 
-- [ ] Final integration and validation.
+- [x] Final integration and validation.
   - Regenerate OpenAPI/types.
   - Run backend validation: `ruff check .`, `ruff format --check .`, and `pytest`.
   - Run frontend validation: `npm run lint`, `npm test`, and `npm run build`.
