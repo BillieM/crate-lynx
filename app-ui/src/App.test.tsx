@@ -671,7 +671,8 @@ describe("App", () => {
 
     expect(screen.getByRole("heading", { level: 1, name: "Streaming relationships" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { level: 2, name: "Relationship queue" })).toBeInTheDocument();
-    expect(screen.getByText("Pending streaming-to-streaming relationship suggestions will appear here for review.")).toBeInTheDocument();
+    expect(await screen.findByRole("listitem", { name: "Suggestion 91: Night Runner to Night Runner" })).toBeInTheDocument();
+    expect(screen.getByRole("listitem", { name: "Suggestion 92: Loose Cable to Loose Cable Live" })).toBeInTheDocument();
     expect(document.getElementById("streaming-relationships")).toHaveAttribute("data-view-active", "true");
     expect(document.getElementById("playlists")).toHaveAttribute("data-view-active", "false");
   });

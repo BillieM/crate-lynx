@@ -64,7 +64,7 @@
   - Keep existing playlist status parsing constrained to `linked`, `pending`, and `unlinked`.
   - Add query and routing tests.
 
-- [ ] Build the Streaming Relationships review UI.
+- [x] Build the Streaming Relationships review UI.
   - Reuse the Link Proposals visual pattern for loading, empty, error, and populated states.
   - Show score-sorted side-by-side streaming track comparisons with confidence and match-method cues.
   - Provide `Equivalent`, `Related`, `Reject`, and manual `Generate` actions.
