@@ -25,7 +25,7 @@
   - Treat same-local conflicts as non-conflicting.
   - Add resolver tests for direct links, transitive equivalent groups, related-only groups, unlinked groups, and conflict cases.
 
-- [ ] Move M3U regeneration behind a shared background job.
+- [x] Move M3U regeneration behind a shared background job.
   - Add an M3U regeneration job/enqueuer for affected full-sync playlist IDs.
   - Replace synchronous M3U writes in approve, reject, and break-link flows with affected-playlist enqueueing.
   - Calculate affected playlists through equivalent groups for local-link changes and through both connected groups for equivalence changes.

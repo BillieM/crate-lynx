@@ -11,7 +11,7 @@ from app.matching.jobs import run_matching_pipeline
 def test_resolve_queue_names_uses_default_when_unset(monkeypatch) -> None:
     monkeypatch.delenv("RQ_QUEUE_NAMES", raising=False)
 
-    assert resolve_queue_names() == ("ingestion", "matching", "streaming")
+    assert resolve_queue_names() == ("ingestion", "matching", "streaming", "m3u")
 
 
 def test_resolve_queue_names_strips_commas_and_whitespace() -> None:
@@ -73,14 +73,14 @@ def test_main_starts_worker(monkeypatch) -> None:
     assert seen["worked"] is True
 
 
-def test_entrypoint_splits_ingestion_from_matching_and_streaming_workers() -> None:
+def test_entrypoint_splits_ingestion_from_background_workers() -> None:
     entrypoint = Path(__file__).resolve().parents[1] / "entrypoint.sh"
     script = entrypoint.read_text()
 
     assert 'INGESTION_WORKER_COUNT="${INGESTION_WORKER_COUNT:-1}"' in script
     assert "RQ_QUEUE_NAMES=ingestion python -m app.core.worker &" in script
     assert (
-        'RQ_QUEUE_NAMES="${RQ_BACKGROUND_QUEUE_NAMES:-matching,streaming}" '
+        'RQ_QUEUE_NAMES="${RQ_BACKGROUND_QUEUE_NAMES:-matching,streaming,m3u}" '
         "python -m app.core.worker &"
     ) in script
     assert 'if [[ -n "${RQ_QUEUE_NAMES:-}" ]]; then' in script

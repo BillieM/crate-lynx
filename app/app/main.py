@@ -121,7 +121,7 @@ def create_app() -> FastAPI:
         if not redis_url:
             raise HTTPException(
                 status_code=503,
-                detail="REDIS_URL must be configured for streaming sync jobs",
+                detail="REDIS_URL must be configured for background jobs",
             )
         return redis_url
 
@@ -153,7 +153,9 @@ def create_app() -> FastAPI:
         prefix="/api",
     )
     app.include_router(
-        create_links_router(),
+        create_links_router(
+            require_redis_url=require_redis_url,
+        ),
         prefix="/api",
     )
     app.include_router(

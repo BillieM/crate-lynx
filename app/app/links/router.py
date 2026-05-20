@@ -1,9 +1,9 @@
 from __future__ import annotations
 
+import logging
 import os
 from collections.abc import Callable
 from datetime import UTC, datetime
-from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import and_, delete, insert, select, update
@@ -23,15 +23,19 @@ from app.matching.pipeline import (
     SuggestedLinkStore,
     suggested_links_table,
 )
-from app.m3u.generator import (
-    get_m3u_output_dir,
-    regenerate_m3us_for_streaming_track,
+from app.m3u.jobs import (
+    M3uRegenerationJobEnqueuer,
+    affected_full_sync_playlist_ids_for_streaming_track,
 )
 from app.streaming.models import streaming_tracks_table
 
 
+logger = logging.getLogger(__name__)
+
+
 def create_router(
     *,
+    require_redis_url: Callable[[], str] | None = None,
     require_database_url: Callable[[], str] | None = None,
 ) -> APIRouter:
     router = APIRouter()
@@ -43,13 +47,33 @@ def create_router(
             require_database_url() if require_database_url is not None else None
         )
 
-    def _regenerate_m3u_exports(streaming_track_id: int, engine: Engine) -> None:
-        regenerate_m3us_for_streaming_track(
-            streaming_track_id,
-            engine=engine,
-            base_path=Path(os.environ.get("LIBRARY_ROOT", "/nas/media/music")),
-            output_dir=get_m3u_output_dir(),
+    def _m3u_redis_url(playlist_ids: tuple[int, ...]) -> str | None:
+        if not playlist_ids:
+            return None
+
+        redis_url = (
+            require_redis_url()
+            if require_redis_url is not None
+            else os.environ.get("REDIS_URL")
         )
+        if not redis_url:
+            logger.warning(
+                "REDIS_URL is not configured; skipping M3U regeneration for "
+                "playlist_ids=%s",
+                playlist_ids,
+            )
+            return None
+
+        return redis_url
+
+    def _enqueue_m3u_regeneration(
+        playlist_ids: tuple[int, ...],
+        redis_url: str | None,
+    ) -> None:
+        if not playlist_ids or redis_url is None:
+            return
+
+        M3uRegenerationJobEnqueuer(redis_url).enqueue_playlists(playlist_ids)
 
     @router.get("/proposals", response_model=ProposalListResponse)
     def list_proposals(
@@ -180,6 +204,12 @@ def create_router(
                     detail="Track already has an approved link",
                 )
 
+            affected_playlist_ids = affected_full_sync_playlist_ids_for_streaming_track(
+                connection,
+                proposal["streaming_track_id"],
+            )
+            m3u_redis_url = _m3u_redis_url(affected_playlist_ids)
+
             result = connection.execute(
                 insert(final_links_table).values(
                     local_track_id=proposal["local_track_id"],
@@ -200,7 +230,7 @@ def create_router(
                 )
             )
 
-        _regenerate_m3u_exports(proposal["streaming_track_id"], engine)
+        _enqueue_m3u_regeneration(affected_playlist_ids, m3u_redis_url)
 
         final_link_id = result.inserted_primary_key[0]
         if not isinstance(final_link_id, int):
@@ -235,6 +265,12 @@ def create_router(
             if proposal is None:
                 raise HTTPException(status_code=404, detail="Proposal not found")
 
+            affected_playlist_ids = affected_full_sync_playlist_ids_for_streaming_track(
+                connection,
+                proposal["streaming_track_id"],
+            )
+            m3u_redis_url = _m3u_redis_url(affected_playlist_ids)
+
             connection.execute(
                 update(suggested_links_table)
                 .where(suggested_links_table.c.id == proposal_id)
@@ -244,7 +280,7 @@ def create_router(
                 )
             )
 
-        _regenerate_m3u_exports(proposal["streaming_track_id"], engine)
+        _enqueue_m3u_regeneration(affected_playlist_ids, m3u_redis_url)
 
         return {
             "proposal_id": proposal_id,
@@ -276,6 +312,12 @@ def create_router(
             if final_link is None:
                 raise HTTPException(status_code=404, detail="Final link not found")
 
+            affected_playlist_ids = affected_full_sync_playlist_ids_for_streaming_track(
+                connection,
+                final_link["streaming_track_id"],
+            )
+            m3u_redis_url = _m3u_redis_url(affected_playlist_ids)
+
             connection.execute(
                 delete(final_links_table).where(final_links_table.c.id == final_link_id)
             )
@@ -290,7 +332,7 @@ def create_router(
                 )
             )
 
-        _regenerate_m3u_exports(final_link["streaming_track_id"], engine)
+        _enqueue_m3u_regeneration(affected_playlist_ids, m3u_redis_url)
 
         rejected_suggestion_id = rejected_suggestion.inserted_primary_key[0]
         if not isinstance(rejected_suggestion_id, int):

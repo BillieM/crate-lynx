@@ -1,14 +1,11 @@
 from __future__ import annotations
 
-import inspect
 from pathlib import Path
 
 from sqlalchemy import create_engine, insert
 
-from app.links.router import create_router
 from app.links.store import final_links_table, metadata as links_metadata
 from app.local_tracks.store import local_tracks_table, metadata as local_tracks_metadata
-from app.matching.pipeline import SUGGESTED_LINK_STATUS_APPROVED
 from app.m3u.generator import (
     generate_m3u,
     get_m3u_output_dir,
@@ -333,68 +330,3 @@ def test_regenerate_m3us_for_streaming_track_writes_only_full_playlists(
     ]
     assert stale_match_only_path.read_text(encoding="utf-8") == "stale match-only"
     assert stale_off_path.read_text(encoding="utf-8") == "stale off"
-
-
-def test_approving_proposal_regenerates_m3u_export(
-    library_root: Path,
-    migrated_database,
-    monkeypatch,
-    test_data,
-    tmp_path: Path,
-) -> None:
-    database_url, _ = migrated_database
-    monkeypatch.setenv("DATABASE_URL", database_url)
-    monkeypatch.setenv("M3U_OUTPUT_DIR", str(tmp_path / "m3u"))
-    account_id = test_data.streaming_account()
-    playlist_id = test_data.streaming_playlist(
-        account_id=account_id,
-        provider_playlist_id="PL-road-trip",
-        sync_mode=PLAYLIST_SYNC_MODE_FULL,
-        title="Road Trip Mix",
-    )
-    local_track_id = test_data.local_track(
-        beets_id=42,
-        file_path="Artist/approved.mp3",
-        fingerprint="fp-approved",
-    )
-    streaming_track_id = test_data.streaming_track(
-        artist="Artist",
-        duration_ms=123000,
-        provider_track_id="ytm-approved",
-        title="Approved Track",
-    )
-    test_data.playlist_membership(
-        playlist_id=playlist_id,
-        position=1,
-        streaming_track_id=streaming_track_id,
-    )
-    proposal_id = test_data.suggested_link(
-        local_track_id=local_track_id,
-        streaming_track_id=streaming_track_id,
-    )
-
-    router = create_router(require_database_url=lambda: database_url)
-    route = next(
-        route
-        for route in router.routes
-        if getattr(route, "path", None) == "/proposals/{proposal_id}/approve"
-        and "POST" in getattr(route, "methods", set())
-    )
-
-    response = _call_endpoint(route.endpoint, proposal_id)
-
-    assert response["status"] == SUGGESTED_LINK_STATUS_APPROVED
-    assert (tmp_path / "m3u" / "Road-Trip-Mix.m3u").read_text(
-        encoding="utf-8"
-    ).splitlines() == [
-        "#EXTM3U",
-        "#EXTINF:123,Artist - Approved Track",
-        str((library_root / "Artist/approved.mp3").resolve()),
-    ]
-
-
-def _call_endpoint(endpoint, *args):
-    result = endpoint(*args)
-    if inspect.isawaitable(result):
-        raise AssertionError("Unexpected async endpoint in m3u generator test")
-    return result

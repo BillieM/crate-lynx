@@ -17,6 +17,7 @@ from app.matching.pipeline import (
     metadata as suggested_links_metadata,
     suggested_links_table,
 )
+from app.relationships.models import metadata as relationships_metadata
 from app.streaming.models import metadata as streaming_metadata
 from app.streaming.models import (
     PLAYLIST_SYNC_MODE_FULL,
@@ -31,6 +32,24 @@ def _call_endpoint(endpoint, *args):
     if inspect.isawaitable(result):
         return asyncio.run(result)
     return result
+
+
+def _capture_m3u_enqueues(monkeypatch) -> dict[str, list[object]]:
+    seen: dict[str, list[object]] = {"redis_urls": [], "playlist_ids": []}
+
+    class FakeM3uRegenerationJobEnqueuer:
+        def __init__(self, redis_url: str) -> None:
+            seen["redis_urls"].append(redis_url)
+
+        def enqueue_playlists(self, playlist_ids) -> list[str]:
+            seen["playlist_ids"].append(tuple(playlist_ids))
+            return ["m3u-job-123"]
+
+    monkeypatch.setattr(
+        "app.links.router.M3uRegenerationJobEnqueuer",
+        FakeM3uRegenerationJobEnqueuer,
+    )
+    return seen
 
 
 def test_list_proposals_returns_joined_pending_records(
@@ -246,6 +265,7 @@ def test_approve_proposal_writes_final_link_and_clears_pending_siblings(
     streaming_metadata.create_all(engine)
     suggested_links_metadata.create_all(engine)
     links_metadata.create_all(engine)
+    relationships_metadata.create_all(engine)
 
     with engine.begin() as connection:
         connection.execute(
@@ -407,8 +427,7 @@ def test_approve_proposal_writes_final_link_and_clears_pending_siblings(
     ]
 
 
-def test_approve_proposal_regenerates_playlist_m3u(
-    library_root: Path,
+def test_approve_proposal_enqueues_playlist_m3u_regeneration(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
@@ -418,8 +437,9 @@ def test_approve_proposal_regenerates_playlist_m3u(
     streaming_metadata.create_all(engine)
     suggested_links_metadata.create_all(engine)
     links_metadata.create_all(engine)
+    relationships_metadata.create_all(engine)
     monkeypatch.setenv("DATABASE_URL", database_url)
-    monkeypatch.setenv("M3U_OUTPUT_DIR", str(tmp_path / "m3u"))
+    seen = _capture_m3u_enqueues(monkeypatch)
 
     with engine.begin() as connection:
         connection.execute(
@@ -470,7 +490,10 @@ def test_approve_proposal_regenerates_playlist_m3u(
             )
         )
 
-    router = create_router(require_database_url=lambda: database_url)
+    router = create_router(
+        require_database_url=lambda: database_url,
+        require_redis_url=lambda: "redis://redis:6379/9",
+    )
     route = next(
         route
         for route in router.routes
@@ -480,13 +503,10 @@ def test_approve_proposal_regenerates_playlist_m3u(
 
     _call_endpoint(route.endpoint, 13)
 
-    assert (tmp_path / "m3u" / "Road-Trip-Mix.m3u").read_text(
-        encoding="utf-8"
-    ).splitlines() == [
-        "#EXTM3U",
-        "#EXTINF:123,Artist - Approved Track",
-        str((library_root / "Artist/approved.mp3").resolve()),
-    ]
+    assert seen == {
+        "redis_urls": ["redis://redis:6379/9"],
+        "playlist_ids": [(7,)],
+    }
 
 
 def test_approve_proposal_returns_404_when_missing(tmp_path: Path) -> None:
@@ -496,6 +516,7 @@ def test_approve_proposal_returns_404_when_missing(tmp_path: Path) -> None:
     streaming_metadata.create_all(engine)
     suggested_links_metadata.create_all(engine)
     links_metadata.create_all(engine)
+    relationships_metadata.create_all(engine)
 
     router = create_router(require_database_url=lambda: database_url)
     route = next(
@@ -523,6 +544,7 @@ def test_approve_proposal_returns_409_for_rejected_pair(tmp_path: Path) -> None:
     streaming_metadata.create_all(engine)
     suggested_links_metadata.create_all(engine)
     links_metadata.create_all(engine)
+    relationships_metadata.create_all(engine)
 
     with engine.begin() as connection:
         connection.execute(
@@ -607,6 +629,7 @@ def test_approve_proposal_returns_409_when_track_already_has_final_link(
     streaming_metadata.create_all(engine)
     suggested_links_metadata.create_all(engine)
     links_metadata.create_all(engine)
+    relationships_metadata.create_all(engine)
 
     with engine.begin() as connection:
         connection.execute(
@@ -706,6 +729,7 @@ def test_reject_proposal_marks_suggestion_rejected(tmp_path: Path) -> None:
     local_tracks_metadata.create_all(engine)
     streaming_metadata.create_all(engine)
     suggested_links_metadata.create_all(engine)
+    relationships_metadata.create_all(engine)
 
     with engine.begin() as connection:
         connection.execute(
@@ -767,8 +791,7 @@ def test_reject_proposal_marks_suggestion_rejected(tmp_path: Path) -> None:
     assert suggestion["rejected_at"] is not None
 
 
-def test_reject_proposal_regenerates_playlist_m3u(
-    library_root: Path,
+def test_reject_proposal_enqueues_playlist_m3u_regeneration(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
@@ -778,9 +801,9 @@ def test_reject_proposal_regenerates_playlist_m3u(
     streaming_metadata.create_all(engine)
     suggested_links_metadata.create_all(engine)
     links_metadata.create_all(engine)
+    relationships_metadata.create_all(engine)
     monkeypatch.setenv("DATABASE_URL", database_url)
-    monkeypatch.setenv("M3U_OUTPUT_DIR", str(tmp_path / "m3u"))
-    assert library_root == tmp_path / "library"
+    seen = _capture_m3u_enqueues(monkeypatch)
 
     output_path = tmp_path / "m3u" / "Road-Trip-Mix.m3u"
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -835,7 +858,10 @@ def test_reject_proposal_regenerates_playlist_m3u(
             )
         )
 
-    router = create_router(require_database_url=lambda: database_url)
+    router = create_router(
+        require_database_url=lambda: database_url,
+        require_redis_url=lambda: "redis://redis:6379/9",
+    )
     route = next(
         route
         for route in router.routes
@@ -845,7 +871,11 @@ def test_reject_proposal_regenerates_playlist_m3u(
 
     _call_endpoint(route.endpoint, 13)
 
-    assert output_path.read_text(encoding="utf-8") == "#EXTM3U"
+    assert output_path.read_text(encoding="utf-8") == "stale"
+    assert seen == {
+        "redis_urls": ["redis://redis:6379/9"],
+        "playlist_ids": [(7,)],
+    }
 
 
 def test_reject_proposal_returns_404_when_missing(tmp_path: Path) -> None:
@@ -883,6 +913,7 @@ def test_break_final_link_removes_final_link_and_writes_rejected_suggestion(
     streaming_metadata.create_all(engine)
     suggested_links_metadata.create_all(engine)
     links_metadata.create_all(engine)
+    relationships_metadata.create_all(engine)
 
     with engine.begin() as connection:
         connection.execute(
@@ -944,8 +975,7 @@ def test_break_final_link_removes_final_link_and_writes_rejected_suggestion(
     assert suggestion["rejected_at"] is not None
 
 
-def test_break_final_link_regenerates_playlist_m3u(
-    library_root: Path,
+def test_break_final_link_enqueues_playlist_m3u_regeneration(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
@@ -955,9 +985,9 @@ def test_break_final_link_regenerates_playlist_m3u(
     streaming_metadata.create_all(engine)
     suggested_links_metadata.create_all(engine)
     links_metadata.create_all(engine)
+    relationships_metadata.create_all(engine)
     monkeypatch.setenv("DATABASE_URL", database_url)
-    monkeypatch.setenv("M3U_OUTPUT_DIR", str(tmp_path / "m3u"))
-    assert library_root == tmp_path / "library"
+    seen = _capture_m3u_enqueues(monkeypatch)
 
     output_path = tmp_path / "m3u" / "Road-Trip-Mix.m3u"
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -1009,7 +1039,10 @@ def test_break_final_link_regenerates_playlist_m3u(
             )
         )
 
-    router = create_router(require_database_url=lambda: database_url)
+    router = create_router(
+        require_database_url=lambda: database_url,
+        require_redis_url=lambda: "redis://redis:6379/9",
+    )
     route = next(
         route
         for route in router.routes
@@ -1019,7 +1052,11 @@ def test_break_final_link_regenerates_playlist_m3u(
 
     _call_endpoint(route.endpoint, 7)
 
-    assert output_path.read_text(encoding="utf-8") == "#EXTM3U"
+    assert output_path.read_text(encoding="utf-8") == "stale"
+    assert seen == {
+        "redis_urls": ["redis://redis:6379/9"],
+        "playlist_ids": [(7,)],
+    }
 
 
 def test_break_final_link_returns_404_when_missing(tmp_path: Path) -> None:
