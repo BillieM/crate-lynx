@@ -1,5 +1,14 @@
 """Streaming relationship persistence models."""
 
+from app.relationships.resolver import (
+    EquivalentAcceptanceConflict,
+    RelationshipFinalLink,
+    RESOLUTION_SOURCE_DIRECT,
+    RESOLUTION_SOURCE_EQUIVALENT,
+    ResolvedStreamingTrackLink,
+    ResolutionSource,
+    StreamingRelationshipResolver,
+)
 from app.relationships.models import (
     NormalizedStreamingTrackPair,
     STREAMING_RELATIONSHIP_CONFIDENCE_HIGH,
@@ -20,7 +29,13 @@ from app.relationships.models import (
 )
 
 __all__ = [
+    "EquivalentAcceptanceConflict",
     "NormalizedStreamingTrackPair",
+    "RelationshipFinalLink",
+    "RESOLUTION_SOURCE_DIRECT",
+    "RESOLUTION_SOURCE_EQUIVALENT",
+    "ResolvedStreamingTrackLink",
+    "ResolutionSource",
     "STREAMING_RELATIONSHIP_CONFIDENCE_HIGH",
     "STREAMING_RELATIONSHIP_CONFIDENCE_LOW",
     "STREAMING_RELATIONSHIP_CONFIDENCE_MEDIUM",
@@ -32,6 +47,7 @@ __all__ = [
     "STREAMING_RELATIONSHIP_TYPE_EQUIVALENT",
     "STREAMING_RELATIONSHIP_TYPE_RELATED",
     "STREAMING_RELATIONSHIP_TYPES",
+    "StreamingRelationshipResolver",
     "metadata",
     "normalize_streaming_track_pair",
     "streaming_relationship_suggestions_table",

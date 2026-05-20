@@ -17,7 +17,7 @@
   - Normalize relationship pairs so duplicate reversed pairs cannot be created.
   - Add migration/schema parity tests and model tests.
 
-- [ ] Build the shared relationship resolver and conflict detector.
+- [x] Build the shared relationship resolver and conflict detector.
   - Implement equivalent-group resolution where direct `final_links` win for the exact streaming track.
   - Resolve unlinked equivalent-group members through the group's single local link.
   - Keep `related` relationships advisory only.
