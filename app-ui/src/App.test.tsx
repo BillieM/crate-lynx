@@ -11,6 +11,7 @@ import type {
   StreamingPlaylistConfigResponse,
   StreamingPlaylistsResponse,
 } from "./features/playlists/queries";
+import type { StreamingRelationshipSuggestionsResponse } from "./features/relationships/queries";
 import { blobResponse, createMockApi, emptyResponse, failUnexpectedFetch, jsonResponse } from "./test/mockApi";
 
 const playlistDetailResponse: PlaylistDetailResponse = {
@@ -196,6 +197,76 @@ const linkProposalsResponse: LinkProposalsResponse = {
     },
   ],
 };
+const streamingRelationshipSuggestionsResponse: StreamingRelationshipSuggestionsResponse = {
+  suggestions: [
+    {
+      id: 91,
+      confidence: "high",
+      conflict_state: "none",
+      created_at: "2026-05-18T12:00:00Z",
+      match_method: "isrc",
+      relationship_type: "equivalent",
+      score: 0.99,
+      status: "pending",
+      first_track: {
+        id: 901,
+        provider_track_id: "ytm:first-901",
+        title: "Night Runner",
+        artist: "Frame Delay",
+        album: "Late Night Drive",
+        year: 2024,
+        isrc: "GBABC2400001",
+        duration_ms: 214000,
+      },
+      second_track: {
+        id: 902,
+        provider_track_id: "ytm:second-902",
+        title: "Night Runner",
+        artist: "Frame Delay",
+        album: "Private Archive",
+        year: null,
+        isrc: "GBABC2400001",
+        duration_ms: 214400,
+      },
+      first_link: null,
+      second_link: null,
+      conflict: null,
+    },
+    {
+      id: 92,
+      confidence: "medium",
+      conflict_state: "none",
+      created_at: "2026-05-18T12:05:00Z",
+      match_method: "fuzzy",
+      relationship_type: "related",
+      score: 0.73,
+      status: "pending",
+      first_track: {
+        id: 903,
+        provider_track_id: "ytm:first-903",
+        title: "Loose Cable",
+        artist: "Patch Bay",
+        album: "Maintenance Window",
+        year: null,
+        isrc: null,
+        duration_ms: null,
+      },
+      second_track: {
+        id: 904,
+        provider_track_id: "ytm:second-904",
+        title: "Loose Cable Live",
+        artist: "Patch Bay",
+        album: "Live Diagnostics",
+        year: null,
+        isrc: null,
+        duration_ms: 232000,
+      },
+      first_link: null,
+      second_link: null,
+      conflict: null,
+    },
+  ],
+};
 
 const libraryTracksResponse: LibraryTracksResponse = {
   next_cursor: null,
@@ -271,6 +342,7 @@ type MockPlaylistFetchOptions = {
   linkProposalsHandler?: (url: string) => Promise<Response> | Response;
   metadataRefreshHandler?: () => Promise<Response> | Response;
   rejectProposalHandler?: (proposalId: string) => Promise<Response> | Response;
+  relationshipSuggestionsHandler?: () => Promise<Response> | Response;
   selectedSyncHandler?: () => Promise<Response> | Response;
 };
 
@@ -315,6 +387,7 @@ function mockPlaylistFetch({
   linkProposalsHandler,
   metadataRefreshHandler,
   rejectProposalHandler,
+  relationshipSuggestionsHandler,
   selectedSyncHandler,
 }: MockPlaylistFetchOptions = {}) {
   const playlistDetailsById = new Map<string, typeof playlistDetailResponse>([
@@ -329,6 +402,9 @@ function mockPlaylistFetch({
   return createMockApi()
     .get("/api/streaming/playlists", () => jsonResponse(streamingPlaylistsResponse))
     .get("/api/streaming/playlists/config", () => jsonResponse(streamingPlaylistConfigResponse))
+    .get("/api/streaming/relationships/suggestions", () =>
+      relationshipSuggestionsHandler?.() ?? jsonResponse(streamingRelationshipSuggestionsResponse),
+    )
     .get(/^\/api\/proposals(?:\?|$)/, ({ url }) => linkProposalsHandler?.(url) ?? jsonResponse(linkProposalsResponse))
     .get("/api/library/tracks", () => jsonResponse(libraryTracksResponse))
     .get("/api/maintenance/missing-locally", () => jsonResponse(missingLocallyResponse))
@@ -499,6 +575,7 @@ describe("App", () => {
     expect(screen.getAllByText("YouTube Music").length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText("Local Library")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Link proposals/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Streaming relationships/i })).toBeInTheDocument();
     expect(await screen.findByRole("button", { name: /Late Night Drive/i })).toBeInTheDocument();
     expect(within(sidebar).getByText("62")).toBeInTheDocument();
     expect(await screen.findByText("321")).toBeInTheDocument();
@@ -510,6 +587,7 @@ describe("App", () => {
 
     for (const viewId of [
       "proposals",
+      "streaming-relationships",
       "unidentified",
       "missing",
       "playlists",
@@ -533,6 +611,7 @@ describe("App", () => {
 
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "Link proposals 3" })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Streaming relationships 2" })).toBeInTheDocument();
       expect(screen.getByRole("button", { name: "Unidentified 1" })).toBeInTheDocument();
       expect(screen.getByRole("button", { name: "Missing locally 1" })).toBeInTheDocument();
       expect(screen.getByRole("button", { name: "All tracks 321" })).toBeInTheDocument();
@@ -582,6 +661,18 @@ describe("App", () => {
     expect(screen.getByText("Pending Signal.mp3")).toBeInTheDocument();
     expect(screen.getByText("Loose Cable.mp3")).toBeInTheDocument();
     expect(document.getElementById("proposals")).toHaveAttribute("data-view-active", "true");
+    expect(document.getElementById("playlists")).toHaveAttribute("data-view-active", "false");
+  });
+
+  it("opens the streaming relationships maintenance routed view from the URL", async () => {
+    mockPlaylistFetch();
+
+    renderApp(["/relationships"]);
+
+    expect(screen.getByRole("heading", { level: 1, name: "Streaming relationships" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 2, name: "Relationship queue" })).toBeInTheDocument();
+    expect(screen.getByText("Pending streaming-to-streaming relationship suggestions will appear here for review.")).toBeInTheDocument();
+    expect(document.getElementById("streaming-relationships")).toHaveAttribute("data-view-active", "true");
     expect(document.getElementById("playlists")).toHaveAttribute("data-view-active", "false");
   });
 

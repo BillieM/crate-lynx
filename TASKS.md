@@ -58,7 +58,7 @@
   - Update M3U export to emit the original playlist row metadata with the resolved local file path.
   - Add backend tests for playlist rows, playlist counts, Missing Locally, and M3U equivalent rows.
 
-- [ ] Add frontend relationship data access and navigation.
+- [x] Add frontend relationship data access and navigation.
   - Add typed fetch/mutation helpers, Zod validation, query keys, and invalidation for streaming relationship suggestions.
   - Add a `Streaming relationships` maintenance nav item and route.
   - Keep existing playlist status parsing constrained to `linked`, `pending`, and `unlinked`.

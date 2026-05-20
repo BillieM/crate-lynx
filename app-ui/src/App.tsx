@@ -5,6 +5,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { useLibraryTracksQuery } from "./features/library/queries";
 import { useMissingLocallyTracksQuery, useUnidentifiedTracksQuery } from "./features/maintenance/queries";
 import { type StreamingPlaylist, useLinkProposalsQuery, useStreamingPlaylistsQuery } from "./features/playlists/queries";
+import { useStreamingRelationshipSuggestionsQuery } from "./features/relationships/queries";
 import { Sidebar } from "./features/shell/Sidebar";
 import { Topbar } from "./features/shell/Topbar";
 import { ViewShell } from "./features/shell/ViewShell";
@@ -42,6 +43,7 @@ function App() {
   const linkProposalsQuery = useLinkProposalsQuery();
   const missingLocallyQuery = useMissingLocallyTracksQuery();
   const playlistsQuery = useStreamingPlaylistsQuery();
+  const relationshipSuggestionsQuery = useStreamingRelationshipSuggestionsQuery();
   const unidentifiedQuery = useUnidentifiedTracksQuery();
   const streamingPlaylists = playlistsQuery.data?.playlists ?? emptyStreamingPlaylists;
   const activeUnidentifiedCount = unidentifiedQuery.data?.tracks.filter((track) => track.ignored_at === null).length;
@@ -56,12 +58,14 @@ function App() {
       buildMaintenanceNavItems({
         missingCount: missingLocallyQuery.data?.tracks.length,
         proposalCount: linkProposalsQuery.data?.proposals.length,
+        relationshipCount: relationshipSuggestionsQuery.data?.suggestions.length,
         unidentifiedCount: activeUnidentifiedCount,
       }),
     [
       activeUnidentifiedCount,
       linkProposalsQuery.data?.proposals.length,
       missingLocallyQuery.data?.tracks.length,
+      relationshipSuggestionsQuery.data?.suggestions.length,
     ],
   );
   const playlistItems = useMemo(() => buildPlaylistNavItems(streamingPlaylists), [streamingPlaylists]);

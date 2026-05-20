@@ -6,11 +6,13 @@ import { PlaylistSyncConfiguration } from "../playlists/PlaylistSyncConfiguratio
 import { PlaylistView } from "../playlists/PlaylistView";
 import type { StreamingPlaylist } from "../playlists/queries";
 import { LinkProposalsView } from "../proposals/LinkProposalsView";
+import { StreamingRelationshipsView } from "../relationships/StreamingRelationshipsView";
 import { AuthenticationSettingsView } from "../settings/AuthenticationSettingsView";
 import { GeneralSettingsView } from "../settings/GeneralSettingsView";
 import type { NavItem, PlaylistSyncViewState, ViewConfig } from "./types";
 
 export const playlistCollectionViewId = "playlists";
+export const streamingRelationshipsViewId = "streaming-relationships";
 export const settingsAuthenticationViewId = "settings-authentication";
 export const settingsGeneralViewId = "settings-general";
 export const settingsSyncYoutubeMusicViewId = "settings-sync-youtube-music";
@@ -33,6 +35,14 @@ const staticViewEntries = [
     icon: "spark",
     path: "/proposals",
     render: () => <LinkProposalsView />,
+  },
+  {
+    id: streamingRelationshipsViewId,
+    title: "Streaming relationships",
+    actionLabels: [],
+    icon: "spark",
+    path: "/relationships",
+    render: () => <StreamingRelationshipsView />,
   },
   {
     id: "unidentified",
@@ -143,14 +153,17 @@ export function buildPlaylistNavItems(playlists: StreamingPlaylist[]): NavItem[]
 export function buildMaintenanceNavItems({
   missingCount,
   proposalCount,
+  relationshipCount,
   unidentifiedCount,
 }: {
   missingCount?: number;
   proposalCount?: number;
+  relationshipCount?: number;
   unidentifiedCount?: number;
 }): NavItem[] {
   return [
     { id: "proposals", label: "Link proposals", badge: proposalCount, tone: "pending" },
+    { id: streamingRelationshipsViewId, label: "Streaming relationships", badge: relationshipCount, tone: "pending" },
     { id: "unidentified", label: "Unidentified", badge: unidentifiedCount, tone: "alert" },
     { id: "missing", label: "Missing locally", badge: missingCount, tone: "accent" },
   ];
