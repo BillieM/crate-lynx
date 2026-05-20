@@ -164,6 +164,7 @@ def test_m3u_regeneration_job_writes_full_sync_playlist(
     local_tracks_metadata.create_all(engine)
     streaming_metadata.create_all(engine)
     links_metadata.create_all(engine)
+    relationships_metadata.create_all(engine)
     monkeypatch.setenv("DATABASE_URL", database_url)
     monkeypatch.setenv("LIBRARY_ROOT", str(tmp_path / "library"))
     monkeypatch.setenv("M3U_OUTPUT_DIR", str(tmp_path / "m3u"))

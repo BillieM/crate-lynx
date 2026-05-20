@@ -26,6 +26,12 @@ from app.matching.pipeline import (
     metadata as suggested_links_metadata,
     suggested_links_table,
 )
+from app.relationships.models import (
+    STREAMING_RELATIONSHIP_TYPE_EQUIVALENT,
+    STREAMING_RELATIONSHIP_TYPE_RELATED,
+    metadata as relationships_metadata,
+    streaming_relationships_table,
+)
 from app.settings.models import metadata as settings_metadata
 from app.settings.schemas import CreateIngestFolderRequest
 from app.settings.store import GeneralSettingsStore
@@ -1005,6 +1011,7 @@ def test_playlist_detail_endpoint_returns_real_link_counts(
     local_tracks_metadata.create_all(engine)
     links_metadata.create_all(engine)
     suggested_links_metadata.create_all(engine)
+    relationships_metadata.create_all(engine)
     monkeypatch.setenv("DATABASE_URL", database_url)
 
     with engine.begin() as connection:
@@ -1054,6 +1061,12 @@ def test_playlist_detail_endpoint_returns_real_link_counts(
                     "title": "Unlinked Song",
                     "artist": "Artist",
                 },
+                {
+                    "id": 12,
+                    "provider_track_id": "ytm-12",
+                    "title": "Equivalent Song",
+                    "artist": "Artist",
+                },
             ],
         )
         connection.execute(
@@ -1062,6 +1075,7 @@ def test_playlist_detail_endpoint_returns_real_link_counts(
                 {"playlist_id": 7, "streaming_track_id": 9, "position": 1},
                 {"playlist_id": 7, "streaming_track_id": 10, "position": 2},
                 {"playlist_id": 7, "streaming_track_id": 11, "position": 3},
+                {"playlist_id": 7, "streaming_track_id": 12, "position": 4},
             ],
         )
         connection.execute(
@@ -1081,6 +1095,13 @@ def test_playlist_detail_endpoint_returns_real_link_counts(
                 status=SUGGESTED_LINK_STATUS_PENDING,
             )
         )
+        connection.execute(
+            insert(streaming_relationships_table).values(
+                lower_track_id=9,
+                higher_track_id=12,
+                relationship_type=STREAMING_RELATIONSHIP_TYPE_EQUIVALENT,
+            )
+        )
 
     app = create_app()
     route = next(
@@ -1097,8 +1118,8 @@ def test_playlist_detail_endpoint_returns_real_link_counts(
     assert response.playlist.cover_art_url is None
     assert response.playlist.sync_mode == PLAYLIST_SYNC_MODE_FULL
     assert response.playlist.provider_track_count is None
-    assert response.playlist.imported_track_count == 3
-    assert response.playlist.linked_count == 1
+    assert response.playlist.imported_track_count == 4
+    assert response.playlist.linked_count == 2
     assert response.playlist.pending_count == 1
     assert response.playlist.unlinked_count == 1
     assert response.playlist.metadata_synced_at == "2026-05-01T09:00:00"
@@ -1119,6 +1140,7 @@ def test_wanted_playlist_endpoints_return_404_for_non_full_playlists(
     metadata.create_all(engine)
     local_tracks_metadata.create_all(engine)
     links_metadata.create_all(engine)
+    relationships_metadata.create_all(engine)
     monkeypatch.setenv("DATABASE_URL", database_url)
 
     with engine.begin() as connection:
@@ -1156,6 +1178,7 @@ def test_playlist_tracks_endpoint_returns_rows_with_link_status(
     local_tracks_metadata.create_all(engine)
     links_metadata.create_all(engine)
     suggested_links_metadata.create_all(engine)
+    relationships_metadata.create_all(engine)
     monkeypatch.setenv("DATABASE_URL", database_url)
 
     with engine.begin() as connection:
@@ -1210,6 +1233,14 @@ def test_playlist_tracks_endpoint_returns_rows_with_link_status(
                     "album": "Album C",
                     "duration_ms": 200000,
                 },
+                {
+                    "id": 12,
+                    "provider_track_id": "ytm-12",
+                    "title": "Equivalent Song",
+                    "artist": "Artist D",
+                    "album": "Album D",
+                    "duration_ms": 222000,
+                },
             ],
         )
         connection.execute(
@@ -1218,6 +1249,7 @@ def test_playlist_tracks_endpoint_returns_rows_with_link_status(
                 {"playlist_id": 7, "streaming_track_id": 9, "position": 1},
                 {"playlist_id": 7, "streaming_track_id": 10, "position": 2},
                 {"playlist_id": 7, "streaming_track_id": 11, "position": 3},
+                {"playlist_id": 7, "streaming_track_id": 12, "position": 4},
             ],
         )
         connection.execute(
@@ -1235,6 +1267,13 @@ def test_playlist_tracks_endpoint_returns_rows_with_link_status(
                 match_method="tag",
                 score=0.82,
                 status=SUGGESTED_LINK_STATUS_PENDING,
+            )
+        )
+        connection.execute(
+            insert(streaming_relationships_table).values(
+                lower_track_id=9,
+                higher_track_id=12,
+                relationship_type=STREAMING_RELATIONSHIP_TYPE_EQUIVALENT,
             )
         )
 
@@ -1268,9 +1307,10 @@ def test_playlist_tracks_endpoint_returns_rows_with_link_status(
         "Linked Song",
         "Pending Song",
         "Unlinked Song",
+        "Equivalent Song",
     ]
     assert playlist_membership_statement_count == 1
-    assert [track.position for track in response.tracks] == [1, 2, 3]
+    assert [track.position for track in response.tracks] == [1, 2, 3, 4]
     assert response.tracks[0].status == "linked"
     assert response.tracks[0].final_link_id == 3
     assert response.tracks[0].local_track_id == 5
@@ -1281,6 +1321,10 @@ def test_playlist_tracks_endpoint_returns_rows_with_link_status(
     assert response.tracks[1].proposal_id == 4
     assert response.tracks[2].status == "unlinked"
     assert response.tracks[2].local_track_id is None
+    assert response.tracks[3].status == "linked"
+    assert response.tracks[3].final_link_id == 3
+    assert response.tracks[3].local_track_id == 5
+    assert response.tracks[3].proposal_id is None
 
 
 def test_library_tracks_endpoint_returns_linked_pending_unlinked_and_no_match_rows(
@@ -1580,6 +1624,7 @@ def test_missing_locally_endpoint_aggregates_playlist_usage_and_excludes_links(
     metadata.create_all(engine)
     local_tracks_metadata.create_all(engine)
     links_metadata.create_all(engine)
+    relationships_metadata.create_all(engine)
     monkeypatch.setenv("DATABASE_URL", database_url)
 
     with engine.begin() as connection:
@@ -1652,6 +1697,22 @@ def test_missing_locally_endpoint_aggregates_playlist_usage_and_excludes_links(
                     "album": "Album E",
                     "duration_ms": 240000,
                 },
+                {
+                    "id": 15,
+                    "provider_track_id": "ytm-15",
+                    "title": "Equivalent Linked Song",
+                    "artist": "Artist F",
+                    "album": "Album F",
+                    "duration_ms": 260000,
+                },
+                {
+                    "id": 16,
+                    "provider_track_id": "ytm-16",
+                    "title": "Related Only Song",
+                    "artist": "Artist G",
+                    "album": "Album G",
+                    "duration_ms": 280000,
+                },
             ],
         )
         connection.execute(
@@ -1664,6 +1725,8 @@ def test_missing_locally_endpoint_aggregates_playlist_usage_and_excludes_links(
                 {"playlist_id": 1, "streaming_track_id": 13, "position": 3},
                 {"playlist_id": 3, "streaming_track_id": 11, "position": 1},
                 {"playlist_id": 3, "streaming_track_id": 14, "position": 2},
+                {"playlist_id": 1, "streaming_track_id": 15, "position": 4},
+                {"playlist_id": 1, "streaming_track_id": 16, "position": 5},
             ],
         )
         connection.execute(
@@ -1681,6 +1744,21 @@ def test_missing_locally_endpoint_aggregates_playlist_usage_and_excludes_links(
                 local_track_id=5,
                 streaming_track_id=13,
             )
+        )
+        connection.execute(
+            insert(streaming_relationships_table),
+            [
+                {
+                    "lower_track_id": 13,
+                    "higher_track_id": 15,
+                    "relationship_type": STREAMING_RELATIONSHIP_TYPE_EQUIVALENT,
+                },
+                {
+                    "lower_track_id": 13,
+                    "higher_track_id": 16,
+                    "relationship_type": STREAMING_RELATIONSHIP_TYPE_RELATED,
+                },
+            ],
         )
 
     app = create_app()
@@ -1713,6 +1791,17 @@ def test_missing_locally_endpoint_aggregates_playlist_usage_and_excludes_links(
                 "artist": "Artist B",
                 "album": None,
                 "duration_ms": None,
+                "playlist_count": 1,
+                "playlist_ids": [1],
+                "playlist_titles": ["Morning Mix"],
+            },
+            {
+                "id": 16,
+                "provider_track_id": "ytm-16",
+                "title": "Related Only Song",
+                "artist": "Artist G",
+                "album": "Album G",
+                "duration_ms": 280000,
                 "playlist_count": 1,
                 "playlist_ids": [1],
                 "playlist_titles": ["Morning Mix"],
@@ -2129,6 +2218,7 @@ def test_playlist_m3u_export_endpoint_returns_attachment(
     metadata.create_all(engine)
     local_tracks_metadata.create_all(engine)
     links_metadata.create_all(engine)
+    relationships_metadata.create_all(engine)
     monkeypatch.setenv("DATABASE_URL", database_url)
 
     with engine.begin() as connection:

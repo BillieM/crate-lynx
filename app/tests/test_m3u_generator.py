@@ -11,6 +11,11 @@ from app.m3u.generator import (
     get_m3u_output_dir,
     regenerate_m3us_for_streaming_track,
 )
+from app.relationships.models import (
+    STREAMING_RELATIONSHIP_TYPE_EQUIVALENT,
+    metadata as relationships_metadata,
+    streaming_relationships_table,
+)
 from app.streaming.models import (
     PLAYLIST_SYNC_MODE_FULL,
     PLAYLIST_SYNC_MODE_MATCH_ONLY,
@@ -31,6 +36,7 @@ def test_generate_m3u_returns_only_final_linked_tracks_in_playlist_order(
     local_tracks_metadata.create_all(engine)
     streaming_metadata.create_all(engine)
     links_metadata.create_all(engine)
+    relationships_metadata.create_all(engine)
     monkeypatch.setenv("DATABASE_URL", database_url)
 
     with engine.begin() as connection:
@@ -140,6 +146,83 @@ def test_generate_m3u_returns_only_final_linked_tracks_in_playlist_order(
     ]
 
 
+def test_generate_m3u_uses_equivalent_link_with_playlist_row_metadata(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite:///{tmp_path / 'm3u-equivalent.db'}"
+    engine = create_engine(database_url)
+    local_tracks_metadata.create_all(engine)
+    streaming_metadata.create_all(engine)
+    links_metadata.create_all(engine)
+    relationships_metadata.create_all(engine)
+    monkeypatch.setenv("DATABASE_URL", database_url)
+
+    with engine.begin() as connection:
+        connection.execute(
+            insert(local_tracks_table).values(
+                id=1,
+                file_path="Artist/source.mp3",
+                library_root_rel_path="Artist/source.mp3",
+                fingerprint="fp-1",
+                beets_id=1,
+            )
+        )
+        connection.execute(
+            insert(streaming_tracks_table),
+            [
+                {
+                    "id": 11,
+                    "provider_track_id": "ytm-source",
+                    "title": "Source Metadata",
+                    "artist": "Source Artist",
+                    "album": None,
+                    "year": None,
+                    "isrc": None,
+                    "duration_ms": 121000,
+                },
+                {
+                    "id": 12,
+                    "provider_track_id": "ytm-playlist",
+                    "title": "Playlist Metadata",
+                    "artist": "Playlist Artist",
+                    "album": None,
+                    "year": None,
+                    "isrc": None,
+                    "duration_ms": 205000,
+                },
+            ],
+        )
+        connection.execute(
+            insert(playlist_membership_table).values(
+                playlist_id=7,
+                streaming_track_id=12,
+                position=1,
+            )
+        )
+        connection.execute(
+            insert(final_links_table).values(
+                local_track_id=1,
+                streaming_track_id=11,
+            )
+        )
+        connection.execute(
+            insert(streaming_relationships_table).values(
+                lower_track_id=11,
+                higher_track_id=12,
+                relationship_type=STREAMING_RELATIONSHIP_TYPE_EQUIVALENT,
+            )
+        )
+
+    output = generate_m3u(7, tmp_path / "exports")
+
+    assert output.splitlines() == [
+        "#EXTM3U",
+        "#EXTINF:205,Playlist Artist - Playlist Metadata",
+        str((tmp_path / "exports" / "Artist/source.mp3").resolve()),
+    ]
+
+
 def test_get_m3u_output_dir_uses_configured_staging_base(
     monkeypatch,
     tmp_path: Path,
@@ -159,6 +242,7 @@ def test_generate_m3u_returns_header_only_for_playlist_without_final_links(
     local_tracks_metadata.create_all(engine)
     streaming_metadata.create_all(engine)
     links_metadata.create_all(engine)
+    relationships_metadata.create_all(engine)
     monkeypatch.setenv("DATABASE_URL", database_url)
 
     with engine.begin() as connection:
@@ -244,6 +328,7 @@ def test_regenerate_m3us_for_streaming_track_writes_only_full_playlists(
     local_tracks_metadata.create_all(engine)
     streaming_metadata.create_all(engine)
     links_metadata.create_all(engine)
+    relationships_metadata.create_all(engine)
     output_dir = tmp_path / "m3u"
     stale_match_only_path = output_dir / "Match-Only.m3u"
     stale_off_path = output_dir / "Off-Playlist.m3u"

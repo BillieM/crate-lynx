@@ -95,20 +95,13 @@ class MaintenanceStore:
                     playlist_membership_table,
                     playlist_membership_table.c.streaming_track_id
                     == streaming_tracks_table.c.id,
-                )
-                .join(
+                ).join(
                     streaming_playlists_table,
                     streaming_playlists_table.c.id
                     == playlist_membership_table.c.playlist_id,
                 )
-                .outerjoin(
-                    final_links_table,
-                    final_links_table.c.streaming_track_id
-                    == streaming_tracks_table.c.id,
-                )
             )
             .where(
-                final_links_table.c.id.is_(None),
                 streaming_playlists_table.c.sync_mode == PLAYLIST_SYNC_MODE_FULL,
             )
             .order_by(
@@ -120,7 +113,13 @@ class MaintenanceStore:
 
         tracks_by_id: dict[int, _MissingLocallyAccumulator] = {}
         with self._engine.connect() as connection:
+            from app.relationships.resolver import StreamingRelationshipResolver
+
+            resolver = StreamingRelationshipResolver(connection)
             for row in connection.execute(query).mappings():
+                if resolver.resolve(int(row["id"])) is not None:
+                    continue
+
                 track = tracks_by_id.setdefault(
                     row["id"],
                     _MissingLocallyAccumulator(

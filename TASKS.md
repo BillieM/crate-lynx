@@ -50,7 +50,7 @@
   - Regenerate OpenAPI and frontend API types after schema changes.
   - Add route tests for success, not-found, stale suggestions, conflicts, detached losing links, and M3U enqueueing.
 
-- [ ] Update existing resolution surfaces to use the resolver.
+- [x] Update existing resolution surfaces to use the resolver.
   - Playlist rows and counts should resolve equivalent-linked tracks as plain `linked`.
   - Populate `local_track_id` and `final_link_id` from the resolved link.
   - Keep pending local-link behavior unchanged for unresolved tracks.

@@ -8,7 +8,6 @@ from sqlalchemy.engine import Engine
 
 from app.core.db import create_database_engine
 from app.core.paths import default_staging_path, resolve_staging_path
-from app.links.store import final_links_table
 from app.local_tracks.store import local_tracks_table
 from app.streaming.models import (
     PLAYLIST_SYNC_MODE_FULL,
@@ -35,25 +34,16 @@ def generate_m3u(
     engine = engine or create_database_engine()
     query = (
         select(
-            local_tracks_table.c.file_path,
+            streaming_tracks_table.c.id.label("streaming_track_id"),
             streaming_tracks_table.c.artist,
             streaming_tracks_table.c.title,
             streaming_tracks_table.c.duration_ms,
         )
         .select_from(
             playlist_membership_table.join(
-                final_links_table,
-                final_links_table.c.streaming_track_id
-                == playlist_membership_table.c.streaming_track_id,
-            )
-            .join(
                 streaming_tracks_table,
                 streaming_tracks_table.c.id
                 == playlist_membership_table.c.streaming_track_id,
-            )
-            .join(
-                local_tracks_table,
-                local_tracks_table.c.id == final_links_table.c.local_track_id,
             )
         )
         .where(playlist_membership_table.c.playlist_id == playlist_id)
@@ -61,12 +51,45 @@ def generate_m3u(
     )
 
     with engine.connect() as connection:
+        from app.relationships.resolver import StreamingRelationshipResolver
+
+        resolver = StreamingRelationshipResolver(connection)
         rows = connection.execute(query).mappings().all()
+        resolved_links_by_track_id = {}
+        for row in rows:
+            streaming_track_id = int(row["streaming_track_id"])
+            resolved_link = resolver.resolve(streaming_track_id)
+            if resolved_link is not None:
+                resolved_links_by_track_id[streaming_track_id] = resolved_link
+
+        local_track_ids = {
+            resolved_link.local_track_id
+            for resolved_link in resolved_links_by_track_id.values()
+        }
+        local_paths_by_id = {}
+        if local_track_ids:
+            local_paths_by_id = {
+                int(row["id"]): row["file_path"]
+                for row in connection.execute(
+                    select(
+                        local_tracks_table.c.id,
+                        local_tracks_table.c.file_path,
+                    ).where(local_tracks_table.c.id.in_(local_track_ids))
+                ).mappings()
+            }
 
     lines = ["#EXTM3U"]
     for row in rows:
+        resolved_link = resolved_links_by_track_id.get(int(row["streaming_track_id"]))
+        if resolved_link is None:
+            continue
+
+        file_path = local_paths_by_id.get(resolved_link.local_track_id)
+        if file_path is None:
+            continue
+
         duration_seconds = _format_duration_seconds(row["duration_ms"])
-        resolved_path = str((base_path / Path(row["file_path"])).resolve())
+        resolved_path = str((base_path / Path(file_path)).resolve())
         lines.append(f"#EXTINF:{duration_seconds},{row['artist']} - {row['title']}")
         lines.append(resolved_path)
 

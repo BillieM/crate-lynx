@@ -18,7 +18,7 @@ from sqlalchemy.engine import Engine
 from ytmusicapi.exceptions import YTMusicError
 
 from app.core.db import create_database_engine
-from app.core.tables import final_links_view, suggested_links_view
+from app.core.tables import suggested_links_view
 from app.streaming.adapters.youtube_music import (
     YouTubeMusicAdapter,
     YouTubeMusicAuthenticationError,
@@ -51,6 +51,7 @@ from app.streaming.models import (
 )
 
 if TYPE_CHECKING:
+    from app.relationships.resolver import StreamingRelationshipResolver
     from app.relationships.suggestions import (
         StreamingRelationshipSuggestionGenerationResult,
     )
@@ -468,8 +469,6 @@ class StreamingAccountStore:
                 streaming_tracks_table.c.album,
                 streaming_tracks_table.c.duration_ms,
                 playlist_membership_table.c.position,
-                final_links_view.c.id.label("final_link_id"),
-                final_links_view.c.local_track_id.label("final_local_track_id"),
                 pending_links.c.id.label("proposal_id"),
                 pending_links.c.local_track_id.label("proposal_local_track_id"),
             )
@@ -478,11 +477,6 @@ class StreamingAccountStore:
                     streaming_tracks_table,
                     streaming_tracks_table.c.id
                     == playlist_membership_table.c.streaming_track_id,
-                )
-                .outerjoin(
-                    final_links_view,
-                    final_links_view.c.streaming_track_id
-                    == streaming_tracks_table.c.id,
                 )
                 .outerjoin(
                     pending_link_ids,
@@ -499,8 +493,11 @@ class StreamingAccountStore:
         )
 
         with self._engine.connect() as connection:
+            from app.relationships.resolver import StreamingRelationshipResolver
+
+            resolver = StreamingRelationshipResolver(connection)
             rows = connection.execute(query).mappings()
-            return [self._playlist_track_from_row(row) for row in rows]
+            return [self._playlist_track_from_row(row, resolver) for row in rows]
 
     def _get_playlist_summary(
         self, playlist_id: int, *, sync_mode: str | None = None
@@ -566,18 +563,22 @@ class StreamingAccountStore:
         )
 
     def _playlist_track_from_row(
-        self, row: Mapping[str, Any]
+        self, row: Mapping[str, Any], resolver: StreamingRelationshipResolver
     ) -> StreamingPlaylistTrack:
-        if row["final_link_id"] is not None:
+        resolved_link = resolver.resolve(int(row["id"]))
+        if resolved_link is not None:
             status = "linked"
-            local_track_id = row["final_local_track_id"]
+            final_link_id = resolved_link.final_link_id
+            local_track_id = resolved_link.local_track_id
             proposal_id = None
         elif row["proposal_id"] is not None:
             status = "pending"
+            final_link_id = None
             local_track_id = row["proposal_local_track_id"]
             proposal_id = row["proposal_id"]
         else:
             status = "unlinked"
+            final_link_id = None
             local_track_id = None
             proposal_id = None
 
@@ -590,7 +591,7 @@ class StreamingAccountStore:
             duration_ms=row["duration_ms"],
             position=row["position"],
             status=status,
-            final_link_id=row["final_link_id"],
+            final_link_id=final_link_id,
             local_track_id=local_track_id,
             proposal_id=proposal_id,
         )
