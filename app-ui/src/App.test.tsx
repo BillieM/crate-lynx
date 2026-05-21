@@ -198,6 +198,8 @@ const linkProposalsResponse: LinkProposalsResponse = {
   ],
 };
 const streamingRelationshipSuggestionsResponse: StreamingRelationshipSuggestionsResponse = {
+  limit: 500,
+  returned_count: 2,
   suggestions: [
     {
       id: 91,
@@ -266,6 +268,7 @@ const streamingRelationshipSuggestionsResponse: StreamingRelationshipSuggestions
       conflict: null,
     },
   ],
+  total_count: 2,
 };
 
 const libraryTracksResponse: LibraryTracksResponse = {

@@ -29,6 +29,8 @@ function createWrapper() {
 }
 
 const relationshipSuggestionsResponse: StreamingRelationshipSuggestionsResponse = {
+  limit: 500,
+  returned_count: 1,
   suggestions: [
     {
       id: 91,
@@ -116,6 +118,7 @@ const relationshipSuggestionsResponse: StreamingRelationshipSuggestionsResponse 
       },
     },
   ],
+  total_count: 1,
 };
 
 describe("streaming relationship queries", () => {
@@ -150,6 +153,7 @@ describe("streaming relationship queries", () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue({
       ok: true,
       json: async () => ({
+        ...relationshipSuggestionsResponse,
         suggestions: [
           {
             ...relationshipSuggestionsResponse.suggestions[0],

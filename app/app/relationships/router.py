@@ -3,8 +3,9 @@ from __future__ import annotations
 from collections.abc import Callable
 import logging
 import os
+from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.engine import Engine
 
 from app.core.db import create_database_engine, get_engine
@@ -21,6 +22,7 @@ from app.relationships.schemas import (
     StreamingRelationshipTrackResponse,
 )
 from app.relationships.store import (
+    DEFAULT_RELATIONSHIP_SUGGESTION_LIST_LIMIT,
     InvalidWinningFinalLinkError,
     StaleStreamingRelationshipSuggestionError,
     StreamingRelationshipAcceptanceConflictError,
@@ -83,13 +85,20 @@ def create_router(
         response_model=StreamingRelationshipSuggestionListResponse,
     )
     def list_relationship_suggestions(
+        limit: Annotated[int, Query(ge=1, le=1000)] = (
+            DEFAULT_RELATIONSHIP_SUGGESTION_LIST_LIMIT
+        ),
         engine: Engine = Depends(get_engine),
     ) -> StreamingRelationshipSuggestionListResponse:
         store = StreamingRelationshipSuggestionStore(engine=_engine(engine))
+        suggestions = store.list_pending(limit=limit)
         return StreamingRelationshipSuggestionListResponse(
             suggestions=[
-                _suggestion_response(suggestion) for suggestion in store.list_pending()
-            ]
+                _suggestion_response(suggestion) for suggestion in suggestions
+            ],
+            total_count=store.count_pending(),
+            returned_count=len(suggestions),
+            limit=limit,
         )
 
     @router.post(

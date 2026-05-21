@@ -60,6 +60,9 @@ class StreamingRelationshipSuggestionResponse(BaseModel):
 
 class StreamingRelationshipSuggestionListResponse(BaseModel):
     suggestions: list[StreamingRelationshipSuggestionResponse]
+    total_count: int
+    returned_count: int
+    limit: int
 
 
 class AcceptStreamingRelationshipSuggestionRequest(BaseModel):

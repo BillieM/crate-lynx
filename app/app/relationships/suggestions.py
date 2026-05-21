@@ -12,7 +12,7 @@ from sqlalchemy.engine import Engine
 
 from app.core.db import create_database_engine
 from app.matching.models import ConfidenceBand
-from app.matching.tags import normalize_match_text, score_track_tags
+from app.matching.tags import normalize_match_text, score_track_tags, title_identity
 from app.relationships.models import (
     STREAMING_RELATIONSHIP_CONFIDENCE_HIGH,
     STREAMING_RELATIONSHIP_CONFIDENCE_MEDIUM,
@@ -39,6 +39,7 @@ ACTIVE_RELATIONSHIP_SUGGESTION_PLAYLIST_MODES = (
     PLAYLIST_SYNC_MODE_FULL,
     PLAYLIST_SYNC_MODE_MATCH_ONLY,
 )
+RELATED_SUGGESTION_SCORE_MIN = 0.75
 
 
 @dataclass(frozen=True, slots=True)
@@ -85,11 +86,7 @@ class StreamingRelationshipSuggestionGenerator:
         with self._engine.begin() as connection:
             tracks = _active_streaming_tracks(connection)
             suppression_context = _suppression_context(connection)
-            suggestions = tuple(
-                candidate
-                for candidate in _relationship_candidates(tracks)
-                if not _is_suppressed(candidate, suppression_context)
-            )
+            suggestions = _relationship_candidates(tracks, suppression_context)
             created_count = _insert_suggestions(
                 connection,
                 suggestions,
@@ -237,16 +234,17 @@ def _suppression_context(connection) -> _SuppressionContext:
 
 def _relationship_candidates(
     tracks: tuple[_StreamingTrackCandidate, ...],
+    suppression_context: _SuppressionContext,
 ) -> tuple[GeneratedStreamingRelationshipSuggestion, ...]:
     candidate_by_pair: dict[
         tuple[int, int],
         GeneratedStreamingRelationshipSuggestion,
     ] = {}
 
-    for candidate in _isrc_candidates(tracks):
+    for candidate in _isrc_candidates(tracks, suppression_context):
         candidate_by_pair[_suggestion_pair(candidate)] = candidate
 
-    for candidate in _fuzzy_candidates(tracks):
+    for candidate in _fuzzy_candidates(tracks, suppression_context):
         candidate_by_pair.setdefault(_suggestion_pair(candidate), candidate)
 
     return tuple(
@@ -263,6 +261,7 @@ def _relationship_candidates(
 
 def _isrc_candidates(
     tracks: tuple[_StreamingTrackCandidate, ...],
+    suppression_context: _SuppressionContext,
 ) -> tuple[GeneratedStreamingRelationshipSuggestion, ...]:
     tracks_by_isrc: defaultdict[str, list[_StreamingTrackCandidate]] = defaultdict(list)
     for track in tracks:
@@ -276,6 +275,13 @@ def _isrc_candidates(
 
         for first, second in combinations(isrc_tracks, 2):
             pair = normalize_streaming_track_pair(first.id, second.id)
+            if _is_pair_suppressed(
+                pair.lower_track_id,
+                pair.higher_track_id,
+                suppression_context,
+            ):
+                continue
+
             candidates.append(
                 GeneratedStreamingRelationshipSuggestion(
                     lower_track_id=pair.lower_track_id,
@@ -292,42 +298,61 @@ def _isrc_candidates(
 
 def _fuzzy_candidates(
     tracks: tuple[_StreamingTrackCandidate, ...],
+    suppression_context: _SuppressionContext,
 ) -> tuple[GeneratedStreamingRelationshipSuggestion, ...]:
     candidates: list[GeneratedStreamingRelationshipSuggestion] = []
-    for first, second in combinations(tracks, 2):
-        score = score_track_tags(
-            left_title=first.title,
-            left_artist=first.artist,
-            left_album=first.album,
-            left_duration_ms=first.duration_ms,
-            right_title=second.title,
-            right_artist=second.artist,
-            right_album=second.album,
-            right_duration_ms=second.duration_ms,
-        )
-        confidence_band = ConfidenceBand.from_score(score)
-        if confidence_band == ConfidenceBand.LOW:
+    tracks_by_title: defaultdict[str, list[_StreamingTrackCandidate]] = defaultdict(
+        list
+    )
+    for track in tracks:
+        tracks_by_title[title_identity(track.title)].append(track)
+
+    for title_tracks in tracks_by_title.values():
+        if len(title_tracks) < 2:
             continue
 
-        pair = normalize_streaming_track_pair(first.id, second.id)
-        candidates.append(
-            GeneratedStreamingRelationshipSuggestion(
-                lower_track_id=pair.lower_track_id,
-                higher_track_id=pair.higher_track_id,
-                relationship_type=(
-                    STREAMING_RELATIONSHIP_TYPE_EQUIVALENT
-                    if confidence_band == ConfidenceBand.HIGH
-                    else STREAMING_RELATIONSHIP_TYPE_RELATED
-                ),
-                match_method=MATCH_METHOD_TAGS,
-                score=score,
-                confidence=(
-                    STREAMING_RELATIONSHIP_CONFIDENCE_HIGH
-                    if confidence_band == ConfidenceBand.HIGH
-                    else STREAMING_RELATIONSHIP_CONFIDENCE_MEDIUM
-                ),
+        for first, second in combinations(title_tracks, 2):
+            pair = normalize_streaming_track_pair(first.id, second.id)
+            if _is_pair_suppressed(
+                pair.lower_track_id,
+                pair.higher_track_id,
+                suppression_context,
+            ):
+                continue
+
+            score = score_track_tags(
+                left_title=first.title,
+                left_artist=first.artist,
+                left_album=first.album,
+                left_duration_ms=first.duration_ms,
+                right_title=second.title,
+                right_artist=second.artist,
+                right_album=second.album,
+                right_duration_ms=second.duration_ms,
             )
-        )
+            if score < RELATED_SUGGESTION_SCORE_MIN:
+                continue
+
+            confidence_band = ConfidenceBand.from_score(score)
+            pair = normalize_streaming_track_pair(first.id, second.id)
+            candidates.append(
+                GeneratedStreamingRelationshipSuggestion(
+                    lower_track_id=pair.lower_track_id,
+                    higher_track_id=pair.higher_track_id,
+                    relationship_type=(
+                        STREAMING_RELATIONSHIP_TYPE_EQUIVALENT
+                        if confidence_band == ConfidenceBand.HIGH
+                        else STREAMING_RELATIONSHIP_TYPE_RELATED
+                    ),
+                    match_method=MATCH_METHOD_TAGS,
+                    score=score,
+                    confidence=(
+                        STREAMING_RELATIONSHIP_CONFIDENCE_HIGH
+                        if confidence_band == ConfidenceBand.HIGH
+                        else STREAMING_RELATIONSHIP_CONFIDENCE_MEDIUM
+                    ),
+                )
+            )
 
     return tuple(candidates)
 
@@ -336,13 +361,25 @@ def _is_suppressed(
     candidate: GeneratedStreamingRelationshipSuggestion,
     context: _SuppressionContext,
 ) -> bool:
-    pair = _suggestion_pair(candidate)
+    return _is_pair_suppressed(
+        candidate.lower_track_id,
+        candidate.higher_track_id,
+        context,
+    )
+
+
+def _is_pair_suppressed(
+    lower_track_id: int,
+    higher_track_id: int,
+    context: _SuppressionContext,
+) -> bool:
+    pair = (lower_track_id, higher_track_id)
     if pair in context.existing_suggestion_pairs:
         return True
 
     group_pair = context.groups.pair_key(
-        candidate.lower_track_id,
-        candidate.higher_track_id,
+        lower_track_id,
+        higher_track_id,
     )
     if group_pair[0] == group_pair[1]:
         return True

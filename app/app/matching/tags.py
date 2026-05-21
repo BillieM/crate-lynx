@@ -45,6 +45,10 @@ def normalize_match_text(value: object) -> str | None:
     return _normalize_text(value)
 
 
+def title_identity(value: str) -> str:
+    return _title_identity(value)
+
+
 def score_track_tags(
     *,
     left_title: str,

@@ -46,8 +46,14 @@ function removeRelationshipSuggestionFromCache(
     return current;
   }
 
+  const suggestions = current.suggestions.filter((suggestion) => String(suggestion.id) !== String(suggestionId));
+  const removedCount = current.suggestions.length - suggestions.length;
+
   return {
-    suggestions: current.suggestions.filter((suggestion) => String(suggestion.id) !== String(suggestionId)),
+    ...current,
+    suggestions,
+    returned_count: Math.max(0, current.returned_count - removedCount),
+    total_count: Math.max(0, current.total_count - removedCount),
   };
 }
 
@@ -289,6 +295,8 @@ export function StreamingRelationshipsView() {
   });
   const suggestions = suggestionsQuery.data?.suggestions;
   const suggestionCount = suggestions?.length ?? 0;
+  const totalSuggestionCount = suggestionsQuery.data?.total_count ?? suggestionCount;
+  const hasMoreSuggestions = totalSuggestionCount > suggestionCount;
   const sortedSuggestions = useMemo(() => sortRelationshipSuggestions(suggestions ?? []), [suggestions]);
   const activeAcceptSuggestionId = acceptMutation.isPending ? String(acceptMutation.variables.suggestionId) : null;
   const activeRejectSuggestionId = rejectMutation.isPending ? String(rejectMutation.variables) : null;
@@ -301,7 +309,9 @@ export function StreamingRelationshipsView() {
           <h2 className={textClasses.sectionTitle}>Relationship queue</h2>
           <p className={`mt-1 ${textClasses.bodyMuted}`}>
             {suggestionsQuery.isSuccess
-              ? `${suggestionCount} pending streaming-to-streaming suggestions sorted by confidence.`
+              ? hasMoreSuggestions
+                ? `Showing ${suggestionCount} of ${totalSuggestionCount} pending streaming-to-streaming suggestions sorted by confidence.`
+                : `${suggestionCount} pending streaming-to-streaming suggestions sorted by confidence.`
               : "Streaming-to-streaming suggestions sorted by confidence."}
           </p>
         </div>

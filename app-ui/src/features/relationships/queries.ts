@@ -80,7 +80,10 @@ const streamingRelationshipSuggestionSchema: z.ZodType<StreamingRelationshipSugg
 
 const streamingRelationshipSuggestionsResponseSchema: z.ZodType<StreamingRelationshipSuggestionsResponse> =
   z.object({
+    limit: z.number(),
+    returned_count: z.number(),
     suggestions: z.array(streamingRelationshipSuggestionSchema),
+    total_count: z.number(),
   });
 
 const generateStreamingRelationshipSuggestionsResponseSchema: z.ZodType<GenerateStreamingRelationshipSuggestionsResponse> =

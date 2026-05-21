@@ -177,7 +177,44 @@ def test_generator_uses_fuzzy_scoring_for_equivalent_and_related_suggestions() -
         },
     ]
     assert suggestions[0]["score"] > 0.85
-    assert 0.5 <= suggestions[1]["score"] <= 0.85
+    assert 0.75 <= suggestions[1]["score"] <= 0.85
+
+
+def test_generator_skips_cross_title_fuzzy_pairs() -> None:
+    engine = _create_generation_engine()
+    test_data = factories.TestDataFactory(engine)
+    account_id = test_data.streaming_account()
+    playlist_id = test_data.streaming_playlist(
+        account_id=account_id,
+        sync_mode=PLAYLIST_SYNC_MODE_FULL,
+    )
+    first_track_id = test_data.streaming_track(
+        provider_track_id="cross-title-1",
+        title="North Star",
+        artist="Shared Artist",
+        album="Shared Album",
+        duration_ms=180000,
+        isrc=None,
+    )
+    second_track_id = test_data.streaming_track(
+        provider_track_id="cross-title-2",
+        title="South Star",
+        artist="Shared Artist",
+        album="Shared Album",
+        duration_ms=180000,
+        isrc=None,
+    )
+    for position, track_id in enumerate((first_track_id, second_track_id), start=1):
+        test_data.playlist_membership(
+            playlist_id=playlist_id,
+            position=position,
+            streaming_track_id=track_id,
+        )
+
+    result = StreamingRelationshipSuggestionGenerator(engine=engine).generate()
+
+    assert result.created_count == 0
+    assert _suggestions(engine) == []
 
 
 def test_generator_dedupes_memberships_and_preserves_pending_suggestions() -> None:

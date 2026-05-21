@@ -1038,6 +1038,12 @@ export interface components {
         StreamingRelationshipSuggestionListResponse: {
             /** Suggestions */
             suggestions: components["schemas"]["StreamingRelationshipSuggestionResponse"][];
+            /** Total Count */
+            total_count: number;
+            /** Returned Count */
+            returned_count: number;
+            /** Limit */
+            limit: number;
         };
         /** StreamingRelationshipSuggestionResponse */
         StreamingRelationshipSuggestionResponse: {
@@ -1944,7 +1950,9 @@ export interface operations {
     };
     list_relationship_suggestions_api_streaming_relationships_suggestions_get: {
         parameters: {
-            query?: never;
+            query?: {
+                limit?: number;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -1958,6 +1966,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["StreamingRelationshipSuggestionListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

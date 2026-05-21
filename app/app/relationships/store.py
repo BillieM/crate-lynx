@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
-from sqlalchemy import delete, insert, select, update
+from sqlalchemy import delete, func, insert, select, update
 from sqlalchemy.engine import Connection, Engine
 
 from app.core.db import create_database_engine
@@ -35,6 +35,7 @@ from app.streaming.models import streaming_tracks_table
 
 CONFLICT_STATE_NONE = "none"
 CONFLICT_STATE_DIFFERENT_LOCAL_LINKS = "different_local_links"
+DEFAULT_RELATIONSHIP_SUGGESTION_LIST_LIMIT = 500
 
 
 class StreamingRelationshipSuggestionNotFoundError(Exception):
@@ -132,7 +133,19 @@ class StreamingRelationshipSuggestionStore:
     ) -> None:
         self._engine = engine or create_database_engine(database_url)
 
-    def list_pending(self) -> list[StreamingRelationshipSuggestionRecord]:
+    def count_pending(self) -> int:
+        query = select(func.count()).where(
+            streaming_relationship_suggestions_table.c.status
+            == STREAMING_RELATIONSHIP_SUGGESTION_STATUS_PENDING
+        )
+        with self._engine.connect() as connection:
+            return int(connection.execute(query).scalar_one())
+
+    def list_pending(
+        self,
+        *,
+        limit: int | None = DEFAULT_RELATIONSHIP_SUGGESTION_LIST_LIMIT,
+    ) -> list[StreamingRelationshipSuggestionRecord]:
         first_track = streaming_tracks_table.alias("first_track")
         second_track = streaming_tracks_table.alias("second_track")
         query = (
@@ -181,6 +194,8 @@ class StreamingRelationshipSuggestionStore:
                 streaming_relationship_suggestions_table.c.id.asc(),
             )
         )
+        if limit is not None:
+            query = query.limit(limit)
 
         with self._engine.connect() as connection:
             rows = connection.execute(query).mappings().all()

@@ -136,7 +136,10 @@ const conflictingEquivalentSuggestion: StreamingRelationshipSuggestion = {
 };
 
 const relationshipSuggestionsResponse: StreamingRelationshipSuggestionsResponse = {
+  limit: 500,
+  returned_count: 2,
   suggestions: [relatedSuggestion, equivalentSuggestion],
+  total_count: 2,
 };
 
 function createWrapper() {
@@ -223,7 +226,9 @@ describe("StreamingRelationshipsView", () => {
   });
 
   it("renders the empty state with the manual generate action", async () => {
-    mockRelationshipFetch({ response: { suggestions: [] } });
+    mockRelationshipFetch({
+      response: { limit: 500, returned_count: 0, suggestions: [], total_count: 0 },
+    });
 
     renderStreamingRelationshipsView();
 
@@ -257,6 +262,21 @@ describe("StreamingRelationshipsView", () => {
     expect(within(looseCableRow).getByText("fuzzy")).toBeInTheDocument();
     expect(within(looseCableRow).getByText("Medium confidence")).toBeInTheDocument();
     expect(within(looseCableRow).getAllByText("Unavailable")).toHaveLength(4);
+  });
+
+  it("shows when only the top pending suggestions are returned", async () => {
+    mockRelationshipFetch({
+      response: {
+        ...relationshipSuggestionsResponse,
+        total_count: 27933,
+      },
+    });
+
+    renderStreamingRelationshipsView();
+
+    expect(
+      await screen.findByText("Showing 2 of 27933 pending streaming-to-streaming suggestions sorted by confidence."),
+    ).toBeInTheDocument();
   });
 
   it("generates suggestions and accepts related suggestions", async () => {
@@ -337,7 +357,12 @@ describe("StreamingRelationshipsView", () => {
 
         return acceptPromise;
       },
-      response: { suggestions: [conflictingEquivalentSuggestion, relatedSuggestion] },
+      response: {
+        limit: 500,
+        returned_count: 2,
+        suggestions: [conflictingEquivalentSuggestion, relatedSuggestion],
+        total_count: 2,
+      },
     });
 
     renderStreamingRelationshipsView();
