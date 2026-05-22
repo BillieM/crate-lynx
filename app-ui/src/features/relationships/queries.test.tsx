@@ -29,7 +29,7 @@ function createWrapper() {
 }
 
 const relationshipSuggestionsResponse: StreamingRelationshipSuggestionsResponse = {
-  limit: 500,
+  limit: 50,
   returned_count: 1,
   suggestions: [
     {
@@ -146,7 +146,24 @@ describe("streaming relationship queries", () => {
     } as Response);
 
     await expect(fetchStreamingRelationshipSuggestions()).resolves.toEqual(relationshipSuggestionsResponse);
-    expect(fetchMock).toHaveBeenCalledWith("/api/streaming/relationships/suggestions");
+    expect(fetchMock).toHaveBeenCalledWith("/api/streaming/relationships/suggestions?limit=50");
+  });
+
+  it("fetches filtered streaming relationship suggestions from the backend endpoint", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      json: async () => relationshipSuggestionsResponse,
+    } as Response);
+
+    await expect(
+      fetchStreamingRelationshipSuggestions({
+        limit: 100,
+        relationshipType: "related",
+      }),
+    ).resolves.toEqual(relationshipSuggestionsResponse);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/streaming/relationships/suggestions?limit=100&relationship_type=related",
+    );
   });
 
   it("rejects relationship suggestions with unsupported enum values", async () => {
@@ -171,10 +188,11 @@ describe("streaming relationship queries", () => {
       ok: true,
       json: async () => ({
         created_count: 4,
+        pruned_count: 3,
       }),
     } as Response);
 
-    await expect(generateStreamingRelationshipSuggestions()).resolves.toEqual({ created_count: 4 });
+    await expect(generateStreamingRelationshipSuggestions()).resolves.toEqual({ created_count: 4, pruned_count: 3 });
     expect(fetchMock).toHaveBeenCalledWith("/api/streaming/relationships/suggestions/generate", {
       method: "POST",
     });

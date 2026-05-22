@@ -4,6 +4,7 @@ import { GitBranch, Link2, RefreshCw, XCircle } from "lucide-react";
 
 import { ActionButton } from "../../components/ActionButton";
 import { EmptyStateCard } from "../../components/EmptyStateCard";
+import { FilterChipGroup, type FilterChipOption } from "../../components/FilterChipGroup";
 import { Pill, type PillTone } from "../../components/Pill";
 import { formatDuration, getMatchMethodLabel } from "../../lib/formatters";
 import { createOptimisticMutation } from "../../lib/optimisticMutation";
@@ -12,6 +13,7 @@ import {
   acceptStreamingRelationshipSuggestion,
   type AcceptStreamingRelationshipSuggestionInput,
   type AcceptStreamingRelationshipSuggestionResponse,
+  DEFAULT_STREAMING_RELATIONSHIP_SUGGESTION_LIMIT,
   generateStreamingRelationshipSuggestions,
   invalidateStreamingRelationshipMutationQueries,
   invalidateStreamingRelationshipSuggestionQueries,
@@ -24,9 +26,17 @@ import {
 } from "./queries";
 
 const relationshipSuggestionsQueryKey = streamingRelationshipQueryKeys.suggestions();
+const relationshipSuggestionPageSize = DEFAULT_STREAMING_RELATIONSHIP_SUGGESTION_LIMIT;
 
 type RelationshipTrack = StreamingRelationshipSuggestion["first_track"];
 type RelationshipLocalLink = NonNullable<StreamingRelationshipSuggestion["first_link"]>;
+type RelationshipSuggestionFilter = "all" | StreamingRelationshipSuggestion["relationship_type"];
+
+const relationshipSuggestionFilterOptions: FilterChipOption<RelationshipSuggestionFilter>[] = [
+  { label: "All", tone: "all", value: "all" },
+  { label: "Equivalent", tone: "linked", value: "equivalent" },
+  { label: "Related", tone: "pending", value: "related" },
+];
 
 function sortRelationshipSuggestions(suggestions: StreamingRelationshipSuggestion[]) {
   return [...suggestions].sort((left, right) => {
@@ -253,7 +263,13 @@ function WinnerSelection({
 export function StreamingRelationshipsView() {
   const queryClient = useQueryClient();
   const [selectedWinnerIds, setSelectedWinnerIds] = useState<Record<number, number>>({});
-  const suggestionsQuery = useStreamingRelationshipSuggestionsQuery();
+  const [activeFilter, setActiveFilter] = useState<RelationshipSuggestionFilter>("all");
+  const [suggestionLimit, setSuggestionLimit] = useState(relationshipSuggestionPageSize);
+  const relationshipType = activeFilter === "all" ? undefined : activeFilter;
+  const suggestionsQuery = useStreamingRelationshipSuggestionsQuery({
+    limit: suggestionLimit,
+    relationshipType,
+  });
   const acceptMutation = useMutation({
     ...createOptimisticMutation<
       AcceptStreamingRelationshipSuggestionResponse,
@@ -321,7 +337,7 @@ export function StreamingRelationshipsView() {
           ) : null}
           {generateMutation.isSuccess ? (
             <p className={`font-medium text-ctp-subtext0 ${textClasses.finePrint}`}>
-              {generateMutation.data.created_count} created.
+              {generateMutation.data.created_count} created, {generateMutation.data.pruned_count} pruned.
             </p>
           ) : null}
           <ActionButton
@@ -338,6 +354,17 @@ export function StreamingRelationshipsView() {
           </ActionButton>
         </div>
       </div>
+      <FilterChipGroup
+        activeValue={activeFilter}
+        ariaLabel="Relationship suggestion filter"
+        density="compact"
+        disabled={suggestionsQuery.isFetching}
+        onValueChange={(value) => {
+          setActiveFilter(value);
+          setSuggestionLimit(relationshipSuggestionPageSize);
+        }}
+        options={relationshipSuggestionFilterOptions}
+      />
       {children}
     </section>
   );
@@ -404,6 +431,17 @@ export function StreamingRelationshipsView() {
           );
         })}
       </ul>
+      {hasMoreSuggestions ? (
+        <div className="flex justify-center py-3">
+          <ActionButton
+            className={`${controlClasses.actionButtonCompact} inline-flex items-center justify-center gap-1.5`}
+            disabled={suggestionsQuery.isFetching}
+            onClick={() => setSuggestionLimit((current) => current + relationshipSuggestionPageSize)}
+          >
+            {suggestionsQuery.isFetching ? "Loading..." : "Load more"}
+          </ActionButton>
+        </div>
+      ) : null}
     </div>,
   );
 }

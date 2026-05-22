@@ -136,7 +136,7 @@ const conflictingEquivalentSuggestion: StreamingRelationshipSuggestion = {
 };
 
 const relationshipSuggestionsResponse: StreamingRelationshipSuggestionsResponse = {
-  limit: 500,
+  limit: 50,
   returned_count: 2,
   suggestions: [relatedSuggestion, equivalentSuggestion],
   total_count: 2,
@@ -174,9 +174,9 @@ function mockRelationshipFetch({
   response = relationshipSuggestionsResponse,
 }: MockRelationshipFetchOptions = {}) {
   return createMockApi()
-    .get("/api/streaming/relationships/suggestions", () => jsonResponse(response))
+    .get(/^\/api\/streaming\/relationships\/suggestions(?:\?.*)?$/, () => jsonResponse(response))
     .post("/api/streaming/relationships/suggestions/generate", () =>
-      generateHandler?.() ?? jsonResponse({ created_count: 2 }),
+      generateHandler?.() ?? jsonResponse({ created_count: 2, pruned_count: 0 }),
     )
     .post(/^\/api\/streaming\/relationships\/suggestions\/(\d+)\/accept$/, ({ init, match }) =>
       acceptHandler?.(match![1], init) ??
@@ -227,7 +227,7 @@ describe("StreamingRelationshipsView", () => {
 
   it("renders the empty state with the manual generate action", async () => {
     mockRelationshipFetch({
-      response: { limit: 500, returned_count: 0, suggestions: [], total_count: 0 },
+      response: { limit: 50, returned_count: 0, suggestions: [], total_count: 0 },
     });
 
     renderStreamingRelationshipsView();
@@ -248,7 +248,7 @@ describe("StreamingRelationshipsView", () => {
       name: "Suggestion 92: Loose Cable to Loose Cable Live",
     });
 
-    expect(fetchMock).toHaveBeenCalledWith("/api/streaming/relationships/suggestions");
+    expect(fetchMock).toHaveBeenCalledWith("/api/streaming/relationships/suggestions?limit=50");
     expect(nightRunnerRow.compareDocumentPosition(looseCableRow)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
     expect(within(nightRunnerRow).getByText("99%")).toBeInTheDocument();
     expect(within(nightRunnerRow).getAllByText("Equivalent")).toHaveLength(2);
@@ -264,6 +264,62 @@ describe("StreamingRelationshipsView", () => {
     expect(within(looseCableRow).getAllByText("Unavailable")).toHaveLength(4);
   });
 
+  it("filters all, equivalent, and related relationship queues", async () => {
+    const fetchMock = createMockApi()
+      .get(/^\/api\/streaming\/relationships\/suggestions(?:\?.*)?$/, ({ url }) => {
+        const params = new URL(url, "http://localhost").searchParams;
+        const relationshipType = params.get("relationship_type");
+
+        if (relationshipType === "equivalent") {
+          return jsonResponse({
+            limit: 50,
+            returned_count: 1,
+            suggestions: [equivalentSuggestion],
+            total_count: 1,
+          });
+        }
+
+        if (relationshipType === "related") {
+          return jsonResponse({
+            limit: 50,
+            returned_count: 1,
+            suggestions: [relatedSuggestion],
+            total_count: 1,
+          });
+        }
+
+        return jsonResponse(relationshipSuggestionsResponse);
+      })
+      .mockFetch();
+
+    renderStreamingRelationshipsView();
+
+    const filters = await screen.findByRole("group", { name: "Relationship suggestion filter" });
+    expect(within(filters).getByRole("button", { name: "All" })).toHaveAttribute("aria-pressed", "true");
+    expect(await screen.findByRole("listitem", { name: "Suggestion 91: Night Runner to Night Runner" })).toBeInTheDocument();
+    expect(screen.getByRole("listitem", { name: "Suggestion 92: Loose Cable to Loose Cable Live" })).toBeInTheDocument();
+
+    fireEvent.click(within(filters).getByRole("button", { name: "Equivalent" }));
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/streaming/relationships/suggestions?limit=50&relationship_type=equivalent",
+      );
+    });
+    expect(await screen.findByRole("listitem", { name: "Suggestion 91: Night Runner to Night Runner" })).toBeInTheDocument();
+    expect(screen.queryByRole("listitem", { name: "Suggestion 92: Loose Cable to Loose Cable Live" })).not.toBeInTheDocument();
+    expect(within(filters).getByRole("button", { name: "Equivalent" })).toHaveAttribute("aria-pressed", "true");
+
+    fireEvent.click(within(filters).getByRole("button", { name: "Related" }));
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/streaming/relationships/suggestions?limit=50&relationship_type=related",
+      );
+    });
+    expect(await screen.findByRole("listitem", { name: "Suggestion 92: Loose Cable to Loose Cable Live" })).toBeInTheDocument();
+    expect(screen.queryByRole("listitem", { name: "Suggestion 91: Night Runner to Night Runner" })).not.toBeInTheDocument();
+    expect(within(filters).getByRole("button", { name: "Related" })).toHaveAttribute("aria-pressed", "true");
+  });
+
   it("shows when only the top pending suggestions are returned", async () => {
     mockRelationshipFetch({
       response: {
@@ -276,6 +332,59 @@ describe("StreamingRelationshipsView", () => {
 
     expect(
       await screen.findByText("Showing 2 of 27933 pending streaming-to-streaming suggestions sorted by confidence."),
+    ).toBeInTheDocument();
+  });
+
+  it("loads more suggestions by increasing the list limit", async () => {
+    const thirdSuggestion: StreamingRelationshipSuggestion = {
+      ...relatedSuggestion,
+      id: 94,
+      first_track: {
+        ...relatedSuggestion.first_track,
+        id: 905,
+        provider_track_id: "ytm:first-905",
+        title: "Loose Cable Demo",
+      },
+      second_track: {
+        ...relatedSuggestion.second_track,
+        id: 906,
+        provider_track_id: "ytm:second-906",
+        title: "Loose Cable Demo",
+      },
+    };
+    const fetchMock = createMockApi()
+      .get(/^\/api\/streaming\/relationships\/suggestions(?:\?.*)?$/, ({ url }) => {
+        const params = new URL(url, "http://localhost").searchParams;
+        const limit = Number(params.get("limit") ?? "50");
+
+        if (limit >= 100) {
+          return jsonResponse({
+            limit,
+            returned_count: 3,
+            suggestions: [relatedSuggestion, equivalentSuggestion, thirdSuggestion],
+            total_count: 75,
+          });
+        }
+
+        return jsonResponse({
+          ...relationshipSuggestionsResponse,
+          total_count: 75,
+        });
+      })
+      .mockFetch();
+
+    renderStreamingRelationshipsView();
+
+    expect(
+      await screen.findByText("Showing 2 of 75 pending streaming-to-streaming suggestions sorted by confidence."),
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Load more" }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith("/api/streaming/relationships/suggestions?limit=100");
+    });
+    expect(
+      await screen.findByText("Showing 3 of 75 pending streaming-to-streaming suggestions sorted by confidence."),
     ).toBeInTheDocument();
   });
 
@@ -294,7 +403,7 @@ describe("StreamingRelationshipsView", () => {
           suggestion_id: Number(suggestionId),
         });
       },
-      generateHandler: () => jsonResponse({ created_count: 4 }),
+      generateHandler: () => jsonResponse({ created_count: 4, pruned_count: 3 }),
     });
 
     renderStreamingRelationshipsView();
@@ -305,7 +414,7 @@ describe("StreamingRelationshipsView", () => {
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith("/api/streaming/relationships/suggestions/generate", { method: "POST" });
     });
-    expect(await screen.findByText("4 created.")).toBeInTheDocument();
+    expect(await screen.findByText("4 created, 3 pruned.")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Related suggestion 92" }));
 
@@ -358,7 +467,7 @@ describe("StreamingRelationshipsView", () => {
         return acceptPromise;
       },
       response: {
-        limit: 500,
+        limit: 50,
         returned_count: 2,
         suggestions: [conflictingEquivalentSuggestion, relatedSuggestion],
         total_count: 2,

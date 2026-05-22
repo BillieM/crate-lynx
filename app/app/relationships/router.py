@@ -19,6 +19,7 @@ from app.relationships.schemas import (
     StreamingRelationshipLocalLinkResponse,
     StreamingRelationshipSuggestionListResponse,
     StreamingRelationshipSuggestionResponse,
+    StreamingRelationshipType,
     StreamingRelationshipTrackResponse,
 )
 from app.relationships.store import (
@@ -88,15 +89,19 @@ def create_router(
         limit: Annotated[int, Query(ge=1, le=1000)] = (
             DEFAULT_RELATIONSHIP_SUGGESTION_LIST_LIMIT
         ),
+        relationship_type: Annotated[StreamingRelationshipType | None, Query()] = None,
         engine: Engine = Depends(get_engine),
     ) -> StreamingRelationshipSuggestionListResponse:
         store = StreamingRelationshipSuggestionStore(engine=_engine(engine))
-        suggestions = store.list_pending(limit=limit)
+        suggestions = store.list_pending(
+            limit=limit,
+            relationship_type=relationship_type,
+        )
         return StreamingRelationshipSuggestionListResponse(
             suggestions=[
                 _suggestion_response(suggestion) for suggestion in suggestions
             ],
-            total_count=store.count_pending(),
+            total_count=store.count_pending(relationship_type=relationship_type),
             returned_count=len(suggestions),
             limit=limit,
         )
@@ -110,8 +115,10 @@ def create_router(
         engine: Engine = Depends(get_engine),
     ) -> GenerateStreamingRelationshipSuggestionsResponse:
         store = StreamingRelationshipSuggestionStore(engine=_engine(engine))
+        result = store.generate()
         return GenerateStreamingRelationshipSuggestionsResponse(
-            created_count=store.generate(),
+            created_count=result.created_count,
+            pruned_count=result.pruned_count,
         )
 
     @router.post(

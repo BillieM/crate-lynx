@@ -16,6 +16,7 @@ from app.relationships.models import (
     STREAMING_RELATIONSHIP_SUGGESTION_STATUS_PENDING,
     STREAMING_RELATIONSHIP_SUGGESTION_STATUS_REJECTED,
     STREAMING_RELATIONSHIP_TYPE_EQUIVALENT,
+    STREAMING_RELATIONSHIP_TYPES,
     normalize_streaming_track_pair,
     streaming_relationship_suggestions_table,
     streaming_relationships_table,
@@ -28,6 +29,7 @@ from app.relationships.resolver import (
     StreamingRelationshipResolver,
 )
 from app.relationships.suggestions import (
+    StreamingRelationshipSuggestionGenerationResult,
     StreamingRelationshipSuggestionGenerator,
 )
 from app.streaming.models import streaming_tracks_table
@@ -35,7 +37,7 @@ from app.streaming.models import streaming_tracks_table
 
 CONFLICT_STATE_NONE = "none"
 CONFLICT_STATE_DIFFERENT_LOCAL_LINKS = "different_local_links"
-DEFAULT_RELATIONSHIP_SUGGESTION_LIST_LIMIT = 500
+DEFAULT_RELATIONSHIP_SUGGESTION_LIST_LIMIT = 50
 
 
 class StreamingRelationshipSuggestionNotFoundError(Exception):
@@ -133,11 +135,18 @@ class StreamingRelationshipSuggestionStore:
     ) -> None:
         self._engine = engine or create_database_engine(database_url)
 
-    def count_pending(self) -> int:
+    def count_pending(self, *, relationship_type: str | None = None) -> int:
         query = select(func.count()).where(
             streaming_relationship_suggestions_table.c.status
             == STREAMING_RELATIONSHIP_SUGGESTION_STATUS_PENDING
         )
+        if relationship_type is not None:
+            _validate_relationship_type(relationship_type)
+            query = query.where(
+                streaming_relationship_suggestions_table.c.relationship_type
+                == relationship_type
+            )
+
         with self._engine.connect() as connection:
             return int(connection.execute(query).scalar_one())
 
@@ -145,7 +154,11 @@ class StreamingRelationshipSuggestionStore:
         self,
         *,
         limit: int | None = DEFAULT_RELATIONSHIP_SUGGESTION_LIST_LIMIT,
+        relationship_type: str | None = None,
     ) -> list[StreamingRelationshipSuggestionRecord]:
+        if relationship_type is not None:
+            _validate_relationship_type(relationship_type)
+
         first_track = streaming_tracks_table.alias("first_track")
         second_track = streaming_tracks_table.alias("second_track")
         query = (
@@ -194,6 +207,11 @@ class StreamingRelationshipSuggestionStore:
                 streaming_relationship_suggestions_table.c.id.asc(),
             )
         )
+        if relationship_type is not None:
+            query = query.where(
+                streaming_relationship_suggestions_table.c.relationship_type
+                == relationship_type
+            )
         if limit is not None:
             query = query.limit(limit)
 
@@ -319,12 +337,8 @@ class StreamingRelationshipSuggestionStore:
             rejected_at=rejected_at,
         )
 
-    def generate(self) -> int:
-        return (
-            StreamingRelationshipSuggestionGenerator(engine=self._engine)
-            .generate()
-            .created_count
-        )
+    def generate(self) -> StreamingRelationshipSuggestionGenerationResult:
+        return StreamingRelationshipSuggestionGenerator(engine=self._engine).generate()
 
 
 class _LocalLinkContextFactory:
@@ -540,3 +554,10 @@ def _create_relationship(
     if not isinstance(relationship_id, int):
         raise ValueError("Failed to persist streaming relationship")
     return relationship_id
+
+
+def _validate_relationship_type(relationship_type: str) -> None:
+    if relationship_type not in STREAMING_RELATIONSHIP_TYPES:
+        raise ValueError(
+            f"Unsupported streaming relationship type: {relationship_type}"
+        )

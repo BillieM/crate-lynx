@@ -183,7 +183,7 @@ def test_list_relationship_suggestions_returns_metadata_links_and_conflicts(
         ],
         "total_count": 1,
         "returned_count": 1,
-        "limit": 500,
+        "limit": 50,
     }
 
 
@@ -223,6 +223,47 @@ def test_list_relationship_suggestions_limits_returned_rows(
     assert response.returned_count == 1
     assert response.limit == 1
     assert [suggestion.id for suggestion in response.suggestions] == [higher_score_id]
+
+
+def test_list_relationship_suggestions_filters_by_relationship_type(
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite:///{tmp_path / 'relationship-list-filter.db'}"
+    engine = _create_relationship_router_engine(database_url)
+    test_data = factories.TestDataFactory(engine)
+    first_track_id, second_track_id = _streaming_pair(test_data)
+    third_track_id = test_data.streaming_track(
+        provider_track_id="ytm-3",
+        title="Track 3",
+    )
+    fourth_track_id = test_data.streaming_track(
+        provider_track_id="ytm-4",
+        title="Track 4",
+    )
+    test_data.streaming_relationship_suggestion(
+        first_track_id=first_track_id,
+        second_track_id=second_track_id,
+        relationship_type=STREAMING_RELATIONSHIP_TYPE_EQUIVALENT,
+        score=0.99,
+    )
+    related_id = test_data.streaming_relationship_suggestion(
+        first_track_id=third_track_id,
+        second_track_id=fourth_track_id,
+        relationship_type=STREAMING_RELATIONSHIP_TYPE_RELATED,
+        score=0.92,
+    )
+
+    router = create_router(require_database_url=lambda: database_url)
+    response = _call_endpoint(
+        _route(router, "GET", "/streaming/relationships/suggestions").endpoint,
+        relationship_type=STREAMING_RELATIONSHIP_TYPE_RELATED,
+    )
+
+    assert response.total_count == 1
+    assert response.returned_count == 1
+    assert response.limit == 50
+    assert [suggestion.id for suggestion in response.suggestions] == [related_id]
+    assert response.suggestions[0].relationship_type == "related"
 
 
 def test_accept_equivalent_suggestion_creates_relationship(
@@ -373,6 +414,20 @@ def test_generate_relationship_suggestions_returns_created_count(
         position=2,
         streaming_track_id=second_track_id,
     )
+    stale_first_id = test_data.streaming_track(
+        provider_track_id="stale-1",
+        title="Stale First",
+        isrc=None,
+    )
+    stale_second_id = test_data.streaming_track(
+        provider_track_id="stale-2",
+        title="Stale Second",
+        isrc=None,
+    )
+    test_data.streaming_relationship_suggestion(
+        first_track_id=stale_first_id,
+        second_track_id=stale_second_id,
+    )
 
     router = create_router(require_database_url=lambda: database_url)
     response = _call_endpoint(
@@ -384,6 +439,7 @@ def test_generate_relationship_suggestions_returns_created_count(
     )
 
     assert response.created_count == 1
+    assert response.pruned_count == 1
 
 
 def test_accept_relationship_suggestion_returns_404_when_missing(

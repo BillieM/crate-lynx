@@ -198,7 +198,7 @@ const linkProposalsResponse: LinkProposalsResponse = {
   ],
 };
 const streamingRelationshipSuggestionsResponse: StreamingRelationshipSuggestionsResponse = {
-  limit: 500,
+  limit: 50,
   returned_count: 2,
   suggestions: [
     {
@@ -345,7 +345,7 @@ type MockPlaylistFetchOptions = {
   linkProposalsHandler?: (url: string) => Promise<Response> | Response;
   metadataRefreshHandler?: () => Promise<Response> | Response;
   rejectProposalHandler?: (proposalId: string) => Promise<Response> | Response;
-  relationshipSuggestionsHandler?: () => Promise<Response> | Response;
+  relationshipSuggestionsHandler?: (url: string) => Promise<Response> | Response;
   selectedSyncHandler?: () => Promise<Response> | Response;
 };
 
@@ -405,8 +405,8 @@ function mockPlaylistFetch({
   return createMockApi()
     .get("/api/streaming/playlists", () => jsonResponse(streamingPlaylistsResponse))
     .get("/api/streaming/playlists/config", () => jsonResponse(streamingPlaylistConfigResponse))
-    .get("/api/streaming/relationships/suggestions", () =>
-      relationshipSuggestionsHandler?.() ?? jsonResponse(streamingRelationshipSuggestionsResponse),
+    .get(/^\/api\/streaming\/relationships\/suggestions(?:\?|$)/, ({ url }) =>
+      relationshipSuggestionsHandler?.(url) ?? jsonResponse(streamingRelationshipSuggestionsResponse),
     )
     .get(/^\/api\/proposals(?:\?|$)/, ({ url }) => linkProposalsHandler?.(url) ?? jsonResponse(linkProposalsResponse))
     .get("/api/library/tracks", () => jsonResponse(libraryTracksResponse))

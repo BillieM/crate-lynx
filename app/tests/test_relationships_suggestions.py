@@ -8,6 +8,7 @@ from sqlalchemy import Engine, create_engine, select
 from app.relationships.models import (
     STREAMING_RELATIONSHIP_CONFIDENCE_HIGH,
     STREAMING_RELATIONSHIP_CONFIDENCE_MEDIUM,
+    STREAMING_RELATIONSHIP_SUGGESTION_STATUS_ACCEPTED,
     STREAMING_RELATIONSHIP_SUGGESTION_STATUS_PENDING,
     STREAMING_RELATIONSHIP_SUGGESTION_STATUS_REJECTED,
     STREAMING_RELATIONSHIP_TYPE_EQUIVALENT,
@@ -16,8 +17,11 @@ from app.relationships.models import (
     streaming_relationship_suggestions_table,
 )
 from app.relationships.suggestions import (
+    EQUIVALENT_SUGGESTION_SCORE_MIN,
+    FUZZY_SUGGESTION_BUCKET_LIMIT,
     MATCH_METHOD_ISRC,
     MATCH_METHOD_TAGS,
+    RELATED_SUGGESTION_SCORE_MIN,
     StreamingRelationshipSuggestionGenerator,
 )
 from app.streaming.adapters.youtube_music import YouTubeMusicPlaylist, YouTubeMusicTrack
@@ -97,6 +101,67 @@ def test_generator_creates_isrc_equivalent_for_active_tracks() -> None:
     ]
 
 
+def test_generator_uses_valid_isrc_star_instead_of_all_pairs() -> None:
+    engine = _create_generation_engine()
+    test_data = factories.TestDataFactory(engine)
+    account_id = test_data.streaming_account()
+    playlist_id = test_data.streaming_playlist(
+        account_id=account_id,
+        sync_mode=PLAYLIST_SYNC_MODE_FULL,
+    )
+    anchor_id = test_data.streaming_track(
+        provider_track_id="isrc-star-1",
+        isrc="GB-UM7-21-05976",
+    )
+    second_id = test_data.streaming_track(
+        provider_track_id="isrc-star-2",
+        isrc="GBUM72105976",
+    )
+    third_id = test_data.streaming_track(
+        provider_track_id="isrc-star-3",
+        isrc="gbum72105976",
+    )
+    invalid_isrc_id = test_data.streaming_track(
+        provider_track_id="isrc-invalid",
+        title="Different Song",
+        artist="Different Artist",
+        isrc="ISRC-track-3",
+    )
+    for position, track_id in enumerate(
+        (anchor_id, second_id, third_id, invalid_isrc_id),
+        start=1,
+    ):
+        test_data.playlist_membership(
+            playlist_id=playlist_id,
+            position=position,
+            streaming_track_id=track_id,
+        )
+
+    result = StreamingRelationshipSuggestionGenerator(engine=engine).generate()
+
+    assert result.created_count == 2
+    assert _suggestions(engine) == [
+        {
+            "lower_track_id": anchor_id,
+            "higher_track_id": second_id,
+            "relationship_type": STREAMING_RELATIONSHIP_TYPE_EQUIVALENT,
+            "match_method": MATCH_METHOD_ISRC,
+            "confidence": STREAMING_RELATIONSHIP_CONFIDENCE_HIGH,
+            "status": STREAMING_RELATIONSHIP_SUGGESTION_STATUS_PENDING,
+            "score": 1.0,
+        },
+        {
+            "lower_track_id": anchor_id,
+            "higher_track_id": third_id,
+            "relationship_type": STREAMING_RELATIONSHIP_TYPE_EQUIVALENT,
+            "match_method": MATCH_METHOD_ISRC,
+            "confidence": STREAMING_RELATIONSHIP_CONFIDENCE_HIGH,
+            "status": STREAMING_RELATIONSHIP_SUGGESTION_STATUS_PENDING,
+            "score": 1.0,
+        },
+    ]
+
+
 def test_generator_uses_fuzzy_scoring_for_equivalent_and_related_suggestions() -> None:
     engine = _create_generation_engine()
     test_data = factories.TestDataFactory(engine)
@@ -125,16 +190,16 @@ def test_generator_uses_fuzzy_scoring_for_equivalent_and_related_suggestions() -
         provider_track_id="related-1",
         title="Blue Train",
         artist="Alpha",
-        album=None,
+        album="Studio Sessions",
         duration_ms=220000,
         isrc=None,
     )
     related_match_id = test_data.streaming_track(
         provider_track_id="related-2",
-        title="Blue Train",
-        artist="Omega",
-        album=None,
-        duration_ms=220000,
+        title="Blue Train - Live",
+        artist="Alpha",
+        album="Live Sessions",
+        duration_ms=248000,
         isrc=None,
     )
     for position, track_id in enumerate(
@@ -176,8 +241,126 @@ def test_generator_uses_fuzzy_scoring_for_equivalent_and_related_suggestions() -
             "score": suggestions[1]["score"],
         },
     ]
-    assert suggestions[0]["score"] > 0.85
-    assert 0.75 <= suggestions[1]["score"] <= 0.85
+    assert suggestions[0]["score"] >= EQUIVALENT_SUGGESTION_SCORE_MIN
+    assert suggestions[1]["score"] >= RELATED_SUGGESTION_SCORE_MIN
+    assert result.pruned_count == 0
+
+
+def test_generator_skips_same_title_different_artist_fuzzy_pairs() -> None:
+    engine = _create_generation_engine()
+    test_data = factories.TestDataFactory(engine)
+    account_id = test_data.streaming_account()
+    playlist_id = test_data.streaming_playlist(
+        account_id=account_id,
+        sync_mode=PLAYLIST_SYNC_MODE_FULL,
+    )
+    first_track_id = test_data.streaming_track(
+        provider_track_id="different-artist-1",
+        title="North Star",
+        artist="June",
+        album="Night",
+        duration_ms=180000,
+        isrc=None,
+    )
+    second_track_id = test_data.streaming_track(
+        provider_track_id="different-artist-2",
+        title="North Star",
+        artist="Other June",
+        album="Night",
+        duration_ms=180000,
+        isrc=None,
+    )
+    for position, track_id in enumerate((first_track_id, second_track_id), start=1):
+        test_data.playlist_membership(
+            playlist_id=playlist_id,
+            position=position,
+            streaming_track_id=track_id,
+        )
+
+    result = StreamingRelationshipSuggestionGenerator(engine=engine).generate()
+
+    assert result.created_count == 0
+    assert result.pruned_count == 0
+    assert _suggestions(engine) == []
+
+
+def test_generator_skips_fuzzy_pairs_below_new_thresholds(monkeypatch) -> None:
+    engine = _create_generation_engine()
+    test_data = factories.TestDataFactory(engine)
+    account_id = test_data.streaming_account()
+    playlist_id = test_data.streaming_playlist(
+        account_id=account_id,
+        sync_mode=PLAYLIST_SYNC_MODE_FULL,
+    )
+    first_track_id = test_data.streaming_track(
+        provider_track_id="threshold-1",
+        title="Silver Line",
+        artist="Signal",
+        album=None,
+        duration_ms=None,
+        isrc=None,
+    )
+    second_track_id = test_data.streaming_track(
+        provider_track_id="threshold-2",
+        title="Silver Line - Live",
+        artist="Signal",
+        album=None,
+        duration_ms=None,
+        isrc=None,
+    )
+    for position, track_id in enumerate((first_track_id, second_track_id), start=1):
+        test_data.playlist_membership(
+            playlist_id=playlist_id,
+            position=position,
+            streaming_track_id=track_id,
+        )
+    monkeypatch.setattr(
+        "app.relationships.suggestions.score_track_tags",
+        lambda **_kwargs: RELATED_SUGGESTION_SCORE_MIN - 0.01,
+    )
+
+    result = StreamingRelationshipSuggestionGenerator(engine=engine).generate()
+
+    assert result.created_count == 0
+    assert result.pruned_count == 0
+    assert _suggestions(engine) == []
+
+
+def test_generator_caps_duplicate_heavy_fuzzy_buckets() -> None:
+    engine = _create_generation_engine()
+    test_data = factories.TestDataFactory(engine)
+    account_id = test_data.streaming_account()
+    playlist_id = test_data.streaming_playlist(
+        account_id=account_id,
+        sync_mode=PLAYLIST_SYNC_MODE_FULL,
+    )
+    track_ids = [
+        test_data.streaming_track(
+            provider_track_id=f"duplicate-title-{index}",
+            title="Duplicate Song",
+            artist="Repeat Artist",
+            album="Same Album",
+            duration_ms=180000,
+            isrc=None,
+        )
+        for index in range(FUZZY_SUGGESTION_BUCKET_LIMIT + 4)
+    ]
+    for position, track_id in enumerate(track_ids, start=1):
+        test_data.playlist_membership(
+            playlist_id=playlist_id,
+            position=position,
+            streaming_track_id=track_id,
+        )
+
+    result = StreamingRelationshipSuggestionGenerator(engine=engine).generate()
+
+    suggestions = _suggestions(engine)
+    assert result.created_count == FUZZY_SUGGESTION_BUCKET_LIMIT
+    assert len(suggestions) == FUZZY_SUGGESTION_BUCKET_LIMIT
+    assert all(
+        suggestion["relationship_type"] == STREAMING_RELATIONSHIP_TYPE_EQUIVALENT
+        for suggestion in suggestions
+    )
 
 
 def test_generator_skips_cross_title_fuzzy_pairs() -> None:
@@ -261,6 +444,75 @@ def test_generator_dedupes_memberships_and_preserves_pending_suggestions() -> No
     assert first_result.created_count == 1
     assert second_result.created_count == 0
     assert len(_suggestions(engine)) == 1
+
+
+def test_generator_prunes_stale_pending_and_preserves_final_history() -> None:
+    engine = _create_generation_engine()
+    test_data = factories.TestDataFactory(engine)
+    account_id = test_data.streaming_account()
+    playlist_id = test_data.streaming_playlist(
+        account_id=account_id,
+        sync_mode=PLAYLIST_SYNC_MODE_FULL,
+    )
+    first_track_id, second_track_id = _active_isrc_pair(test_data, playlist_id)
+    valid_pending_id = test_data.streaming_relationship_suggestion(
+        first_track_id=first_track_id,
+        second_track_id=second_track_id,
+        relationship_type=STREAMING_RELATIONSHIP_TYPE_RELATED,
+        match_method=MATCH_METHOD_TAGS,
+        confidence=STREAMING_RELATIONSHIP_CONFIDENCE_MEDIUM,
+        score=0.91,
+    )
+    stale_first_id = test_data.streaming_track(
+        provider_track_id="stale-1",
+        title="Stale First",
+        isrc=None,
+    )
+    stale_second_id = test_data.streaming_track(
+        provider_track_id="stale-2",
+        title="Stale Second",
+        isrc=None,
+    )
+    stale_pending_id = test_data.streaming_relationship_suggestion(
+        first_track_id=stale_first_id,
+        second_track_id=stale_second_id,
+    )
+    accepted_first_id = test_data.streaming_track(provider_track_id="accepted-1")
+    accepted_second_id = test_data.streaming_track(provider_track_id="accepted-2")
+    accepted_suggestion_id = test_data.streaming_relationship_suggestion(
+        first_track_id=accepted_first_id,
+        second_track_id=accepted_second_id,
+        status=STREAMING_RELATIONSHIP_SUGGESTION_STATUS_ACCEPTED,
+    )
+    rejected_first_id = test_data.streaming_track(provider_track_id="rejected-1")
+    rejected_second_id = test_data.streaming_track(provider_track_id="rejected-2")
+    rejected_suggestion_id = test_data.streaming_relationship_suggestion(
+        first_track_id=rejected_first_id,
+        second_track_id=rejected_second_id,
+        status=STREAMING_RELATIONSHIP_SUGGESTION_STATUS_REJECTED,
+    )
+
+    result = StreamingRelationshipSuggestionGenerator(engine=engine).generate()
+
+    suggestions = _suggestions(engine, include_id=True)
+    assert result.created_count == 0
+    assert result.pruned_count == 1
+    assert [suggestion["id"] for suggestion in suggestions] == [
+        valid_pending_id,
+        accepted_suggestion_id,
+        rejected_suggestion_id,
+    ]
+    assert stale_pending_id not in [suggestion["id"] for suggestion in suggestions]
+    assert suggestions[0] == {
+        "id": valid_pending_id,
+        "lower_track_id": first_track_id,
+        "higher_track_id": second_track_id,
+        "relationship_type": STREAMING_RELATIONSHIP_TYPE_EQUIVALENT,
+        "match_method": MATCH_METHOD_ISRC,
+        "confidence": STREAMING_RELATIONSHIP_CONFIDENCE_HIGH,
+        "status": STREAMING_RELATIONSHIP_SUGGESTION_STATUS_PENDING,
+        "score": 1.0,
+    }
 
 
 def test_generator_suppresses_accepted_equivalent_relationships() -> None:

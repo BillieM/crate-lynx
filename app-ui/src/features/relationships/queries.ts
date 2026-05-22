@@ -22,6 +22,14 @@ export type RejectStreamingRelationshipSuggestionResponse =
 export type AcceptStreamingRelationshipSuggestionInput = AcceptStreamingRelationshipSuggestionRequest & {
   suggestionId: number | string;
 };
+export type StreamingRelationshipSuggestionType = StreamingRelationshipSuggestion["relationship_type"];
+
+export type StreamingRelationshipSuggestionsQuery = {
+  limit?: number;
+  relationshipType?: StreamingRelationshipSuggestionType;
+};
+
+export const DEFAULT_STREAMING_RELATIONSHIP_SUGGESTION_LIMIT = 50;
 
 const nullableStringSchema = z.string().nullable();
 const relationshipTypeSchema = z.enum(["equivalent", "related"]);
@@ -89,6 +97,7 @@ const streamingRelationshipSuggestionsResponseSchema: z.ZodType<StreamingRelatio
 const generateStreamingRelationshipSuggestionsResponseSchema: z.ZodType<GenerateStreamingRelationshipSuggestionsResponse> =
   z.object({
     created_count: z.number(),
+    pruned_count: z.number(),
   });
 
 const acceptStreamingRelationshipSuggestionResponseSchema: z.ZodType<AcceptStreamingRelationshipSuggestionResponse> =
@@ -110,7 +119,10 @@ const rejectStreamingRelationshipSuggestionResponseSchema: z.ZodType<RejectStrea
 
 export const streamingRelationshipQueryKeys = {
   all: ["streaming-relationships"] as const,
-  suggestions: () => ["streaming-relationships", "suggestions"] as const,
+  suggestions: (query?: StreamingRelationshipSuggestionsQuery) =>
+    query === undefined
+      ? (["streaming-relationships", "suggestions"] as const)
+      : (["streaming-relationships", "suggestions", query] as const),
 };
 
 export function streamingRelationshipSuggestionInvalidationKeys(): QueryKey[] {
@@ -133,9 +145,23 @@ export async function invalidateStreamingRelationshipMutationQueries(queryClient
   await invalidateQueryKeys(queryClient, streamingRelationshipMutationInvalidationKeys());
 }
 
-export async function fetchStreamingRelationshipSuggestions(): Promise<StreamingRelationshipSuggestionsResponse> {
+function relationshipSuggestionsUrl({
+  limit = DEFAULT_STREAMING_RELATIONSHIP_SUGGESTION_LIMIT,
+  relationshipType,
+}: StreamingRelationshipSuggestionsQuery = {}) {
+  const params = new URLSearchParams({ limit: String(limit) });
+  if (relationshipType !== undefined) {
+    params.set("relationship_type", relationshipType);
+  }
+
+  return endpoints.api(`/streaming/relationships/suggestions?${params.toString()}`);
+}
+
+export async function fetchStreamingRelationshipSuggestions(
+  query: StreamingRelationshipSuggestionsQuery = {},
+): Promise<StreamingRelationshipSuggestionsResponse> {
   return fetchJson(
-    endpoints.api("/streaming/relationships/suggestions"),
+    relationshipSuggestionsUrl(query),
     streamingRelationshipSuggestionsResponseSchema,
   );
 }
@@ -173,10 +199,10 @@ export async function rejectStreamingRelationshipSuggestion(
   );
 }
 
-export function useStreamingRelationshipSuggestionsQuery() {
+export function useStreamingRelationshipSuggestionsQuery(query: StreamingRelationshipSuggestionsQuery = {}) {
   return useQuery({
-    queryKey: streamingRelationshipQueryKeys.suggestions(),
-    queryFn: fetchStreamingRelationshipSuggestions,
+    queryKey: streamingRelationshipQueryKeys.suggestions(query),
+    queryFn: () => fetchStreamingRelationshipSuggestions(query),
   });
 }
 

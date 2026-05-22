@@ -3,19 +3,21 @@ from __future__ import annotations
 from collections import defaultdict
 from dataclasses import dataclass
 from itertools import combinations
+import re
 from typing import Any
 
-from sqlalchemy import select
+from rapidfuzz import fuzz
+from sqlalchemy import delete, select
 from sqlalchemy.dialects.postgresql import insert as postgresql_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.engine import Engine
 
 from app.core.db import create_database_engine
-from app.matching.models import ConfidenceBand
 from app.matching.tags import normalize_match_text, score_track_tags, title_identity
 from app.relationships.models import (
     STREAMING_RELATIONSHIP_CONFIDENCE_HIGH,
     STREAMING_RELATIONSHIP_CONFIDENCE_MEDIUM,
+    STREAMING_RELATIONSHIP_SUGGESTION_STATUS_ACCEPTED,
     STREAMING_RELATIONSHIP_SUGGESTION_STATUS_PENDING,
     STREAMING_RELATIONSHIP_SUGGESTION_STATUS_REJECTED,
     STREAMING_RELATIONSHIP_TYPE_EQUIVALENT,
@@ -35,11 +37,32 @@ from app.streaming.models import (
 
 MATCH_METHOD_ISRC = "isrc"
 MATCH_METHOD_TAGS = "tags"
+EQUIVALENT_SUGGESTION_SCORE_MIN = 0.94
+RELATED_SUGGESTION_SCORE_MIN = 0.90
+FUZZY_SUGGESTION_BUCKET_LIMIT = 12
+EQUIVALENT_DURATION_TOLERANCE_MS = 10_000
+ALBUM_CONFLICT_SIMILARITY_MAX = 0.98
+NEAR_TITLE_SIMILARITY_MIN = 0.90
+ISRC_RE = re.compile(r"^[A-Z]{2}[A-Z0-9]{3}\d{7}$")
+VERSION_TERM_RE = re.compile(
+    r"\b(?:acoustic|alt|alternate|club|demo|edit|extended|instrumental|"
+    r"karaoke|live|mix|mono|original|radio|remaster(?:ed)?|remix|session|"
+    r"single|stereo|take|version)\b"
+)
+TITLE_VERSION_PAREN_RE = re.compile(
+    r"\s*[\[(][^\])]*(?:acoustic|alt|alternate|club|demo|edit|extended|"
+    r"instrumental|karaoke|live|mix|mono|original|radio|remaster(?:ed)?|"
+    r"remix|session|single|stereo|take|version)\b[^\])]*[\])]"
+)
+TITLE_VERSION_SUFFIX_RE = re.compile(
+    r"(?:\s+-\s+|\s+)(?:acoustic|alt|alternate|club|demo|edit|extended|"
+    r"instrumental|karaoke|live|mix|mono|original|radio|remaster(?:ed)?|"
+    r"remix|session|single|stereo|take|version)\b.*$"
+)
 ACTIVE_RELATIONSHIP_SUGGESTION_PLAYLIST_MODES = (
     PLAYLIST_SYNC_MODE_FULL,
     PLAYLIST_SYNC_MODE_MATCH_ONLY,
 )
-RELATED_SUGGESTION_SCORE_MIN = 0.75
 
 
 @dataclass(frozen=True, slots=True)
@@ -55,6 +78,7 @@ class GeneratedStreamingRelationshipSuggestion:
 @dataclass(frozen=True, slots=True)
 class StreamingRelationshipSuggestionGenerationResult:
     created_count: int
+    pruned_count: int
     suggestions: tuple[GeneratedStreamingRelationshipSuggestion, ...]
 
 
@@ -71,9 +95,22 @@ class _StreamingTrackCandidate:
 @dataclass(frozen=True, slots=True)
 class _SuppressionContext:
     groups: _TrackGroups
-    existing_suggestion_pairs: frozenset[tuple[int, int]]
+    final_suggestion_pairs: frozenset[tuple[int, int]]
     accepted_group_pairs: frozenset[tuple[int, int]]
     rejected_group_pairs: frozenset[tuple[int, int]]
+
+
+@dataclass(frozen=True, slots=True)
+class _EquivalentSafetyCheck:
+    version_conflict: bool
+    duration_conflict: bool
+    album_conflict: bool
+
+    @property
+    def is_safe(self) -> bool:
+        return not (
+            self.version_conflict or self.duration_conflict or self.album_conflict
+        )
 
 
 class StreamingRelationshipSuggestionGenerator:
@@ -87,13 +124,18 @@ class StreamingRelationshipSuggestionGenerator:
             tracks = _active_streaming_tracks(connection)
             suppression_context = _suppression_context(connection)
             suggestions = _relationship_candidates(tracks, suppression_context)
-            created_count = _insert_suggestions(
+            pruned_count = _prune_pending_suggestions(
+                connection,
+                frozenset(_suggestion_pair(suggestion) for suggestion in suggestions),
+            )
+            created_count = _upsert_pending_suggestions(
                 connection,
                 suggestions,
             )
 
         return StreamingRelationshipSuggestionGenerationResult(
             created_count=created_count,
+            pruned_count=pruned_count,
             suggestions=suggestions,
         )
 
@@ -211,12 +253,17 @@ def _suppression_context(connection) -> _SuppressionContext:
         .mappings()
         .all()
     )
-    existing_suggestion_pairs = frozenset(
+    final_suggestion_pairs = frozenset(
         (
             int(row["lower_track_id"]),
             int(row["higher_track_id"]),
         )
         for row in suggestion_rows
+        if row["status"]
+        in (
+            STREAMING_RELATIONSHIP_SUGGESTION_STATUS_ACCEPTED,
+            STREAMING_RELATIONSHIP_SUGGESTION_STATUS_REJECTED,
+        )
     )
     rejected_group_pairs = frozenset(
         groups.pair_key(int(row["lower_track_id"]), int(row["higher_track_id"]))
@@ -226,7 +273,7 @@ def _suppression_context(connection) -> _SuppressionContext:
 
     return _SuppressionContext(
         groups=groups,
-        existing_suggestion_pairs=existing_suggestion_pairs,
+        final_suggestion_pairs=final_suggestion_pairs,
         accepted_group_pairs=accepted_group_pairs,
         rejected_group_pairs=rejected_group_pairs,
     )
@@ -269,12 +316,14 @@ def _isrc_candidates(
             tracks_by_isrc[track.isrc].append(track)
 
     candidates: list[GeneratedStreamingRelationshipSuggestion] = []
-    for isrc_tracks in tracks_by_isrc.values():
+    for _, isrc_tracks in sorted(tracks_by_isrc.items()):
         if len(isrc_tracks) < 2:
             continue
 
-        for first, second in combinations(isrc_tracks, 2):
-            pair = normalize_streaming_track_pair(first.id, second.id)
+        sorted_tracks = sorted(isrc_tracks, key=lambda track: track.id)
+        anchor = sorted_tracks[0]
+        for track in sorted_tracks[1:]:
+            pair = normalize_streaming_track_pair(anchor.id, track.id)
             if _is_pair_suppressed(
                 pair.lower_track_id,
                 pair.higher_track_id,
@@ -301,17 +350,33 @@ def _fuzzy_candidates(
     suppression_context: _SuppressionContext,
 ) -> tuple[GeneratedStreamingRelationshipSuggestion, ...]:
     candidates: list[GeneratedStreamingRelationshipSuggestion] = []
-    tracks_by_title: defaultdict[str, list[_StreamingTrackCandidate]] = defaultdict(
-        list
-    )
+    tracks_by_bucket: defaultdict[
+        tuple[str, str],
+        list[_StreamingTrackCandidate],
+    ] = defaultdict(list)
     for track in tracks:
-        tracks_by_title[title_identity(track.title)].append(track)
+        tracks_by_bucket[(track.artist, _fuzzy_title_bucket_key(track.title))].append(
+            track
+        )
 
-    for title_tracks in tracks_by_title.values():
-        if len(title_tracks) < 2:
+    for bucket_tracks in tracks_by_bucket.values():
+        if len(bucket_tracks) < 2:
             continue
 
-        for first, second in combinations(title_tracks, 2):
+        bucket_candidates: list[GeneratedStreamingRelationshipSuggestion] = []
+        for first, second in combinations(
+            sorted(bucket_tracks, key=lambda track: track.id),
+            2,
+        ):
+            if first.isrc is not None and first.isrc == second.isrc:
+                continue
+
+            if first.artist != second.artist or not _has_near_same_title(
+                first.title,
+                second.title,
+            ):
+                continue
+
             pair = normalize_streaming_track_pair(first.id, second.id)
             if _is_pair_suppressed(
                 pair.lower_track_id,
@@ -330,42 +395,42 @@ def _fuzzy_candidates(
                 right_album=second.album,
                 right_duration_ms=second.duration_ms,
             )
-            if score < RELATED_SUGGESTION_SCORE_MIN:
+            safety = _equivalent_safety(first, second)
+            if score >= EQUIVALENT_SUGGESTION_SCORE_MIN and safety.is_safe:
+                bucket_candidates.append(
+                    GeneratedStreamingRelationshipSuggestion(
+                        lower_track_id=pair.lower_track_id,
+                        higher_track_id=pair.higher_track_id,
+                        relationship_type=STREAMING_RELATIONSHIP_TYPE_EQUIVALENT,
+                        match_method=MATCH_METHOD_TAGS,
+                        score=score,
+                        confidence=STREAMING_RELATIONSHIP_CONFIDENCE_HIGH,
+                    )
+                )
                 continue
 
-            confidence_band = ConfidenceBand.from_score(score)
-            pair = normalize_streaming_track_pair(first.id, second.id)
-            candidates.append(
-                GeneratedStreamingRelationshipSuggestion(
-                    lower_track_id=pair.lower_track_id,
-                    higher_track_id=pair.higher_track_id,
-                    relationship_type=(
-                        STREAMING_RELATIONSHIP_TYPE_EQUIVALENT
-                        if confidence_band == ConfidenceBand.HIGH
-                        else STREAMING_RELATIONSHIP_TYPE_RELATED
-                    ),
-                    match_method=MATCH_METHOD_TAGS,
-                    score=score,
-                    confidence=(
-                        STREAMING_RELATIONSHIP_CONFIDENCE_HIGH
-                        if confidence_band == ConfidenceBand.HIGH
-                        else STREAMING_RELATIONSHIP_CONFIDENCE_MEDIUM
-                    ),
+            if score >= RELATED_SUGGESTION_SCORE_MIN and not safety.is_safe:
+                bucket_candidates.append(
+                    GeneratedStreamingRelationshipSuggestion(
+                        lower_track_id=pair.lower_track_id,
+                        higher_track_id=pair.higher_track_id,
+                        relationship_type=STREAMING_RELATIONSHIP_TYPE_RELATED,
+                        match_method=MATCH_METHOD_TAGS,
+                        score=score,
+                        confidence=STREAMING_RELATIONSHIP_CONFIDENCE_MEDIUM,
+                    )
                 )
+
+        bucket_candidates.sort(
+            key=lambda candidate: (
+                -candidate.score,
+                candidate.lower_track_id,
+                candidate.higher_track_id,
             )
+        )
+        candidates.extend(bucket_candidates[:FUZZY_SUGGESTION_BUCKET_LIMIT])
 
     return tuple(candidates)
-
-
-def _is_suppressed(
-    candidate: GeneratedStreamingRelationshipSuggestion,
-    context: _SuppressionContext,
-) -> bool:
-    return _is_pair_suppressed(
-        candidate.lower_track_id,
-        candidate.higher_track_id,
-        context,
-    )
 
 
 def _is_pair_suppressed(
@@ -374,7 +439,7 @@ def _is_pair_suppressed(
     context: _SuppressionContext,
 ) -> bool:
     pair = (lower_track_id, higher_track_id)
-    if pair in context.existing_suggestion_pairs:
+    if pair in context.final_suggestion_pairs:
         return True
 
     group_pair = context.groups.pair_key(
@@ -390,12 +455,57 @@ def _is_pair_suppressed(
     )
 
 
-def _insert_suggestions(
+def _prune_pending_suggestions(
+    connection,
+    valid_pairs: frozenset[tuple[int, int]],
+) -> int:
+    pending_rows = (
+        connection.execute(
+            select(
+                streaming_relationship_suggestions_table.c.id,
+                streaming_relationship_suggestions_table.c.lower_track_id,
+                streaming_relationship_suggestions_table.c.higher_track_id,
+            ).where(
+                streaming_relationship_suggestions_table.c.status
+                == STREAMING_RELATIONSHIP_SUGGESTION_STATUS_PENDING
+            )
+        )
+        .mappings()
+        .all()
+    )
+    stale_ids = [
+        int(row["id"])
+        for row in pending_rows
+        if (
+            int(row["lower_track_id"]),
+            int(row["higher_track_id"]),
+        )
+        not in valid_pairs
+    ]
+    if not stale_ids:
+        return 0
+
+    result = connection.execute(
+        delete(streaming_relationship_suggestions_table).where(
+            streaming_relationship_suggestions_table.c.id.in_(stale_ids)
+        )
+    )
+    return result.rowcount or 0
+
+
+def _upsert_pending_suggestions(
     connection,
     suggestions: tuple[GeneratedStreamingRelationshipSuggestion, ...],
 ) -> int:
     if not suggestions:
         return 0
+
+    existing_pending_pairs = _pending_suggestion_pairs(connection)
+    created_count = sum(
+        1
+        for suggestion in suggestions
+        if _suggestion_pair(suggestion) not in existing_pending_pairs
+    )
 
     rows = [
         {
@@ -409,17 +519,48 @@ def _insert_suggestions(
         }
         for suggestion in suggestions
     ]
-    statement = _conflict_insert(
+    insert_statement = _conflict_insert(
         streaming_relationship_suggestions_table,
         connection.dialect.name,
-    ).on_conflict_do_nothing(
+    )
+    statement = insert_statement.on_conflict_do_update(
         index_elements=[
             streaming_relationship_suggestions_table.c.lower_track_id,
             streaming_relationship_suggestions_table.c.higher_track_id,
-        ]
+        ],
+        set_={
+            "relationship_type": insert_statement.excluded.relationship_type,
+            "match_method": insert_statement.excluded.match_method,
+            "score": insert_statement.excluded.score,
+            "confidence": insert_statement.excluded.confidence,
+        },
+        where=(
+            streaming_relationship_suggestions_table.c.status
+            == STREAMING_RELATIONSHIP_SUGGESTION_STATUS_PENDING
+        ),
     )
-    result = connection.execute(statement, rows)
-    return result.rowcount or 0
+    connection.execute(statement, rows)
+    return created_count
+
+
+def _pending_suggestion_pairs(connection) -> frozenset[tuple[int, int]]:
+    return frozenset(
+        (
+            int(row["lower_track_id"]),
+            int(row["higher_track_id"]),
+        )
+        for row in connection.execute(
+            select(
+                streaming_relationship_suggestions_table.c.lower_track_id,
+                streaming_relationship_suggestions_table.c.higher_track_id,
+            ).where(
+                streaming_relationship_suggestions_table.c.status
+                == STREAMING_RELATIONSHIP_SUGGESTION_STATUS_PENDING
+            )
+        )
+        .mappings()
+        .all()
+    )
 
 
 def _conflict_insert(target_table: Any, dialect_name: str) -> Any:
@@ -443,5 +584,74 @@ def _normalize_isrc(value: object) -> str | None:
     if not isinstance(value, str):
         return None
 
-    normalized = value.strip().upper()
-    return normalized or None
+    normalized = re.sub(r"[\s-]+", "", value.strip().upper())
+    if not normalized or ISRC_RE.fullmatch(normalized) is None:
+        return None
+
+    return normalized
+
+
+def _fuzzy_title_key(title: str) -> str:
+    without_parenthetical_versions = TITLE_VERSION_PAREN_RE.sub("", title)
+    without_suffix_versions = TITLE_VERSION_SUFFIX_RE.sub(
+        "",
+        without_parenthetical_versions,
+    )
+    return title_identity(without_suffix_versions)
+
+
+def _fuzzy_title_bucket_key(title: str) -> str:
+    title_key = _fuzzy_title_key(title)
+    first_token = title_key.split(maxsplit=1)[0] if title_key else ""
+    return first_token or title_key
+
+
+def _has_near_same_title(first_title: str, second_title: str) -> bool:
+    first_key = _fuzzy_title_key(first_title)
+    second_key = _fuzzy_title_key(second_title)
+    if first_key == second_key:
+        return True
+
+    return fuzz.token_sort_ratio(first_key, second_key) / 100 >= (
+        NEAR_TITLE_SIMILARITY_MIN
+    )
+
+
+def _equivalent_safety(
+    first: _StreamingTrackCandidate,
+    second: _StreamingTrackCandidate,
+) -> _EquivalentSafetyCheck:
+    return _EquivalentSafetyCheck(
+        version_conflict=_title_version_tokens(first.title)
+        != _title_version_tokens(second.title),
+        duration_conflict=_has_duration_conflict(
+            first.duration_ms,
+            second.duration_ms,
+        ),
+        album_conflict=_has_album_conflict(first.album, second.album),
+    )
+
+
+def _title_version_tokens(title: str) -> frozenset[str]:
+    return frozenset(match.group(0) for match in VERSION_TERM_RE.finditer(title))
+
+
+def _has_duration_conflict(
+    first_duration_ms: int | None,
+    second_duration_ms: int | None,
+) -> bool:
+    return (
+        first_duration_ms is not None
+        and second_duration_ms is not None
+        and abs(first_duration_ms - second_duration_ms)
+        > EQUIVALENT_DURATION_TOLERANCE_MS
+    )
+
+
+def _has_album_conflict(first_album: str | None, second_album: str | None) -> bool:
+    if first_album is None or second_album is None:
+        return False
+
+    return fuzz.token_sort_ratio(first_album, second_album) / 100 < (
+        ALBUM_CONFLICT_SIMILARITY_MAX
+    )

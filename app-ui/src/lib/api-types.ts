@@ -624,6 +624,8 @@ export interface components {
         GenerateStreamingRelationshipSuggestionsResponse: {
             /** Created Count */
             created_count: number;
+            /** Pruned Count */
+            pruned_count: number;
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -1952,6 +1954,7 @@ export interface operations {
         parameters: {
             query?: {
                 limit?: number;
+                relationship_type?: ("equivalent" | "related") | null;
             };
             header?: never;
             path?: never;

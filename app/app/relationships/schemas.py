@@ -86,3 +86,4 @@ class RejectStreamingRelationshipSuggestionResponse(BaseModel):
 
 class GenerateStreamingRelationshipSuggestionsResponse(BaseModel):
     created_count: int
+    pruned_count: int
