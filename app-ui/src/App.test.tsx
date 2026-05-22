@@ -608,13 +608,19 @@ describe("App", () => {
   });
 
   it("renders Library and Maintenance sidebar badges from backend query data", async () => {
-    mockPlaylistFetch();
+    mockPlaylistFetch({
+      relationshipSuggestionsHandler: () =>
+        jsonResponse({
+          ...streamingRelationshipSuggestionsResponse,
+          total_count: 27933,
+        }),
+    });
 
     renderApp(["/proposals"]);
 
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "Link proposals 3" })).toBeInTheDocument();
-      expect(screen.getByRole("button", { name: "Streaming relationships 2" })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Streaming relationships 27933" })).toBeInTheDocument();
       expect(screen.getByRole("button", { name: "Unidentified 1" })).toBeInTheDocument();
       expect(screen.getByRole("button", { name: "Missing locally 1" })).toBeInTheDocument();
       expect(screen.getByRole("button", { name: "All tracks 321" })).toBeInTheDocument();

@@ -58,14 +58,14 @@ function App() {
       buildMaintenanceNavItems({
         missingCount: missingLocallyQuery.data?.tracks.length,
         proposalCount: linkProposalsQuery.data?.proposals.length,
-        relationshipCount: relationshipSuggestionsQuery.data?.suggestions.length,
+        relationshipCount: relationshipSuggestionsQuery.data?.total_count,
         unidentifiedCount: activeUnidentifiedCount,
       }),
     [
       activeUnidentifiedCount,
       linkProposalsQuery.data?.proposals.length,
       missingLocallyQuery.data?.tracks.length,
-      relationshipSuggestionsQuery.data?.suggestions.length,
+      relationshipSuggestionsQuery.data?.total_count,
     ],
   );
   const playlistItems = useMemo(() => buildPlaylistNavItems(streamingPlaylists), [streamingPlaylists]);

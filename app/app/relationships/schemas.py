@@ -66,6 +66,7 @@ class StreamingRelationshipSuggestionListResponse(BaseModel):
 
 
 class AcceptStreamingRelationshipSuggestionRequest(BaseModel):
+    relationship_type: StreamingRelationshipType | None = None
     winning_final_link_id: int | None = None
 
 

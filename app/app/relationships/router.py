@@ -135,6 +135,9 @@ def create_router(
         try:
             result = store.accept(
                 suggestion_id,
+                relationship_type=(
+                    request.relationship_type if request is not None else None
+                ),
                 winning_final_link_id=(
                     request.winning_final_link_id if request is not None else None
                 ),

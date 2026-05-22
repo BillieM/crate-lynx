@@ -326,6 +326,52 @@ def test_generator_skips_fuzzy_pairs_below_new_thresholds(monkeypatch) -> None:
     assert _suggestions(engine) == []
 
 
+def test_generator_skips_album_only_related_pairs_and_prunes_pending() -> None:
+    engine = _create_generation_engine()
+    test_data = factories.TestDataFactory(engine)
+    account_id = test_data.streaming_account()
+    playlist_id = test_data.streaming_playlist(
+        account_id=account_id,
+        sync_mode=PLAYLIST_SYNC_MODE_FULL,
+    )
+    first_track_id = test_data.streaming_track(
+        provider_track_id="album-only-1",
+        title="Silver Line",
+        artist="Signal",
+        album="Studio Sessions",
+        duration_ms=180000,
+        isrc=None,
+    )
+    second_track_id = test_data.streaming_track(
+        provider_track_id="album-only-2",
+        title="Silver Line",
+        artist="Signal",
+        album="Compilation Sessions",
+        duration_ms=180000,
+        isrc=None,
+    )
+    for position, track_id in enumerate((first_track_id, second_track_id), start=1):
+        test_data.playlist_membership(
+            playlist_id=playlist_id,
+            position=position,
+            streaming_track_id=track_id,
+        )
+    pending_id = test_data.streaming_relationship_suggestion(
+        first_track_id=first_track_id,
+        relationship_type=STREAMING_RELATIONSHIP_TYPE_RELATED,
+        second_track_id=second_track_id,
+    )
+
+    result = StreamingRelationshipSuggestionGenerator(engine=engine).generate()
+
+    assert result.created_count == 0
+    assert result.pruned_count == 1
+    assert pending_id not in [
+        suggestion["id"] for suggestion in _suggestions(engine, include_id=True)
+    ]
+    assert _suggestions(engine) == []
+
+
 def test_generator_caps_duplicate_heavy_fuzzy_buckets() -> None:
     engine = _create_generation_engine()
     test_data = factories.TestDataFactory(engine)

@@ -572,6 +572,8 @@ export interface components {
     schemas: {
         /** AcceptStreamingRelationshipSuggestionRequest */
         AcceptStreamingRelationshipSuggestionRequest: {
+            /** Relationship Type */
+            relationship_type?: ("equivalent" | "related") | null;
             /** Winning Final Link Id */
             winning_final_link_id?: number | null;
         };

@@ -313,6 +313,147 @@ def test_accept_equivalent_suggestion_creates_relationship(
     assert suggestion["accepted_relationship_id"] == relationship["id"]
 
 
+def test_accept_equivalent_recommendation_as_related_ignores_link_conflicts(
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite:///{tmp_path / 'relationship-equivalent-as-related.db'}"
+    engine = _create_relationship_router_engine(database_url)
+    test_data = factories.TestDataFactory(engine)
+    first_track_id, second_track_id = _streaming_pair(test_data)
+    first_local_id = test_data.local_track(file_path="Artist/first.mp3")
+    second_local_id = test_data.local_track(file_path="Artist/second.mp3")
+    first_link_id = test_data.final_link(
+        local_track_id=first_local_id,
+        streaming_track_id=first_track_id,
+    )
+    second_link_id = test_data.final_link(
+        local_track_id=second_local_id,
+        streaming_track_id=second_track_id,
+    )
+    suggestion_id = test_data.streaming_relationship_suggestion(
+        first_track_id=first_track_id,
+        relationship_type=STREAMING_RELATIONSHIP_TYPE_EQUIVALENT,
+        second_track_id=second_track_id,
+    )
+
+    router = create_router(require_database_url=lambda: database_url)
+    response = _call_endpoint(
+        _route(
+            router,
+            "POST",
+            "/streaming/relationships/suggestions/{suggestion_id}/accept",
+        ).endpoint,
+        suggestion_id,
+        AcceptStreamingRelationshipSuggestionRequest(
+            relationship_type=STREAMING_RELATIONSHIP_TYPE_RELATED,
+        ),
+    )
+
+    assert response.relationship_type == "related"
+    assert response.detached_final_link_ids == []
+    with engine.connect() as connection:
+        relationship = (
+            connection.execute(select(streaming_relationships_table)).mappings().one()
+        )
+        suggestion = (
+            connection.execute(select(streaming_relationship_suggestions_table))
+            .mappings()
+            .one()
+        )
+        final_link_ids = connection.execute(
+            select(final_links_table.c.id).order_by(final_links_table.c.id.asc())
+        ).scalars()
+
+    assert relationship["relationship_type"] == STREAMING_RELATIONSHIP_TYPE_RELATED
+    assert suggestion["relationship_type"] == STREAMING_RELATIONSHIP_TYPE_EQUIVALENT
+    assert list(final_link_ids) == [first_link_id, second_link_id]
+
+
+def test_accept_related_recommendation_as_equivalent_resolves_conflicts(
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite:///{tmp_path / 'relationship-related-as-equivalent.db'}"
+    engine = _create_relationship_router_engine(database_url)
+    test_data = factories.TestDataFactory(engine)
+    first_track_id, second_track_id = _streaming_pair(test_data)
+    first_local_id = test_data.local_track(file_path="Artist/first.mp3")
+    second_local_id = test_data.local_track(file_path="Artist/second.mp3")
+    winning_link_id = test_data.final_link(
+        local_track_id=first_local_id,
+        streaming_track_id=first_track_id,
+    )
+    losing_link_id = test_data.final_link(
+        local_track_id=second_local_id,
+        streaming_track_id=second_track_id,
+    )
+    suggestion_id = test_data.streaming_relationship_suggestion(
+        first_track_id=first_track_id,
+        relationship_type=STREAMING_RELATIONSHIP_TYPE_RELATED,
+        second_track_id=second_track_id,
+    )
+
+    router = create_router(require_database_url=lambda: database_url)
+    list_response = _call_endpoint(
+        _route(router, "GET", "/streaming/relationships/suggestions").endpoint,
+    )
+    assert list_response.suggestions[0].relationship_type == "related"
+    assert list_response.suggestions[0].conflict_state == "different_local_links"
+    try:
+        _call_endpoint(
+            _route(
+                router,
+                "POST",
+                "/streaming/relationships/suggestions/{suggestion_id}/accept",
+            ).endpoint,
+            suggestion_id,
+            AcceptStreamingRelationshipSuggestionRequest(
+                relationship_type=STREAMING_RELATIONSHIP_TYPE_EQUIVALENT,
+            ),
+        )
+    except StarletteHTTPException as exc:
+        assert exc.status_code == 409
+        assert (
+            exc.detail
+            == "winning_final_link_id is required for conflicting equivalent relationship"
+        )
+    else:
+        raise AssertionError(
+            "Expected related recommendation accepted as equivalent to require a winner"
+        )
+
+    response = _call_endpoint(
+        _route(
+            router,
+            "POST",
+            "/streaming/relationships/suggestions/{suggestion_id}/accept",
+        ).endpoint,
+        suggestion_id,
+        AcceptStreamingRelationshipSuggestionRequest(
+            relationship_type=STREAMING_RELATIONSHIP_TYPE_EQUIVALENT,
+            winning_final_link_id=winning_link_id,
+        ),
+    )
+
+    assert response.relationship_type == "equivalent"
+    assert response.detached_final_link_ids == [losing_link_id]
+    with engine.connect() as connection:
+        relationship = (
+            connection.execute(select(streaming_relationships_table)).mappings().one()
+        )
+        suggestion = (
+            connection.execute(select(streaming_relationship_suggestions_table))
+            .mappings()
+            .one()
+        )
+        final_link_ids = list(
+            connection.execute(select(final_links_table.c.id)).scalars()
+        )
+
+    assert relationship["relationship_type"] == STREAMING_RELATIONSHIP_TYPE_EQUIVALENT
+    assert suggestion["relationship_type"] == STREAMING_RELATIONSHIP_TYPE_RELATED
+    assert final_link_ids == [winning_link_id]
+
+
 def test_accept_related_suggestion_ignores_link_conflicts(
     tmp_path: Path,
 ) -> None:

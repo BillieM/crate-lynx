@@ -174,13 +174,22 @@ export async function generateStreamingRelationshipSuggestions(): Promise<Genera
 }
 
 export async function acceptStreamingRelationshipSuggestion({
+  relationship_type,
   suggestionId,
   winning_final_link_id,
 }: AcceptStreamingRelationshipSuggestionInput): Promise<AcceptStreamingRelationshipSuggestionResponse> {
+  const body: AcceptStreamingRelationshipSuggestionRequest = {};
+  if (relationship_type !== undefined) {
+    body.relationship_type = relationship_type;
+  }
+  if (winning_final_link_id !== undefined) {
+    body.winning_final_link_id = winning_final_link_id;
+  }
+
   return postJson(
     endpoints.api(`/streaming/relationships/suggestions/${encodeURIComponent(String(suggestionId))}/accept`),
     {
-      body: winning_final_link_id === undefined ? undefined : { winning_final_link_id },
+      body: Object.keys(body).length === 0 ? undefined : body,
       errorMessage: "Relationship suggestion accept request failed",
       schema: acceptStreamingRelationshipSuggestionResponseSchema,
     },

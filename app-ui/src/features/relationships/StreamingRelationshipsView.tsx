@@ -4,7 +4,6 @@ import { GitBranch, Link2, RefreshCw, XCircle } from "lucide-react";
 
 import { ActionButton } from "../../components/ActionButton";
 import { EmptyStateCard } from "../../components/EmptyStateCard";
-import { FilterChipGroup, type FilterChipOption } from "../../components/FilterChipGroup";
 import { Pill, type PillTone } from "../../components/Pill";
 import { formatDuration, getMatchMethodLabel } from "../../lib/formatters";
 import { createOptimisticMutation } from "../../lib/optimisticMutation";
@@ -30,13 +29,7 @@ const relationshipSuggestionPageSize = DEFAULT_STREAMING_RELATIONSHIP_SUGGESTION
 
 type RelationshipTrack = StreamingRelationshipSuggestion["first_track"];
 type RelationshipLocalLink = NonNullable<StreamingRelationshipSuggestion["first_link"]>;
-type RelationshipSuggestionFilter = "all" | StreamingRelationshipSuggestion["relationship_type"];
-
-const relationshipSuggestionFilterOptions: FilterChipOption<RelationshipSuggestionFilter>[] = [
-  { label: "All", tone: "all", value: "all" },
-  { label: "Equivalent", tone: "linked", value: "equivalent" },
-  { label: "Related", tone: "pending", value: "related" },
-];
+type RelationshipActionType = StreamingRelationshipSuggestion["relationship_type"];
 
 function sortRelationshipSuggestions(suggestions: StreamingRelationshipSuggestion[]) {
   return [...suggestions].sort((left, right) => {
@@ -218,7 +211,7 @@ function WinnerSelection({
   selectedWinnerId: number | null;
   suggestion: StreamingRelationshipSuggestion;
 }) {
-  if (suggestion.relationship_type !== "equivalent" || suggestion.conflict_state !== "different_local_links") {
+  if (suggestion.conflict_state !== "different_local_links") {
     return null;
   }
 
@@ -263,12 +256,9 @@ function WinnerSelection({
 export function StreamingRelationshipsView() {
   const queryClient = useQueryClient();
   const [selectedWinnerIds, setSelectedWinnerIds] = useState<Record<number, number>>({});
-  const [activeFilter, setActiveFilter] = useState<RelationshipSuggestionFilter>("all");
   const [suggestionLimit, setSuggestionLimit] = useState(relationshipSuggestionPageSize);
-  const relationshipType = activeFilter === "all" ? undefined : activeFilter;
   const suggestionsQuery = useStreamingRelationshipSuggestionsQuery({
     limit: suggestionLimit,
-    relationshipType,
   });
   const acceptMutation = useMutation({
     ...createOptimisticMutation<
@@ -315,8 +305,10 @@ export function StreamingRelationshipsView() {
   const hasMoreSuggestions = totalSuggestionCount > suggestionCount;
   const sortedSuggestions = useMemo(() => sortRelationshipSuggestions(suggestions ?? []), [suggestions]);
   const activeAcceptSuggestionId = acceptMutation.isPending ? String(acceptMutation.variables.suggestionId) : null;
+  const activeAcceptRelationshipType = acceptMutation.isPending ? acceptMutation.variables.relationship_type ?? null : null;
   const activeRejectSuggestionId = rejectMutation.isPending ? String(rejectMutation.variables) : null;
   const failedAcceptSuggestionId = acceptMutation.isError ? String(acceptMutation.variables.suggestionId) : null;
+  const failedAcceptRelationshipType = acceptMutation.isError ? acceptMutation.variables.relationship_type ?? null : null;
   const failedRejectSuggestionId = rejectMutation.isError ? String(rejectMutation.variables) : null;
   const renderRelationshipFrame = (children: ReactNode) => (
     <section className="flex min-h-0 flex-1 flex-col gap-4">
@@ -354,17 +346,6 @@ export function StreamingRelationshipsView() {
           </ActionButton>
         </div>
       </div>
-      <FilterChipGroup
-        activeValue={activeFilter}
-        ariaLabel="Relationship suggestion filter"
-        density="compact"
-        disabled={suggestionsQuery.isFetching}
-        onValueChange={(value) => {
-          setActiveFilter(value);
-          setSuggestionLimit(relationshipSuggestionPageSize);
-        }}
-        options={relationshipSuggestionFilterOptions}
-      />
       {children}
     </section>
   );
@@ -415,8 +396,10 @@ export function StreamingRelationshipsView() {
 
           return (
             <RelationshipSuggestionRow
+              activeAcceptRelationshipType={activeAcceptRelationshipType}
               activeAcceptSuggestionId={activeAcceptSuggestionId}
               activeRejectSuggestionId={activeRejectSuggestionId}
+              failedAcceptRelationshipType={failedAcceptRelationshipType}
               failedAcceptSuggestionId={failedAcceptSuggestionId}
               failedRejectSuggestionId={failedRejectSuggestionId}
               key={suggestion.id}
@@ -447,8 +430,10 @@ export function StreamingRelationshipsView() {
 }
 
 function RelationshipSuggestionRow({
+  activeAcceptRelationshipType,
   activeAcceptSuggestionId,
   activeRejectSuggestionId,
+  failedAcceptRelationshipType,
   failedAcceptSuggestionId,
   failedRejectSuggestionId,
   onAccept,
@@ -457,8 +442,10 @@ function RelationshipSuggestionRow({
   selectedWinnerId,
   suggestion,
 }: {
+  activeAcceptRelationshipType: RelationshipActionType | null;
   activeAcceptSuggestionId: string | null;
   activeRejectSuggestionId: string | null;
+  failedAcceptRelationshipType: RelationshipActionType | null;
   failedAcceptSuggestionId: string | null;
   failedRejectSuggestionId: string | null;
   onAccept: (input: AcceptStreamingRelationshipSuggestionInput) => void;
@@ -467,24 +454,27 @@ function RelationshipSuggestionRow({
   selectedWinnerId: number | null;
   suggestion: StreamingRelationshipSuggestion;
 }) {
-  const acceptLabel = getRelationshipTypeLabel(suggestion.relationship_type);
-  const hasEquivalentConflict =
-    suggestion.relationship_type === "equivalent" && suggestion.conflict_state === "different_local_links";
-  const canAccept = !hasEquivalentConflict || selectedWinnerId !== null;
+  const recommendationLabel = getRelationshipTypeLabel(suggestion.relationship_type);
+  const hasEquivalentConflict = suggestion.conflict_state === "different_local_links";
+  const canAcceptEquivalent = !hasEquivalentConflict || selectedWinnerId !== null;
   const isAccepting = activeAcceptSuggestionId === String(suggestion.id);
+  const isEquivalentAccepting = isAccepting && activeAcceptRelationshipType === "equivalent";
+  const isRelatedAccepting = isAccepting && activeAcceptRelationshipType === "related";
   const isRejecting = activeRejectSuggestionId === String(suggestion.id);
   const isActionPending = isAccepting || isRejecting;
   const actionError =
     failedAcceptSuggestionId === String(suggestion.id)
-      ? `${acceptLabel} failed.`
+      ? `${getRelationshipTypeLabel(failedAcceptRelationshipType ?? suggestion.relationship_type)} failed.`
       : failedRejectSuggestionId === String(suggestion.id)
         ? "Reject failed."
         : null;
 
-  function handleAccept() {
+  function handleAccept(relationshipType: RelationshipActionType) {
     onAccept({
+      relationship_type: relationshipType,
       suggestionId: suggestion.id,
-      winning_final_link_id: hasEquivalentConflict && selectedWinnerId !== null ? selectedWinnerId : undefined,
+      winning_final_link_id:
+        relationshipType === "equivalent" && hasEquivalentConflict && selectedWinnerId !== null ? selectedWinnerId : undefined,
     });
   }
 
@@ -499,7 +489,7 @@ function RelationshipSuggestionRow({
             <Pill className="tabular-nums" tone={getRelationshipScoreTone(suggestion.score)}>
               {formatRelationshipScore(suggestion.score)}
             </Pill>
-            <Pill tone={getRelationshipTypeTone(suggestion.relationship_type)}>{acceptLabel}</Pill>
+            <Pill tone={getRelationshipTypeTone(suggestion.relationship_type)}>Recommended {recommendationLabel}</Pill>
             <Pill tone={getMatchMethodTone(suggestion.match_method)}>{getMatchMethodLabel(suggestion.match_method)}</Pill>
             <span className={`inline-flex items-center gap-1 ${textClasses.finePrint} font-medium text-ctp-subtext0`}>
               <span
@@ -530,16 +520,22 @@ function RelationshipSuggestionRow({
         <div className="flex flex-wrap items-center gap-2 border-t border-ctp-surface0 pt-2 xl:flex-col xl:items-stretch xl:border-t-0 xl:pt-0">
           <ActionButton
             className={`${controlClasses.actionButtonCompact} inline-flex items-center justify-center gap-1.5`}
-            disabled={isActionPending || !canAccept}
-            onClick={handleAccept}
+            disabled={isActionPending || !canAcceptEquivalent}
+            onClick={() => handleAccept("equivalent")}
             tone="success"
           >
-            {suggestion.relationship_type === "equivalent" ? (
-              <Link2 aria-hidden="true" className="h-3.5 w-3.5" strokeWidth={1.9} />
-            ) : (
-              <GitBranch aria-hidden="true" className="h-3.5 w-3.5" strokeWidth={1.9} />
-            )}
-            <span>{isAccepting ? "Accepting..." : acceptLabel}</span>
+            <Link2 aria-hidden="true" className="h-3.5 w-3.5" strokeWidth={1.9} />
+            <span>{isEquivalentAccepting ? "Accepting..." : "Equivalent"}</span>
+            <span className="sr-only"> suggestion {suggestion.id}</span>
+          </ActionButton>
+          <ActionButton
+            className={`${controlClasses.actionButtonCompact} inline-flex items-center justify-center gap-1.5`}
+            disabled={isActionPending}
+            onClick={() => handleAccept("related")}
+            tone="neutral"
+          >
+            <GitBranch aria-hidden="true" className="h-3.5 w-3.5" strokeWidth={1.9} />
+            <span>{isRelatedAccepting ? "Accepting..." : "Related"}</span>
             <span className="sr-only"> suggestion {suggestion.id}</span>
           </ActionButton>
           <ActionButton

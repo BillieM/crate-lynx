@@ -135,6 +135,67 @@ const conflictingEquivalentSuggestion: StreamingRelationshipSuggestion = {
   },
 };
 
+const conflictingRelatedSuggestion: StreamingRelationshipSuggestion = {
+  ...relatedSuggestion,
+  id: 94,
+  conflict_state: "different_local_links",
+  first_link: {
+    approved_at: "2026-05-18T12:03:00Z",
+    final_link_id: 8001,
+    local_album: "Maintenance Window",
+    local_artist: "Patch Bay",
+    local_file_path: "Patch Bay/Loose Cable.flac",
+    local_title: "Loose Cable",
+    local_track_id: 503,
+    resolution_source: "direct",
+    source_streaming_track_id: 903,
+    streaming_track_id: 903,
+  },
+  second_link: {
+    approved_at: "2026-05-18T12:04:00Z",
+    final_link_id: 8002,
+    local_album: "Live Diagnostics",
+    local_artist: "Patch Bay",
+    local_file_path: "Patch Bay/Loose Cable Live.flac",
+    local_title: "Loose Cable Live",
+    local_track_id: 504,
+    resolution_source: "direct",
+    source_streaming_track_id: 904,
+    streaming_track_id: 904,
+  },
+  conflict: {
+    final_links: [
+      {
+        approved_at: "2026-05-18T12:03:00Z",
+        final_link_id: 8001,
+        local_album: "Maintenance Window",
+        local_artist: "Patch Bay",
+        local_file_path: "Patch Bay/Loose Cable.flac",
+        local_title: "Loose Cable",
+        local_track_id: 503,
+        resolution_source: "direct",
+        source_streaming_track_id: 903,
+        streaming_track_id: 903,
+      },
+      {
+        approved_at: "2026-05-18T12:04:00Z",
+        final_link_id: 8002,
+        local_album: "Live Diagnostics",
+        local_artist: "Patch Bay",
+        local_file_path: "Patch Bay/Loose Cable Live.flac",
+        local_title: "Loose Cable Live",
+        local_track_id: 504,
+        resolution_source: "direct",
+        source_streaming_track_id: 904,
+        streaming_track_id: 904,
+      },
+    ],
+    first_group_track_ids: [903],
+    local_track_ids: [503, 504],
+    second_group_track_ids: [904],
+  },
+};
+
 const relationshipSuggestionsResponse: StreamingRelationshipSuggestionsResponse = {
   limit: 50,
   returned_count: 2,
@@ -184,7 +245,12 @@ function mockRelationshipFetch({
         accepted_at: "2026-05-18T12:30:00Z",
         detached_final_link_ids: [],
         relationship_id: 81,
-        relationship_type: match![1] === "92" ? "related" : "equivalent",
+        relationship_type:
+          typeof init?.body === "string"
+            ? JSON.parse(init.body).relationship_type
+            : match![1] === "92"
+              ? "related"
+              : "equivalent",
         status: "accepted",
         suggestion_id: Number(match![1]),
       }),
@@ -251,73 +317,33 @@ describe("StreamingRelationshipsView", () => {
     expect(fetchMock).toHaveBeenCalledWith("/api/streaming/relationships/suggestions?limit=50");
     expect(nightRunnerRow.compareDocumentPosition(looseCableRow)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
     expect(within(nightRunnerRow).getByText("99%")).toBeInTheDocument();
-    expect(within(nightRunnerRow).getAllByText("Equivalent")).toHaveLength(2);
+    expect(within(nightRunnerRow).getByText("Recommended Equivalent")).toBeInTheDocument();
+    expect(within(nightRunnerRow).getByRole("button", { name: "Equivalent suggestion 91" })).toBeInTheDocument();
+    expect(within(nightRunnerRow).getByRole("button", { name: "Related suggestion 91" })).toBeInTheDocument();
+    expect(within(nightRunnerRow).getByRole("button", { name: "Reject suggestion 91" })).toBeInTheDocument();
     expect(within(nightRunnerRow).getAllByText("ISRC")).toHaveLength(3);
     expect(within(nightRunnerRow).getByText("High confidence")).toBeInTheDocument();
     expect(within(nightRunnerRow).getAllByText("GBABC2400001")).toHaveLength(2);
     expect(within(nightRunnerRow).getAllByText("3:34")).toHaveLength(2);
     expect(within(nightRunnerRow).getAllByText("No local link")).toHaveLength(2);
     expect(within(looseCableRow).getByText("73%")).toBeInTheDocument();
-    expect(within(looseCableRow).getAllByText("Related")).toHaveLength(2);
+    expect(within(looseCableRow).getByText("Recommended Related")).toBeInTheDocument();
+    expect(within(looseCableRow).getByRole("button", { name: "Equivalent suggestion 92" })).toBeInTheDocument();
+    expect(within(looseCableRow).getByRole("button", { name: "Related suggestion 92" })).toBeInTheDocument();
+    expect(within(looseCableRow).getByRole("button", { name: "Reject suggestion 92" })).toBeInTheDocument();
     expect(within(looseCableRow).getByText("fuzzy")).toBeInTheDocument();
     expect(within(looseCableRow).getByText("Medium confidence")).toBeInTheDocument();
     expect(within(looseCableRow).getAllByText("Unavailable")).toHaveLength(4);
   });
 
-  it("filters all, equivalent, and related relationship queues", async () => {
-    const fetchMock = createMockApi()
-      .get(/^\/api\/streaming\/relationships\/suggestions(?:\?.*)?$/, ({ url }) => {
-        const params = new URL(url, "http://localhost").searchParams;
-        const relationshipType = params.get("relationship_type");
-
-        if (relationshipType === "equivalent") {
-          return jsonResponse({
-            limit: 50,
-            returned_count: 1,
-            suggestions: [equivalentSuggestion],
-            total_count: 1,
-          });
-        }
-
-        if (relationshipType === "related") {
-          return jsonResponse({
-            limit: 50,
-            returned_count: 1,
-            suggestions: [relatedSuggestion],
-            total_count: 1,
-          });
-        }
-
-        return jsonResponse(relationshipSuggestionsResponse);
-      })
-      .mockFetch();
+  it("renders a unified relationship queue without type filters", async () => {
+    mockRelationshipFetch();
 
     renderStreamingRelationshipsView();
 
-    const filters = await screen.findByRole("group", { name: "Relationship suggestion filter" });
-    expect(within(filters).getByRole("button", { name: "All" })).toHaveAttribute("aria-pressed", "true");
     expect(await screen.findByRole("listitem", { name: "Suggestion 91: Night Runner to Night Runner" })).toBeInTheDocument();
     expect(screen.getByRole("listitem", { name: "Suggestion 92: Loose Cable to Loose Cable Live" })).toBeInTheDocument();
-
-    fireEvent.click(within(filters).getByRole("button", { name: "Equivalent" }));
-    await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledWith(
-        "/api/streaming/relationships/suggestions?limit=50&relationship_type=equivalent",
-      );
-    });
-    expect(await screen.findByRole("listitem", { name: "Suggestion 91: Night Runner to Night Runner" })).toBeInTheDocument();
-    expect(screen.queryByRole("listitem", { name: "Suggestion 92: Loose Cable to Loose Cable Live" })).not.toBeInTheDocument();
-    expect(within(filters).getByRole("button", { name: "Equivalent" })).toHaveAttribute("aria-pressed", "true");
-
-    fireEvent.click(within(filters).getByRole("button", { name: "Related" }));
-    await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledWith(
-        "/api/streaming/relationships/suggestions?limit=50&relationship_type=related",
-      );
-    });
-    expect(await screen.findByRole("listitem", { name: "Suggestion 92: Loose Cable to Loose Cable Live" })).toBeInTheDocument();
-    expect(screen.queryByRole("listitem", { name: "Suggestion 91: Night Runner to Night Runner" })).not.toBeInTheDocument();
-    expect(within(filters).getByRole("button", { name: "Related" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.queryByRole("group", { name: "Relationship suggestion filter" })).not.toBeInTheDocument();
   });
 
   it("shows when only the top pending suggestions are returned", async () => {
@@ -419,9 +445,15 @@ describe("StreamingRelationshipsView", () => {
     fireEvent.click(screen.getByRole("button", { name: "Related suggestion 92" }));
 
     await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledWith("/api/streaming/relationships/suggestions/92/accept", { method: "POST" });
+      expect(fetchMock).toHaveBeenCalledWith("/api/streaming/relationships/suggestions/92/accept", {
+        body: JSON.stringify({ relationship_type: "related" }),
+        headers: {
+          "Content-Type": "application/json",
+        },
+        method: "POST",
+      });
     });
-    expect(relatedAcceptInit?.body).toBeUndefined();
+    expect(relatedAcceptInit?.body).toBe(JSON.stringify({ relationship_type: "related" }));
   });
 
   it("rejects suggestions with optimistic removal", async () => {
@@ -454,7 +486,7 @@ describe("StreamingRelationshipsView", () => {
     );
   });
 
-  it("shows winner selection only for equivalent conflicts and submits the chosen link", async () => {
+  it("shows winner selection for equivalent conflicts and submits the chosen equivalent type", async () => {
     let acceptInit: RequestInit | undefined;
     let resolveAccept: (response: Response) => void = () => {};
     const acceptPromise = new Promise<Response>((resolve) => {
@@ -492,7 +524,7 @@ describe("StreamingRelationshipsView", () => {
 
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith("/api/streaming/relationships/suggestions/93/accept", {
-        body: JSON.stringify({ winning_final_link_id: 7002 }),
+        body: JSON.stringify({ relationship_type: "equivalent", winning_final_link_id: 7002 }),
         headers: {
           "Content-Type": "application/json",
         },
@@ -500,7 +532,7 @@ describe("StreamingRelationshipsView", () => {
       });
       expect(screen.queryByRole("listitem", { name: "Suggestion 93: Night Runner to Night Runner" })).not.toBeInTheDocument();
     });
-    expect(acceptInit?.body).toBe(JSON.stringify({ winning_final_link_id: 7002 }));
+    expect(acceptInit?.body).toBe(JSON.stringify({ relationship_type: "equivalent", winning_final_link_id: 7002 }));
 
     resolveAccept(
       jsonResponse({
@@ -512,6 +544,52 @@ describe("StreamingRelationshipsView", () => {
         suggestion_id: 93,
       }),
     );
+  });
+
+  it("does not send a conflict winner when the chosen action is related", async () => {
+    let acceptInit: RequestInit | undefined;
+    const fetchMock = mockRelationshipFetch({
+      acceptHandler: (_suggestionId, init) => {
+        acceptInit = init;
+
+        return jsonResponse({
+          accepted_at: "2026-05-18T12:30:00Z",
+          detached_final_link_ids: [],
+          relationship_id: 84,
+          relationship_type: "related",
+          status: "accepted",
+          suggestion_id: 94,
+        });
+      },
+      response: {
+        limit: 50,
+        returned_count: 1,
+        suggestions: [conflictingRelatedSuggestion],
+        total_count: 1,
+      },
+    });
+
+    renderStreamingRelationshipsView();
+
+    const conflictRow = await screen.findByRole("listitem", {
+      name: "Suggestion 94: Loose Cable to Loose Cable Live",
+    });
+
+    expect(within(conflictRow).getByText("Recommended Related")).toBeInTheDocument();
+    expect(within(conflictRow).getByText("Choose winning local link")).toBeInTheDocument();
+
+    fireEvent.click(within(conflictRow).getByRole("button", { name: "Related suggestion 94" }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith("/api/streaming/relationships/suggestions/94/accept", {
+        body: JSON.stringify({ relationship_type: "related" }),
+        headers: {
+          "Content-Type": "application/json",
+        },
+        method: "POST",
+      });
+    });
+    expect(acceptInit?.body).toBe(JSON.stringify({ relationship_type: "related" }));
   });
 
   it("restores rows and shows inline errors when accept or reject mutations fail", async () => {

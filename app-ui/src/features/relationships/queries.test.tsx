@@ -198,7 +198,7 @@ describe("streaming relationship queries", () => {
     });
   });
 
-  it("accepts a streaming relationship suggestion with an optional conflict winner", async () => {
+  it("accepts a streaming relationship suggestion with a chosen type and optional conflict winner", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({
       ok: true,
       json: async () => ({
@@ -213,6 +213,7 @@ describe("streaming relationship queries", () => {
 
     await expect(
       acceptStreamingRelationshipSuggestion({
+        relationship_type: "equivalent",
         suggestionId: 91,
         winning_final_link_id: 7001,
       }),
@@ -225,7 +226,7 @@ describe("streaming relationship queries", () => {
       suggestion_id: 91,
     });
     expect(fetchMock).toHaveBeenCalledWith("/api/streaming/relationships/suggestions/91/accept", {
-      body: JSON.stringify({ winning_final_link_id: 7001 }),
+      body: JSON.stringify({ relationship_type: "equivalent", winning_final_link_id: 7001 }),
       headers: {
         "Content-Type": "application/json",
       },

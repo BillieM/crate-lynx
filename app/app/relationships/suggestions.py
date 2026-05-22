@@ -112,6 +112,10 @@ class _EquivalentSafetyCheck:
             self.version_conflict or self.duration_conflict or self.album_conflict
         )
 
+    @property
+    def has_related_signal(self) -> bool:
+        return self.version_conflict or self.duration_conflict
+
 
 class StreamingRelationshipSuggestionGenerator:
     def __init__(
@@ -409,7 +413,7 @@ def _fuzzy_candidates(
                 )
                 continue
 
-            if score >= RELATED_SUGGESTION_SCORE_MIN and not safety.is_safe:
+            if score >= RELATED_SUGGESTION_SCORE_MIN and safety.has_related_signal:
                 bucket_candidates.append(
                     GeneratedStreamingRelationshipSuggestion(
                         lower_track_id=pair.lower_track_id,

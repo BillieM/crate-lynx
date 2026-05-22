@@ -233,6 +233,7 @@ class StreamingRelationshipSuggestionStore:
         self,
         suggestion_id: int,
         *,
+        relationship_type: str | None = None,
         winning_final_link_id: int | None = None,
     ) -> AcceptStreamingRelationshipSuggestionResult:
         accepted_at = datetime.now(UTC)
@@ -246,7 +247,12 @@ class StreamingRelationshipSuggestionStore:
 
             lower_track_id = int(suggestion["lower_track_id"])
             higher_track_id = int(suggestion["higher_track_id"])
-            relationship_type = str(suggestion["relationship_type"])
+            accepted_relationship_type = (
+                str(suggestion["relationship_type"])
+                if relationship_type is None
+                else relationship_type
+            )
+            _validate_relationship_type(accepted_relationship_type)
             if _has_existing_relationship(
                 connection,
                 lower_track_id=lower_track_id,
@@ -260,7 +266,7 @@ class StreamingRelationshipSuggestionStore:
 
             detached_final_link_ids: tuple[int, ...] = ()
             affected_playlist_ids: tuple[int, ...] = ()
-            if relationship_type == STREAMING_RELATIONSHIP_TYPE_EQUIVALENT:
+            if accepted_relationship_type == STREAMING_RELATIONSHIP_TYPE_EQUIVALENT:
                 affected_playlist_ids = affected_full_sync_playlist_ids_for_equivalence(
                     connection,
                     lower_track_id,
@@ -282,7 +288,7 @@ class StreamingRelationshipSuggestionStore:
                 connection,
                 lower_track_id=lower_track_id,
                 higher_track_id=higher_track_id,
-                relationship_type=relationship_type,
+                relationship_type=accepted_relationship_type,
                 accepted_at=accepted_at,
             )
             if detached_final_link_ids:
@@ -304,7 +310,7 @@ class StreamingRelationshipSuggestionStore:
         return AcceptStreamingRelationshipSuggestionResult(
             suggestion_id=suggestion_id,
             relationship_id=relationship_id,
-            relationship_type=relationship_type,
+            relationship_type=accepted_relationship_type,
             accepted_at=accepted_at,
             detached_final_link_ids=detached_final_link_ids,
             affected_playlist_ids=affected_playlist_ids,
@@ -431,22 +437,21 @@ def _suggestion_record(
     second_link = link_contexts.for_resolved(resolver.resolve(higher_track_id))
     conflict = None
     conflict_state = CONFLICT_STATE_NONE
-    if row["relationship_type"] == STREAMING_RELATIONSHIP_TYPE_EQUIVALENT:
-        detected_conflict = resolver.detect_equivalent_acceptance_conflict(
-            lower_track_id,
-            higher_track_id,
+    detected_conflict = resolver.detect_equivalent_acceptance_conflict(
+        lower_track_id,
+        higher_track_id,
+    )
+    if detected_conflict is not None:
+        conflict_state = CONFLICT_STATE_DIFFERENT_LOCAL_LINKS
+        conflict = StreamingRelationshipConflictContext(
+            first_group_track_ids=detected_conflict.first_group_track_ids,
+            second_group_track_ids=detected_conflict.second_group_track_ids,
+            local_track_ids=detected_conflict.local_track_ids,
+            final_links=tuple(
+                link_contexts.for_final_link(final_link)
+                for final_link in detected_conflict.final_links
+            ),
         )
-        if detected_conflict is not None:
-            conflict_state = CONFLICT_STATE_DIFFERENT_LOCAL_LINKS
-            conflict = StreamingRelationshipConflictContext(
-                first_group_track_ids=detected_conflict.first_group_track_ids,
-                second_group_track_ids=detected_conflict.second_group_track_ids,
-                local_track_ids=detected_conflict.local_track_ids,
-                final_links=tuple(
-                    link_contexts.for_final_link(final_link)
-                    for final_link in detected_conflict.final_links
-                ),
-            )
 
     return StreamingRelationshipSuggestionRecord(
         id=int(row["id"]),
