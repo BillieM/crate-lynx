@@ -1,6 +1,6 @@
 import { useMemo, useState, type ReactNode } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { GitBranch, Link2, RefreshCw, XCircle } from "lucide-react";
+import { useMutation, useQueryClient, type InfiniteData } from "@tanstack/react-query";
+import { ChevronDown, GitBranch, Link2, RefreshCw, XCircle } from "lucide-react";
 
 import { ActionButton } from "../../components/ActionButton";
 import { EmptyStateCard } from "../../components/EmptyStateCard";
@@ -8,11 +8,11 @@ import { Pill, type PillTone } from "../../components/Pill";
 import { formatDuration, getMatchMethodLabel } from "../../lib/formatters";
 import { createOptimisticMutation } from "../../lib/optimisticMutation";
 import { controlClasses, layoutClasses, surfaceClasses, textClasses } from "../../styles/componentClasses";
+import { MatchInspectionPanel } from "../matching/MatchInspectionPanel";
 import {
   acceptStreamingRelationshipSuggestion,
   type AcceptStreamingRelationshipSuggestionInput,
   type AcceptStreamingRelationshipSuggestionResponse,
-  DEFAULT_STREAMING_RELATIONSHIP_SUGGESTION_LIMIT,
   generateStreamingRelationshipSuggestions,
   invalidateStreamingRelationshipMutationQueries,
   invalidateStreamingRelationshipSuggestionQueries,
@@ -21,11 +21,10 @@ import {
   type StreamingRelationshipSuggestion,
   type StreamingRelationshipSuggestionsResponse,
   streamingRelationshipQueryKeys,
-  useStreamingRelationshipSuggestionsQuery,
+  useStreamingRelationshipSuggestionsInfiniteQuery,
 } from "./queries";
 
-const relationshipSuggestionsQueryKey = streamingRelationshipQueryKeys.suggestions();
-const relationshipSuggestionPageSize = DEFAULT_STREAMING_RELATIONSHIP_SUGGESTION_LIMIT;
+const relationshipSuggestionsQueryKey = streamingRelationshipQueryKeys.suggestionPages();
 
 type RelationshipTrack = StreamingRelationshipSuggestion["first_track"];
 type RelationshipLocalLink = NonNullable<StreamingRelationshipSuggestion["first_link"]>;
@@ -42,21 +41,32 @@ function sortRelationshipSuggestions(suggestions: StreamingRelationshipSuggestio
 }
 
 function removeRelationshipSuggestionFromCache(
-  current: StreamingRelationshipSuggestionsResponse | undefined,
+  current: InfiniteData<StreamingRelationshipSuggestionsResponse> | undefined,
   suggestionId: number | string,
-): StreamingRelationshipSuggestionsResponse | undefined {
+): InfiniteData<StreamingRelationshipSuggestionsResponse> | undefined {
   if (!current) {
     return current;
   }
 
-  const suggestions = current.suggestions.filter((suggestion) => String(suggestion.id) !== String(suggestionId));
-  const removedCount = current.suggestions.length - suggestions.length;
+  let totalRemovedCount = 0;
+  const nextPages = current.pages.map((page) => {
+    const suggestions = page.suggestions.filter((suggestion) => String(suggestion.id) !== String(suggestionId));
+    const pageRemovedCount = page.suggestions.length - suggestions.length;
+    totalRemovedCount += pageRemovedCount;
+
+    return {
+      ...page,
+      returned_count: Math.max(0, page.returned_count - pageRemovedCount),
+      suggestions,
+    };
+  });
 
   return {
     ...current,
-    suggestions,
-    returned_count: Math.max(0, current.returned_count - removedCount),
-    total_count: Math.max(0, current.total_count - removedCount),
+    pages: nextPages.map((page) => ({
+      ...page,
+      total_count: Math.max(0, page.total_count - totalRemovedCount),
+    })),
   };
 }
 
@@ -253,19 +263,33 @@ function WinnerSelection({
   );
 }
 
+function localAudiosForSuggestion(suggestion: StreamingRelationshipSuggestion) {
+  const seenLocalTrackIds = new Set<number>();
+  return [suggestion.first_link, suggestion.second_link]
+    .filter((link): link is RelationshipLocalLink => link !== null)
+    .filter((link) => {
+      if (seenLocalTrackIds.has(link.local_track_id)) {
+        return false;
+      }
+      seenLocalTrackIds.add(link.local_track_id);
+      return true;
+    })
+    .map((link) => ({
+      label: `Listen to ${getLocalLinkLabel(link)}`,
+      localTrackId: link.local_track_id,
+    }));
+}
+
 export function StreamingRelationshipsView() {
   const queryClient = useQueryClient();
   const [selectedWinnerIds, setSelectedWinnerIds] = useState<Record<number, number>>({});
-  const [suggestionLimit, setSuggestionLimit] = useState(relationshipSuggestionPageSize);
-  const suggestionsQuery = useStreamingRelationshipSuggestionsQuery({
-    limit: suggestionLimit,
-  });
+  const suggestionsQuery = useStreamingRelationshipSuggestionsInfiniteQuery();
   const acceptMutation = useMutation({
     ...createOptimisticMutation<
       AcceptStreamingRelationshipSuggestionResponse,
       Error,
       AcceptStreamingRelationshipSuggestionInput,
-      StreamingRelationshipSuggestionsResponse
+      InfiniteData<StreamingRelationshipSuggestionsResponse>
     >({
       mutationFn: acceptStreamingRelationshipSuggestion,
       optimisticUpdate: (current, variables) =>
@@ -282,7 +306,7 @@ export function StreamingRelationshipsView() {
       RejectStreamingRelationshipSuggestionResponse,
       Error,
       number | string,
-      StreamingRelationshipSuggestionsResponse
+      InfiniteData<StreamingRelationshipSuggestionsResponse>
     >({
       mutationFn: rejectStreamingRelationshipSuggestion,
       optimisticUpdate: removeRelationshipSuggestionFromCache,
@@ -299,10 +323,14 @@ export function StreamingRelationshipsView() {
       await invalidateStreamingRelationshipSuggestionQueries(queryClient);
     },
   });
-  const suggestions = suggestionsQuery.data?.suggestions;
-  const suggestionCount = suggestions?.length ?? 0;
-  const totalSuggestionCount = suggestionsQuery.data?.total_count ?? suggestionCount;
-  const hasMoreSuggestions = totalSuggestionCount > suggestionCount;
+  const suggestions = useMemo(
+    () => suggestionsQuery.data?.pages.flatMap((page) => page.suggestions) ?? [],
+    [suggestionsQuery.data],
+  );
+  const suggestionCount = suggestions.length;
+  const totalSuggestionCount = suggestionsQuery.data?.pages[0]?.total_count ?? suggestionCount;
+  const hasMoreSuggestions = suggestionsQuery.hasNextPage;
+  const hasUnloadedSuggestions = totalSuggestionCount > suggestionCount;
   const sortedSuggestions = useMemo(() => sortRelationshipSuggestions(suggestions ?? []), [suggestions]);
   const activeAcceptSuggestionId = acceptMutation.isPending ? String(acceptMutation.variables.suggestionId) : null;
   const activeAcceptRelationshipType = acceptMutation.isPending ? acceptMutation.variables.relationship_type ?? null : null;
@@ -317,7 +345,7 @@ export function StreamingRelationshipsView() {
           <h2 className={textClasses.sectionTitle}>Relationship queue</h2>
           <p className={`mt-1 ${textClasses.bodyMuted}`}>
             {suggestionsQuery.isSuccess
-              ? hasMoreSuggestions
+              ? hasUnloadedSuggestions
                 ? `Showing ${suggestionCount} of ${totalSuggestionCount} pending streaming-to-streaming suggestions sorted by confidence.`
                 : `${suggestionCount} pending streaming-to-streaming suggestions sorted by confidence.`
               : "Streaming-to-streaming suggestions sorted by confidence."}
@@ -418,10 +446,12 @@ export function StreamingRelationshipsView() {
         <div className="flex justify-center py-3">
           <ActionButton
             className={`${controlClasses.actionButtonCompact} inline-flex items-center justify-center gap-1.5`}
-            disabled={suggestionsQuery.isFetching}
-            onClick={() => setSuggestionLimit((current) => current + relationshipSuggestionPageSize)}
+            disabled={suggestionsQuery.isFetchingNextPage}
+            onClick={() => {
+              void suggestionsQuery.fetchNextPage();
+            }}
           >
-            {suggestionsQuery.isFetching ? "Loading..." : "Load more"}
+            {suggestionsQuery.isFetchingNextPage ? "Loading..." : "Load more"}
           </ActionButton>
         </div>
       ) : null}
@@ -454,6 +484,7 @@ function RelationshipSuggestionRow({
   selectedWinnerId: number | null;
   suggestion: StreamingRelationshipSuggestion;
 }) {
+  const [isExpanded, setIsExpanded] = useState(false);
   const recommendationLabel = getRelationshipTypeLabel(suggestion.relationship_type);
   const hasEquivalentConflict = suggestion.conflict_state === "different_local_links";
   const canAcceptEquivalent = !hasEquivalentConflict || selectedWinnerId !== null;
@@ -515,9 +546,39 @@ function RelationshipSuggestionRow({
             selectedWinnerId={selectedWinnerId}
             suggestion={suggestion}
           />
+          {isExpanded ? (
+            <MatchInspectionPanel
+              localAudios={localAudiosForSuggestion(suggestion)}
+              streamingTracks={[
+                {
+                  artist: suggestion.first_track.artist,
+                  providerTrackId: suggestion.first_track.provider_track_id,
+                  title: suggestion.first_track.title,
+                },
+                {
+                  artist: suggestion.second_track.artist,
+                  providerTrackId: suggestion.second_track.provider_track_id,
+                  title: suggestion.second_track.title,
+                },
+              ]}
+            />
+          ) : null}
         </div>
 
         <div className="flex flex-wrap items-center gap-2 border-t border-ctp-surface0 pt-2 xl:flex-col xl:items-stretch xl:border-t-0 xl:pt-0">
+          <ActionButton
+            aria-expanded={isExpanded}
+            className={`${controlClasses.actionButtonCompact} inline-flex items-center justify-center gap-1.5`}
+            onClick={() => setIsExpanded((current) => !current)}
+          >
+            <ChevronDown
+              aria-hidden="true"
+              className={`h-3.5 w-3.5 transition-transform ${isExpanded ? "rotate-180" : ""}`}
+              strokeWidth={1.9}
+            />
+            <span>{isExpanded ? "Hide details" : "Inspect"}</span>
+            <span className="sr-only"> suggestion {suggestion.id}</span>
+          </ActionButton>
           <ActionButton
             className={`${controlClasses.actionButtonCompact} inline-flex items-center justify-center gap-1.5`}
             disabled={isActionPending || !canAcceptEquivalent}

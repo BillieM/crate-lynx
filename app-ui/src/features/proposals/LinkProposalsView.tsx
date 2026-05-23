@@ -1,25 +1,26 @@
-import { useMemo, type ReactNode } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { CheckCircle2, XCircle } from "lucide-react";
+import { useMemo, useState, type ReactNode } from "react";
+import { useMutation, useQueryClient, type InfiniteData } from "@tanstack/react-query";
+import { CheckCircle2, ChevronDown, XCircle } from "lucide-react";
 import { ActionButton } from "../../components/ActionButton";
 import { EmptyStateCard } from "../../components/EmptyStateCard";
 import { Pill, type PillTone } from "../../components/Pill";
 import { getLocalTrackLabel, getMatchMethodLabel } from "../../lib/formatters";
 import { createOptimisticMutation, type OptimisticMutationSnapshot } from "../../lib/optimisticMutation";
 import { controlClasses, layoutClasses, surfaceClasses, textClasses } from "../../styles/componentClasses";
-import { LocalTrackAudioPreview } from "../localTracks/LocalTrackAudioPreview";
+import { MatchInspectionPanel } from "../matching/MatchInspectionPanel";
 import {
   type ApproveLinkProposalResponse,
   approveLinkProposal,
   type LinkProposal,
   type LinkProposalsResponse,
   invalidatePlaylistLinkQueries,
+  playlistQueryKeys,
   rejectLinkProposal,
   type RejectLinkProposalResponse,
-  useLinkProposalsQuery,
+  useLinkProposalsInfiniteQuery,
 } from "../playlists/queries";
 
-const proposalsQueryKey = ["playlists", "proposals"] as const;
+const proposalsQueryKey = playlistQueryKeys.proposalPages();
 
 function clampPercentage(matchPercentage: number) {
   return Math.max(0, Math.min(100, matchPercentage));
@@ -36,31 +37,55 @@ function sortLinkProposals(proposals: LinkProposal[]) {
 }
 
 function removeProposalCandidateFromCache(
-  current: LinkProposalsResponse | undefined,
+  current: InfiniteData<LinkProposalsResponse> | undefined,
   proposalId: number | string,
-  snapshots: OptimisticMutationSnapshot<LinkProposalsResponse>[],
+  snapshots: OptimisticMutationSnapshot<InfiniteData<LinkProposalsResponse>>[],
   options: { removeLocalTrackGroup: boolean },
-): LinkProposalsResponse | undefined {
+): InfiniteData<LinkProposalsResponse> | undefined {
   if (!current) {
     return current;
   }
 
   const targetLocalTrackIds = new Set(
     snapshots.flatMap(([, data]) =>
-      data?.proposals
-        .filter((proposal) => String(proposal.id) === String(proposalId))
-        .map((proposal) => proposal.local_track_id) ?? [],
+      data?.pages.flatMap((page) =>
+        page.proposals
+          .filter((proposal) => String(proposal.id) === String(proposalId))
+          .map((proposal) => proposal.local_track_id),
+      ) ?? [],
     ),
   );
-
-  return {
-    proposals: current.proposals.filter((proposal) => {
+  let totalRemovedCount = 0;
+  const nextPages = current.pages.map((page) => {
+    let pageRemovedCount = 0;
+    const proposals = page.proposals.filter((proposal) => {
       if (String(proposal.id) === String(proposalId)) {
+        pageRemovedCount += 1;
         return false;
       }
 
-      return !options.removeLocalTrackGroup || !targetLocalTrackIds.has(proposal.local_track_id);
-    }),
+      if (options.removeLocalTrackGroup && targetLocalTrackIds.has(proposal.local_track_id)) {
+        pageRemovedCount += 1;
+        return false;
+      }
+
+      return true;
+    });
+    totalRemovedCount += pageRemovedCount;
+
+    return {
+      ...page,
+      proposals,
+      returned_count: Math.max(0, page.returned_count - pageRemovedCount),
+    };
+  });
+
+  return {
+    ...current,
+    pages: nextPages.map((page) => ({
+      ...page,
+      total_count: Math.max(0, page.total_count - totalRemovedCount),
+    })),
   };
 }
 
@@ -166,9 +191,14 @@ function getConfidenceDotColorClass(confidenceBand: LinkProposal["confidence_ban
 
 export function LinkProposalsView() {
   const queryClient = useQueryClient();
-  const proposalsQuery = useLinkProposalsQuery();
+  const proposalsQuery = useLinkProposalsInfiniteQuery();
   const approveMutation = useMutation({
-    ...createOptimisticMutation<ApproveLinkProposalResponse, Error, number | string, LinkProposalsResponse>({
+    ...createOptimisticMutation<
+      ApproveLinkProposalResponse,
+      Error,
+      number | string,
+      InfiniteData<LinkProposalsResponse>
+    >({
       mutationFn: approveLinkProposal,
       optimisticUpdate: (current, proposalId, snapshots) =>
         removeProposalCandidateFromCache(current, proposalId, snapshots, { removeLocalTrackGroup: true }),
@@ -180,7 +210,12 @@ export function LinkProposalsView() {
     },
   });
   const rejectMutation = useMutation({
-    ...createOptimisticMutation<RejectLinkProposalResponse, Error, number | string, LinkProposalsResponse>({
+    ...createOptimisticMutation<
+      RejectLinkProposalResponse,
+      Error,
+      number | string,
+      InfiniteData<LinkProposalsResponse>
+    >({
       mutationFn: rejectLinkProposal,
       optimisticUpdate: (current, proposalId, snapshots) =>
         removeProposalCandidateFromCache(current, proposalId, snapshots, { removeLocalTrackGroup: false }),
@@ -191,8 +226,14 @@ export function LinkProposalsView() {
       await invalidatePlaylistLinkQueries(queryClient);
     },
   });
-  const proposals = proposalsQuery.data?.proposals;
-  const proposalCount = proposals?.length ?? 0;
+  const proposals = useMemo(
+    () => proposalsQuery.data?.pages.flatMap((page) => page.proposals) ?? [],
+    [proposalsQuery.data],
+  );
+  const proposalCount = proposals.length;
+  const totalProposalCount = proposalsQuery.data?.pages[0]?.total_count ?? proposalCount;
+  const hasMoreProposals = proposalsQuery.hasNextPage;
+  const hasUnloadedProposals = totalProposalCount > proposalCount;
   const sortedProposals = useMemo(() => sortLinkProposals(proposals ?? []), [proposals]);
   const activeApproveProposalId = approveMutation.isPending ? String(approveMutation.variables) : null;
   const activeRejectProposalId = rejectMutation.isPending ? String(rejectMutation.variables) : null;
@@ -205,7 +246,9 @@ export function LinkProposalsView() {
           <h2 className={textClasses.sectionTitle}>Proposal queue</h2>
           <p className={`mt-1 ${textClasses.bodyMuted}`}>
             {proposalsQuery.isSuccess
-              ? `${proposalCount} pending suggestions sorted by confidence.`
+              ? hasUnloadedProposals
+                ? `Showing ${proposalCount} of ${totalProposalCount} pending suggestions sorted by confidence.`
+                : `${proposalCount} pending suggestions sorted by confidence.`
               : "Pending suggestions sorted by confidence."}
           </p>
         </div>
@@ -267,6 +310,19 @@ export function LinkProposalsView() {
           />
         ))}
       </ul>
+      {hasMoreProposals ? (
+        <div className="flex justify-center py-3">
+          <ActionButton
+            className={`${controlClasses.actionButtonCompact} inline-flex items-center justify-center gap-1.5`}
+            disabled={proposalsQuery.isFetchingNextPage}
+            onClick={() => {
+              void proposalsQuery.fetchNextPage();
+            }}
+          >
+            {proposalsQuery.isFetchingNextPage ? "Loading..." : "Load more"}
+          </ActionButton>
+        </div>
+      ) : null}
     </div>,
   );
 }
@@ -288,6 +344,7 @@ function ProposalRow({
   onReject: (proposalId: number) => void;
   proposal: LinkProposal;
 }) {
+  const [isExpanded, setIsExpanded] = useState(false);
   const scorePercentage = getProposalScorePercentage(proposal.score);
   const actionError =
     failedApproveProposalId === String(proposal.id)
@@ -354,13 +411,37 @@ function ProposalRow({
               streamingValue={proposal.streaming_album}
             />
           </dl>
-          <LocalTrackAudioPreview
-            label={`Listen to ${proposal.local_title ?? getLocalTrackLabel(proposal)}`}
-            localTrackId={proposal.local_track_id}
-          />
+          {isExpanded ? (
+            <MatchInspectionPanel
+              localAudio={{
+                label: `Listen to ${proposal.local_title ?? getLocalTrackLabel(proposal)}`,
+                localTrackId: proposal.local_track_id,
+              }}
+              streamingTracks={[
+                {
+                  artist: proposal.streaming_artist,
+                  providerTrackId: proposal.streaming_provider_track_id,
+                  title: proposal.streaming_title,
+                },
+              ]}
+            />
+          ) : null}
         </div>
 
         <div className="flex flex-wrap items-center gap-2 border-t border-ctp-surface0 pt-2 xl:flex-col xl:items-stretch xl:border-t-0 xl:pt-0">
+          <ActionButton
+            aria-expanded={isExpanded}
+            className={`${controlClasses.actionButtonCompact} inline-flex items-center justify-center gap-1.5`}
+            onClick={() => setIsExpanded((current) => !current)}
+          >
+            <ChevronDown
+              aria-hidden="true"
+              className={`h-3.5 w-3.5 transition-transform ${isExpanded ? "rotate-180" : ""}`}
+              strokeWidth={1.9}
+            />
+            <span>{isExpanded ? "Hide details" : "Inspect"}</span>
+            <span className="sr-only"> proposal {proposal.id}</span>
+          </ActionButton>
           <ActionButton
             className={`${controlClasses.actionButtonCompact} inline-flex items-center justify-center gap-1.5`}
             disabled={isActionPending}

@@ -143,6 +143,8 @@ const activePlaylistSyncEndpoint = (playlistId: number | string) => `/api/stream
 const metadataRefreshEndpoint = "/api/streaming/accounts/4/refresh-metadata";
 const metadataRefreshResponse = { account_id: 4, job_id: "metadata-refresh-job-4" };
 const linkProposalsResponse: LinkProposalsResponse = {
+  limit: 50,
+  next_cursor: null,
   proposals: [
     {
       id: 44,
@@ -152,6 +154,7 @@ const linkProposalsResponse: LinkProposalsResponse = {
       local_file_path: "Frame Delay/Night Runner.mp3",
       local_title: "Night Runner File",
       streaming_track_id: 901,
+      streaming_provider_track_id: "ytm-901",
       streaming_title: "Night Runner",
       streaming_artist: "Frame Delay",
       streaming_album: "Late Night Drive",
@@ -169,6 +172,7 @@ const linkProposalsResponse: LinkProposalsResponse = {
       local_file_path: "Static Gate/Pending Signal.mp3",
       local_title: null,
       streaming_track_id: 902,
+      streaming_provider_track_id: "ytm-902",
       streaming_title: "Pending Signal",
       streaming_artist: "Static Gate",
       streaming_album: null,
@@ -186,6 +190,7 @@ const linkProposalsResponse: LinkProposalsResponse = {
       local_file_path: "Patch Bay/Loose Cable.mp3",
       local_title: "Loose Cable",
       streaming_track_id: 903,
+      streaming_provider_track_id: "ytm-903",
       streaming_title: "Loose Cable",
       streaming_artist: "Patch Bay",
       streaming_album: "Maintenance Window",
@@ -196,9 +201,12 @@ const linkProposalsResponse: LinkProposalsResponse = {
       confidence_band: "low",
     },
   ],
+  returned_count: 3,
+  total_count: 3,
 };
 const streamingRelationshipSuggestionsResponse: StreamingRelationshipSuggestionsResponse = {
   limit: 50,
+  next_cursor: null,
   returned_count: 2,
   suggestions: [
     {
@@ -892,7 +900,7 @@ describe("App", () => {
       linkProposalsHandler: () =>
         ({
           ok: true,
-          json: async () => ({ proposals: [] }),
+          json: async () => ({ limit: 50, next_cursor: null, proposals: [], returned_count: 0, total_count: 0 }),
         }) as Response,
     });
 

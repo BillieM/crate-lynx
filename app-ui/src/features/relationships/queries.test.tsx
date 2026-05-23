@@ -30,6 +30,7 @@ function createWrapper() {
 
 const relationshipSuggestionsResponse: StreamingRelationshipSuggestionsResponse = {
   limit: 50,
+  next_cursor: null,
   returned_count: 1,
   suggestions: [
     {
@@ -129,11 +130,14 @@ describe("streaming relationship queries", () => {
   it("builds stable query and invalidation keys", () => {
     expect(streamingRelationshipQueryKeys.all).toEqual(["streaming-relationships"]);
     expect(streamingRelationshipQueryKeys.suggestions()).toEqual(["streaming-relationships", "suggestions"]);
+    expect(streamingRelationshipQueryKeys.suggestionPages()).toEqual(["streaming-relationships", "suggestion-pages"]);
     expect(streamingRelationshipSuggestionInvalidationKeys()).toEqual([
       ["streaming-relationships", "suggestions"],
+      ["streaming-relationships", "suggestion-pages"],
     ]);
     expect(streamingRelationshipMutationInvalidationKeys()).toEqual([
       ["streaming-relationships", "suggestions"],
+      ["streaming-relationships", "suggestion-pages"],
       ["playlists"],
       ["maintenance", "missing-locally"],
     ]);

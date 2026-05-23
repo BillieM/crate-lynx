@@ -188,6 +188,7 @@ def test_list_relationship_suggestions_returns_metadata_links_and_conflicts(
         "total_count": 1,
         "returned_count": 1,
         "limit": 50,
+        "next_cursor": None,
     }
 
 
@@ -226,7 +227,63 @@ def test_list_relationship_suggestions_limits_returned_rows(
     assert response.total_count == 2
     assert response.returned_count == 1
     assert response.limit == 1
+    assert response.next_cursor is not None
     assert [suggestion.id for suggestion in response.suggestions] == [higher_score_id]
+
+
+def test_list_relationship_suggestions_uses_cursor_pagination(
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite:///{tmp_path / 'relationship-list-cursor.db'}"
+    engine = _create_relationship_router_engine(database_url)
+    test_data = factories.TestDataFactory(engine)
+    first_track_id, second_track_id = _streaming_pair(test_data)
+    third_track_id = test_data.streaming_track(
+        provider_track_id="ytm-3",
+        title="Track 3",
+    )
+    fourth_track_id = test_data.streaming_track(
+        provider_track_id="ytm-4",
+        title="Track 4",
+    )
+    fifth_track_id = test_data.streaming_track(
+        provider_track_id="ytm-5",
+        title="Track 5",
+    )
+    sixth_track_id = test_data.streaming_track(
+        provider_track_id="ytm-6",
+        title="Track 6",
+    )
+    first_id = test_data.streaming_relationship_suggestion(
+        first_track_id=first_track_id,
+        second_track_id=second_track_id,
+        score=0.99,
+    )
+    second_id = test_data.streaming_relationship_suggestion(
+        first_track_id=third_track_id,
+        second_track_id=fourth_track_id,
+        score=0.99,
+    )
+    third_id = test_data.streaming_relationship_suggestion(
+        first_track_id=fifth_track_id,
+        second_track_id=sixth_track_id,
+        score=0.75,
+    )
+
+    router = create_router(require_database_url=lambda: database_url)
+    endpoint = _route(router, "GET", "/streaming/relationships/suggestions").endpoint
+    first_page = _call_endpoint(endpoint, limit=2)
+    second_page = _call_endpoint(endpoint, cursor=first_page.next_cursor, limit=2)
+
+    assert first_page.total_count == 3
+    assert [suggestion.id for suggestion in first_page.suggestions] == [
+        first_id,
+        second_id,
+    ]
+    assert first_page.next_cursor is not None
+    assert second_page.total_count == 3
+    assert [suggestion.id for suggestion in second_page.suggestions] == [third_id]
+    assert second_page.next_cursor is None
 
 
 def test_list_relationship_suggestions_filters_by_relationship_type(
@@ -266,11 +323,12 @@ def test_list_relationship_suggestions_filters_by_relationship_type(
     assert response.total_count == 1
     assert response.returned_count == 1
     assert response.limit == 50
+    assert response.next_cursor is None
     assert [suggestion.id for suggestion in response.suggestions] == [related_id]
     assert response.suggestions[0].relationship_type == "related"
 
 
-def test_list_relationship_suggestions_hides_stale_resolved_relationships(
+def test_list_relationship_suggestions_does_not_prune_stale_rows(
     tmp_path: Path,
 ) -> None:
     database_url = f"sqlite:///{tmp_path / 'relationship-list-stale.db'}"
@@ -310,12 +368,12 @@ def test_list_relationship_suggestions_hides_stale_resolved_relationships(
         second_track_id=exact_second_id,
         relationship_type=STREAMING_RELATIONSHIP_TYPE_RELATED,
     )
-    test_data.streaming_relationship_suggestion(
+    equivalent_stale_id = test_data.streaming_relationship_suggestion(
         first_track_id=first_track_id,
         second_track_id=second_track_id,
         score=0.99,
     )
-    test_data.streaming_relationship_suggestion(
+    related_stale_id = test_data.streaming_relationship_suggestion(
         first_track_id=exact_first_id,
         second_track_id=exact_second_id,
         score=0.98,
@@ -329,12 +387,17 @@ def test_list_relationship_suggestions_hides_stale_resolved_relationships(
     router = create_router(require_database_url=lambda: database_url)
     response = _call_endpoint(
         _route(router, "GET", "/streaming/relationships/suggestions").endpoint,
-        limit=1,
+        limit=10,
     )
 
-    assert response.total_count == 1
-    assert response.returned_count == 1
-    assert [suggestion.id for suggestion in response.suggestions] == [fresh_id]
+    assert response.total_count == 3
+    assert response.returned_count == 3
+    assert response.next_cursor is None
+    assert [suggestion.id for suggestion in response.suggestions] == [
+        equivalent_stale_id,
+        related_stale_id,
+        fresh_id,
+    ]
 
 
 def test_accept_equivalent_suggestion_creates_relationship(

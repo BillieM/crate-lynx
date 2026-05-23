@@ -409,6 +409,42 @@ def test_generator_caps_duplicate_heavy_fuzzy_buckets() -> None:
     )
 
 
+def test_generator_applies_global_pending_suggestion_cap(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "app.relationships.suggestions.MAX_PENDING_RELATIONSHIP_SUGGESTIONS",
+        2,
+    )
+    engine = _create_generation_engine()
+    test_data = factories.TestDataFactory(engine)
+    account_id = test_data.streaming_account()
+    playlist_id = test_data.streaming_playlist(
+        account_id=account_id,
+        sync_mode=PLAYLIST_SYNC_MODE_FULL,
+    )
+    track_ids = [
+        test_data.streaming_track(
+            provider_track_id=f"global-cap-{index}",
+            title="Capped Song",
+            artist="Capped Artist",
+            isrc="GBUM72105976",
+        )
+        for index in range(4)
+    ]
+    for position, track_id in enumerate(track_ids, start=1):
+        test_data.playlist_membership(
+            playlist_id=playlist_id,
+            position=position,
+            streaming_track_id=track_id,
+        )
+
+    result = StreamingRelationshipSuggestionGenerator(engine=engine).generate()
+
+    suggestions = _suggestions(engine)
+    assert result.created_count == 2
+    assert len(suggestions) == 2
+    assert all(suggestion["score"] == 1.0 for suggestion in suggestions)
+
+
 def test_generator_skips_cross_title_fuzzy_pairs() -> None:
     engine = _create_generation_engine()
     test_data = factories.TestDataFactory(engine)

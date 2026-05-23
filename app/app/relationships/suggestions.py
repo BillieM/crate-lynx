@@ -38,8 +38,9 @@ from app.streaming.models import (
 MATCH_METHOD_ISRC = "isrc"
 MATCH_METHOD_TAGS = "tags"
 EQUIVALENT_SUGGESTION_SCORE_MIN = 0.94
-RELATED_SUGGESTION_SCORE_MIN = 0.90
-FUZZY_SUGGESTION_BUCKET_LIMIT = 12
+RELATED_SUGGESTION_SCORE_MIN = 0.93
+FUZZY_SUGGESTION_BUCKET_LIMIT = 5
+MAX_PENDING_RELATIONSHIP_SUGGESTIONS = 1000
 EQUIVALENT_DURATION_TOLERANCE_MS = 10_000
 ALBUM_CONFLICT_SIMILARITY_MAX = 0.98
 NEAR_TITLE_SIMILARITY_MIN = 0.90
@@ -114,7 +115,7 @@ class _EquivalentSafetyCheck:
 
     @property
     def has_related_signal(self) -> bool:
-        return self.version_conflict or self.duration_conflict
+        return self.version_conflict
 
 
 class StreamingRelationshipSuggestionGenerator:
@@ -302,11 +303,11 @@ def _relationship_candidates(
         sorted(
             candidate_by_pair.values(),
             key=lambda candidate: (
+                -candidate.score,
                 candidate.lower_track_id,
                 candidate.higher_track_id,
-                -candidate.score,
             ),
-        )
+        )[:MAX_PENDING_RELATIONSHIP_SUGGESTIONS]
     )
 
 

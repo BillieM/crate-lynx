@@ -1106,6 +1106,14 @@ export interface components {
         ProposalListResponse: {
             /** Proposals */
             proposals: components["schemas"]["ProposalResponse"][];
+            /** Total Count */
+            total_count: number;
+            /** Returned Count */
+            returned_count: number;
+            /** Limit */
+            limit: number;
+            /** Next Cursor */
+            next_cursor: string | null;
         };
         /** ProposalResponse */
         ProposalResponse: {
@@ -1123,6 +1131,8 @@ export interface components {
             local_album: string | null;
             /** Streaming Track Id */
             streaming_track_id: number;
+            /** Streaming Provider Track Id */
+            streaming_provider_track_id: string;
             /** Streaming Title */
             streaming_title: string;
             /** Streaming Artist */
@@ -1307,6 +1317,8 @@ export interface components {
             returned_count: number;
             /** Limit */
             limit: number;
+            /** Next Cursor */
+            next_cursor: string | null;
         };
         /** StreamingRelationshipSuggestionResponse */
         StreamingRelationshipSuggestionResponse: {
@@ -2327,6 +2339,8 @@ export interface operations {
         parameters: {
             query?: {
                 band?: components["schemas"]["ConfidenceBand"] | null;
+                cursor?: string | null;
+                limit?: number;
             };
             header?: never;
             path?: never;
@@ -2489,6 +2503,7 @@ export interface operations {
     list_relationship_suggestions_api_streaming_relationships_suggestions_get: {
         parameters: {
             query?: {
+                cursor?: string | null;
                 limit?: number;
                 relationship_type?: ("equivalent" | "related") | null;
             };

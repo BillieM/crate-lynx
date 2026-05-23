@@ -54,6 +54,7 @@ suggested_links_table = Table(
     ),
     Index("ix_suggested_links_local_track_id_status", "local_track_id", "status"),
     Index("ix_suggested_links_streaming_track_id", "streaming_track_id"),
+    Index("ix_suggested_links_pending_queue", "status", "score", "id"),
 )
 
 

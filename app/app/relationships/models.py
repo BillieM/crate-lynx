@@ -139,4 +139,10 @@ streaming_relationship_suggestions_table = Table(
     Index("ix_streaming_relationship_suggestions_status", "status"),
     Index("ix_streaming_relationship_suggestions_lower_track_id", "lower_track_id"),
     Index("ix_streaming_relationship_suggestions_higher_track_id", "higher_track_id"),
+    Index(
+        "ix_streaming_relationship_suggestions_pending_queue",
+        "status",
+        "score",
+        "id",
+    ),
 )

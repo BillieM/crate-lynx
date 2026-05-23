@@ -3,9 +3,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
-from sqlalchemy import delete, func, insert, select, update
+from sqlalchemy import and_, delete, func, insert, or_, select, update
 from sqlalchemy.engine import Connection, Engine
 
+from app.core.cursors import ScoreIdCursor
 from app.core.db import create_database_engine
 from app.ingestion.beets_mirror import beets_items_table
 from app.links.store import final_links_table
@@ -169,16 +170,13 @@ class StreamingRelationshipSuggestionStore:
                 == relationship_type
             )
 
-        with self._engine.begin() as connection:
-            _prune_stale_pending_suggestions(
-                connection,
-                relationship_type=relationship_type,
-            )
+        with self._engine.connect() as connection:
             return int(connection.execute(query).scalar_one())
 
     def list_pending(
         self,
         *,
+        cursor: ScoreIdCursor | None = None,
         limit: int | None = DEFAULT_RELATIONSHIP_SUGGESTION_LIST_LIMIT,
         relationship_type: str | None = None,
     ) -> list[StreamingRelationshipSuggestionRecord]:
@@ -238,14 +236,21 @@ class StreamingRelationshipSuggestionStore:
                 streaming_relationship_suggestions_table.c.relationship_type
                 == relationship_type
             )
+        if cursor is not None:
+            query = query.where(
+                or_(
+                    streaming_relationship_suggestions_table.c.score < cursor.score,
+                    and_(
+                        streaming_relationship_suggestions_table.c.score
+                        == cursor.score,
+                        streaming_relationship_suggestions_table.c.id > cursor.row_id,
+                    ),
+                )
+            )
         if limit is not None:
             query = query.limit(limit)
 
-        with self._engine.begin() as connection:
-            _prune_stale_pending_suggestions(
-                connection,
-                relationship_type=relationship_type,
-            )
+        with self._engine.connect() as connection:
             rows = connection.execute(query).mappings().all()
             resolver = StreamingRelationshipResolver(connection)
             link_contexts = _LocalLinkContextFactory(connection)
@@ -357,6 +362,17 @@ class StreamingRelationshipSuggestionStore:
             if suggestion is None:
                 raise StreamingRelationshipSuggestionNotFoundError
             if suggestion["status"] != STREAMING_RELATIONSHIP_SUGGESTION_STATUS_PENDING:
+                raise StaleStreamingRelationshipSuggestionError
+
+            lower_track_id = int(suggestion["lower_track_id"])
+            higher_track_id = int(suggestion["higher_track_id"])
+            resolver = StreamingRelationshipResolver(connection)
+            if _is_stale_pending_suggestion(
+                connection,
+                resolver=resolver,
+                lower_track_id=lower_track_id,
+                higher_track_id=higher_track_id,
+            ):
                 raise StaleStreamingRelationshipSuggestionError
 
             connection.execute(

@@ -16,6 +16,7 @@ def test_proposal_response_stores_expected_fields() -> None:
         local_artist="Artist",
         local_album="Album",
         streaming_track_id=12,
+        streaming_provider_track_id="yt-track-12",
         streaming_title="Track",
         streaming_artist="Artist",
         streaming_album="Album",
@@ -33,6 +34,7 @@ def test_proposal_response_stores_expected_fields() -> None:
     assert proposal.local_artist == "Artist"
     assert proposal.local_album == "Album"
     assert proposal.streaming_track_id == 12
+    assert proposal.streaming_provider_track_id == "yt-track-12"
     assert proposal.streaming_title == "Track"
     assert proposal.streaming_artist == "Artist"
     assert proposal.streaming_album == "Album"
@@ -54,6 +56,7 @@ def test_proposal_list_response_wraps_proposals() -> None:
                 local_artist=None,
                 local_album=None,
                 streaming_track_id=3,
+                streaming_provider_track_id="yt-track-3",
                 streaming_title="Track",
                 streaming_artist="Artist",
                 streaming_album=None,
@@ -63,11 +66,19 @@ def test_proposal_list_response_wraps_proposals() -> None:
                 confidence_band=ConfidenceBand.HIGH,
                 rejected_at=None,
             )
-        ]
+        ],
+        total_count=1,
+        returned_count=1,
+        limit=50,
+        next_cursor=None,
     )
 
     assert len(payload.proposals) == 1
     assert payload.proposals[0].confidence_band is ConfidenceBand.HIGH
+    assert payload.total_count == 1
+    assert payload.returned_count == 1
+    assert payload.limit == 50
+    assert payload.next_cursor is None
 
 
 def test_approve_and_reject_requests_accept_empty_payloads() -> None:

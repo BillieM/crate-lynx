@@ -63,6 +63,7 @@ class StreamingRelationshipSuggestionListResponse(BaseModel):
     total_count: int
     returned_count: int
     limit: int
+    next_cursor: str | None
 
 
 class AcceptStreamingRelationshipSuggestionRequest(BaseModel):

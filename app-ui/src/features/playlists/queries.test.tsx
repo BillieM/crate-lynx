@@ -49,10 +49,12 @@ describe("playlist queries", () => {
     expect(playlistQueryKeys.config()).toEqual(["playlists", "config"]);
     expect(playlistQueryKeys.detail(12)).toEqual(["playlists", 12, "detail"]);
     expect(playlistQueryKeys.list()).toEqual(["playlists", "list"]);
-    expect(playlistQueryKeys.proposals()).toEqual(["playlists", "proposals", { confidenceBand: null }]);
+    expect(playlistQueryKeys.proposals()).toEqual(["playlists", "proposals", "list", { confidenceBand: null }]);
+    expect(playlistQueryKeys.proposalPages()).toEqual(["playlists", "proposals", "pages", { confidenceBand: null }]);
     expect(playlistQueryKeys.proposals({ confidenceBand: "high" })).toEqual([
       "playlists",
       "proposals",
+      "list",
       { confidenceBand: "high" },
     ]);
     expect(playlistQueryKeys.tracks(12)).toEqual(["playlists", 12, "tracks"]);
@@ -175,6 +177,8 @@ describe("playlist queries", () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({
       ok: true,
       json: async () => ({
+        limit: 50,
+        next_cursor: null,
         proposals: [
           {
             id: 44,
@@ -184,6 +188,7 @@ describe("playlist queries", () => {
             local_file_path: "Frame Delay/Open Road.flac",
             local_title: "Open Road Local",
             streaming_track_id: 77,
+            streaming_provider_track_id: "ytm-77",
             streaming_title: "Open Road",
             streaming_artist: "Frame Delay",
             streaming_album: "Late Night Drive",
@@ -194,10 +199,14 @@ describe("playlist queries", () => {
             rejected_at: null,
           },
         ],
+        returned_count: 1,
+        total_count: 1,
       }),
     } as Response);
 
     await expect(fetchLinkProposals()).resolves.toEqual({
+      limit: 50,
+      next_cursor: null,
       proposals: [
         {
           id: 44,
@@ -207,6 +216,7 @@ describe("playlist queries", () => {
           local_file_path: "Frame Delay/Open Road.flac",
           local_title: "Open Road Local",
           streaming_track_id: 77,
+          streaming_provider_track_id: "ytm-77",
           streaming_title: "Open Road",
           streaming_artist: "Frame Delay",
           streaming_album: "Late Night Drive",
@@ -217,6 +227,8 @@ describe("playlist queries", () => {
           rejected_at: null,
         },
       ],
+      returned_count: 1,
+      total_count: 1,
     });
     expect(fetchMock).toHaveBeenCalledWith("/api/proposals");
   });
@@ -224,10 +236,16 @@ describe("playlist queries", () => {
   it("fetches link proposals with a confidence-band filter", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({
       ok: true,
-      json: async () => ({ proposals: [] }),
+      json: async () => ({ limit: 50, next_cursor: null, proposals: [], returned_count: 0, total_count: 0 }),
     } as Response);
 
-    await expect(fetchLinkProposals({ confidenceBand: "high" })).resolves.toEqual({ proposals: [] });
+    await expect(fetchLinkProposals({ confidenceBand: "high" })).resolves.toEqual({
+      limit: 50,
+      next_cursor: null,
+      proposals: [],
+      returned_count: 0,
+      total_count: 0,
+    });
     expect(fetchMock).toHaveBeenCalledWith("/api/proposals?band=high");
   });
 
@@ -648,6 +666,8 @@ describe("playlist queries", () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({
       ok: true,
       json: async () => ({
+        limit: 50,
+        next_cursor: null,
         proposals: [
           {
             id: 90,
@@ -657,6 +677,7 @@ describe("playlist queries", () => {
             local_file_path: "Phase Memory/Signal Loss.flac",
             local_title: "Signal Loss",
             streaming_track_id: 88,
+            streaming_provider_track_id: "ytm-88",
             streaming_title: "Signal Loss",
             streaming_artist: "Phase Memory",
             streaming_album: null,
@@ -667,6 +688,8 @@ describe("playlist queries", () => {
             rejected_at: null,
           },
         ],
+        returned_count: 1,
+        total_count: 1,
       }),
     } as Response);
 

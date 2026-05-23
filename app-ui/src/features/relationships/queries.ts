@@ -1,4 +1,4 @@
-import { type QueryClient, type QueryKey, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { type QueryClient, type QueryKey, useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { z } from "zod";
 
 import { endpoints, fetchJson, postJson } from "../../lib/api";
@@ -25,6 +25,7 @@ export type AcceptStreamingRelationshipSuggestionInput = AcceptStreamingRelation
 export type StreamingRelationshipSuggestionType = StreamingRelationshipSuggestion["relationship_type"];
 
 export type StreamingRelationshipSuggestionsQuery = {
+  cursor?: string | null;
   limit?: number;
   relationshipType?: StreamingRelationshipSuggestionType;
 };
@@ -89,6 +90,7 @@ const streamingRelationshipSuggestionSchema: z.ZodType<StreamingRelationshipSugg
 const streamingRelationshipSuggestionsResponseSchema: z.ZodType<StreamingRelationshipSuggestionsResponse> =
   z.object({
     limit: z.number(),
+    next_cursor: z.string().nullable(),
     returned_count: z.number(),
     suggestions: z.array(streamingRelationshipSuggestionSchema),
     total_count: z.number(),
@@ -123,10 +125,17 @@ export const streamingRelationshipQueryKeys = {
     query === undefined
       ? (["streaming-relationships", "suggestions"] as const)
       : (["streaming-relationships", "suggestions", query] as const),
+  suggestionPages: (query?: Omit<StreamingRelationshipSuggestionsQuery, "cursor">) =>
+    query === undefined
+      ? (["streaming-relationships", "suggestion-pages"] as const)
+      : (["streaming-relationships", "suggestion-pages", query] as const),
 };
 
 export function streamingRelationshipSuggestionInvalidationKeys(): QueryKey[] {
-  return [streamingRelationshipQueryKeys.suggestions()];
+  return [
+    streamingRelationshipQueryKeys.suggestions(),
+    streamingRelationshipQueryKeys.suggestionPages(),
+  ];
 }
 
 export function streamingRelationshipMutationInvalidationKeys(): QueryKey[] {
@@ -146,10 +155,14 @@ export async function invalidateStreamingRelationshipMutationQueries(queryClient
 }
 
 function relationshipSuggestionsUrl({
+  cursor,
   limit = DEFAULT_STREAMING_RELATIONSHIP_SUGGESTION_LIMIT,
   relationshipType,
 }: StreamingRelationshipSuggestionsQuery = {}) {
   const params = new URLSearchParams({ limit: String(limit) });
+  if (cursor !== null && cursor !== undefined) {
+    params.set("cursor", cursor);
+  }
   if (relationshipType !== undefined) {
     params.set("relationship_type", relationshipType);
   }
@@ -212,6 +225,21 @@ export function useStreamingRelationshipSuggestionsQuery(query: StreamingRelatio
   return useQuery({
     queryKey: streamingRelationshipQueryKeys.suggestions(query),
     queryFn: () => fetchStreamingRelationshipSuggestions(query),
+  });
+}
+
+export function useStreamingRelationshipSuggestionsInfiniteQuery(
+  query: Omit<StreamingRelationshipSuggestionsQuery, "cursor"> = {},
+) {
+  return useInfiniteQuery({
+    queryKey: streamingRelationshipQueryKeys.suggestionPages(query),
+    queryFn: ({ pageParam }) =>
+      fetchStreamingRelationshipSuggestions({
+        ...query,
+        cursor: pageParam,
+      }),
+    initialPageParam: null as string | null,
+    getNextPageParam: (lastPage) => lastPage.next_cursor ?? undefined,
   });
 }
 

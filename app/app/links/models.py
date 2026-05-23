@@ -11,6 +11,7 @@ class ProposalResponse(BaseModel):
     local_artist: str | None
     local_album: str | None
     streaming_track_id: int
+    streaming_provider_track_id: str
     streaming_title: str
     streaming_artist: str
     streaming_album: str | None
@@ -23,6 +24,10 @@ class ProposalResponse(BaseModel):
 
 class ProposalListResponse(BaseModel):
     proposals: list[ProposalResponse]
+    total_count: int
+    returned_count: int
+    limit: int
+    next_cursor: str | None
 
 
 class ApproveProposalRequest(BaseModel):

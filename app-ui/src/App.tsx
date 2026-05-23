@@ -57,13 +57,13 @@ function App() {
     () =>
       buildMaintenanceNavItems({
         missingCount: missingLocallyQuery.data?.tracks.length,
-        proposalCount: linkProposalsQuery.data?.proposals.length,
+        proposalCount: linkProposalsQuery.data?.total_count,
         relationshipCount: relationshipSuggestionsQuery.data?.total_count,
         unidentifiedCount: activeUnidentifiedCount,
       }),
     [
       activeUnidentifiedCount,
-      linkProposalsQuery.data?.proposals.length,
+      linkProposalsQuery.data?.total_count,
       missingLocallyQuery.data?.tracks.length,
       relationshipSuggestionsQuery.data?.total_count,
     ],

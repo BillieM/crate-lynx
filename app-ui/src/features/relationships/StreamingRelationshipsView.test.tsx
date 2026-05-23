@@ -198,6 +198,7 @@ const conflictingRelatedSuggestion: StreamingRelationshipSuggestion = {
 
 const relationshipSuggestionsResponse: StreamingRelationshipSuggestionsResponse = {
   limit: 50,
+  next_cursor: null,
   returned_count: 2,
   suggestions: [relatedSuggestion, equivalentSuggestion],
   total_count: 2,
@@ -293,7 +294,7 @@ describe("StreamingRelationshipsView", () => {
 
   it("renders the empty state with the manual generate action", async () => {
     mockRelationshipFetch({
-      response: { limit: 50, returned_count: 0, suggestions: [], total_count: 0 },
+      response: { limit: 50, next_cursor: null, returned_count: 0, suggestions: [], total_count: 0 },
     });
 
     renderStreamingRelationshipsView();
@@ -326,6 +327,12 @@ describe("StreamingRelationshipsView", () => {
     expect(within(nightRunnerRow).getAllByText("GBABC2400001")).toHaveLength(2);
     expect(within(nightRunnerRow).getAllByText("3:34")).toHaveLength(2);
     expect(within(nightRunnerRow).getAllByText("No local link")).toHaveLength(2);
+    fireEvent.click(within(nightRunnerRow).getByRole("button", { name: "Inspect suggestion 91" }));
+    expect(within(nightRunnerRow).getAllByRole("link", { name: "Open" })).toHaveLength(2);
+    fireEvent.click(within(nightRunnerRow).getAllByRole("button", { name: "Preview" })[0]);
+    expect(within(nightRunnerRow).getByTitle("YouTube preview for Night Runner").getAttribute("src")).toContain(
+      "https://www.youtube.com/embed/ytm%3Afirst-901",
+    );
     expect(within(looseCableRow).getByText("73%")).toBeInTheDocument();
     expect(within(looseCableRow).getByText("Recommended Related")).toBeInTheDocument();
     expect(within(looseCableRow).getByRole("button", { name: "Equivalent suggestion 92" })).toBeInTheDocument();
@@ -361,7 +368,7 @@ describe("StreamingRelationshipsView", () => {
     ).toBeInTheDocument();
   });
 
-  it("loads more suggestions by increasing the list limit", async () => {
+  it("loads more suggestions with cursor pagination", async () => {
     const thirdSuggestion: StreamingRelationshipSuggestion = {
       ...relatedSuggestion,
       id: 94,
@@ -381,19 +388,21 @@ describe("StreamingRelationshipsView", () => {
     const fetchMock = createMockApi()
       .get(/^\/api\/streaming\/relationships\/suggestions(?:\?.*)?$/, ({ url }) => {
         const params = new URL(url, "http://localhost").searchParams;
-        const limit = Number(params.get("limit") ?? "50");
+        const cursor = params.get("cursor");
 
-        if (limit >= 100) {
+        if (cursor === "page-2") {
           return jsonResponse({
-            limit,
-            returned_count: 3,
-            suggestions: [relatedSuggestion, equivalentSuggestion, thirdSuggestion],
+            limit: 50,
+            next_cursor: null,
+            returned_count: 1,
+            suggestions: [thirdSuggestion],
             total_count: 75,
           });
         }
 
         return jsonResponse({
           ...relationshipSuggestionsResponse,
+          next_cursor: "page-2",
           total_count: 75,
         });
       })
@@ -407,7 +416,7 @@ describe("StreamingRelationshipsView", () => {
     fireEvent.click(screen.getByRole("button", { name: "Load more" }));
 
     await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledWith("/api/streaming/relationships/suggestions?limit=100");
+      expect(fetchMock).toHaveBeenCalledWith("/api/streaming/relationships/suggestions?limit=50&cursor=page-2");
     });
     expect(
       await screen.findByText("Showing 3 of 75 pending streaming-to-streaming suggestions sorted by confidence."),
@@ -500,6 +509,7 @@ describe("StreamingRelationshipsView", () => {
       },
       response: {
         limit: 50,
+        next_cursor: null,
         returned_count: 2,
         suggestions: [conflictingEquivalentSuggestion, relatedSuggestion],
         total_count: 2,
@@ -563,6 +573,7 @@ describe("StreamingRelationshipsView", () => {
       },
       response: {
         limit: 50,
+        next_cursor: null,
         returned_count: 1,
         suggestions: [conflictingRelatedSuggestion],
         total_count: 1,

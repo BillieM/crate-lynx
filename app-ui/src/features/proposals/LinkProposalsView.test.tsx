@@ -6,6 +6,8 @@ import { LinkProposalsView } from "./LinkProposalsView";
 import type { LinkProposalsResponse } from "../playlists/queries";
 
 const proposalsResponse: LinkProposalsResponse = {
+  limit: 50,
+  next_cursor: null,
   proposals: [
     {
       confidence_band: "high",
@@ -21,6 +23,7 @@ const proposalsResponse: LinkProposalsResponse = {
       status: "pending",
       streaming_album: "Late Night Drive",
       streaming_artist: "Frame Delay",
+      streaming_provider_track_id: "ytm-901",
       streaming_title: "Night Runner",
       streaming_track_id: 901,
     },
@@ -38,6 +41,7 @@ const proposalsResponse: LinkProposalsResponse = {
       status: "pending",
       streaming_album: "Late Night Drive",
       streaming_artist: "Frame Delay",
+      streaming_provider_track_id: "ytm-907",
       streaming_title: "Night Runner Alternate",
       streaming_track_id: 907,
     },
@@ -55,10 +59,13 @@ const proposalsResponse: LinkProposalsResponse = {
       status: "pending",
       streaming_album: null,
       streaming_artist: "Static Gate",
+      streaming_provider_track_id: "ytm-902",
       streaming_title: "Pending Signal",
       streaming_track_id: 902,
     },
   ],
+  returned_count: 3,
+  total_count: 3,
 };
 
 function renderLinkProposalsView(initialEntry = "/proposals") {
@@ -136,7 +143,7 @@ describe("LinkProposalsView", () => {
 
     expect(await screen.findByRole("heading", { level: 2, name: "Proposal queue" })).toBeInTheDocument();
     expect(await screen.findAllByText("Night Runner.mp3")).toHaveLength(2);
-    expect(fetchMock).toHaveBeenCalledWith("/api/proposals");
+    expect(fetchMock).toHaveBeenCalledWith("/api/proposals?limit=50");
 
     expect(screen.queryByRole("heading", { level: 3, name: "High" })).not.toBeInTheDocument();
     expect(screen.queryByRole("heading", { level: 3, name: "Medium" })).not.toBeInTheDocument();
@@ -159,9 +166,18 @@ describe("LinkProposalsView", () => {
     expect(within(nightRunnerRow).getByText("Tag")).toBeInTheDocument();
     expect(within(nightRunnerRow).getByText("92%")).toBeInTheDocument();
     expect(within(nightRunnerRow).getByText("High confidence")).toBeInTheDocument();
+    fireEvent.click(within(nightRunnerRow).getByRole("button", { name: "Inspect proposal 44" }));
     expect(within(nightRunnerRow).getByLabelText("Listen to Night Runner File")).toHaveAttribute(
       "src",
       "/api/local-tracks/501/audio",
+    );
+    expect(within(nightRunnerRow).getByRole("link", { name: "Open" })).toHaveAttribute(
+      "href",
+      "https://music.youtube.com/watch?v=ytm-901",
+    );
+    fireEvent.click(within(nightRunnerRow).getByRole("button", { name: "Preview" }));
+    expect(within(nightRunnerRow).getByTitle("YouTube preview for Night Runner").getAttribute("src")).toContain(
+      "https://www.youtube.com/embed/ytm-901",
     );
     expect(within(alternateRow).getAllByText("Night Runner Alternate")).toHaveLength(2);
     expect(within(alternateRow).getByText("82%")).toBeInTheDocument();
@@ -189,6 +205,8 @@ describe("LinkProposalsView", () => {
   it("renders a dash only for the missing local field when partial metadata is present", async () => {
     mockProposalFetch({
       response: {
+        limit: 50,
+        next_cursor: null,
         proposals: [
           {
             confidence_band: "medium",
@@ -204,10 +222,13 @@ describe("LinkProposalsView", () => {
             status: "pending",
             streaming_album: "Signals",
             streaming_artist: "Static Gate",
+            streaming_provider_track_id: "ytm-908",
             streaming_title: "Partial Signal",
             streaming_track_id: 908,
           },
         ],
+        returned_count: 1,
+        total_count: 1,
       },
     });
 
@@ -226,9 +247,55 @@ describe("LinkProposalsView", () => {
 
     expect(await screen.findAllByText("Night Runner.mp3")).toHaveLength(2);
     expect(screen.getByText("Pending Signal.mp3")).toBeInTheDocument();
-    expect(fetchMock).toHaveBeenCalledWith("/api/proposals");
+    expect(fetchMock).toHaveBeenCalledWith("/api/proposals?limit=50");
     expect(fetchMock).not.toHaveBeenCalledWith("/api/proposals?band=high");
     expect(screen.queryByRole("group", { name: "Confidence band filters" })).not.toBeInTheDocument();
+  });
+
+  it("loads more proposals with cursor pagination", async () => {
+    const thirdProposal = proposalsResponse.proposals[2];
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async (input: RequestInfo | URL) => {
+      const url = String(input);
+
+      if (url === "/api/proposals?limit=50") {
+        return {
+          ok: true,
+          json: async () => ({
+            ...proposalsResponse,
+            next_cursor: "page-2",
+            proposals: proposalsResponse.proposals.slice(0, 2),
+            returned_count: 2,
+            total_count: 75,
+          }),
+        } as Response;
+      }
+
+      if (url === "/api/proposals?cursor=page-2&limit=50") {
+        return {
+          ok: true,
+          json: async () => ({
+            ...proposalsResponse,
+            next_cursor: null,
+            proposals: [thirdProposal],
+            returned_count: 1,
+            total_count: 75,
+          }),
+        } as Response;
+      }
+
+      throw new Error(`Unexpected fetch request: GET ${url}`);
+    });
+
+    renderLinkProposalsView();
+
+    expect(await screen.findByText("Showing 2 of 75 pending suggestions sorted by confidence.")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Load more" }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith("/api/proposals?cursor=page-2&limit=50");
+    });
+    expect(await screen.findByText("Showing 3 of 75 pending suggestions sorted by confidence.")).toBeInTheDocument();
+    expect(screen.getByRole("listitem", { name: /Proposal 45: Pending Signal\.mp3/ })).toBeInTheDocument();
   });
 
   it("optimistically removes whole local-track groups on approve and only selected candidates on reject", async () => {

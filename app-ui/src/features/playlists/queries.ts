@@ -1,4 +1,4 @@
-import { type QueryClient, type QueryKey, useQuery } from "@tanstack/react-query";
+import { type QueryClient, type QueryKey, useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { z } from "zod";
 
 import { deleteJson, endpoints, fetchBlob, fetchJson, patchJson, postJson } from "../../lib/api";
@@ -51,6 +51,11 @@ export type LinkProposalListFilters = {
   confidenceBand?: LinkProposalConfidenceBand | null;
 };
 
+export type LinkProposalListQuery = LinkProposalListFilters & {
+  cursor?: string | null;
+  limit?: number;
+};
+
 export type StreamingSyncResponse = ApiSchemas["StreamingSyncResponse"];
 export type PlaylistSyncResponse = ApiSchemas["PlaylistSyncResponse"];
 
@@ -60,6 +65,8 @@ export type DeleteFinalLinkResponse = {
   rejected_suggestion_id: number;
   status: "rejected";
 };
+
+export const DEFAULT_LINK_PROPOSAL_LIMIT = 50;
 
 const nullableStringSchema = z.string().nullable();
 const playlistSyncModeSchema = z.enum(["off", "match_only", "full"]);
@@ -158,12 +165,17 @@ const linkProposalSchema: z.ZodType<LinkProposal> = z.object({
   status: z.string(),
   streaming_album: nullableStringSchema,
   streaming_artist: z.string(),
+  streaming_provider_track_id: z.string(),
   streaming_title: z.string(),
   streaming_track_id: z.number(),
 });
 
 const linkProposalsResponseSchema: z.ZodType<LinkProposalsResponse> = z.object({
+  limit: z.number(),
+  next_cursor: z.string().nullable(),
   proposals: z.array(linkProposalSchema),
+  returned_count: z.number(),
+  total_count: z.number(),
 });
 
 const streamingSyncResponseSchema: z.ZodType<StreamingSyncResponse> = z.object({
@@ -201,7 +213,9 @@ export const playlistQueryKeys = {
   detail: (playlistId: number | string) => ["playlists", playlistId, "detail"] as const,
   list: () => ["playlists", "list"] as const,
   proposals: (filters: LinkProposalListFilters = {}) =>
-    ["playlists", "proposals", { confidenceBand: filters.confidenceBand ?? null }] as const,
+    ["playlists", "proposals", "list", { confidenceBand: filters.confidenceBand ?? null }] as const,
+  proposalPages: (filters: LinkProposalListFilters = {}) =>
+    ["playlists", "proposals", "pages", { confidenceBand: filters.confidenceBand ?? null }] as const,
   tracks: (playlistId: number | string) => ["playlists", playlistId, "tracks"] as const,
 };
 
@@ -338,11 +352,17 @@ export async function fetchPlaylistTracks(playlistId: number | string): Promise<
   );
 }
 
-export async function fetchLinkProposals(filters: LinkProposalListFilters = {}): Promise<LinkProposalsResponse> {
+export async function fetchLinkProposals(query: LinkProposalListQuery = {}): Promise<LinkProposalsResponse> {
   const params = new URLSearchParams();
 
-  if (filters.confidenceBand) {
-    params.set("band", filters.confidenceBand);
+  if (query.confidenceBand) {
+    params.set("band", query.confidenceBand);
+  }
+  if (query.cursor !== null && query.cursor !== undefined) {
+    params.set("cursor", query.cursor);
+  }
+  if (query.limit !== undefined) {
+    params.set("limit", String(query.limit));
   }
 
   const queryString = params.toString();
@@ -428,5 +448,19 @@ export function useLinkProposalsQuery(filters: LinkProposalListFilters = {}) {
   return useQuery({
     queryKey: playlistQueryKeys.proposals(filters),
     queryFn: () => fetchLinkProposals(filters),
+  });
+}
+
+export function useLinkProposalsInfiniteQuery(filters: LinkProposalListFilters = {}) {
+  return useInfiniteQuery({
+    queryKey: playlistQueryKeys.proposalPages(filters),
+    queryFn: ({ pageParam }) =>
+      fetchLinkProposals({
+        ...filters,
+        cursor: pageParam,
+        limit: DEFAULT_LINK_PROPOSAL_LIMIT,
+      }),
+    initialPageParam: null as string | null,
+    getNextPageParam: (lastPage) => lastPage.next_cursor ?? undefined,
   });
 }

@@ -32,8 +32,8 @@ from app.streaming.models import (
 )
 
 
-def _call_endpoint(endpoint, *args):
-    result = endpoint(*args)
+def _call_endpoint(endpoint, *args, **kwargs):
+    result = endpoint(*args, **kwargs)
     if inspect.isawaitable(result):
         return asyncio.run(result)
     return result
@@ -157,6 +157,7 @@ def test_list_proposals_returns_joined_pending_records(
                 "local_artist": "Local Artist",
                 "local_album": "Local Album",
                 "streaming_track_id": pending_streaming_id,
+                "streaming_provider_track_id": "ytm-9",
                 "streaming_title": "Track",
                 "streaming_artist": "Artist",
                 "streaming_album": "Album",
@@ -166,7 +167,11 @@ def test_list_proposals_returns_joined_pending_records(
                 "confidence_band": "medium",
                 "rejected_at": None,
             }
-        ]
+        ],
+        "total_count": 1,
+        "returned_count": 1,
+        "limit": 50,
+        "next_cursor": None,
     }
 
 
@@ -259,6 +264,61 @@ def test_list_proposals_filters_by_confidence_band(
         medium_proposal_id
     ]
     assert [proposal.id for proposal in low_response.proposals] == [low_proposal_id]
+
+
+def test_list_proposals_uses_score_cursor_pagination(
+    migrated_database,
+    test_data,
+) -> None:
+    database_url, _ = migrated_database
+    local_ids = [
+        test_data.local_track(
+            beets_id=index,
+            file_path=f"Artist/track-{index}.mp3",
+            fingerprint=f"fp-{index}",
+        )
+        for index in range(1, 4)
+    ]
+    streaming_ids = [
+        test_data.streaming_track(
+            provider_track_id=f"ytm-{index}",
+            title=f"Track {index}",
+        )
+        for index in range(1, 4)
+    ]
+    first_id = test_data.suggested_link(
+        local_track_id=local_ids[0],
+        streaming_track_id=streaming_ids[0],
+        score=0.99,
+    )
+    second_id = test_data.suggested_link(
+        local_track_id=local_ids[1],
+        streaming_track_id=streaming_ids[1],
+        score=0.99,
+    )
+    third_id = test_data.suggested_link(
+        local_track_id=local_ids[2],
+        streaming_track_id=streaming_ids[2],
+        score=0.75,
+    )
+
+    router = create_router(require_database_url=lambda: database_url)
+    endpoint = next(
+        route
+        for route in router.routes
+        if getattr(route, "path", None) == "/proposals"
+        and "GET" in getattr(route, "methods", set())
+    ).endpoint
+
+    first_page = _call_endpoint(endpoint, limit=2)
+    second_page = _call_endpoint(endpoint, cursor=first_page.next_cursor, limit=2)
+
+    assert first_page.total_count == 3
+    assert [proposal.id for proposal in first_page.proposals] == [first_id, second_id]
+    assert first_page.next_cursor is not None
+    assert second_page.total_count == 3
+    assert [proposal.id for proposal in second_page.proposals] == [third_id]
+    assert second_page.next_cursor is None
 
 
 def test_approve_proposal_writes_final_link_and_clears_pending_siblings(

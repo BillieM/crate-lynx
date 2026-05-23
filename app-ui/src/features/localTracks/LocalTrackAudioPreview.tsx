@@ -2,6 +2,7 @@ import { Volume2 } from "lucide-react";
 
 import { endpoints } from "../../lib/api";
 import { textClasses } from "../../styles/componentClasses";
+import { AudioPreviewPlayer } from "../matching/AudioPreviewPlayer";
 
 type LocalTrackAudioPreviewProps = {
   className?: string;
@@ -26,13 +27,7 @@ export function LocalTrackAudioPreview({
         <Volume2 aria-hidden="true" className="h-3.5 w-3.5" />
         <span className={textClasses.finePrint}>Local audio</span>
       </div>
-      <audio
-        aria-label={audioLabel}
-        className="h-8 w-full min-w-0"
-        controls
-        preload="none"
-        src={localTrackAudioUrl(localTrackId)}
-      />
+      <AudioPreviewPlayer label={audioLabel} src={localTrackAudioUrl(localTrackId)} />
     </div>
   );
 }

@@ -8,6 +8,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.engine import Engine
 
+from app.core.cursors import decode_score_id_cursor, encode_score_id_cursor
 from app.core.db import create_database_engine, get_engine
 from app.m3u.jobs import M3uRegenerationJobEnqueuer
 from app.relationships.schemas import (
@@ -92,6 +93,7 @@ def create_router(
         response_model=StreamingRelationshipSuggestionListResponse,
     )
     def list_relationship_suggestions(
+        cursor: Annotated[str | None, Query()] = None,
         limit: Annotated[int, Query(ge=1, le=1000)] = (
             DEFAULT_RELATIONSHIP_SUGGESTION_LIST_LIMIT
         ),
@@ -99,17 +101,34 @@ def create_router(
         engine: Engine = Depends(get_engine),
     ) -> StreamingRelationshipSuggestionListResponse:
         store = StreamingRelationshipSuggestionStore(engine=_engine(engine))
+        decoded_cursor = None
+        if cursor is not None:
+            try:
+                decoded_cursor = decode_score_id_cursor(cursor)
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail=str(exc)) from exc
         suggestions = store.list_pending(
-            limit=limit,
+            cursor=decoded_cursor,
+            limit=limit + 1,
             relationship_type=relationship_type,
+        )
+        page_suggestions = suggestions[:limit]
+        next_cursor = (
+            encode_score_id_cursor(
+                score=page_suggestions[-1].score,
+                row_id=page_suggestions[-1].id,
+            )
+            if len(suggestions) > limit and page_suggestions
+            else None
         )
         return StreamingRelationshipSuggestionListResponse(
             suggestions=[
-                _suggestion_response(suggestion) for suggestion in suggestions
+                _suggestion_response(suggestion) for suggestion in page_suggestions
             ],
             total_count=store.count_pending(relationship_type=relationship_type),
-            returned_count=len(suggestions),
+            returned_count=len(page_suggestions),
             limit=limit,
+            next_cursor=next_cursor,
         )
 
     @router.post(

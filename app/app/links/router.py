@@ -4,12 +4,14 @@ import logging
 import os
 from collections.abc import Callable
 from datetime import UTC, datetime
+from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import and_, delete, insert, select, update
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import and_, delete, func, insert, or_, select, update
 from sqlalchemy.engine import Engine
 from sqlalchemy.sql.elements import ColumnElement
 
+from app.core.cursors import decode_score_id_cursor, encode_score_id_cursor
 from app.core.db import create_database_engine, get_engine
 from app.ingestion.beets_mirror import beets_items_table
 from app.links.models import (
@@ -38,6 +40,7 @@ from app.streaming.models import streaming_tracks_table
 
 
 logger = logging.getLogger(__name__)
+DEFAULT_PROPOSAL_LIST_LIMIT = 50
 
 
 def create_router(
@@ -85,9 +88,38 @@ def create_router(
     @router.get("/proposals", response_model=ProposalListResponse)
     def list_proposals(
         band: ConfidenceBand | None = None,
+        cursor: Annotated[str | None, Query()] = None,
+        limit: Annotated[int, Query(ge=1, le=500)] = DEFAULT_PROPOSAL_LIST_LIMIT,
         engine: Engine = Depends(get_engine),
     ) -> ProposalListResponse:
         engine = _engine(engine)
+        base_from = (
+            suggested_links_table.join(
+                local_tracks_table,
+                local_tracks_table.c.id == suggested_links_table.c.local_track_id,
+            )
+            .outerjoin(
+                beets_items_table,
+                beets_items_table.c.beets_id == local_tracks_table.c.beets_id,
+            )
+            .join(
+                streaming_tracks_table,
+                streaming_tracks_table.c.id
+                == suggested_links_table.c.streaming_track_id,
+            )
+            .outerjoin(
+                final_links_table,
+                final_links_table.c.local_track_id
+                == suggested_links_table.c.local_track_id,
+            )
+        )
+        filters = [
+            suggested_links_table.c.status == SUGGESTED_LINK_STATUS_PENDING,
+            final_links_table.c.id.is_(None),
+        ]
+        if band is not None:
+            filters.append(_confidence_band_clause(band))
+
         query = (
             select(
                 suggested_links_table.c.id,
@@ -97,6 +129,9 @@ def create_router(
                 beets_items_table.c.artist.label("local_artist"),
                 beets_items_table.c.album.label("local_album"),
                 suggested_links_table.c.streaming_track_id,
+                streaming_tracks_table.c.provider_track_id.label(
+                    "streaming_provider_track_id"
+                ),
                 streaming_tracks_table.c.title.label("streaming_title"),
                 streaming_tracks_table.c.artist.label("streaming_artist"),
                 streaming_tracks_table.c.album.label("streaming_album"),
@@ -105,37 +140,37 @@ def create_router(
                 suggested_links_table.c.status,
                 suggested_links_table.c.rejected_at,
             )
-            .select_from(
-                suggested_links_table.join(
-                    local_tracks_table,
-                    local_tracks_table.c.id == suggested_links_table.c.local_track_id,
-                )
-                .outerjoin(
-                    beets_items_table,
-                    beets_items_table.c.beets_id == local_tracks_table.c.beets_id,
-                )
-                .join(
-                    streaming_tracks_table,
-                    streaming_tracks_table.c.id
-                    == suggested_links_table.c.streaming_track_id,
-                )
-                .outerjoin(
-                    final_links_table,
-                    final_links_table.c.local_track_id
-                    == suggested_links_table.c.local_track_id,
-                )
+            .select_from(base_from)
+            .where(*filters)
+            .order_by(
+                suggested_links_table.c.score.desc(),
+                suggested_links_table.c.id.asc(),
             )
-            .where(
-                suggested_links_table.c.status == SUGGESTED_LINK_STATUS_PENDING,
-                final_links_table.c.id.is_(None),
-            )
-            .order_by(suggested_links_table.c.id.asc())
+            .limit(limit + 1)
         )
-        if band is not None:
-            query = query.where(_confidence_band_clause(band))
+        if cursor is not None:
+            try:
+                decoded_cursor = decode_score_id_cursor(cursor)
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail=str(exc)) from exc
+            query = query.where(
+                or_(
+                    suggested_links_table.c.score < decoded_cursor.score,
+                    and_(
+                        suggested_links_table.c.score == decoded_cursor.score,
+                        suggested_links_table.c.id > decoded_cursor.row_id,
+                    ),
+                )
+            )
 
         with engine.connect() as connection:
-            rows = connection.execute(query).mappings()
+            total_count = int(
+                connection.execute(
+                    select(func.count()).select_from(base_from).where(*filters)
+                ).scalar_one()
+            )
+            rows = connection.execute(query).mappings().all()
+            page_rows = rows[:limit]
             proposals = [
                 ProposalResponse(
                     id=row["id"],
@@ -145,6 +180,7 @@ def create_router(
                     local_artist=row["local_artist"],
                     local_album=row["local_album"],
                     streaming_track_id=row["streaming_track_id"],
+                    streaming_provider_track_id=row["streaming_provider_track_id"],
                     streaming_title=row["streaming_title"],
                     streaming_artist=row["streaming_artist"],
                     streaming_album=row["streaming_album"],
@@ -158,10 +194,25 @@ def create_router(
                         else None
                     ),
                 )
-                for row in rows
+                for row in page_rows
             ]
 
-        return ProposalListResponse(proposals=proposals)
+        next_cursor = (
+            encode_score_id_cursor(
+                score=float(page_rows[-1]["score"]),
+                row_id=int(page_rows[-1]["id"]),
+            )
+            if len(rows) > limit and page_rows
+            else None
+        )
+
+        return ProposalListResponse(
+            proposals=proposals,
+            total_count=total_count,
+            returned_count=len(proposals),
+            limit=limit,
+            next_cursor=next_cursor,
+        )
 
     @router.post("/proposals/{proposal_id}/approve", status_code=201)
     def approve_proposal(
