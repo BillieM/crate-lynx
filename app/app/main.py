@@ -24,7 +24,6 @@ from app.settings.router import create_router as create_settings_router
 from app.settings.store import GeneralSettingsStore
 from app.streaming import crypto
 from app.streaming.router import create_router as create_streaming_router
-from app.system.router import router as system_router
 
 
 logger = logging.getLogger(__name__)
@@ -126,7 +125,6 @@ def create_app() -> FastAPI:
             )
         return redis_url
 
-    app.include_router(system_router)
     app.include_router(
         create_streaming_router(
             require_redis_url=require_redis_url,

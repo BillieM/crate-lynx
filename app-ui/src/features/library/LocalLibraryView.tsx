@@ -13,6 +13,7 @@ import { settleInChunks } from "../../lib/settleInChunks";
 import { useDelayedInvalidate } from "../../lib/useDelayedInvalidate";
 import { controlClasses, surfaceClasses, textClasses } from "../../styles/componentClasses";
 import { trackStatusDotClasses } from "../../styles/toneClasses";
+import { rematchLocalTrack } from "../localTracks/queries";
 import { TrackDetailDrawer } from "../tracks/TrackDetailDrawer";
 import { deleteFinalLink } from "../playlists/queries";
 import {
@@ -36,11 +37,6 @@ const defaultLibraryStats = {
 } satisfies LibraryStats;
 const emptyLibraryTracks: LibraryTrack[] = [];
 
-type RematchResponse = {
-  job_id: string;
-  local_track_id: number;
-};
-
 type BulkLibraryStatus = {
   body: string;
   status: "error" | "success";
@@ -50,18 +46,6 @@ type BulkLibraryStatus = {
 type LibraryTrackWithFinalLink = LibraryTrack & {
   final_link_id: number;
 };
-
-async function rematchLocalTrack(localTrackId: number): Promise<RematchResponse> {
-  const response = await fetch(`/api/local-tracks/${encodeURIComponent(String(localTrackId))}/rematch`, {
-    method: "POST",
-  });
-
-  if (!response.ok) {
-    throw new Error(`Re-match request failed with status ${response.status}`);
-  }
-
-  return (await response.json()) as RematchResponse;
-}
 
 function hasFinalLinkId(track: LibraryTrack): track is LibraryTrackWithFinalLink {
   return typeof track.final_link_id === "number" && Number.isFinite(track.final_link_id);

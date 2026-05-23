@@ -1,6 +1,6 @@
 import { type QueryClient, type QueryKey, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { endpoints, fetchJson } from "../../lib/api";
+import { deleteJson, endpoints, fetchJson, postJson } from "../../lib/api";
 import { invalidateQueryKeys } from "../../lib/queryInvalidation";
 
 export type IngestFolder = {
@@ -35,29 +35,16 @@ export async function fetchGeneralSettings(): Promise<GeneralSettingsResponse> {
 }
 
 export async function createIngestFolder({ path }: CreateIngestFolderInput): Promise<IngestFolder> {
-  const response = await fetch("/api/settings/ingest-folders", {
-    body: JSON.stringify({ path }),
-    headers: {
-      "Content-Type": "application/json",
-    },
-    method: "POST",
+  return postJson<IngestFolder>(endpoints.api("/settings/ingest-folders"), {
+    body: { path },
+    errorMessage: "Ingest folder create request failed",
   });
-
-  if (!response.ok) {
-    throw new Error(`Ingest folder create request failed with status ${response.status}`);
-  }
-
-  return (await response.json()) as IngestFolder;
 }
 
 export async function deleteIngestFolder(folderId: number | string): Promise<void> {
-  const response = await fetch(`/api/settings/ingest-folders/${encodeURIComponent(String(folderId))}`, {
-    method: "DELETE",
+  await deleteJson<void>(endpoints.api(`/settings/ingest-folders/${encodeURIComponent(String(folderId))}`), {
+    errorMessage: "Ingest folder delete request failed",
   });
-
-  if (!response.ok) {
-    throw new Error(`Ingest folder delete request failed with status ${response.status}`);
-  }
 }
 
 export function useGeneralSettingsQuery() {

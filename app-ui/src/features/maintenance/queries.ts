@@ -1,7 +1,13 @@
 import { type QueryClient, type QueryKey, useQuery } from "@tanstack/react-query";
 
-import { endpoints, fetchJson } from "../../lib/api";
+import { ApiRequestError, endpoints, fetchJson, postJson } from "../../lib/api";
 import { invalidateQueryKeys } from "../../lib/queryInvalidation";
+import {
+  rematchLocalTrack,
+  rescueLocalTrackMetadata,
+  type RematchLocalTrackResponse,
+  type RescuedLocalTrack,
+} from "../localTracks/queries";
 
 export type MissingLocallyTrack = {
   album: string | null;
@@ -57,42 +63,11 @@ export type UnidentifiedRestoreResponse = {
   source_path: string;
 };
 
-export type RescuedLocalTrack = {
-  beets_id: number | null;
-  file_path: string;
-  id: number;
-  library_root_rel_path: string | null;
-};
-
-export type RematchLocalTrackResponse = {
-  job_id: string;
-  local_track_id: number;
-};
-
-export class MaintenanceRequestError extends Error {
-  status: number;
-
-  constructor(message: string, status: number) {
-    super(`${message} with status ${status}`);
-    this.name = "MaintenanceRequestError";
-    this.status = status;
-  }
-}
+export { rematchLocalTrack, rescueLocalTrackMetadata };
+export type { RematchLocalTrackResponse, RescuedLocalTrack };
 
 export function getMaintenanceRequestStatus(error: unknown): number | null {
-  return error instanceof MaintenanceRequestError ? error.status : null;
-}
-
-async function postMaintenanceJson<T>(url: string, errorMessage: string): Promise<T> {
-  const response = await fetch(url, {
-    method: "POST",
-  });
-
-  if (!response.ok) {
-    throw new MaintenanceRequestError(errorMessage, response.status);
-  }
-
-  return (await response.json()) as T;
+  return error instanceof ApiRequestError ? error.status : null;
 }
 
 export const maintenanceQueryKeys = {
@@ -125,38 +100,24 @@ export async function fetchUnidentifiedTracks(): Promise<UnidentifiedResponse> {
   return fetchJson<UnidentifiedResponse>(endpoints.api("/maintenance/unidentified"));
 }
 
-export async function rescueLocalTrackMetadata(localTrackId: number | string): Promise<RescuedLocalTrack> {
-  return postMaintenanceJson<RescuedLocalTrack>(
-    `/api/local-tracks/${encodeURIComponent(String(localTrackId))}/rescue`,
-    "Metadata rescue request failed",
-  );
-}
-
-export async function rematchLocalTrack(localTrackId: number | string): Promise<RematchLocalTrackResponse> {
-  return postMaintenanceJson<RematchLocalTrackResponse>(
-    `/api/local-tracks/${encodeURIComponent(String(localTrackId))}/rematch`,
-    "Re-match request failed",
-  );
-}
-
 export async function retryUnidentifiedTrack(attemptId: number | string): Promise<UnidentifiedRetryResponse> {
-  return postMaintenanceJson<UnidentifiedRetryResponse>(
-    `/api/maintenance/unidentified/${encodeURIComponent(String(attemptId))}/retry`,
-    "Unidentified retry request failed",
+  return postJson<UnidentifiedRetryResponse>(
+    endpoints.api(`/maintenance/unidentified/${encodeURIComponent(String(attemptId))}/retry`),
+    { errorMessage: "Unidentified retry request failed" },
   );
 }
 
 export async function ignoreUnidentifiedTrack(attemptId: number | string): Promise<UnidentifiedIgnoreResponse> {
-  return postMaintenanceJson<UnidentifiedIgnoreResponse>(
-    `/api/maintenance/unidentified/${encodeURIComponent(String(attemptId))}/ignore`,
-    "Unidentified ignore request failed",
+  return postJson<UnidentifiedIgnoreResponse>(
+    endpoints.api(`/maintenance/unidentified/${encodeURIComponent(String(attemptId))}/ignore`),
+    { errorMessage: "Unidentified ignore request failed" },
   );
 }
 
 export async function restoreUnidentifiedTrack(attemptId: number | string): Promise<UnidentifiedRestoreResponse> {
-  return postMaintenanceJson<UnidentifiedRestoreResponse>(
-    `/api/maintenance/unidentified/${encodeURIComponent(String(attemptId))}/restore`,
-    "Unidentified restore request failed",
+  return postJson<UnidentifiedRestoreResponse>(
+    endpoints.api(`/maintenance/unidentified/${encodeURIComponent(String(attemptId))}/restore`),
+    { errorMessage: "Unidentified restore request failed" },
   );
 }
 

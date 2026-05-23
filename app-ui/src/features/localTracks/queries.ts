@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 
-import { endpoints, fetchJson } from "../../lib/api";
+import { endpoints, fetchJson, postJson } from "../../lib/api";
 
 export type LocalTrackFinalLink = {
   approved_at: string;
@@ -35,6 +35,18 @@ export type LocalTrackDetail = {
   pending_suggestions: LocalTrackSuggestion[];
 };
 
+export type RematchLocalTrackResponse = {
+  job_id: string;
+  local_track_id: number;
+};
+
+export type RescuedLocalTrack = {
+  beets_id: number | null;
+  file_path: string;
+  id: number;
+  library_root_rel_path: string | null;
+};
+
 export const localTrackQueryKeys = {
   all: ["local-tracks"] as const,
   detail: (localTrackId: number | string) => ["local-tracks", localTrackId, "detail"] as const,
@@ -42,6 +54,24 @@ export const localTrackQueryKeys = {
 
 export async function fetchLocalTrackDetail(localTrackId: number | string): Promise<LocalTrackDetail> {
   return fetchJson<LocalTrackDetail>(endpoints.api(`/local-tracks/${encodeURIComponent(String(localTrackId))}`));
+}
+
+export async function rematchLocalTrack(localTrackId: number | string): Promise<RematchLocalTrackResponse> {
+  return postJson<RematchLocalTrackResponse>(
+    endpoints.api(`/local-tracks/${encodeURIComponent(String(localTrackId))}/rematch`),
+    {
+      errorMessage: "Re-match request failed",
+    },
+  );
+}
+
+export async function rescueLocalTrackMetadata(localTrackId: number | string): Promise<RescuedLocalTrack> {
+  return postJson<RescuedLocalTrack>(
+    endpoints.api(`/local-tracks/${encodeURIComponent(String(localTrackId))}/rescue`),
+    {
+      errorMessage: "Metadata rescue request failed",
+    },
+  );
 }
 
 export function useLocalTrackDetailQuery(localTrackId: number | string | null | undefined, enabled = true) {

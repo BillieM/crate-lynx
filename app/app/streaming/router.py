@@ -73,37 +73,28 @@ def create_router(
             updated_at=account.updated_at.isoformat(),
         )
 
+    def streaming_playlist_payload(playlist: object) -> dict[str, object]:
+        return {
+            "id": playlist.id,
+            "account_id": playlist.account_id,
+            "provider_playlist_id": playlist.provider_playlist_id,
+            "title": playlist.title,
+            "sync_mode": playlist.sync_mode,
+            "provider_track_count": playlist.provider_track_count,
+            "imported_track_count": playlist.imported_track_count,
+            "metadata_synced_at": serialize_datetime(playlist.metadata_synced_at),
+            "tracks_synced_at": serialize_datetime(playlist.tracks_synced_at),
+            "last_sync_error": playlist.last_sync_error,
+            "last_sync_error_at": serialize_datetime(playlist.last_sync_error_at),
+        }
+
     def serialize_streaming_playlist(playlist: object) -> StreamingPlaylistResponse:
-        return StreamingPlaylistResponse(
-            id=playlist.id,
-            account_id=playlist.account_id,
-            provider_playlist_id=playlist.provider_playlist_id,
-            title=playlist.title,
-            sync_mode=playlist.sync_mode,
-            provider_track_count=playlist.provider_track_count,
-            imported_track_count=playlist.imported_track_count,
-            metadata_synced_at=serialize_datetime(playlist.metadata_synced_at),
-            tracks_synced_at=serialize_datetime(playlist.tracks_synced_at),
-            last_sync_error=playlist.last_sync_error,
-            last_sync_error_at=serialize_datetime(playlist.last_sync_error_at),
-        )
+        return StreamingPlaylistResponse(**streaming_playlist_payload(playlist))
 
     def serialize_streaming_playlist_config(
         playlist: object,
     ) -> StreamingPlaylistConfigResponse:
-        return StreamingPlaylistConfigResponse(
-            id=playlist.id,
-            account_id=playlist.account_id,
-            provider_playlist_id=playlist.provider_playlist_id,
-            title=playlist.title,
-            sync_mode=playlist.sync_mode,
-            provider_track_count=playlist.provider_track_count,
-            imported_track_count=playlist.imported_track_count,
-            metadata_synced_at=serialize_datetime(playlist.metadata_synced_at),
-            tracks_synced_at=serialize_datetime(playlist.tracks_synced_at),
-            last_sync_error=playlist.last_sync_error,
-            last_sync_error_at=serialize_datetime(playlist.last_sync_error_at),
-        )
+        return StreamingPlaylistConfigResponse(**streaming_playlist_payload(playlist))
 
     def serialize_playlist_detail(playlist: object) -> PlaylistDetailResponse:
         return PlaylistDetailResponse(
@@ -217,6 +208,13 @@ def create_router(
             validate_youtube_music_browser_auth(browser_headers)
         except YouTubeMusicAuthValidationError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    def require_streaming_account(
+        store: StreamingAccountStore,
+        account_id: int,
+    ) -> None:
+        if not any(account.id == account_id for account in store.list_accounts()):
+            raise HTTPException(status_code=404, detail="Streaming account not found")
 
     @router.get("/streaming/accounts", response_model=StreamingAccountsResponse)
     def list_streaming_accounts(
@@ -369,13 +367,9 @@ def create_router(
         from app.m3u.generator import build_m3u_filename, generate_m3u
 
         store = _store(engine)
-        playlist = next(
-            (
-                playlist
-                for playlist in store.list_playlists(sync_mode=PLAYLIST_SYNC_MODE_FULL)
-                if playlist.id == playlist_id
-            ),
-            None,
+        playlist = store.get_playlist_summary(
+            playlist_id,
+            sync_mode=PLAYLIST_SYNC_MODE_FULL,
         )
         if playlist is None:
             raise HTTPException(status_code=404, detail="Playlist not found")
@@ -422,8 +416,7 @@ def create_router(
         engine: Engine = Depends(get_engine),
     ) -> StreamingAccountResponse:
         store = _store(engine)
-        if not any(account.id == account_id for account in store.list_accounts()):
-            raise HTTPException(status_code=404, detail="Streaming account not found")
+        require_streaming_account(store, account_id)
 
         validate_browser_headers(payload.browser_headers)
         account = store.update_youtube_music_account_auth(
@@ -445,8 +438,7 @@ def create_router(
         engine: Engine = Depends(get_engine),
     ) -> StreamingSyncResponse:
         store = _store(engine)
-        if not any(account.id == account_id for account in store.list_accounts()):
-            raise HTTPException(status_code=404, detail="Streaming account not found")
+        require_streaming_account(store, account_id)
 
         job_id = StreamingSyncJobEnqueuer(require_redis_url()).enqueue(
             account_id=account_id,
@@ -463,8 +455,7 @@ def create_router(
         engine: Engine = Depends(get_engine),
     ) -> StreamingSyncResponse:
         store = _store(engine)
-        if not any(account.id == account_id for account in store.list_accounts()):
-            raise HTTPException(status_code=404, detail="Streaming account not found")
+        require_streaming_account(store, account_id)
 
         job_id = StreamingSyncJobEnqueuer(require_redis_url()).enqueue_metadata_refresh(
             account_id=account_id,
@@ -481,7 +472,7 @@ def create_router(
         engine: Engine = Depends(get_engine),
     ) -> PlaylistSyncResponse:
         store = _store(engine)
-        if not any(playlist.id == playlist_id for playlist in store.list_playlists()):
+        if not store.playlist_exists(playlist_id):
             raise HTTPException(status_code=404, detail="Playlist not found")
 
         job_id = StreamingSyncJobEnqueuer(require_redis_url()).enqueue_playlist_sync(

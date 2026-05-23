@@ -12,13 +12,27 @@ type JsonRequestOptions<T> = {
   schema?: JsonSchema<T>;
 };
 
+export class ApiRequestError extends Error {
+  status: number;
+
+  constructor(message: string, status: number) {
+    super(`${message} with status ${status}`);
+    this.name = "ApiRequestError";
+    this.status = status;
+  }
+}
+
 async function parseJson<T>(response: Response, schema?: JsonSchema<T>): Promise<T> {
+  if (response.status === 204 || typeof response.json !== "function") {
+    return undefined as T;
+  }
+
   const data = (await response.json()) as unknown;
   return schema ? schema.parse(data) : (data as T);
 }
 
 function requestError(errorMessage: string | undefined, status: number) {
-  return new Error(`${errorMessage ?? "Request failed"} with status ${status}`);
+  return new ApiRequestError(errorMessage ?? "Request failed", status);
 }
 
 export async function fetchJson<T>(

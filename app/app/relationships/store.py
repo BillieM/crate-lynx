@@ -356,12 +356,7 @@ class StreamingRelationshipSuggestionStore:
                 relationship_type=accepted_relationship_type,
                 accepted_at=accepted_at,
             )
-            if detached_final_link_ids:
-                connection.execute(
-                    delete(final_links_table).where(
-                        final_links_table.c.id.in_(detached_final_link_ids)
-                    )
-                )
+            _detach_final_links(connection, detached_final_link_ids)
             connection.execute(
                 update(streaming_relationship_suggestions_table)
                 .where(streaming_relationship_suggestions_table.c.id == suggestion_id)
@@ -836,51 +831,6 @@ def _detach_final_links(
     connection.execute(
         delete(final_links_table).where(final_links_table.c.id.in_(final_link_ids))
     )
-
-
-def _prune_stale_pending_suggestions(
-    connection: Connection,
-    *,
-    relationship_type: str | None = None,
-) -> int:
-    query = select(
-        streaming_relationship_suggestions_table.c.id,
-        streaming_relationship_suggestions_table.c.lower_track_id,
-        streaming_relationship_suggestions_table.c.higher_track_id,
-    ).where(
-        streaming_relationship_suggestions_table.c.status
-        == STREAMING_RELATIONSHIP_SUGGESTION_STATUS_PENDING
-    )
-    if relationship_type is not None:
-        query = query.where(
-            streaming_relationship_suggestions_table.c.relationship_type
-            == relationship_type
-        )
-
-    rows = connection.execute(query).mappings().all()
-    if not rows:
-        return 0
-
-    resolver = StreamingRelationshipResolver(connection)
-    stale_ids = [
-        int(row["id"])
-        for row in rows
-        if _is_stale_pending_suggestion(
-            connection,
-            resolver=resolver,
-            lower_track_id=int(row["lower_track_id"]),
-            higher_track_id=int(row["higher_track_id"]),
-        )
-    ]
-    if not stale_ids:
-        return 0
-
-    result = connection.execute(
-        delete(streaming_relationship_suggestions_table).where(
-            streaming_relationship_suggestions_table.c.id.in_(stale_ids)
-        )
-    )
-    return result.rowcount or 0
 
 
 def _is_stale_pending_suggestion(

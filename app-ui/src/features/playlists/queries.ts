@@ -93,7 +93,7 @@ const playlistDetailResponseSchema: z.ZodType<PlaylistDetailResponse> = z.object
   playlist: playlistDetailSchema,
 });
 
-const streamingPlaylistSchema: z.ZodType<StreamingPlaylist> = z.object({
+const streamingPlaylistBaseSchema = z.object({
   account_id: z.number(),
   id: z.number(),
   last_sync_error: nullableStringSchema,
@@ -107,19 +107,8 @@ const streamingPlaylistSchema: z.ZodType<StreamingPlaylist> = z.object({
   tracks_synced_at: nullableStringSchema,
 });
 
-const streamingPlaylistConfigSchema: z.ZodType<StreamingPlaylistConfig> = z.object({
-  account_id: z.number(),
-  id: z.number(),
-  last_sync_error: nullableStringSchema,
-  last_sync_error_at: nullableStringSchema,
-  imported_track_count: z.number(),
-  metadata_synced_at: nullableStringSchema,
-  provider_track_count: z.number().nullable(),
-  provider_playlist_id: z.string(),
-  sync_mode: playlistSyncModeSchema,
-  title: z.string(),
-  tracks_synced_at: nullableStringSchema,
-});
+const streamingPlaylistSchema: z.ZodType<StreamingPlaylist> = streamingPlaylistBaseSchema;
+const streamingPlaylistConfigSchema: z.ZodType<StreamingPlaylistConfig> = streamingPlaylistBaseSchema;
 
 const streamingPlaylistsResponseSchema: z.ZodType<StreamingPlaylistsResponse> = z.object({
   playlists: z.array(streamingPlaylistSchema),
