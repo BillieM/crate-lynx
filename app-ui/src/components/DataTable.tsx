@@ -80,6 +80,8 @@ const densityClasses = {
   },
 };
 
+const emptyRowSelection: RowSelectionState = {};
+
 const interactiveRowTargetSelector = [
   "button",
   "a",
@@ -149,7 +151,7 @@ export function DataTable<TRow>({
   stickyHeader = false,
 }: DataTableProps<TRow>) {
   const hasColumnFiltering = columnFilters !== undefined && onColumnFiltersChange !== undefined;
-  const currentRowSelection = rowSelection ?? {};
+  const currentRowSelection = rowSelection ?? emptyRowSelection;
   const table = useReactTable({
     columns,
     data,
@@ -168,7 +170,8 @@ export function DataTable<TRow>({
     },
   });
   const lastSelectedIndexRef = useRef<number | null>(null);
-  const hasCommittedColumnFiltersRef = useRef(false);
+  const previousColumnFiltersKeyRef = useRef<string | undefined>(undefined);
+  const currentRowSelectionRef = useRef<RowSelectionState>(currentRowSelection);
   const columnFiltersKey = useMemo(
     () => (columnFilters === undefined ? undefined : JSON.stringify(columnFilters)),
     [columnFilters],
@@ -181,6 +184,11 @@ export function DataTable<TRow>({
   const tableDensity = densityClasses[density];
   const filteredRowCount = table.getFilteredRowModel().rows.length;
   const totalRowCount = table.getCoreRowModel().rows.length;
+  const isRowInteractive = enableRowSelection || onActivate !== undefined;
+
+  useEffect(() => {
+    currentRowSelectionRef.current = currentRowSelection;
+  }, [currentRowSelection]);
 
   useEffect(() => {
     if (!enableRowSelection || !onRowSelectionChange) {
@@ -191,12 +199,20 @@ export function DataTable<TRow>({
       return;
     }
 
-    if (!hasCommittedColumnFiltersRef.current) {
-      hasCommittedColumnFiltersRef.current = true;
+    if (previousColumnFiltersKeyRef.current === undefined) {
+      previousColumnFiltersKeyRef.current = columnFiltersKey;
       return;
     }
 
-    onRowSelectionChange({});
+    if (previousColumnFiltersKeyRef.current === columnFiltersKey) {
+      return;
+    }
+
+    previousColumnFiltersKeyRef.current = columnFiltersKey;
+
+    if (Object.values(currentRowSelectionRef.current).some(Boolean)) {
+      onRowSelectionChange({});
+    }
   }, [columnFiltersKey, enableRowSelection, onRowSelectionChange]);
 
   function setRowSelected(rowIndex: number, checked: boolean, shiftKey = false) {
@@ -387,9 +403,9 @@ export function DataTable<TRow>({
                 key={row.id}
                 className={`${tableDensity.row} border-b border-ctp-surface0/80 outline-none transition-colors last:border-b-0 hover:bg-ctp-surface0/70 focus-visible:bg-ctp-surface0 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ctp-mauve`}
                 data-row-id={row.id}
-                tabIndex={0}
-                onClick={(event) => handleRowClick(event, row.original)}
-                onKeyDown={(event) => handleRowKeyDown(event, rowIndex, row.original)}
+                tabIndex={isRowInteractive ? 0 : undefined}
+                onClick={isRowInteractive ? (event) => handleRowClick(event, row.original) : undefined}
+                onKeyDown={isRowInteractive ? (event) => handleRowKeyDown(event, rowIndex, row.original) : undefined}
               >
                 {enableRowSelection ? (
                   <td className="w-10 px-3 py-2">

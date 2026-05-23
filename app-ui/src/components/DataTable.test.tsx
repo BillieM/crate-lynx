@@ -92,6 +92,21 @@ function NonSelectableDataTable({ onActivate = vi.fn() }: { onActivate?: (track:
   );
 }
 
+function StaticDataTable() {
+  const [sorting, setSorting] = useState<SortingState>([]);
+
+  return (
+    <DataTable
+      columns={columns}
+      data={tracks}
+      enableRowSelection={false}
+      rowId={(track) => track.id}
+      sorting={sorting}
+      onSortingChange={setSorting}
+    />
+  );
+}
+
 function FilterableDataTable() {
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
@@ -238,6 +253,12 @@ describe("DataTable", () => {
 
     fireEvent.keyDown(secondBodyRow, { key: "Enter" });
     expect(onActivate).toHaveBeenCalledWith(tracks[1]);
+  });
+
+  it("does not add row tab stops when rows have no row-level action", () => {
+    render(<StaticDataTable />);
+
+    expect(screen.getAllByRole("row")[1]).not.toHaveAttribute("tabindex");
   });
 
   it("supports controlled column filters, header counts, and selection clearing when filters change", () => {

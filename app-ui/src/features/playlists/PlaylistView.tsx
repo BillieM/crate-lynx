@@ -16,7 +16,7 @@ import { FilterChips } from "./FilterChips";
 import { getPlaylistTrackFilterCounts, type PlaylistTrackFilter } from "./filterTracks";
 import { PlaylistHeader } from "./PlaylistHeader";
 import { PlaylistTrackActions } from "./PlaylistTrackActions";
-import { TrackStatusDot } from "./TrackStatusDot";
+import { TrackStatusDot } from "../../components/TrackStatusDot";
 import {
   deleteFinalLink,
   invalidatePlaylistContentQueries,

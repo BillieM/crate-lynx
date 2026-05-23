@@ -8,11 +8,11 @@ import { DataTable } from "../../components/DataTable";
 import { EmptyStateCard } from "../../components/EmptyStateCard";
 import { FilterChipGroup, type FilterChipOption } from "../../components/FilterChipGroup";
 import { StatusMessage } from "../../components/StatusMessage";
+import { TrackStatusDot } from "../../components/TrackStatusDot";
 import { formatDuration } from "../../lib/formatters";
 import { settleInChunks } from "../../lib/settleInChunks";
 import { useDelayedInvalidate } from "../../lib/useDelayedInvalidate";
 import { controlClasses, surfaceClasses, textClasses } from "../../styles/componentClasses";
-import { trackStatusDotClasses } from "../../styles/toneClasses";
 import { rematchLocalTrack } from "../localTracks/queries";
 import { TrackDetailDrawer } from "../tracks/TrackDetailDrawer";
 import { deleteFinalLink } from "../playlists/queries";
@@ -27,7 +27,7 @@ import {
 } from "./queries";
 
 type LibraryViewState = "ready" | "loading" | "error";
-type LibraryLinkStatusFilter = "all" | "linked" | "pending" | "unlinked";
+type LibraryLinkStatusFilter = "all" | LibraryLinkStatus;
 
 const defaultLibraryStats = {
   linked: 0,
@@ -50,12 +50,6 @@ type LibraryTrackWithFinalLink = LibraryTrack & {
 function hasFinalLinkId(track: LibraryTrack): track is LibraryTrackWithFinalLink {
   return typeof track.final_link_id === "number" && Number.isFinite(track.final_link_id);
 }
-
-const linkStatusLabels = {
-  linked: "Linked",
-  pending: "Pending",
-  unlinked: "Unlinked",
-} satisfies Record<LibraryLinkStatus, string>;
 
 const columnHelper = createColumnHelper<LibraryTrack>();
 
@@ -138,16 +132,6 @@ function LibraryFilterBar({
         Reset
       </ActionButton>
     </section>
-  );
-}
-
-function TrackStatusDot({ status }: { status: LibraryLinkStatus }) {
-  return (
-    <span
-      aria-label={`${linkStatusLabels[status]} track`}
-      className={`inline-flex h-2.5 w-2.5 rounded-full ${trackStatusDotClasses[status]}`}
-      role="status"
-    />
   );
 }
 

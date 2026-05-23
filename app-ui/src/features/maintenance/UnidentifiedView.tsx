@@ -16,8 +16,9 @@ import { ActionButton } from "../../components/ActionButton";
 import { DataTable } from "../../components/DataTable";
 import { EmptyStateCard } from "../../components/EmptyStateCard";
 import { FilterChipGroup, type FilterChipOption } from "../../components/FilterChipGroup";
+import { MetricCard } from "../../components/MetricCard";
 import { StatusMessage } from "../../components/StatusMessage";
-import { surfaceClasses, textClasses } from "../../styles/componentClasses";
+import { textClasses } from "../../styles/componentClasses";
 import { LocalTrackDetailDrawer } from "../localTracks/LocalTrackDetailDrawer";
 import {
   getMaintenanceRequestStatus,
@@ -244,30 +245,6 @@ function UnidentifiedRowActions({
   );
 }
 
-function UnidentifiedSummaryCard({
-  icon: Icon,
-  label,
-  value,
-}: {
-  icon: typeof FileQuestion;
-  label: string;
-  value: string;
-}) {
-  return (
-    <section className={`${surfaceClasses.compactCard} min-h-24`} aria-label={label}>
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className={`${textClasses.microEyebrow} text-ctp-subtext0`}>{label}</p>
-          <p className="mt-2 text-[24px] font-semibold leading-none tabular-nums text-ctp-text">{value}</p>
-        </div>
-        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[8px] bg-ctp-red/18 text-ctp-red ring-1 ring-inset ring-ctp-red/30">
-          <Icon aria-hidden="true" className="h-[18px] w-[18px]" strokeWidth={1.8} />
-        </div>
-      </div>
-    </section>
-  );
-}
-
 type UnidentifiedViewProps = {
   isPending?: boolean;
   state?: MaintenanceViewState;
@@ -428,9 +405,24 @@ export function UnidentifiedView({ isPending = false, state, tracksResponse }: U
       ) : null}
 
       <div className="grid gap-3 sm:grid-cols-3" aria-label="Unidentified summary">
-        <UnidentifiedSummaryCard icon={FileQuestion} label="Failed sources" value={tracks.length.toString()} />
-        <UnidentifiedSummaryCard icon={History} label="Total attempts" value={totalAttemptCount.toString()} />
-        <UnidentifiedSummaryCard icon={XCircle} label="Active" value={activeTracks.length.toString()} />
+        <MetricCard
+          icon={FileQuestion}
+          label="Failed sources"
+          toneClass="bg-ctp-red/18 text-ctp-red ring-ctp-red/30"
+          value={tracks.length}
+        />
+        <MetricCard
+          icon={History}
+          label="Total attempts"
+          toneClass="bg-ctp-red/18 text-ctp-red ring-ctp-red/30"
+          value={totalAttemptCount}
+        />
+        <MetricCard
+          icon={XCircle}
+          label="Active"
+          toneClass="bg-ctp-red/18 text-ctp-red ring-ctp-red/30"
+          value={activeTracks.length}
+        />
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto pb-1 pr-1" aria-label="Unidentified tracks" role="region">

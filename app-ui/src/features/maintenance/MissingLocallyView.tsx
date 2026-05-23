@@ -1,15 +1,16 @@
 import { createColumnHelper, type RowSelectionState, type SortingState } from "@tanstack/react-table";
 import { useQueryClient } from "@tanstack/react-query";
-import { ListMusic, Music2, RadioTower, RefreshCw, SearchX } from "lucide-react";
+import { ListMusic, RadioTower, RefreshCw, SearchX } from "lucide-react";
 import { useMemo, useState } from "react";
 import { ActionButton } from "../../components/ActionButton";
 import { DataTable } from "../../components/DataTable";
 import { EmptyStateCard } from "../../components/EmptyStateCard";
+import { MetricCard } from "../../components/MetricCard";
 import { StatusMessage } from "../../components/StatusMessage";
 import { formatDuration } from "../../lib/formatters";
 import { settleInChunks } from "../../lib/settleInChunks";
 import { useDelayedInvalidate } from "../../lib/useDelayedInvalidate";
-import { surfaceClasses, textClasses } from "../../styles/componentClasses";
+import { textClasses } from "../../styles/componentClasses";
 import {
   playlistSyncJobInvalidationKeys,
   syncStreamingPlaylist,
@@ -44,32 +45,6 @@ function formatPlaylistUsage(track: MissingLocallyTrack) {
 
 function getPlaylistCountLabel(track: MissingLocallyTrack) {
   return `${track.playlist_count} ${track.playlist_count === 1 ? "playlist" : "playlists"}`;
-}
-
-function MissingSummaryCard({
-  icon: Icon,
-  label,
-  toneClass,
-  value,
-}: {
-  icon: typeof Music2;
-  label: string;
-  toneClass: string;
-  value: string;
-}) {
-  return (
-    <section className={`${surfaceClasses.compactCard} min-h-24`} aria-label={label}>
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className={`${textClasses.microEyebrow} text-ctp-subtext0`}>{label}</p>
-          <p className="mt-2 text-[24px] font-semibold leading-none tabular-nums text-ctp-text">{value}</p>
-        </div>
-        <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-[8px] ring-1 ring-inset ${toneClass}`}>
-          <Icon aria-hidden="true" className="h-[18px] w-[18px]" strokeWidth={1.8} />
-        </div>
-      </div>
-    </section>
-  );
 }
 
 type MissingLocallyViewProps = {
@@ -202,17 +177,17 @@ export function MissingLocallyView({ isPending = false, state, tracksResponse }:
       ) : null}
 
       <div className="grid gap-3 sm:grid-cols-2" aria-label="Missing locally summary">
-        <MissingSummaryCard
+        <MetricCard
           icon={SearchX}
           label="Missing tracks"
           toneClass="bg-ctp-yellow/18 text-ctp-yellow ring-ctp-yellow/30"
-          value={tracks.length.toString()}
+          value={tracks.length}
         />
-        <MissingSummaryCard
+        <MetricCard
           icon={ListMusic}
           label="Affected playlists"
           toneClass="bg-ctp-blue/18 text-ctp-blue ring-ctp-blue/30"
-          value={playlistCount.toString()}
+          value={playlistCount}
         />
       </div>
 

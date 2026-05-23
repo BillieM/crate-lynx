@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
-import App, { getProgressColor } from "./App";
+import App from "./App";
 import type { LibraryTracksResponse } from "./features/library/queries";
 import type { MissingLocallyResponse, UnidentifiedResponse } from "./features/maintenance/queries";
 import type {
@@ -12,6 +12,7 @@ import type {
   StreamingPlaylistsResponse,
 } from "./features/playlists/queries";
 import type { StreamingRelationshipSuggestionsResponse } from "./features/relationships/queries";
+import { getProgressColor } from "./features/shell/progress";
 import { blobResponse, createMockApi, emptyResponse, failUnexpectedFetch, jsonResponse } from "./test/mockApi";
 
 const playlistDetailResponse: PlaylistDetailResponse = {
@@ -1562,7 +1563,9 @@ describe("App", () => {
     fireEvent.click(await screen.findByRole("button", { name: /Late Night Drive/i }));
 
     expect(await screen.findByText("Night Runner")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: /Pending/i }));
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /Pending/i }));
+    });
 
     expect(screen.getByText("Pending Signal")).toBeInTheDocument();
     expect(screen.queryByText("Night Runner")).not.toBeInTheDocument();

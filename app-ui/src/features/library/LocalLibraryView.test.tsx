@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { PropsWithChildren, ReactElement } from "react";
 import { MemoryRouter } from "react-router-dom";
 
@@ -271,13 +271,17 @@ describe("LocalLibraryView", () => {
     const filters = await screen.findByRole("region", { name: "Library filters" });
     const pendingButton = await within(filters).findByRole("button", { name: "Pending 2" });
 
-    fireEvent.click(pendingButton);
+    await act(async () => {
+      fireEvent.click(pendingButton);
+    });
 
     expect(within(filters).getByRole("button", { name: "Pending 2" })).toHaveAttribute("aria-pressed", "true");
 
     const resetButton = within(filters).getByRole("button", { name: "Reset library filters" });
     expect(resetButton).toBeEnabled();
-    fireEvent.click(resetButton);
+    await act(async () => {
+      fireEvent.click(resetButton);
+    });
 
     expect(within(filters).getByRole("button", { name: "All 5" })).toHaveAttribute("aria-pressed", "true");
     expect(resetButton).toBeDisabled();
@@ -351,7 +355,9 @@ describe("LocalLibraryView", () => {
     const filters = await screen.findByRole("region", { name: "Library filters" });
     const pendingButton = await within(filters).findByRole("button", { name: "Pending 2" });
 
-    fireEvent.click(pendingButton);
+    await act(async () => {
+      fireEvent.click(pendingButton);
+    });
 
     const trackList = screen.getByRole("region", { name: "Local library tracks" });
     expect(within(trackList).getByText("Showing 2 of 5 rows")).toBeInTheDocument();

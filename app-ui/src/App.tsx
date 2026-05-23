@@ -1,5 +1,3 @@
-/* eslint-disable react-refresh/only-export-components */
-
 import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useLibraryTracksQuery } from "./features/library/queries";
@@ -9,7 +7,6 @@ import { useStreamingRelationshipSuggestionsQuery } from "./features/relationshi
 import { Sidebar } from "./features/shell/Sidebar";
 import { Topbar } from "./features/shell/Topbar";
 import { ViewShell } from "./features/shell/ViewShell";
-import { getProgressColor } from "./features/shell/progress";
 import type { PlaylistSyncViewState } from "./features/shell/types";
 import {
   type AppViewEntry,
@@ -27,9 +24,6 @@ import {
   settingsSyncYoutubeMusicViewId,
   staticViewRoutes,
 } from "./features/shell/viewRegistry";
-
-export { getProgressColor };
-export type { ProgressColor, ProgressStatus } from "./features/shell/progress";
 
 const emptyStreamingPlaylists: StreamingPlaylist[] = [];
 
@@ -132,7 +126,7 @@ function App() {
     activeViewId === settingsSyncYoutubeMusicViewId;
 
   return (
-    <div className="flex min-h-0 flex-1 flex-row overflow-hidden bg-ctp-base text-ctp-text max-md:flex-col">
+    <div className="flex h-full min-h-0 w-full flex-1 flex-row overflow-hidden bg-ctp-base text-ctp-text max-md:flex-col">
       <Sidebar
         activeItemId={activeViewId}
         isSettingsMode={isSettingsView}
@@ -147,7 +141,7 @@ function App() {
         settingsItems={settingsItems}
       />
 
-      <main className="flex min-h-0 min-w-0 flex-1 flex-col bg-ctp-base">
+      <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-ctp-base">
         <Topbar
           isSettingsView={isSettingsView}
           onNavigateHome={() => handleViewSelect("proposals")}

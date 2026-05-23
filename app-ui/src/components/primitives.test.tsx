@@ -1,9 +1,12 @@
 import { render, screen } from "@testing-library/react";
+import { Music2 } from "lucide-react";
 
 import { ActionButton } from "./ActionButton";
 import { EmptyStateCard } from "./EmptyStateCard";
+import { MetricCard } from "./MetricCard";
 import { Pill } from "./Pill";
 import { StatusMessage } from "./StatusMessage";
+import { TrackStatusDot } from "./TrackStatusDot";
 
 describe("shared UI primitives", () => {
   it("renders action buttons with neutral and disabled state classes", () => {
@@ -33,5 +36,24 @@ describe("shared UI primitives", () => {
 
     expect(screen.getByRole("status", { name: "" })).toHaveTextContent("There is nothing to review.");
     expect(screen.getByText("Sync in progress")).toHaveClass("text-ctp-text");
+  });
+
+  it("renders shared track status dots", () => {
+    render(<TrackStatusDot status="linked" />);
+
+    expect(screen.getByRole("status", { name: "Linked track" })).toHaveClass("bg-ctp-green");
+  });
+
+  it("renders reusable metric cards", () => {
+    render(
+      <MetricCard
+        icon={Music2}
+        label="Missing tracks"
+        toneClass="bg-ctp-yellow/18 text-ctp-yellow ring-ctp-yellow/30"
+        value={12}
+      />,
+    );
+
+    expect(screen.getByRole("region", { name: "Missing tracks" })).toHaveTextContent("12");
   });
 });
