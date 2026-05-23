@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
@@ -150,6 +151,27 @@ class StreamingRelationshipMutationResult:
     affected_playlist_ids: tuple[int, ...]
 
 
+@dataclass(frozen=True, slots=True)
+class _SuggestionResolutionContext:
+    row: object
+    lower_track_id: int
+    higher_track_id: int
+    first_resolved_link: ResolvedStreamingTrackLink | None
+    second_resolved_link: ResolvedStreamingTrackLink | None
+    conflict: EquivalentAcceptanceConflict | None
+
+    @property
+    def final_link_ids(self) -> tuple[int, ...]:
+        link_ids = [
+            resolved.final_link_id
+            for resolved in (self.first_resolved_link, self.second_resolved_link)
+            if resolved is not None
+        ]
+        if self.conflict is not None:
+            link_ids.extend(link.id for link in self.conflict.final_links)
+        return tuple(link_ids)
+
+
 class StreamingRelationshipSuggestionStore:
     def __init__(
         self, database_url: str | None = None, *, engine: Engine | None = None
@@ -254,14 +276,22 @@ class StreamingRelationshipSuggestionStore:
             rows = connection.execute(query).mappings().all()
             resolver = StreamingRelationshipResolver(connection)
             link_contexts = _LocalLinkContextFactory(connection)
+            contexts = [
+                _suggestion_resolution_context(row=row, resolver=resolver)
+                for row in rows
+            ]
+            link_contexts.prime(
+                final_link_id
+                for context in contexts
+                for final_link_id in context.final_link_ids
+            )
 
             return [
                 _suggestion_record(
-                    row=row,
-                    resolver=resolver,
+                    context=context,
                     link_contexts=link_contexts,
                 )
-                for row in rows
+                for context in contexts
             ]
 
     def accept(
@@ -578,12 +608,20 @@ class _LocalLinkContextFactory:
             approved_at=final_link.approved_at,
         )
 
-    def _row(self, final_link_id: int):
-        cached = self._rows_by_final_link_id.get(final_link_id)
-        if cached is not None:
-            return cached
+    def prime(self, final_link_ids: Iterable[int]) -> None:
+        missing_ids = tuple(
+            sorted(
+                {
+                    int(final_link_id)
+                    for final_link_id in final_link_ids
+                    if int(final_link_id) not in self._rows_by_final_link_id
+                }
+            )
+        )
+        if not missing_ids:
+            return
 
-        row = (
+        rows = (
             self._connection.execute(
                 select(
                     final_links_table.c.id,
@@ -603,31 +641,56 @@ class _LocalLinkContextFactory:
                         beets_items_table.c.beets_id == local_tracks_table.c.beets_id,
                     )
                 )
-                .where(final_links_table.c.id == final_link_id)
+                .where(final_links_table.c.id.in_(missing_ids))
             )
             .mappings()
-            .one()
+            .all()
         )
-        self._rows_by_final_link_id[final_link_id] = row
-        return row
+        for row in rows:
+            self._rows_by_final_link_id[int(row["id"])] = row
+
+    def _row(self, final_link_id: int):
+        cached = self._rows_by_final_link_id.get(final_link_id)
+        if cached is not None:
+            return cached
+
+        self.prime((final_link_id,))
+        return self._rows_by_final_link_id[final_link_id]
+
+
+def _suggestion_resolution_context(
+    *,
+    row,
+    resolver: StreamingRelationshipResolver,
+) -> _SuggestionResolutionContext:
+    lower_track_id = int(row["lower_track_id"])
+    higher_track_id = int(row["higher_track_id"])
+    return _SuggestionResolutionContext(
+        row=row,
+        lower_track_id=lower_track_id,
+        higher_track_id=higher_track_id,
+        first_resolved_link=resolver.resolve(lower_track_id),
+        second_resolved_link=resolver.resolve(higher_track_id),
+        conflict=resolver.detect_equivalent_acceptance_conflict(
+            lower_track_id,
+            higher_track_id,
+        ),
+    )
 
 
 def _suggestion_record(
     *,
-    row,
-    resolver: StreamingRelationshipResolver,
+    context: _SuggestionResolutionContext,
     link_contexts: _LocalLinkContextFactory,
 ) -> StreamingRelationshipSuggestionRecord:
-    lower_track_id = int(row["lower_track_id"])
-    higher_track_id = int(row["higher_track_id"])
-    first_link = link_contexts.for_resolved(resolver.resolve(lower_track_id))
-    second_link = link_contexts.for_resolved(resolver.resolve(higher_track_id))
+    row = context.row
+    lower_track_id = context.lower_track_id
+    higher_track_id = context.higher_track_id
+    first_link = link_contexts.for_resolved(context.first_resolved_link)
+    second_link = link_contexts.for_resolved(context.second_resolved_link)
     conflict = None
     conflict_state = CONFLICT_STATE_NONE
-    detected_conflict = resolver.detect_equivalent_acceptance_conflict(
-        lower_track_id,
-        higher_track_id,
-    )
+    detected_conflict = context.conflict
     if detected_conflict is not None:
         conflict_state = CONFLICT_STATE_DIFFERENT_LOCAL_LINKS
         conflict = StreamingRelationshipConflictContext(

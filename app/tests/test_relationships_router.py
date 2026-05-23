@@ -4,7 +4,7 @@ import asyncio
 import inspect
 from pathlib import Path
 
-from sqlalchemy import create_engine, select
+from sqlalchemy import create_engine, event, select
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.ingestion.beets_mirror import metadata as beets_metadata
@@ -190,6 +190,84 @@ def test_list_relationship_suggestions_returns_metadata_links_and_conflicts(
         "limit": 50,
         "next_cursor": None,
     }
+
+
+def test_list_relationship_suggestions_batches_local_link_context_queries(
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite:///{tmp_path / 'relationship-list-context-batch.db'}"
+    engine = _create_relationship_router_engine(database_url)
+    test_data = factories.TestDataFactory(engine)
+
+    for index in range(3):
+        first_track_id = test_data.streaming_track(
+            provider_track_id=f"ytm-context-{index}-a",
+            title=f"Track {index} A",
+        )
+        second_track_id = test_data.streaming_track(
+            provider_track_id=f"ytm-context-{index}-b",
+            title=f"Track {index} B",
+        )
+        first_local_id = test_data.local_track(
+            beets_id=100 + index * 2,
+            file_path=f"Artist/context-{index}-a.mp3",
+        )
+        second_local_id = test_data.local_track(
+            beets_id=101 + index * 2,
+            file_path=f"Artist/context-{index}-b.mp3",
+        )
+        test_data.beets_item(
+            beets_id=100 + index * 2,
+            title=f"Local {index} A",
+        )
+        test_data.beets_item(
+            beets_id=101 + index * 2,
+            title=f"Local {index} B",
+        )
+        test_data.final_link(
+            local_track_id=first_local_id,
+            streaming_track_id=first_track_id,
+        )
+        test_data.final_link(
+            local_track_id=second_local_id,
+            streaming_track_id=second_track_id,
+        )
+        test_data.streaming_relationship_suggestion(
+            first_track_id=first_track_id,
+            second_track_id=second_track_id,
+            score=0.99 - index / 100,
+        )
+
+    local_link_context_statement_count = 0
+
+    def count_local_link_context_statement(
+        conn, cursor, statement, parameters, context, executemany
+    ) -> None:
+        nonlocal local_link_context_statement_count
+        if (
+            "final_links" in statement
+            and "local_tracks" in statement
+            and "beets_items" in statement
+        ):
+            local_link_context_statement_count += 1
+
+    event.listen(engine, "before_cursor_execute", count_local_link_context_statement)
+    router = create_router(require_database_url=lambda: database_url)
+
+    try:
+        response = _call_endpoint(
+            _route(router, "GET", "/streaming/relationships/suggestions").endpoint,
+            engine=engine,
+        )
+    finally:
+        event.remove(
+            engine,
+            "before_cursor_execute",
+            count_local_link_context_statement,
+        )
+
+    assert response.returned_count == 3
+    assert local_link_context_statement_count == 1
 
 
 def test_list_relationship_suggestions_limits_returned_rows(
