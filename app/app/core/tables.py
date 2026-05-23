@@ -23,6 +23,18 @@ suggested_links_view = table(
     column("created_at"),
 )
 
+streaming_tracks_view = table(
+    "streaming_tracks",
+    column("id"),
+    column("provider_track_id"),
+    column("title"),
+    column("artist"),
+    column("album"),
+    column("year"),
+    column("isrc"),
+    column("duration_ms"),
+)
+
 streaming_relationships_view = table(
     "streaming_relationships",
     column("id"),

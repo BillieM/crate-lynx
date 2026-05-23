@@ -22,7 +22,11 @@ from app.relationships.models import (
     streaming_relationships_table,
 )
 from app.relationships.router import create_router
-from app.relationships.schemas import AcceptStreamingRelationshipSuggestionRequest
+from app.relationships.schemas import (
+    AcceptStreamingRelationshipSuggestionRequest,
+    CreateStreamingRelationshipRequest,
+    UpdateStreamingRelationshipRequest,
+)
 from app.streaming.models import (
     PLAYLIST_SYNC_MODE_FULL,
     metadata as streaming_metadata,
@@ -264,6 +268,73 @@ def test_list_relationship_suggestions_filters_by_relationship_type(
     assert response.limit == 50
     assert [suggestion.id for suggestion in response.suggestions] == [related_id]
     assert response.suggestions[0].relationship_type == "related"
+
+
+def test_list_relationship_suggestions_hides_stale_resolved_relationships(
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite:///{tmp_path / 'relationship-list-stale.db'}"
+    engine = _create_relationship_router_engine(database_url)
+    test_data = factories.TestDataFactory(engine)
+    first_track_id, second_track_id = _streaming_pair(test_data)
+    group_track_id = test_data.streaming_track(
+        provider_track_id="ytm-3",
+        title="Track 3",
+    )
+    exact_first_id = test_data.streaming_track(
+        provider_track_id="ytm-4",
+        title="Track 4",
+    )
+    exact_second_id = test_data.streaming_track(
+        provider_track_id="ytm-5",
+        title="Track 5",
+    )
+    fresh_first_id = test_data.streaming_track(
+        provider_track_id="ytm-6",
+        title="Track 6",
+    )
+    fresh_second_id = test_data.streaming_track(
+        provider_track_id="ytm-7",
+        title="Track 7",
+    )
+    test_data.streaming_relationship(
+        first_track_id=first_track_id,
+        second_track_id=group_track_id,
+    )
+    test_data.streaming_relationship(
+        first_track_id=second_track_id,
+        second_track_id=group_track_id,
+    )
+    test_data.streaming_relationship(
+        first_track_id=exact_first_id,
+        second_track_id=exact_second_id,
+        relationship_type=STREAMING_RELATIONSHIP_TYPE_RELATED,
+    )
+    test_data.streaming_relationship_suggestion(
+        first_track_id=first_track_id,
+        second_track_id=second_track_id,
+        score=0.99,
+    )
+    test_data.streaming_relationship_suggestion(
+        first_track_id=exact_first_id,
+        second_track_id=exact_second_id,
+        score=0.98,
+    )
+    fresh_id = test_data.streaming_relationship_suggestion(
+        first_track_id=fresh_first_id,
+        second_track_id=fresh_second_id,
+        score=0.75,
+    )
+
+    router = create_router(require_database_url=lambda: database_url)
+    response = _call_endpoint(
+        _route(router, "GET", "/streaming/relationships/suggestions").endpoint,
+        limit=1,
+    )
+
+    assert response.total_count == 1
+    assert response.returned_count == 1
+    assert [suggestion.id for suggestion in response.suggestions] == [fresh_id]
 
 
 def test_accept_equivalent_suggestion_creates_relationship(
@@ -774,6 +845,90 @@ def test_accept_equivalent_suggestion_enqueues_m3u_regeneration(
         "redis_urls": ["redis://redis:6379/9"],
         "playlist_ids": [(first_playlist_id, second_playlist_id)],
     }
+
+
+def test_streaming_relationship_create_update_delete_endpoints(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite:///{tmp_path / 'relationship-manual-crud.db'}"
+    engine = _create_relationship_router_engine(database_url)
+    seen = _capture_m3u_enqueues(monkeypatch)
+    test_data = factories.TestDataFactory(engine)
+    account_id = test_data.streaming_account()
+    first_track_id, second_track_id = _streaming_pair(test_data)
+    first_playlist_id = test_data.streaming_playlist(
+        account_id=account_id,
+        provider_playlist_id="PL-first",
+        sync_mode=PLAYLIST_SYNC_MODE_FULL,
+    )
+    second_playlist_id = test_data.streaming_playlist(
+        account_id=account_id,
+        provider_playlist_id="PL-second",
+        sync_mode=PLAYLIST_SYNC_MODE_FULL,
+    )
+    test_data.playlist_membership(
+        playlist_id=first_playlist_id,
+        streaming_track_id=first_track_id,
+    )
+    test_data.playlist_membership(
+        playlist_id=second_playlist_id,
+        streaming_track_id=second_track_id,
+    )
+
+    router = create_router(
+        require_database_url=lambda: database_url,
+        require_redis_url=lambda: "redis://redis:6379/9",
+    )
+    create_response = _call_endpoint(
+        _route(router, "POST", "/streaming/relationships").endpoint,
+        CreateStreamingRelationshipRequest(
+            first_track_id=first_track_id,
+            relationship_type=STREAMING_RELATIONSHIP_TYPE_RELATED,
+            second_track_id=second_track_id,
+        ),
+    )
+
+    assert create_response.status == "created"
+    assert create_response.relationship_type == "related"
+    assert create_response.detached_final_link_ids == []
+    assert seen == {"redis_urls": [], "playlist_ids": []}
+
+    update_response = _call_endpoint(
+        _route(router, "PATCH", "/streaming/relationships/{relationship_id}").endpoint,
+        create_response.relationship_id,
+        UpdateStreamingRelationshipRequest(
+            relationship_type=STREAMING_RELATIONSHIP_TYPE_EQUIVALENT,
+        ),
+    )
+
+    assert update_response.status == "updated"
+    assert update_response.relationship_type == "equivalent"
+    assert update_response.detached_final_link_ids == []
+
+    delete_response = _call_endpoint(
+        _route(
+            router,
+            "DELETE",
+            "/streaming/relationships/{relationship_id}",
+        ).endpoint,
+        create_response.relationship_id,
+    )
+
+    assert delete_response.status == "deleted"
+    assert delete_response.relationship_type == "equivalent"
+    assert delete_response.accepted_at is None
+    assert seen == {
+        "redis_urls": ["redis://redis:6379/9", "redis://redis:6379/9"],
+        "playlist_ids": [
+            (first_playlist_id, second_playlist_id),
+            (first_playlist_id, second_playlist_id),
+        ],
+    }
+    with engine.connect() as connection:
+        relationships = connection.execute(select(streaming_relationships_table)).all()
+
+    assert relationships == []
 
 
 def _streaming_pair(

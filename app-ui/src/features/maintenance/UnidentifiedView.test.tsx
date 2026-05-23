@@ -202,17 +202,41 @@ describe("UnidentifiedView", () => {
   it("opens the local track detail drawer from a row action", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({
       json: async () => ({
+        album: "Live Transfers",
+        artist: "Artist",
+        beets_album: null,
+        beets_id: 91,
+        beets_item: {
+          attributes: [],
+          beets_id: 91,
+          fields: [{ key: "title", value: "Side B Live Rip" }],
+        },
+        created_at: "2026-05-03T09:55:00Z",
+        duration_ms: null,
         failed_ingestion_attempts: [],
         file_path: "Artist/side-b-live-rip.flac",
         final_link: {
           approved_at: "2026-05-03T10:00:00Z",
           id: 91,
+          streaming_track: {
+            album: "Live Transfers",
+            artist: "Artist",
+            duration_ms: null,
+            id: 7001,
+            isrc: null,
+            provider_track_id: "ytm-7001",
+            title: "Side B Live Rip",
+            year: null,
+          },
           streaming_track_id: 7001,
         },
+        fingerprint: null,
         id: 1004,
         library_root_rel_path: "Artist/side-b-live-rip.flac",
         link_status: "linked",
         pending_suggestions: [],
+        title: "Side B Live Rip",
+        updated_at: "2026-05-03T10:00:00Z",
       }),
       ok: true,
     } as Response);
@@ -221,7 +245,7 @@ describe("UnidentifiedView", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Open local track 1004 for side-b-live-rip.flac" }));
 
-    expect(await screen.findByText("Track #1004")).toBeInTheDocument();
+    expect(await screen.findByRole("dialog", { name: "Side B Live Rip" })).toBeInTheDocument();
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith("/api/local-tracks/1004");
     });

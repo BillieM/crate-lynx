@@ -134,6 +134,46 @@ function mockPlaylistApi({
     .get("/api/streaming/playlists", () => jsonResponse({ playlists: [] }))
     .get("/api/streaming/accounts", () => jsonResponse({ accounts }))
     .delete("/api/final-links/9001", deleteHandler)
+    .get("/api/streaming/tracks/101", () =>
+      jsonResponse({
+        album: "Late Night Drive",
+        artist: "Frame Delay",
+        duration_ms: 214000,
+        equivalent_tracks: [],
+        id: 101,
+        isrc: "USFD1260001",
+        pending_local_suggestions: [],
+        playlist_appearances: [
+          {
+            account_id: 4,
+            playlist_id: 12,
+            position: 1,
+            provider_playlist_id: "PL12",
+            sync_mode: "full",
+            title: "Late Night Drive",
+          },
+        ],
+        provider_track_id: "ytm-101",
+        relationships: [],
+        resolved_local_link: {
+          approved_at: "2026-05-01T09:00:00Z",
+          final_link_id: 9001,
+          local_track: {
+            album: "Late Night Drive",
+            artist: "Frame Delay",
+            file_path: "/library/Frame Delay/Night Runner.mp3",
+            id: 501,
+            library_root_rel_path: "Frame Delay/Night Runner.mp3",
+            title: "Night Runner",
+          },
+          local_track_id: 501,
+          resolution_source: "direct",
+          source_streaming_track_id: 101,
+        },
+        title: "Night Runner",
+        year: 2026,
+      }),
+    )
     .get("/api/local-tracks/501", () =>
       jsonResponse({
         failed_ingestion_attempts: [],
@@ -209,15 +249,16 @@ describe("PlaylistView", () => {
     expect(screen.getByRole("checkbox", { name: "Select row 1" })).not.toBeChecked();
   });
 
-  it("opens the local track drawer for a linked row action", async () => {
+  it("opens the streaming track drawer for a linked row action", async () => {
     mockPlaylistApi();
 
     renderWithProviders(<PlaylistView isActive playlistResourceId={12} />);
 
     fireEvent.click(await screen.findByRole("button", { name: "Linked" }));
 
-    expect(await screen.findByRole("dialog", { name: "Track #501" })).toBeInTheDocument();
-    expect(await screen.findByText(/Frame Delay\/Night Runner\.mp3/)).toBeInTheDocument();
+    const dialog = await screen.findByRole("dialog", { name: "Night Runner" });
+    expect(dialog).toBeInTheDocument();
+    expect(within(dialog).getByText("ytm-101")).toBeInTheDocument();
   });
 
   it("renders account auth errors alongside playlist sync errors", async () => {

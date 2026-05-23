@@ -10,7 +10,7 @@ import { StatusMessage } from "../../components/StatusMessage";
 import { formatDuration } from "../../lib/formatters";
 import { settleInChunks } from "../../lib/settleInChunks";
 import { textClasses } from "../../styles/componentClasses";
-import { LocalTrackDetailDrawer } from "../localTracks/LocalTrackDetailDrawer";
+import { TrackDetailDrawer } from "../tracks/TrackDetailDrawer";
 import { useStreamingAccountsQuery } from "../streamingAccounts/queries";
 import { FilterChips } from "./FilterChips";
 import { getPlaylistTrackFilterCounts, type PlaylistTrackFilter } from "./filterTracks";
@@ -96,12 +96,8 @@ export function PlaylistView({
       : null;
   const openTrackDetail = useCallback(
     (track: PlaylistTrack) => {
-      if (track.status !== "linked" || track.local_track_id === null) {
-        return;
-      }
-
       const nextParams = new URLSearchParams(searchParams);
-      nextParams.set("detail", String(track.local_track_id));
+      nextParams.set("detail", `streaming:${track.id}`);
       setSearchParams(nextParams, { replace: false });
     },
     [searchParams, setSearchParams],
@@ -309,7 +305,7 @@ export function PlaylistView({
           <EmptyStateCard body="No tracks match this filter." title="No matching tracks" />
         )}
       </div>
-      <LocalTrackDetailDrawer localTrackId={null} open={false} syncUrl onClose={() => undefined} />
+      <TrackDetailDrawer open={false} syncUrl onClose={() => undefined} />
     </section>
   );
 }

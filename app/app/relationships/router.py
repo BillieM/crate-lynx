@@ -13,22 +13,28 @@ from app.m3u.jobs import M3uRegenerationJobEnqueuer
 from app.relationships.schemas import (
     AcceptStreamingRelationshipSuggestionRequest,
     AcceptStreamingRelationshipSuggestionResponse,
+    CreateStreamingRelationshipRequest,
     GenerateStreamingRelationshipSuggestionsResponse,
     RejectStreamingRelationshipSuggestionResponse,
     StreamingRelationshipConflictResponse,
     StreamingRelationshipLocalLinkResponse,
+    StreamingRelationshipMutationResponse,
     StreamingRelationshipSuggestionListResponse,
     StreamingRelationshipSuggestionResponse,
     StreamingRelationshipType,
     StreamingRelationshipTrackResponse,
+    UpdateStreamingRelationshipRequest,
 )
 from app.relationships.store import (
     DEFAULT_RELATIONSHIP_SUGGESTION_LIST_LIMIT,
     InvalidWinningFinalLinkError,
     StaleStreamingRelationshipSuggestionError,
     StreamingRelationshipAcceptanceConflictError,
+    StreamingRelationshipAlreadyExistsError,
     StreamingRelationshipConflictContext,
     StreamingRelationshipLocalLinkContext,
+    StreamingRelationshipNotFoundError,
+    StreamingRelationshipStore,
     StreamingRelationshipSuggestionNotFoundError,
     StreamingRelationshipSuggestionRecord,
     StreamingRelationshipSuggestionStore,
@@ -200,7 +206,119 @@ def create_router(
             rejected_at=result.rejected_at.isoformat(),
         )
 
+    @router.post(
+        "/streaming/relationships",
+        status_code=201,
+        response_model=StreamingRelationshipMutationResponse,
+    )
+    def create_streaming_relationship(
+        request: CreateStreamingRelationshipRequest,
+        engine: Engine = Depends(get_engine),
+    ) -> StreamingRelationshipMutationResponse:
+        store = StreamingRelationshipStore(engine=_engine(engine))
+        try:
+            result = store.create(
+                first_track_id=request.first_track_id,
+                second_track_id=request.second_track_id,
+                relationship_type=request.relationship_type,
+                winning_final_link_id=request.winning_final_link_id,
+            )
+        except StreamingRelationshipNotFoundError as exc:
+            raise HTTPException(
+                status_code=404,
+                detail="Streaming relationship tracks not found",
+            ) from exc
+        except StreamingRelationshipAlreadyExistsError as exc:
+            raise HTTPException(
+                status_code=409,
+                detail="Streaming relationship already exists",
+            ) from exc
+        except StreamingRelationshipAcceptanceConflictError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except InvalidWinningFinalLinkError as exc:
+            raise HTTPException(
+                status_code=409,
+                detail="winning_final_link_id must reference a conflicting final link",
+            ) from exc
+
+        redis_url = _m3u_redis_url(result.affected_playlist_ids)
+        _enqueue_m3u_regeneration(result.affected_playlist_ids, redis_url)
+
+        return _relationship_mutation_response(result, status="created")
+
+    @router.patch(
+        "/streaming/relationships/{relationship_id}",
+        response_model=StreamingRelationshipMutationResponse,
+    )
+    def update_streaming_relationship(
+        relationship_id: int,
+        request: UpdateStreamingRelationshipRequest,
+        engine: Engine = Depends(get_engine),
+    ) -> StreamingRelationshipMutationResponse:
+        store = StreamingRelationshipStore(engine=_engine(engine))
+        try:
+            result = store.update(
+                relationship_id,
+                relationship_type=request.relationship_type,
+                winning_final_link_id=request.winning_final_link_id,
+            )
+        except StreamingRelationshipNotFoundError as exc:
+            raise HTTPException(
+                status_code=404,
+                detail="Streaming relationship not found",
+            ) from exc
+        except StreamingRelationshipAcceptanceConflictError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except InvalidWinningFinalLinkError as exc:
+            raise HTTPException(
+                status_code=409,
+                detail="winning_final_link_id must reference a conflicting final link",
+            ) from exc
+
+        redis_url = _m3u_redis_url(result.affected_playlist_ids)
+        _enqueue_m3u_regeneration(result.affected_playlist_ids, redis_url)
+
+        return _relationship_mutation_response(result, status="updated")
+
+    @router.delete(
+        "/streaming/relationships/{relationship_id}",
+        response_model=StreamingRelationshipMutationResponse,
+    )
+    def delete_streaming_relationship(
+        relationship_id: int,
+        engine: Engine = Depends(get_engine),
+    ) -> StreamingRelationshipMutationResponse:
+        store = StreamingRelationshipStore(engine=_engine(engine))
+        try:
+            result = store.delete(relationship_id)
+        except StreamingRelationshipNotFoundError as exc:
+            raise HTTPException(
+                status_code=404,
+                detail="Streaming relationship not found",
+            ) from exc
+
+        redis_url = _m3u_redis_url(result.affected_playlist_ids)
+        _enqueue_m3u_regeneration(result.affected_playlist_ids, redis_url)
+
+        return _relationship_mutation_response(result, status="deleted")
+
     return router
+
+
+def _relationship_mutation_response(
+    result,
+    *,
+    status: str,
+) -> StreamingRelationshipMutationResponse:
+    return StreamingRelationshipMutationResponse(
+        relationship_id=result.relationship_id,
+        relationship_type=result.relationship_type,
+        status=status,
+        accepted_at=(
+            result.accepted_at.isoformat() if result.accepted_at is not None else None
+        ),
+        detached_final_link_ids=list(result.detached_final_link_ids),
+    )
 
 
 def _suggestion_response(

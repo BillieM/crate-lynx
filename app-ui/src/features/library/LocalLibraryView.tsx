@@ -13,7 +13,7 @@ import { settleInChunks } from "../../lib/settleInChunks";
 import { useDelayedInvalidate } from "../../lib/useDelayedInvalidate";
 import { controlClasses, surfaceClasses, textClasses } from "../../styles/componentClasses";
 import { trackStatusDotClasses } from "../../styles/toneClasses";
-import { LocalTrackDetailDrawer } from "../localTracks/LocalTrackDetailDrawer";
+import { TrackDetailDrawer } from "../tracks/TrackDetailDrawer";
 import { deleteFinalLink } from "../playlists/queries";
 import {
   type LibraryLinkStatus,
@@ -217,7 +217,7 @@ export function LocalLibraryView({ isPending = false, state, tracksResponse }: L
   const openTrackDetail = useCallback(
     (track: LibraryTrack) => {
       const nextParams = new URLSearchParams(searchParams);
-      nextParams.set("detail", String(track.id));
+      nextParams.set("detail", `local:${track.id}`);
       setSearchParams(nextParams, { replace: false });
     },
     [searchParams, setSearchParams],
@@ -461,7 +461,7 @@ export function LocalLibraryView({ isPending = false, state, tracksResponse }: L
           )}
         </div>
       </section>
-      <LocalTrackDetailDrawer localTrackId={null} open={false} syncUrl onClose={() => undefined} />
+      <TrackDetailDrawer open={false} syncUrl onClose={() => undefined} />
     </section>
   );
 }

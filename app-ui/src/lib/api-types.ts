@@ -141,6 +141,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/streaming/tracks/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Search Streaming Tracks */
+        get: operations["search_streaming_tracks_api_streaming_tracks_search_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/streaming/tracks/{streaming_track_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Streaming Track Detail */
+        get: operations["get_streaming_track_detail_api_streaming_tracks__streaming_track_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/playlists/{playlist_id}/m3u": {
         parameters: {
             query?: never;
@@ -413,6 +447,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/final-links": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Final Link */
+        post: operations["create_final_link_api_final_links_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/final-links/{final_link_id}": {
         parameters: {
             query?: never;
@@ -492,6 +543,75 @@ export interface paths {
         put?: never;
         /** Reject Relationship Suggestion */
         post: operations["reject_relationship_suggestion_api_streaming_relationships_suggestions__suggestion_id__reject_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/streaming/relationships": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Streaming Relationship */
+        post: operations["create_streaming_relationship_api_streaming_relationships_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/streaming/relationships/{relationship_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Streaming Relationship */
+        delete: operations["delete_streaming_relationship_api_streaming_relationships__relationship_id__delete"];
+        options?: never;
+        head?: never;
+        /** Update Streaming Relationship */
+        patch: operations["update_streaming_relationship_api_streaming_relationships__relationship_id__patch"];
+        trace?: never;
+    };
+    "/api/local-tracks/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Search Local Tracks */
+        get: operations["search_local_tracks_api_local_tracks_search_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/local-tracks/{local_track_id}/audio": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Local Track Audio */
+        get: operations["get_local_track_audio_api_local_tracks__local_track_id__audio_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -598,11 +718,60 @@ export interface components {
             /** Detached Final Link Ids */
             detached_final_link_ids: number[];
         };
+        /** BeetsAlbumDetailResponse */
+        BeetsAlbumDetailResponse: {
+            /** Beets Album Id */
+            beets_album_id: number;
+            /** Fields */
+            fields: components["schemas"]["MetadataFieldResponse"][];
+            /** Attributes */
+            attributes: components["schemas"]["MetadataFieldResponse"][];
+        };
+        /** BeetsItemDetailResponse */
+        BeetsItemDetailResponse: {
+            /** Beets Id */
+            beets_id: number;
+            /** Fields */
+            fields: components["schemas"]["MetadataFieldResponse"][];
+            /** Attributes */
+            attributes: components["schemas"]["MetadataFieldResponse"][];
+        };
         /**
          * ConfidenceBand
          * @enum {string}
          */
         ConfidenceBand: "high" | "medium" | "low";
+        /** CreateFinalLinkRequest */
+        CreateFinalLinkRequest: {
+            /** Local Track Id */
+            local_track_id: number;
+            /** Streaming Track Id */
+            streaming_track_id: number;
+            /** Replace Final Link Id */
+            replace_final_link_id?: number | null;
+            /**
+             * Detach Conflicting Final Link Ids
+             * @default []
+             */
+            detach_conflicting_final_link_ids: number[];
+        };
+        /** CreateFinalLinkResponse */
+        CreateFinalLinkResponse: {
+            /** Final Link Id */
+            final_link_id: number;
+            /** Local Track Id */
+            local_track_id: number;
+            /** Streaming Track Id */
+            streaming_track_id: number;
+            /** Approved At */
+            approved_at: string;
+            /** Status */
+            status: string;
+            /** Replaced Final Link Id */
+            replaced_final_link_id: number | null;
+            /** Detached Final Link Ids */
+            detached_final_link_ids: number[];
+        };
         /** CreateIngestFolderRequest */
         CreateIngestFolderRequest: {
             /** Path */
@@ -616,6 +785,20 @@ export interface components {
             browser_headers: {
                 [key: string]: unknown;
             };
+        };
+        /** CreateStreamingRelationshipRequest */
+        CreateStreamingRelationshipRequest: {
+            /** First Track Id */
+            first_track_id: number;
+            /** Second Track Id */
+            second_track_id: number;
+            /**
+             * Relationship Type
+             * @enum {string}
+             */
+            relationship_type: "equivalent" | "related";
+            /** Winning Final Link Id */
+            winning_final_link_id?: number | null;
         };
         /** GeneralSettingsResponse */
         GeneralSettingsResponse: {
@@ -705,11 +888,35 @@ export interface components {
             file_path: string;
             /** Library Root Rel Path */
             library_root_rel_path: string;
+            /** Fingerprint */
+            fingerprint: string | null;
+            /** Beets Id */
+            beets_id: number | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
             /** Link Status */
             link_status: string;
+            /** Title */
+            title: string | null;
+            /** Artist */
+            artist: string | null;
+            /** Album */
+            album: string | null;
+            /** Duration Ms */
+            duration_ms: number | null;
             final_link: components["schemas"]["LocalTrackFinalLinkResponse"] | null;
             /** Pending Suggestions */
             pending_suggestions: components["schemas"]["LocalTrackSuggestionResponse"][];
+            beets_item: components["schemas"]["BeetsItemDetailResponse"] | null;
+            beets_album: components["schemas"]["BeetsAlbumDetailResponse"] | null;
             /** Failed Ingestion Attempts */
             failed_ingestion_attempts: components["schemas"]["LocalTrackFailedIngestionResponse"][];
         };
@@ -740,6 +947,31 @@ export interface components {
              * Format: date-time
              */
             approved_at: string;
+            streaming_track: components["schemas"]["StreamingTrackSummaryResponse"];
+        };
+        /** LocalTrackSearchResponse */
+        LocalTrackSearchResponse: {
+            /** Tracks */
+            tracks: components["schemas"]["LocalTrackSearchResultResponse"][];
+        };
+        /** LocalTrackSearchResultResponse */
+        LocalTrackSearchResultResponse: {
+            /** Id */
+            id: number;
+            /** Title */
+            title: string | null;
+            /** Artist */
+            artist: string | null;
+            /** Album */
+            album: string | null;
+            /** File Path */
+            file_path: string;
+            /** Library Root Rel Path */
+            library_root_rel_path: string;
+            /** Link Status */
+            link_status: string;
+            /** Final Link Id */
+            final_link_id: number | null;
         };
         /** LocalTrackSuggestionResponse */
         LocalTrackSuggestionResponse: {
@@ -758,6 +990,14 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+            streaming_track: components["schemas"]["StreamingTrackSummaryResponse"];
+        };
+        /** MetadataFieldResponse */
+        MetadataFieldResponse: {
+            /** Key */
+            key: string;
+            /** Value */
+            value: string | null;
         };
         /** MissingLocallyResponse */
         MissingLocallyResponse: {
@@ -1038,6 +1278,25 @@ export interface components {
             /** Approved At */
             approved_at: string;
         };
+        /** StreamingRelationshipMutationResponse */
+        StreamingRelationshipMutationResponse: {
+            /** Relationship Id */
+            relationship_id: number;
+            /**
+             * Relationship Type
+             * @enum {string}
+             */
+            relationship_type: "equivalent" | "related";
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "created" | "updated" | "deleted";
+            /** Accepted At */
+            accepted_at: string | null;
+            /** Detached Final Link Ids */
+            detached_final_link_ids: number[];
+        };
         /** StreamingRelationshipSuggestionListResponse */
         StreamingRelationshipSuggestionListResponse: {
             /** Suggestions */
@@ -1107,6 +1366,175 @@ export interface components {
             account_id: number;
             /** Job Id */
             job_id: string;
+        };
+        /** StreamingTrackDetailResponse */
+        StreamingTrackDetailResponse: {
+            /** Id */
+            id: number;
+            /** Provider Track Id */
+            provider_track_id: string;
+            /** Title */
+            title: string;
+            /** Artist */
+            artist: string;
+            /** Album */
+            album: string | null;
+            /** Year */
+            year: number | null;
+            /** Isrc */
+            isrc: string | null;
+            /** Duration Ms */
+            duration_ms: number | null;
+            resolved_local_link: components["schemas"]["StreamingTrackLocalLinkResponse"] | null;
+            /** Equivalent Tracks */
+            equivalent_tracks: components["schemas"]["StreamingTrackRelationshipPeerResponse"][];
+            /** Relationships */
+            relationships: components["schemas"]["StreamingTrackRelationshipResponse"][];
+            /** Playlist Appearances */
+            playlist_appearances: components["schemas"]["StreamingTrackPlaylistAppearanceResponse"][];
+            /** Pending Local Suggestions */
+            pending_local_suggestions: components["schemas"]["StreamingTrackPendingLocalSuggestionResponse"][];
+        };
+        /** StreamingTrackLocalLinkResponse */
+        StreamingTrackLocalLinkResponse: {
+            /** Final Link Id */
+            final_link_id: number;
+            /** Local Track Id */
+            local_track_id: number;
+            /** Source Streaming Track Id */
+            source_streaming_track_id: number;
+            /** Resolution Source */
+            resolution_source: string;
+            /** Approved At */
+            approved_at: string;
+            local_track: components["schemas"]["StreamingTrackLocalSummaryResponse"];
+        };
+        /** StreamingTrackLocalSummaryResponse */
+        StreamingTrackLocalSummaryResponse: {
+            /** Id */
+            id: number;
+            /** File Path */
+            file_path: string;
+            /** Library Root Rel Path */
+            library_root_rel_path: string;
+            /** Title */
+            title: string | null;
+            /** Artist */
+            artist: string | null;
+            /** Album */
+            album: string | null;
+        };
+        /** StreamingTrackPendingLocalSuggestionResponse */
+        StreamingTrackPendingLocalSuggestionResponse: {
+            /** Id */
+            id: number;
+            /** Local Track Id */
+            local_track_id: number;
+            /** Match Method */
+            match_method: string;
+            /** Score */
+            score: number;
+            /** Status */
+            status: string;
+            /** Created At */
+            created_at: string;
+            local_track: components["schemas"]["StreamingTrackLocalSummaryResponse"];
+        };
+        /** StreamingTrackPlaylistAppearanceResponse */
+        StreamingTrackPlaylistAppearanceResponse: {
+            /** Playlist Id */
+            playlist_id: number;
+            /** Account Id */
+            account_id: number;
+            /** Provider Playlist Id */
+            provider_playlist_id: string;
+            /** Title */
+            title: string;
+            /**
+             * Sync Mode
+             * @enum {string}
+             */
+            sync_mode: "off" | "match_only" | "full";
+            /** Position */
+            position: number;
+        };
+        /** StreamingTrackRelationshipPeerResponse */
+        StreamingTrackRelationshipPeerResponse: {
+            /** Id */
+            id: number;
+            /** Provider Track Id */
+            provider_track_id: string;
+            /** Title */
+            title: string;
+            /** Artist */
+            artist: string;
+            /** Album */
+            album: string | null;
+            /** Year */
+            year: number | null;
+            /** Isrc */
+            isrc: string | null;
+            /** Duration Ms */
+            duration_ms: number | null;
+        };
+        /** StreamingTrackRelationshipResponse */
+        StreamingTrackRelationshipResponse: {
+            /** Id */
+            id: number;
+            /** Relationship Type */
+            relationship_type: string;
+            /** Accepted At */
+            accepted_at: string;
+            peer_track: components["schemas"]["StreamingTrackRelationshipPeerResponse"];
+        };
+        /** StreamingTrackSearchResponse */
+        StreamingTrackSearchResponse: {
+            /** Tracks */
+            tracks: components["schemas"]["StreamingTrackSearchResultResponse"][];
+        };
+        /** StreamingTrackSearchResultResponse */
+        StreamingTrackSearchResultResponse: {
+            /** Id */
+            id: number;
+            /** Provider Track Id */
+            provider_track_id: string;
+            /** Title */
+            title: string;
+            /** Artist */
+            artist: string;
+            /** Album */
+            album: string | null;
+            /** Year */
+            year: number | null;
+            /** Isrc */
+            isrc: string | null;
+            /** Duration Ms */
+            duration_ms: number | null;
+            /** Link Status */
+            link_status: string;
+            /** Final Link Id */
+            final_link_id: number | null;
+            /** Local Track Id */
+            local_track_id: number | null;
+        };
+        /** StreamingTrackSummaryResponse */
+        StreamingTrackSummaryResponse: {
+            /** Id */
+            id: number;
+            /** Provider Track Id */
+            provider_track_id: string;
+            /** Title */
+            title: string;
+            /** Artist */
+            artist: string;
+            /** Album */
+            album: string | null;
+            /** Year */
+            year: number | null;
+            /** Isrc */
+            isrc: string | null;
+            /** Duration Ms */
+            duration_ms: number | null;
         };
         /** UnidentifiedIgnoreResponse */
         UnidentifiedIgnoreResponse: {
@@ -1183,6 +1611,16 @@ export interface components {
              * @enum {string}
              */
             sync_mode: "off" | "match_only" | "full";
+        };
+        /** UpdateStreamingRelationshipRequest */
+        UpdateStreamingRelationshipRequest: {
+            /**
+             * Relationship Type
+             * @enum {string}
+             */
+            relationship_type: "equivalent" | "related";
+            /** Winning Final Link Id */
+            winning_final_link_id?: number | null;
         };
         /** ValidationError */
         ValidationError: {
@@ -1419,6 +1857,69 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PlaylistTracksResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    search_streaming_tracks_api_streaming_tracks_search_get: {
+        parameters: {
+            query?: {
+                q?: string;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StreamingTrackSearchResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_streaming_track_detail_api_streaming_tracks__streaming_track_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                streaming_track_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StreamingTrackDetailResponse"];
                 };
             };
             /** @description Validation Error */
@@ -1919,6 +2420,39 @@ export interface operations {
             };
         };
     };
+    create_final_link_api_final_links_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateFinalLinkRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreateFinalLinkResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     break_final_link_api_final_links__final_link_id__delete: {
         parameters: {
             query?: never;
@@ -2058,6 +2592,166 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["RejectStreamingRelationshipSuggestionResponse"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_streaming_relationship_api_streaming_relationships_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateStreamingRelationshipRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StreamingRelationshipMutationResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_streaming_relationship_api_streaming_relationships__relationship_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                relationship_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StreamingRelationshipMutationResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_streaming_relationship_api_streaming_relationships__relationship_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                relationship_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateStreamingRelationshipRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StreamingRelationshipMutationResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    search_local_tracks_api_local_tracks_search_get: {
+        parameters: {
+            query?: {
+                q?: string;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LocalTrackSearchResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_local_track_audio_api_local_tracks__local_track_id__audio_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                local_track_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {

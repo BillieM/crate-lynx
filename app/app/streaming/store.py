@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable, Mapping
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
@@ -9,6 +10,7 @@ from sqlalchemy import (
     delete,
     func,
     insert,
+    or_,
     select,
     update,
 )
@@ -18,7 +20,8 @@ from sqlalchemy.engine import Engine
 from ytmusicapi.exceptions import YTMusicError
 
 from app.core.db import create_database_engine
-from app.core.tables import suggested_links_view
+from app.core.tables import streaming_relationships_view, suggested_links_view
+from app.local_tracks.store import local_tracks_table
 from app.streaming.adapters.youtube_music import (
     YouTubeMusicAdapter,
     YouTubeMusicAuthenticationError,
@@ -57,6 +60,99 @@ if TYPE_CHECKING:
     )
 
 PENDING_LINK_STATUS = "pending"
+
+
+@dataclass(frozen=True, slots=True)
+class StreamingTrackLocalSummaryRecord:
+    id: int
+    file_path: str
+    library_root_rel_path: str
+    title: str | None
+    artist: str | None
+    album: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class StreamingTrackLocalLinkRecord:
+    final_link_id: int
+    local_track_id: int
+    source_streaming_track_id: int
+    resolution_source: str
+    approved_at: datetime
+    local_track: StreamingTrackLocalSummaryRecord
+
+
+@dataclass(frozen=True, slots=True)
+class StreamingTrackRelationshipPeerRecord:
+    id: int
+    provider_track_id: str
+    title: str
+    artist: str
+    album: str | None
+    year: int | None
+    isrc: str | None
+    duration_ms: int | None
+
+
+@dataclass(frozen=True, slots=True)
+class StreamingTrackRelationshipRecord:
+    id: int
+    relationship_type: str
+    accepted_at: datetime
+    peer_track: StreamingTrackRelationshipPeerRecord
+
+
+@dataclass(frozen=True, slots=True)
+class StreamingTrackPlaylistAppearanceRecord:
+    playlist_id: int
+    account_id: int
+    provider_playlist_id: str
+    title: str
+    sync_mode: str
+    position: int
+
+
+@dataclass(frozen=True, slots=True)
+class StreamingTrackPendingLocalSuggestionRecord:
+    id: int
+    local_track_id: int
+    match_method: str
+    score: float
+    status: str
+    created_at: datetime
+    local_track: StreamingTrackLocalSummaryRecord
+
+
+@dataclass(frozen=True, slots=True)
+class StreamingTrackDetailRecord:
+    id: int
+    provider_track_id: str
+    title: str
+    artist: str
+    album: str | None
+    year: int | None
+    isrc: str | None
+    duration_ms: int | None
+    resolved_local_link: StreamingTrackLocalLinkRecord | None
+    equivalent_tracks: list[StreamingTrackRelationshipPeerRecord]
+    relationships: list[StreamingTrackRelationshipRecord]
+    playlist_appearances: list[StreamingTrackPlaylistAppearanceRecord]
+    pending_local_suggestions: list[StreamingTrackPendingLocalSuggestionRecord]
+
+
+@dataclass(frozen=True, slots=True)
+class StreamingTrackSearchResultRecord:
+    id: int
+    provider_track_id: str
+    title: str
+    artist: str
+    album: str | None
+    year: int | None
+    isrc: str | None
+    duration_ms: int | None
+    link_status: str
+    final_link_id: int | None
+    local_track_id: int | None
 
 
 def _conflict_insert(target_table: Any, dialect_name: str) -> Any:
@@ -447,6 +543,160 @@ class StreamingAccountStore:
 
         with self._engine.connect() as connection:
             return connection.execute(query).scalar_one_or_none() is not None
+
+    def get_track_detail(
+        self,
+        streaming_track_id: int,
+    ) -> StreamingTrackDetailRecord | None:
+        track_query = select(
+            streaming_tracks_table.c.id,
+            streaming_tracks_table.c.provider_track_id,
+            streaming_tracks_table.c.title,
+            streaming_tracks_table.c.artist,
+            streaming_tracks_table.c.album,
+            streaming_tracks_table.c.year,
+            streaming_tracks_table.c.isrc,
+            streaming_tracks_table.c.duration_ms,
+        ).where(streaming_tracks_table.c.id == streaming_track_id)
+
+        with self._engine.connect() as connection:
+            track = connection.execute(track_query).mappings().one_or_none()
+            if track is None:
+                return None
+
+            from app.relationships.resolver import StreamingRelationshipResolver
+
+            resolver = StreamingRelationshipResolver(connection)
+            resolved_link = resolver.resolve(streaming_track_id)
+            local_link = (
+                _resolved_local_link_record(connection, resolved_link)
+                if resolved_link is not None
+                else None
+            )
+            equivalent_track_ids = [
+                track_id
+                for track_id in resolver.equivalent_group_track_ids(streaming_track_id)
+                if track_id != streaming_track_id
+            ]
+            equivalent_tracks = (
+                _streaming_track_peers(connection, equivalent_track_ids)
+                if equivalent_track_ids
+                else []
+            )
+            relationships = _streaming_track_relationships(
+                connection,
+                streaming_track_id,
+            )
+            playlist_appearances = _streaming_track_playlist_appearances(
+                connection,
+                streaming_track_id,
+            )
+            pending_suggestions = _streaming_track_pending_local_suggestions(
+                connection,
+                streaming_track_id,
+            )
+
+        return StreamingTrackDetailRecord(
+            id=track["id"],
+            provider_track_id=track["provider_track_id"],
+            title=track["title"],
+            artist=track["artist"],
+            album=track["album"],
+            year=track["year"],
+            isrc=track["isrc"],
+            duration_ms=track["duration_ms"],
+            resolved_local_link=local_link,
+            equivalent_tracks=equivalent_tracks,
+            relationships=relationships,
+            playlist_appearances=playlist_appearances,
+            pending_local_suggestions=pending_suggestions,
+        )
+
+    def search_tracks(
+        self,
+        *,
+        query: str = "",
+        limit: int = 20,
+    ) -> list[StreamingTrackSearchResultRecord]:
+        search_query = (
+            select(
+                streaming_tracks_table.c.id,
+                streaming_tracks_table.c.provider_track_id,
+                streaming_tracks_table.c.title,
+                streaming_tracks_table.c.artist,
+                streaming_tracks_table.c.album,
+                streaming_tracks_table.c.year,
+                streaming_tracks_table.c.isrc,
+                streaming_tracks_table.c.duration_ms,
+            )
+            .order_by(streaming_tracks_table.c.id.asc())
+            .limit(limit)
+        )
+        normalized_query = query.strip()
+        if normalized_query:
+            like_query = f"%{normalized_query}%"
+            clauses = [
+                streaming_tracks_table.c.provider_track_id.ilike(like_query),
+                streaming_tracks_table.c.title.ilike(like_query),
+                streaming_tracks_table.c.artist.ilike(like_query),
+                streaming_tracks_table.c.album.ilike(like_query),
+                streaming_tracks_table.c.isrc.ilike(like_query),
+            ]
+            if normalized_query.isdecimal():
+                clauses.append(streaming_tracks_table.c.id == int(normalized_query))
+            search_query = search_query.where(or_(*clauses))
+
+        with self._engine.connect() as connection:
+            from app.relationships.resolver import StreamingRelationshipResolver
+
+            resolver = StreamingRelationshipResolver(connection)
+            rows = connection.execute(search_query).mappings().all()
+            row_ids = tuple(int(row["id"]) for row in rows)
+            pending_track_ids = (
+                set(
+                    connection.execute(
+                        select(suggested_links_view.c.streaming_track_id).where(
+                            suggested_links_view.c.status == PENDING_LINK_STATUS,
+                            suggested_links_view.c.streaming_track_id.in_(row_ids),
+                        )
+                    ).scalars()
+                )
+                if row_ids
+                else set()
+            )
+            results: list[StreamingTrackSearchResultRecord] = []
+            for row in rows:
+                resolved_link = resolver.resolve(int(row["id"]))
+                link_status = "unlinked"
+                if resolved_link is not None:
+                    link_status = "linked"
+                elif int(row["id"]) in pending_track_ids:
+                    link_status = "pending"
+                results.append(
+                    StreamingTrackSearchResultRecord(
+                        id=row["id"],
+                        provider_track_id=row["provider_track_id"],
+                        title=row["title"],
+                        artist=row["artist"],
+                        album=row["album"],
+                        year=row["year"],
+                        isrc=row["isrc"],
+                        duration_ms=row["duration_ms"],
+                        link_status=link_status,
+                        final_link_id=(
+                            resolved_link.final_link_id
+                            if resolved_link is not None
+                            else None
+                        ),
+                        local_track_id=(
+                            resolved_link.local_track_id
+                            if resolved_link is not None
+                            else None
+                        ),
+                    )
+                )
+
+        return results
 
     def list_playlist_tracks(self, playlist_id: int) -> list[StreamingPlaylistTrack]:
         pending_link_ids = (
@@ -850,3 +1100,282 @@ def _format_auth_error(error: Exception) -> str:
     if not message:
         return "Authentication with YouTube Music failed."
     return f"YouTube Music authentication failed: {message}"
+
+
+def _resolved_local_link_record(
+    connection,
+    resolved_link,
+) -> StreamingTrackLocalLinkRecord | None:
+    local_track = _local_track_summary(connection, resolved_link.local_track_id)
+    if local_track is None:
+        return None
+
+    return StreamingTrackLocalLinkRecord(
+        final_link_id=resolved_link.final_link_id,
+        local_track_id=resolved_link.local_track_id,
+        source_streaming_track_id=resolved_link.source_streaming_track_id,
+        resolution_source=resolved_link.resolution_source,
+        approved_at=_final_link_approved_at(connection, resolved_link.final_link_id),
+        local_track=local_track,
+    )
+
+
+def _final_link_approved_at(connection, final_link_id: int) -> datetime:
+    from app.core.tables import final_links_view
+
+    return connection.execute(
+        select(final_links_view.c.approved_at).where(
+            final_links_view.c.id == final_link_id
+        )
+    ).scalar_one()
+
+
+def _local_track_summary(
+    connection,
+    local_track_id: int,
+) -> StreamingTrackLocalSummaryRecord | None:
+    beets_items_table = _beets_items_table()
+    row = (
+        connection.execute(
+            select(
+                local_tracks_table.c.id,
+                local_tracks_table.c.file_path,
+                local_tracks_table.c.library_root_rel_path,
+                beets_items_table.c.title,
+                beets_items_table.c.artist,
+                beets_items_table.c.album,
+            )
+            .select_from(
+                local_tracks_table.outerjoin(
+                    beets_items_table,
+                    beets_items_table.c.beets_id == local_tracks_table.c.beets_id,
+                )
+            )
+            .where(local_tracks_table.c.id == local_track_id)
+        )
+        .mappings()
+        .one_or_none()
+    )
+    if row is None:
+        return None
+
+    return StreamingTrackLocalSummaryRecord(
+        id=row["id"],
+        file_path=row["file_path"],
+        library_root_rel_path=row["library_root_rel_path"],
+        title=row["title"],
+        artist=row["artist"],
+        album=row["album"],
+    )
+
+
+def _streaming_track_peers(
+    connection,
+    streaming_track_ids: list[int],
+) -> list[StreamingTrackRelationshipPeerRecord]:
+    rows = (
+        connection.execute(
+            select(
+                streaming_tracks_table.c.id,
+                streaming_tracks_table.c.provider_track_id,
+                streaming_tracks_table.c.title,
+                streaming_tracks_table.c.artist,
+                streaming_tracks_table.c.album,
+                streaming_tracks_table.c.year,
+                streaming_tracks_table.c.isrc,
+                streaming_tracks_table.c.duration_ms,
+            )
+            .where(streaming_tracks_table.c.id.in_(streaming_track_ids))
+            .order_by(streaming_tracks_table.c.id.asc())
+        )
+        .mappings()
+        .all()
+    )
+    return [_streaming_track_peer(row) for row in rows]
+
+
+def _streaming_track_relationships(
+    connection,
+    streaming_track_id: int,
+) -> list[StreamingTrackRelationshipRecord]:
+    peer_track = streaming_tracks_table.alias("peer_track")
+    rows = (
+        connection.execute(
+            select(
+                streaming_relationships_view.c.id,
+                streaming_relationships_view.c.relationship_type,
+                streaming_relationships_view.c.accepted_at,
+                peer_track.c.id.label("peer_id"),
+                peer_track.c.provider_track_id.label("peer_provider_track_id"),
+                peer_track.c.title.label("peer_title"),
+                peer_track.c.artist.label("peer_artist"),
+                peer_track.c.album.label("peer_album"),
+                peer_track.c.year.label("peer_year"),
+                peer_track.c.isrc.label("peer_isrc"),
+                peer_track.c.duration_ms.label("peer_duration_ms"),
+            )
+            .select_from(
+                streaming_relationships_view.join(
+                    peer_track,
+                    peer_track.c.id
+                    == (
+                        streaming_relationships_view.c.higher_track_id
+                        + streaming_relationships_view.c.lower_track_id
+                        - streaming_track_id
+                    ),
+                )
+            )
+            .where(
+                or_(
+                    streaming_relationships_view.c.lower_track_id == streaming_track_id,
+                    streaming_relationships_view.c.higher_track_id
+                    == streaming_track_id,
+                )
+            )
+            .order_by(streaming_relationships_view.c.id.asc())
+        )
+        .mappings()
+        .all()
+    )
+    return [
+        StreamingTrackRelationshipRecord(
+            id=row["id"],
+            relationship_type=row["relationship_type"],
+            accepted_at=row["accepted_at"],
+            peer_track=StreamingTrackRelationshipPeerRecord(
+                id=row["peer_id"],
+                provider_track_id=row["peer_provider_track_id"],
+                title=row["peer_title"],
+                artist=row["peer_artist"],
+                album=row["peer_album"],
+                year=row["peer_year"],
+                isrc=row["peer_isrc"],
+                duration_ms=row["peer_duration_ms"],
+            ),
+        )
+        for row in rows
+    ]
+
+
+def _streaming_track_playlist_appearances(
+    connection,
+    streaming_track_id: int,
+) -> list[StreamingTrackPlaylistAppearanceRecord]:
+    rows = (
+        connection.execute(
+            select(
+                streaming_playlists_table.c.id.label("playlist_id"),
+                streaming_playlists_table.c.account_id,
+                streaming_playlists_table.c.provider_playlist_id,
+                streaming_playlists_table.c.title,
+                streaming_playlists_table.c.sync_mode,
+                playlist_membership_table.c.position,
+            )
+            .select_from(
+                playlist_membership_table.join(
+                    streaming_playlists_table,
+                    streaming_playlists_table.c.id
+                    == playlist_membership_table.c.playlist_id,
+                )
+            )
+            .where(playlist_membership_table.c.streaming_track_id == streaming_track_id)
+            .order_by(
+                streaming_playlists_table.c.title.asc(),
+                playlist_membership_table.c.position.asc(),
+            )
+        )
+        .mappings()
+        .all()
+    )
+    return [
+        StreamingTrackPlaylistAppearanceRecord(
+            playlist_id=row["playlist_id"],
+            account_id=row["account_id"],
+            provider_playlist_id=row["provider_playlist_id"],
+            title=row["title"],
+            sync_mode=row["sync_mode"],
+            position=row["position"],
+        )
+        for row in rows
+    ]
+
+
+def _streaming_track_pending_local_suggestions(
+    connection,
+    streaming_track_id: int,
+) -> list[StreamingTrackPendingLocalSuggestionRecord]:
+    beets_items_table = _beets_items_table()
+    rows = (
+        connection.execute(
+            select(
+                suggested_links_view.c.id,
+                suggested_links_view.c.local_track_id,
+                suggested_links_view.c.match_method,
+                suggested_links_view.c.score,
+                suggested_links_view.c.status,
+                suggested_links_view.c.created_at,
+                local_tracks_table.c.file_path,
+                local_tracks_table.c.library_root_rel_path,
+                beets_items_table.c.title,
+                beets_items_table.c.artist,
+                beets_items_table.c.album,
+            )
+            .select_from(
+                suggested_links_view.join(
+                    local_tracks_table,
+                    local_tracks_table.c.id == suggested_links_view.c.local_track_id,
+                ).outerjoin(
+                    beets_items_table,
+                    beets_items_table.c.beets_id == local_tracks_table.c.beets_id,
+                )
+            )
+            .where(
+                suggested_links_view.c.streaming_track_id == streaming_track_id,
+                suggested_links_view.c.status == PENDING_LINK_STATUS,
+            )
+            .order_by(
+                suggested_links_view.c.score.desc(),
+                suggested_links_view.c.id.asc(),
+            )
+        )
+        .mappings()
+        .all()
+    )
+    return [
+        StreamingTrackPendingLocalSuggestionRecord(
+            id=row["id"],
+            local_track_id=row["local_track_id"],
+            match_method=row["match_method"],
+            score=row["score"],
+            status=row["status"],
+            created_at=row["created_at"],
+            local_track=StreamingTrackLocalSummaryRecord(
+                id=row["local_track_id"],
+                file_path=row["file_path"],
+                library_root_rel_path=row["library_root_rel_path"],
+                title=row["title"],
+                artist=row["artist"],
+                album=row["album"],
+            ),
+        )
+        for row in rows
+    ]
+
+
+def _streaming_track_peer(row) -> StreamingTrackRelationshipPeerRecord:
+    return StreamingTrackRelationshipPeerRecord(
+        id=row["id"],
+        provider_track_id=row["provider_track_id"],
+        title=row["title"],
+        artist=row["artist"],
+        album=row["album"],
+        year=row["year"],
+        isrc=row["isrc"],
+        duration_ms=row["duration_ms"],
+    )
+
+
+def _beets_items_table():
+    from app.ingestion.beets_mirror import beets_items_table
+
+    return beets_items_table

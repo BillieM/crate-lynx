@@ -31,3 +31,20 @@ class ApproveProposalRequest(BaseModel):
 
 class RejectProposalRequest(BaseModel):
     pass
+
+
+class CreateFinalLinkRequest(BaseModel):
+    local_track_id: int
+    streaming_track_id: int
+    replace_final_link_id: int | None = None
+    detach_conflicting_final_link_ids: list[int] = []
+
+
+class CreateFinalLinkResponse(BaseModel):
+    final_link_id: int
+    local_track_id: int
+    streaming_track_id: int
+    approved_at: str
+    status: str
+    replaced_final_link_id: int | None
+    detached_final_link_ids: list[int]

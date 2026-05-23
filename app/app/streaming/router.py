@@ -18,6 +18,15 @@ from app.streaming.schemas import (
     StreamingAccountsResponse,
     StreamingPlaylistConfigListResponse,
     StreamingPlaylistConfigResponse,
+    StreamingTrackDetailResponse,
+    StreamingTrackLocalLinkResponse,
+    StreamingTrackLocalSummaryResponse,
+    StreamingTrackPendingLocalSuggestionResponse,
+    StreamingTrackPlaylistAppearanceResponse,
+    StreamingTrackRelationshipPeerResponse,
+    StreamingTrackRelationshipResponse,
+    StreamingTrackSearchResponse,
+    StreamingTrackSearchResultResponse,
     StreamingPlaylistResponse,
     StreamingPlaylistsResponse,
     StreamingSyncResponse,
@@ -44,7 +53,9 @@ def create_router(
     def serialize_datetime(value: object) -> str | None:
         if value is None:
             return None
-        return value.isoformat()
+        if hasattr(value, "isoformat"):
+            return value.isoformat()
+        return str(value)
 
     def serialize_streaming_account(account: object) -> StreamingAccountResponse:
         return StreamingAccountResponse(
@@ -113,6 +124,92 @@ def create_router(
                 last_sync_error=playlist.last_sync_error,
                 last_sync_error_at=serialize_datetime(playlist.last_sync_error_at),
             )
+        )
+
+    def serialize_streaming_track_peer(
+        track: object,
+    ) -> StreamingTrackRelationshipPeerResponse:
+        return StreamingTrackRelationshipPeerResponse(
+            id=track.id,
+            provider_track_id=track.provider_track_id,
+            title=track.title,
+            artist=track.artist,
+            album=track.album,
+            year=track.year,
+            isrc=track.isrc,
+            duration_ms=track.duration_ms,
+        )
+
+    def serialize_local_summary(track: object) -> StreamingTrackLocalSummaryResponse:
+        return StreamingTrackLocalSummaryResponse(
+            id=track.id,
+            file_path=track.file_path,
+            library_root_rel_path=track.library_root_rel_path,
+            title=track.title,
+            artist=track.artist,
+            album=track.album,
+        )
+
+    def serialize_local_link(link: object) -> StreamingTrackLocalLinkResponse:
+        return StreamingTrackLocalLinkResponse(
+            final_link_id=link.final_link_id,
+            local_track_id=link.local_track_id,
+            source_streaming_track_id=link.source_streaming_track_id,
+            resolution_source=link.resolution_source,
+            approved_at=serialize_datetime(link.approved_at) or "",
+            local_track=serialize_local_summary(link.local_track),
+        )
+
+    def serialize_streaming_track_detail(track: object) -> StreamingTrackDetailResponse:
+        return StreamingTrackDetailResponse(
+            id=track.id,
+            provider_track_id=track.provider_track_id,
+            title=track.title,
+            artist=track.artist,
+            album=track.album,
+            year=track.year,
+            isrc=track.isrc,
+            duration_ms=track.duration_ms,
+            resolved_local_link=(
+                serialize_local_link(track.resolved_local_link)
+                if track.resolved_local_link is not None
+                else None
+            ),
+            equivalent_tracks=[
+                serialize_streaming_track_peer(peer) for peer in track.equivalent_tracks
+            ],
+            relationships=[
+                StreamingTrackRelationshipResponse(
+                    id=relationship.id,
+                    relationship_type=relationship.relationship_type,
+                    accepted_at=serialize_datetime(relationship.accepted_at) or "",
+                    peer_track=serialize_streaming_track_peer(relationship.peer_track),
+                )
+                for relationship in track.relationships
+            ],
+            playlist_appearances=[
+                StreamingTrackPlaylistAppearanceResponse(
+                    playlist_id=appearance.playlist_id,
+                    account_id=appearance.account_id,
+                    provider_playlist_id=appearance.provider_playlist_id,
+                    title=appearance.title,
+                    sync_mode=appearance.sync_mode,
+                    position=appearance.position,
+                )
+                for appearance in track.playlist_appearances
+            ],
+            pending_local_suggestions=[
+                StreamingTrackPendingLocalSuggestionResponse(
+                    id=suggestion.id,
+                    local_track_id=suggestion.local_track_id,
+                    match_method=suggestion.match_method,
+                    score=suggestion.score,
+                    status=suggestion.status,
+                    created_at=serialize_datetime(suggestion.created_at) or "",
+                    local_track=serialize_local_summary(suggestion.local_track),
+                )
+                for suggestion in track.pending_local_suggestions
+            ],
         )
 
     def validate_browser_headers(browser_headers: dict[str, object]) -> None:
@@ -217,6 +314,52 @@ def create_router(
                 for track in store.list_playlist_tracks(playlist_id)
             ]
         )
+
+    @router.get(
+        "/streaming/tracks/search",
+        response_model=StreamingTrackSearchResponse,
+    )
+    def search_streaming_tracks(
+        q: str = "",
+        limit: int = 20,
+        engine: Engine = Depends(get_engine),
+    ) -> StreamingTrackSearchResponse:
+        tracks = _store(engine).search_tracks(
+            query=q,
+            limit=max(1, min(limit, 50)),
+        )
+        return StreamingTrackSearchResponse(
+            tracks=[
+                StreamingTrackSearchResultResponse(
+                    id=track.id,
+                    provider_track_id=track.provider_track_id,
+                    title=track.title,
+                    artist=track.artist,
+                    album=track.album,
+                    year=track.year,
+                    isrc=track.isrc,
+                    duration_ms=track.duration_ms,
+                    link_status=track.link_status,
+                    final_link_id=track.final_link_id,
+                    local_track_id=track.local_track_id,
+                )
+                for track in tracks
+            ]
+        )
+
+    @router.get(
+        "/streaming/tracks/{streaming_track_id}",
+        response_model=StreamingTrackDetailResponse,
+    )
+    def get_streaming_track_detail(
+        streaming_track_id: int,
+        engine: Engine = Depends(get_engine),
+    ) -> StreamingTrackDetailResponse:
+        track = _store(engine).get_track_detail(streaming_track_id)
+        if track is None:
+            raise HTTPException(status_code=404, detail="Streaming track not found")
+
+        return serialize_streaming_track_detail(track)
 
     @router.get("/playlists/{playlist_id}/m3u")
     def export_playlist_m3u(

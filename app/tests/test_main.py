@@ -121,7 +121,9 @@ def test_links_routes_are_mounted_under_api_prefix() -> None:
     assert "/api/proposals" in route_paths
     assert "/api/proposals/{proposal_id}/approve" in route_paths
     assert "/api/proposals/{proposal_id}/reject" in route_paths
+    assert "/api/final-links" in route_paths
     assert "/api/final-links/{final_link_id}" in route_paths
+    assert "/api/local-tracks/search" in route_paths
     assert "/api/local-tracks/{local_track_id}/rescue" in route_paths
     assert "/local-tracks/{local_track_id}/rescue" not in route_paths
     assert "/api/playlists/{playlist_id}" in route_paths
@@ -140,6 +142,10 @@ def test_links_routes_are_mounted_under_api_prefix() -> None:
     assert "/api/streaming/playlists/config" in route_paths
     assert "/api/streaming/playlists/{playlist_id}" in route_paths
     assert "/api/streaming/playlists/{playlist_id}/sync" in route_paths
+    assert "/api/streaming/tracks/search" in route_paths
+    assert "/api/streaming/tracks/{streaming_track_id}" in route_paths
+    assert "/api/streaming/relationships" in route_paths
+    assert "/api/streaming/relationships/{relationship_id}" in route_paths
     assert "/api/local-tracks/{local_track_id}/rematch" in route_paths
     assert "/api/settings/general" in route_paths
     assert "/api/settings/ingest-folders" in route_paths

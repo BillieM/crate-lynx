@@ -2,6 +2,7 @@ import asyncio
 import inspect
 from datetime import UTC, datetime
 from pathlib import Path
+from types import SimpleNamespace
 
 from sqlalchemy import create_engine, insert, select
 from starlette.exceptions import HTTPException as StarletteHTTPException
@@ -17,7 +18,11 @@ from app.matching.pipeline import (
     metadata as suggested_links_metadata,
     suggested_links_table,
 )
-from app.relationships.models import metadata as relationships_metadata
+from app.relationships.models import (
+    STREAMING_RELATIONSHIP_TYPE_EQUIVALENT,
+    metadata as relationships_metadata,
+    streaming_relationships_table,
+)
 from app.streaming.models import metadata as streaming_metadata
 from app.streaming.models import (
     PLAYLIST_SYNC_MODE_FULL,
@@ -902,6 +907,270 @@ def test_reject_proposal_returns_404_when_missing(tmp_path: Path) -> None:
         raise AssertionError(
             "Expected reject endpoint to raise 404 for missing proposal"
         )
+
+
+def test_create_manual_final_link_replaces_existing_link_and_clears_pending(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite:///{tmp_path / 'manual-final-link-replace.db'}"
+    engine = create_engine(database_url)
+    local_tracks_metadata.create_all(engine)
+    streaming_metadata.create_all(engine)
+    suggested_links_metadata.create_all(engine)
+    links_metadata.create_all(engine)
+    relationships_metadata.create_all(engine)
+    monkeypatch.setenv("DATABASE_URL", database_url)
+    seen = _capture_m3u_enqueues(monkeypatch)
+
+    with engine.begin() as connection:
+        connection.execute(
+            insert(local_tracks_table).values(
+                id=4,
+                file_path="Artist/manual.mp3",
+                library_root_rel_path="Artist/manual.mp3",
+            )
+        )
+        connection.execute(
+            insert(streaming_tracks_table),
+            [
+                {
+                    "id": 9,
+                    "provider_track_id": "ytm-old",
+                    "title": "Old Link",
+                    "artist": "Artist",
+                },
+                {
+                    "id": 10,
+                    "provider_track_id": "ytm-new",
+                    "title": "New Link",
+                    "artist": "Artist",
+                },
+            ],
+        )
+        connection.execute(
+            insert(streaming_playlists_table),
+            [
+                {
+                    "id": 7,
+                    "account_id": 1,
+                    "provider_playlist_id": "PL-old",
+                    "title": "Old Playlist",
+                    "sync_mode": PLAYLIST_SYNC_MODE_FULL,
+                },
+                {
+                    "id": 8,
+                    "account_id": 1,
+                    "provider_playlist_id": "PL-new",
+                    "title": "New Playlist",
+                    "sync_mode": PLAYLIST_SYNC_MODE_FULL,
+                },
+            ],
+        )
+        connection.execute(
+            insert(playlist_membership_table),
+            [
+                {"playlist_id": 7, "streaming_track_id": 9, "position": 1},
+                {"playlist_id": 8, "streaming_track_id": 10, "position": 1},
+            ],
+        )
+        connection.execute(
+            insert(final_links_table).values(
+                id=13,
+                local_track_id=4,
+                streaming_track_id=9,
+            )
+        )
+        connection.execute(
+            insert(suggested_links_table),
+            [
+                {
+                    "id": 21,
+                    "local_track_id": 4,
+                    "streaming_track_id": 10,
+                    "match_method": "tags",
+                    "score": 0.71,
+                    "status": SUGGESTED_LINK_STATUS_PENDING,
+                },
+                {
+                    "id": 22,
+                    "local_track_id": 4,
+                    "streaming_track_id": 9,
+                    "match_method": "tags",
+                    "score": 0.68,
+                    "status": SUGGESTED_LINK_STATUS_PENDING,
+                },
+            ],
+        )
+
+    router = create_router(
+        require_database_url=lambda: database_url,
+        require_redis_url=lambda: "redis://redis:6379/9",
+    )
+    route = next(
+        route
+        for route in router.routes
+        if getattr(route, "path", None) == "/final-links"
+        and "POST" in getattr(route, "methods", set())
+    )
+
+    response = _call_endpoint(
+        route.endpoint,
+        SimpleNamespace(
+            detach_conflicting_final_link_ids=[],
+            local_track_id=4,
+            replace_final_link_id=13,
+            streaming_track_id=10,
+        ),
+    )
+
+    assert response.local_track_id == 4
+    assert response.streaming_track_id == 10
+    assert response.replaced_final_link_id == 13
+    assert response.detached_final_link_ids == []
+    with engine.connect() as connection:
+        final_links = connection.execute(select(final_links_table)).mappings().all()
+        suggestions = (
+            connection.execute(
+                select(
+                    suggested_links_table.c.local_track_id,
+                    suggested_links_table.c.streaming_track_id,
+                    suggested_links_table.c.match_method,
+                    suggested_links_table.c.score,
+                    suggested_links_table.c.status,
+                ).order_by(suggested_links_table.c.id.asc())
+            )
+            .mappings()
+            .all()
+        )
+
+    assert len(final_links) == 1
+    assert final_links[0]["local_track_id"] == 4
+    assert final_links[0]["streaming_track_id"] == 10
+    assert [dict(suggestion) for suggestion in suggestions] == [
+        {
+            "local_track_id": 4,
+            "streaming_track_id": 10,
+            "match_method": "manual",
+            "score": 1.0,
+            "status": SUGGESTED_LINK_STATUS_APPROVED,
+        }
+    ]
+    assert seen == {
+        "redis_urls": ["redis://redis:6379/9"],
+        "playlist_ids": [(7, 8)],
+    }
+
+
+def test_create_manual_final_link_reports_and_detaches_equivalent_conflicts(
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite:///{tmp_path / 'manual-final-link-conflict.db'}"
+    engine = create_engine(database_url)
+    local_tracks_metadata.create_all(engine)
+    streaming_metadata.create_all(engine)
+    suggested_links_metadata.create_all(engine)
+    links_metadata.create_all(engine)
+    relationships_metadata.create_all(engine)
+
+    with engine.begin() as connection:
+        connection.execute(
+            insert(local_tracks_table),
+            [
+                {
+                    "id": 4,
+                    "file_path": "Artist/existing.mp3",
+                    "library_root_rel_path": "Artist/existing.mp3",
+                },
+                {
+                    "id": 5,
+                    "file_path": "Artist/new.mp3",
+                    "library_root_rel_path": "Artist/new.mp3",
+                },
+            ],
+        )
+        connection.execute(
+            insert(streaming_tracks_table),
+            [
+                {
+                    "id": 9,
+                    "provider_track_id": "ytm-existing",
+                    "title": "Existing Equivalent",
+                    "artist": "Artist",
+                },
+                {
+                    "id": 10,
+                    "provider_track_id": "ytm-target",
+                    "title": "Target Equivalent",
+                    "artist": "Artist",
+                },
+            ],
+        )
+        connection.execute(
+            insert(streaming_relationships_table).values(
+                lower_track_id=9,
+                higher_track_id=10,
+                relationship_type=STREAMING_RELATIONSHIP_TYPE_EQUIVALENT,
+            )
+        )
+        connection.execute(
+            insert(final_links_table).values(
+                id=17,
+                local_track_id=4,
+                streaming_track_id=9,
+            )
+        )
+
+    router = create_router(require_database_url=lambda: database_url)
+    route = next(
+        route
+        for route in router.routes
+        if getattr(route, "path", None) == "/final-links"
+        and "POST" in getattr(route, "methods", set())
+    )
+
+    try:
+        _call_endpoint(
+            route.endpoint,
+            SimpleNamespace(
+                detach_conflicting_final_link_ids=[],
+                local_track_id=5,
+                replace_final_link_id=None,
+                streaming_track_id=10,
+            ),
+        )
+    except StarletteHTTPException as exc:
+        assert exc.status_code == 409
+        assert exc.detail == {
+            "reason": "streaming_group_already_linked",
+            "conflicting_final_links": [
+                {
+                    "final_link_id": 17,
+                    "local_track_id": 4,
+                    "streaming_track_id": 9,
+                }
+            ],
+        }
+    else:
+        raise AssertionError("Expected equivalent group link conflict")
+
+    response = _call_endpoint(
+        route.endpoint,
+        SimpleNamespace(
+            detach_conflicting_final_link_ids=[17],
+            local_track_id=5,
+            replace_final_link_id=None,
+            streaming_track_id=10,
+        ),
+    )
+
+    assert response.detached_final_link_ids == [17]
+    with engine.connect() as connection:
+        final_links = connection.execute(select(final_links_table)).mappings().all()
+
+    assert len(final_links) == 1
+    assert final_links[0]["local_track_id"] == 5
+    assert final_links[0]["streaming_track_id"] == 10
 
 
 def test_break_final_link_removes_final_link_and_writes_rejected_suggestion(

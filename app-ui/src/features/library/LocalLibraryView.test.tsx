@@ -83,9 +83,61 @@ const libraryTracksResponse: LibraryTracksResponse = {
   ],
 };
 
+const localTrackDetailResponse = {
+  album: "Nocturnal",
+  artist: "The Midnight",
+  beets_album: {
+    attributes: [{ key: "catalognum", value: "MIDNIGHT-01" }],
+    beets_album_id: 301,
+    fields: [{ key: "album", value: "Nocturnal" }],
+  },
+  beets_id: 201,
+  beets_item: {
+    attributes: [{ key: "mood", value: "night drive" }],
+    beets_id: 201,
+    fields: [
+      { key: "title", value: "Night Shift" },
+      { key: "artist", value: "The Midnight" },
+    ],
+  },
+  created_at: "2026-05-01T08:00:00Z",
+  duration_ms: 245000,
+  failed_ingestion_attempts: [],
+  file_path: "/library/Synthwave/The Midnight/Nocturnal/Night Shift.mp3",
+  final_link: {
+    approved_at: "2026-05-01T09:00:00Z",
+    id: 9001,
+    streaming_track: {
+      album: "Nocturnal",
+      artist: "The Midnight",
+      duration_ms: 245000,
+      id: 501,
+      isrc: "USMID260001",
+      provider_track_id: "ytm-501",
+      title: "Night Shift",
+      year: 2026,
+    },
+    streaming_track_id: 501,
+  },
+  fingerprint: "fp-night-shift",
+  id: 1001,
+  library_root_rel_path: "Synthwave/The Midnight/Nocturnal/Night Shift.mp3",
+  link_status: "linked",
+  pending_suggestions: [],
+  title: "Night Shift",
+  updated_at: "2026-05-01T09:00:00Z",
+};
+
 function mockLibraryFetch(response: LibraryTracksResponse = libraryTracksResponse) {
   return vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
     const url = String(input);
+
+    if (url === "/api/local-tracks/1001") {
+      return {
+        ok: true,
+        json: async () => localTrackDetailResponse,
+      } as Response;
+    }
 
     if (url.startsWith("/api/final-links/") && init?.method === "DELETE") {
       return {
@@ -288,7 +340,7 @@ describe("LocalLibraryView", () => {
 
     fireEvent.click(await screen.findByText("Night Shift"));
 
-    expect(await screen.findByRole("dialog", { name: "Track #1001" })).toBeInTheDocument();
+    expect(await screen.findByRole("dialog", { name: "Night Shift" })).toBeInTheDocument();
   });
 
   it("filters the rendered library track rows by selected link status", async () => {

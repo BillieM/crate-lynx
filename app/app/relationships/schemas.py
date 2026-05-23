@@ -88,3 +88,23 @@ class RejectStreamingRelationshipSuggestionResponse(BaseModel):
 class GenerateStreamingRelationshipSuggestionsResponse(BaseModel):
     created_count: int
     pruned_count: int
+
+
+class CreateStreamingRelationshipRequest(BaseModel):
+    first_track_id: int
+    second_track_id: int
+    relationship_type: StreamingRelationshipType
+    winning_final_link_id: int | None = None
+
+
+class UpdateStreamingRelationshipRequest(BaseModel):
+    relationship_type: StreamingRelationshipType
+    winning_final_link_id: int | None = None
+
+
+class StreamingRelationshipMutationResponse(BaseModel):
+    relationship_id: int
+    relationship_type: StreamingRelationshipType
+    status: Literal["created", "updated", "deleted"]
+    accepted_at: str | None
+    detached_final_link_ids: list[int]

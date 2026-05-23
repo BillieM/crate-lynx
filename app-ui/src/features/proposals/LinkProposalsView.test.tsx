@@ -159,6 +159,10 @@ describe("LinkProposalsView", () => {
     expect(within(nightRunnerRow).getByText("Tag")).toBeInTheDocument();
     expect(within(nightRunnerRow).getByText("92%")).toBeInTheDocument();
     expect(within(nightRunnerRow).getByText("High confidence")).toBeInTheDocument();
+    expect(within(nightRunnerRow).getByLabelText("Listen to Night Runner File")).toHaveAttribute(
+      "src",
+      "/api/local-tracks/501/audio",
+    );
     expect(within(alternateRow).getAllByText("Night Runner Alternate")).toHaveLength(2);
     expect(within(alternateRow).getByText("82%")).toBeInTheDocument();
     expect(within(alternateRow).getByText("Medium confidence")).toBeInTheDocument();

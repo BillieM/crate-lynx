@@ -12,7 +12,12 @@ from sqlalchemy.sql.elements import ColumnElement
 
 from app.core.db import create_database_engine, get_engine
 from app.ingestion.beets_mirror import beets_items_table
-from app.links.models import ProposalListResponse, ProposalResponse
+from app.links.models import (
+    CreateFinalLinkRequest,
+    CreateFinalLinkResponse,
+    ProposalListResponse,
+    ProposalResponse,
+)
 from app.links.store import final_links_table
 from app.local_tracks.store import local_tracks_table
 from app.matching.models import ConfidenceBand
@@ -26,7 +31,9 @@ from app.matching.pipeline import (
 from app.m3u.jobs import (
     M3uRegenerationJobEnqueuer,
     affected_full_sync_playlist_ids_for_streaming_track,
+    affected_full_sync_playlist_ids_for_streaming_tracks,
 )
+from app.relationships.resolver import StreamingRelationshipResolver
 from app.streaming.models import streaming_tracks_table
 
 
@@ -288,6 +295,196 @@ def create_router(
             "rejected_at": rejected_at.isoformat(),
         }
 
+    @router.post(
+        "/final-links",
+        status_code=201,
+        response_model=CreateFinalLinkResponse,
+    )
+    def create_final_link(
+        payload: CreateFinalLinkRequest,
+        engine: Engine = Depends(get_engine),
+    ) -> CreateFinalLinkResponse:
+        engine = _engine(engine)
+        detach_ids = tuple(sorted(set(payload.detach_conflicting_final_link_ids)))
+
+        with engine.begin() as connection:
+            if not _local_track_exists(connection, payload.local_track_id):
+                raise HTTPException(status_code=404, detail="Local track not found")
+            if not _streaming_track_exists(connection, payload.streaming_track_id):
+                raise HTTPException(status_code=404, detail="Streaming track not found")
+
+            existing_local_link = _final_link_for_local_track(
+                connection,
+                payload.local_track_id,
+            )
+            if existing_local_link is not None:
+                is_same_target = (
+                    existing_local_link["streaming_track_id"]
+                    == payload.streaming_track_id
+                )
+                if (
+                    payload.replace_final_link_id is not None
+                    and payload.replace_final_link_id != existing_local_link["id"]
+                ) or (not is_same_target and payload.replace_final_link_id is None):
+                    raise HTTPException(
+                        status_code=409,
+                        detail={
+                            "reason": "local_track_already_linked",
+                            "final_link_id": existing_local_link["id"],
+                            "streaming_track_id": existing_local_link[
+                                "streaming_track_id"
+                            ],
+                        },
+                    )
+            elif payload.replace_final_link_id is not None:
+                raise HTTPException(
+                    status_code=409,
+                    detail="replace_final_link_id does not match the local track",
+                )
+
+            resolver = StreamingRelationshipResolver(connection)
+            target_group_ids = resolver.equivalent_group_track_ids(
+                payload.streaming_track_id
+            )
+            conflicting_links = _conflicting_group_final_links(
+                connection,
+                target_group_ids,
+                local_track_id=payload.local_track_id,
+                replacing_final_link_id=payload.replace_final_link_id,
+            )
+            conflict_ids = {int(row["id"]) for row in conflicting_links}
+            unknown_detach_ids = set(detach_ids) - conflict_ids
+            if unknown_detach_ids:
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "reason": "invalid_detach_conflicts",
+                        "final_link_ids": sorted(unknown_detach_ids),
+                    },
+                )
+            missing_detach_ids = conflict_ids - set(detach_ids)
+            if missing_detach_ids:
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "reason": "streaming_group_already_linked",
+                        "conflicting_final_links": [
+                            {
+                                "final_link_id": row["id"],
+                                "local_track_id": row["local_track_id"],
+                                "streaming_track_id": row["streaming_track_id"],
+                            }
+                            for row in conflicting_links
+                            if int(row["id"]) in missing_detach_ids
+                        ],
+                    },
+                )
+            if (
+                existing_local_link is not None
+                and existing_local_link["streaming_track_id"]
+                == payload.streaming_track_id
+                and not detach_ids
+            ):
+                return CreateFinalLinkResponse(
+                    final_link_id=existing_local_link["id"],
+                    local_track_id=payload.local_track_id,
+                    streaming_track_id=payload.streaming_track_id,
+                    approved_at=_isoformat(existing_local_link["approved_at"]),
+                    status=SUGGESTED_LINK_STATUS_APPROVED,
+                    replaced_final_link_id=None,
+                    detached_final_link_ids=[],
+                )
+
+            affected_track_ids = set(target_group_ids)
+            replaced_final_link_id = None
+            if existing_local_link is not None:
+                replaced_final_link_id = int(existing_local_link["id"])
+                affected_track_ids.update(
+                    resolver.equivalent_group_track_ids(
+                        int(existing_local_link["streaming_track_id"])
+                    )
+                )
+                connection.execute(
+                    delete(final_links_table).where(
+                        final_links_table.c.id == existing_local_link["id"]
+                    )
+                )
+            if detach_ids:
+                detached_rows = (
+                    connection.execute(
+                        select(final_links_table.c.streaming_track_id).where(
+                            final_links_table.c.id.in_(detach_ids)
+                        )
+                    )
+                    .mappings()
+                    .all()
+                )
+                for row in detached_rows:
+                    affected_track_ids.update(
+                        resolver.equivalent_group_track_ids(
+                            int(row["streaming_track_id"])
+                        )
+                    )
+                connection.execute(
+                    delete(final_links_table).where(
+                        final_links_table.c.id.in_(detach_ids)
+                    )
+                )
+
+            result = connection.execute(
+                insert(final_links_table).values(
+                    local_track_id=payload.local_track_id,
+                    streaming_track_id=payload.streaming_track_id,
+                )
+            )
+            final_link_id = result.inserted_primary_key[0]
+            if not isinstance(final_link_id, int):
+                raise ValueError("Failed to persist final link")
+
+            approved_at = (
+                connection.execute(
+                    select(final_links_table.c.approved_at).where(
+                        final_links_table.c.id == final_link_id
+                    )
+                )
+                .scalars()
+                .one()
+            )
+            connection.execute(
+                insert(suggested_links_table).values(
+                    local_track_id=payload.local_track_id,
+                    streaming_track_id=payload.streaming_track_id,
+                    match_method="manual",
+                    score=1.0,
+                    status=SUGGESTED_LINK_STATUS_APPROVED,
+                )
+            )
+            connection.execute(
+                delete(suggested_links_table).where(
+                    suggested_links_table.c.local_track_id == payload.local_track_id,
+                    suggested_links_table.c.status == SUGGESTED_LINK_STATUS_PENDING,
+                )
+            )
+            affected_playlist_ids = (
+                affected_full_sync_playlist_ids_for_streaming_tracks(
+                    connection,
+                    affected_track_ids,
+                )
+            )
+            m3u_redis_url = _m3u_redis_url(affected_playlist_ids)
+
+        _enqueue_m3u_regeneration(affected_playlist_ids, m3u_redis_url)
+
+        return CreateFinalLinkResponse(
+            final_link_id=final_link_id,
+            local_track_id=payload.local_track_id,
+            streaming_track_id=payload.streaming_track_id,
+            approved_at=_isoformat(approved_at),
+            status=SUGGESTED_LINK_STATUS_APPROVED,
+            replaced_final_link_id=replaced_final_link_id,
+            detached_final_link_ids=list(detach_ids),
+        )
+
     @router.delete("/final-links/{final_link_id}")
     def break_final_link(
         final_link_id: int,
@@ -357,3 +554,74 @@ def _confidence_band_clause(band: ConfidenceBand) -> ColumnElement[bool]:
             suggested_links_table.c.score <= 0.85,
         )
     return suggested_links_table.c.score < 0.5
+
+
+def _local_track_exists(connection, local_track_id: int) -> bool:
+    return (
+        connection.execute(
+            select(local_tracks_table.c.id).where(
+                local_tracks_table.c.id == local_track_id
+            )
+        ).scalar_one_or_none()
+        is not None
+    )
+
+
+def _streaming_track_exists(connection, streaming_track_id: int) -> bool:
+    return (
+        connection.execute(
+            select(streaming_tracks_table.c.id).where(
+                streaming_tracks_table.c.id == streaming_track_id
+            )
+        ).scalar_one_or_none()
+        is not None
+    )
+
+
+def _final_link_for_local_track(connection, local_track_id: int):
+    return (
+        connection.execute(
+            select(
+                final_links_table.c.id,
+                final_links_table.c.local_track_id,
+                final_links_table.c.streaming_track_id,
+                final_links_table.c.approved_at,
+            ).where(final_links_table.c.local_track_id == local_track_id)
+        )
+        .mappings()
+        .one_or_none()
+    )
+
+
+def _conflicting_group_final_links(
+    connection,
+    streaming_track_ids: tuple[int, ...],
+    *,
+    local_track_id: int,
+    replacing_final_link_id: int | None,
+):
+    rows = (
+        connection.execute(
+            select(
+                final_links_table.c.id,
+                final_links_table.c.local_track_id,
+                final_links_table.c.streaming_track_id,
+            )
+            .where(final_links_table.c.streaming_track_id.in_(streaming_track_ids))
+            .order_by(final_links_table.c.id.asc())
+        )
+        .mappings()
+        .all()
+    )
+    return [
+        row
+        for row in rows
+        if row["local_track_id"] != local_track_id
+        and row["id"] != replacing_final_link_id
+    ]
+
+
+def _isoformat(value) -> str:
+    if hasattr(value, "isoformat"):
+        return value.isoformat()
+    return str(value)

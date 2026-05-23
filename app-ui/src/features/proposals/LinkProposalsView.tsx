@@ -7,6 +7,7 @@ import { Pill, type PillTone } from "../../components/Pill";
 import { getLocalTrackLabel, getMatchMethodLabel } from "../../lib/formatters";
 import { createOptimisticMutation, type OptimisticMutationSnapshot } from "../../lib/optimisticMutation";
 import { controlClasses, layoutClasses, surfaceClasses, textClasses } from "../../styles/componentClasses";
+import { LocalTrackAudioPreview } from "../localTracks/LocalTrackAudioPreview";
 import {
   type ApproveLinkProposalResponse,
   approveLinkProposal,
@@ -353,6 +354,10 @@ function ProposalRow({
               streamingValue={proposal.streaming_album}
             />
           </dl>
+          <LocalTrackAudioPreview
+            label={`Listen to ${proposal.local_title ?? getLocalTrackLabel(proposal)}`}
+            localTrackId={proposal.local_track_id}
+          />
         </div>
 
         <div className="flex flex-wrap items-center gap-2 border-t border-ctp-surface0 pt-2 xl:flex-col xl:items-stretch xl:border-t-0 xl:pt-0">
