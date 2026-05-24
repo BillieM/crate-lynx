@@ -1,0 +1,6 @@
+SQLAlchemy==2.0.40
+alembic==1.15.2
+psycopg[binary]==3.2.13
+beets==2.2.0
+fastapi==0.115.12
+rapidfuzz==3.13.0
