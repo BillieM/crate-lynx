@@ -1,28 +1,16 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, BookOpenText, Cog, ListMusic, Sparkles, type LucideIcon } from "lucide-react";
-import { ActionButton } from "../../components/ActionButton";
+import { ArrowLeft, BookOpenText, FileDown, ListMusic, RefreshCw, Settings, Sparkles, type LucideIcon } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { IconButton } from "../../components/IconButton";
 import { useDelayedInvalidate } from "../../lib/useDelayedInvalidate";
 import { controlClasses, shellClasses, textClasses } from "../../styles/componentClasses";
 import {
-  exportPlaylistM3u,
   invalidatePlaylistContentQueries,
   syncStreamingPlaylist,
   usePlaylistDetailQuery,
 } from "../playlists/queries";
 import { streamingAccountPlaylistSyncJobInvalidationKeys } from "../streamingAccounts/queries";
 import type { PlaylistSyncViewState, ViewConfig } from "./types";
-
-function downloadBlob(blob: Blob, filename: string) {
-  const url = window.URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-
-  anchor.href = url;
-  anchor.download = filename;
-  document.body.append(anchor);
-  anchor.click();
-  anchor.remove();
-  window.URL.revokeObjectURL(url);
-}
 
 function TopbarIcon({ icon }: { icon: ViewConfig["icon"] }) {
   const Icon = topbarIconMap[icon];
@@ -33,7 +21,7 @@ function TopbarIcon({ icon }: { icon: ViewConfig["icon"] }) {
 const topbarIconMap = {
   library: BookOpenText,
   playlist: ListMusic,
-  settings: Cog,
+  settings: Settings,
   spark: Sparkles,
 } satisfies Record<ViewConfig["icon"], LucideIcon>;
 
@@ -92,16 +80,11 @@ export function Topbar({
   onPlaylistSyncStateChange: (state: PlaylistSyncViewState) => void;
   view: ViewConfig;
 }) {
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const delayedInvalidate = useDelayedInvalidate();
   const playlistDetailQuery = usePlaylistDetailQuery(view.playlistResourceId ?? null);
   const playlist = playlistDetailQuery.data?.playlist;
-  const exportMutation = useMutation({
-    mutationFn: exportPlaylistM3u,
-    onSuccess: ({ blob, filename }) => {
-      downloadBlob(blob, filename);
-    },
-  });
   const syncMutation = useMutation({
     mutationFn: syncStreamingPlaylist,
     onMutate: (playlistId) => {
@@ -117,56 +100,60 @@ export function Topbar({
     },
   });
 
-  function renderActionButton(actionLabel: string) {
+  function renderToolbarAction(actionLabel: string) {
     if (actionLabel === "Sync") {
       if (view.playlistResourceId === undefined) {
         return null;
       }
 
       const canSync = playlist !== undefined && !syncMutation.isPending;
+      const label = syncMutation.isPending ? "Syncing playlist" : "Sync";
 
       return (
-        <ActionButton
+        <IconButton
           aria-live="polite"
-          className={controlClasses.actionButtonCompact}
           disabled={!canSync}
           key={actionLabel}
+          label={label}
           onClick={() => {
             if (view.playlistResourceId !== undefined) {
               syncMutation.mutate(view.playlistResourceId);
             }
           }}
+          tooltip={label}
         >
-          {syncMutation.isPending ? "Syncing..." : actionLabel}
-        </ActionButton>
+          <RefreshCw
+            aria-hidden="true"
+            className={syncMutation.isPending ? "animate-spin" : undefined}
+            focusable="false"
+            strokeWidth={1.8}
+          />
+        </IconButton>
       );
     }
 
     if (actionLabel === "Export M3U") {
-      const canExport = view.playlistResourceId !== undefined && !exportMutation.isPending;
+      const canExport = view.playlistResourceId !== undefined;
+      const label = "Export M3U";
 
       return (
-        <ActionButton
-          aria-live="polite"
-          className={controlClasses.actionButtonCompact}
+        <IconButton
           disabled={!canExport}
           key={actionLabel}
+          label={label}
           onClick={() => {
             if (view.playlistResourceId !== undefined) {
-              exportMutation.mutate(view.playlistResourceId);
+              navigate(`/playlists/export?playlist=${view.playlistResourceId}`);
             }
           }}
+          tooltip={label}
         >
-          {exportMutation.isPending ? "Exporting..." : actionLabel}
-        </ActionButton>
+          <FileDown aria-hidden="true" focusable="false" strokeWidth={1.8} />
+        </IconButton>
       );
     }
 
-    return (
-      <ActionButton className={controlClasses.actionButtonCompact} key={actionLabel}>
-        {actionLabel}
-      </ActionButton>
-    );
+    return null;
   }
 
   return (
@@ -187,20 +174,19 @@ export function Topbar({
           pendingText="Syncing playlist..."
           successText="Playlist sync queued."
         />
-        {exportMutation.isSuccess ? <span className={`${textClasses.finePrint} font-medium text-ctp-green`}>M3U ready.</span> : null}
-        {exportMutation.isError ? <span className={`${textClasses.finePrint} font-medium text-ctp-red`}>Export failed.</span> : null}
-        <ActionButton
-          aria-label={isSettingsView ? "Return to Link proposals" : "Open app settings"}
-          className="inline-flex h-7 w-7 shrink-0 items-center justify-center p-0 text-ctp-text [&_svg]:block [&_svg]:h-4 [&_svg]:w-4"
-          onClick={isSettingsView ? onNavigateHome : onOpenAppSettings}
-        >
-          {isSettingsView ? (
-            <ArrowLeft aria-hidden="true" focusable="false" strokeWidth={1.8} />
-          ) : (
-            <Cog aria-hidden="true" focusable="false" strokeWidth={1.8} />
-          )}
-        </ActionButton>
-        {view.actionLabels.map((actionLabel) => renderActionButton(actionLabel))}
+        <div aria-label="Topbar actions" className="flex items-center gap-1.5" role="toolbar">
+          {view.actionLabels.map((actionLabel) => renderToolbarAction(actionLabel))}
+          <IconButton
+            label={isSettingsView ? "Return to Link proposals" : "Open app settings"}
+            onClick={isSettingsView ? onNavigateHome : onOpenAppSettings}
+          >
+            {isSettingsView ? (
+              <ArrowLeft aria-hidden="true" focusable="false" strokeWidth={1.8} />
+            ) : (
+              <Settings aria-hidden="true" focusable="false" strokeWidth={1.8} />
+            )}
+          </IconButton>
+        </div>
       </div>
     </header>
   );

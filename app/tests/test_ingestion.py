@@ -3,6 +3,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 import logging
 import sqlite3
+import stat
 import subprocess
 import threading
 import time
@@ -1005,9 +1006,15 @@ def test_ingestion_processor_prepares_imports_and_deletes_source(
     preparer = Mock(spec=AudioPreparer)
     preparer.prepare.return_value = prepared
     importer = Mock(spec=BeetsImporter)
-    importer.library_root = tmp_path / "library"
+    library_root = tmp_path / "library"
+    library_path = library_root / "Artist" / "track.mp3"
+    library_path.parent.mkdir(parents=True)
+    library_path.write_bytes(b"imported")
+    library_path.parent.chmod(0o700)
+    library_path.chmod(0o600)
+    importer.library_root = library_root
     importer.import_file.return_value = ImportedTrack(
-        library_path=tmp_path / "library" / "Artist" / "track.mp3",
+        library_path=library_path,
         beets_id=17,
     )
     fingerprint_generator = Mock(spec=FingerprintGenerator)
@@ -1022,8 +1029,10 @@ def test_ingestion_processor_prepares_imports_and_deletes_source(
 
     assert result is prepared
     assert result.fingerprint == "abc123"
-    assert result.library_path == tmp_path / "library" / "Artist" / "track.mp3"
+    assert result.library_path == library_path
     assert result.beets_id == 17
+    assert stat.S_IMODE(library_path.parent.stat().st_mode) & 0o777 == 0o775
+    assert stat.S_IMODE(library_path.stat().st_mode) == 0o664
     preparer.prepare.assert_called_once_with(source, tmp_path / "staging")
     fingerprint_generator.generate.assert_called_once_with(prepared.prepared_path)
     importer.import_file.assert_called_once_with(prepared.prepared_path)

@@ -136,7 +136,7 @@ export function Sidebar({
           </div>
           <div>
             <p className={`${shellClasses.brandEyebrow} text-ctp-mauve`}>
-              MUSEBRIDGE
+              CRATELYNX
             </p>
             <p className={`mt-0.5 text-ctp-subtext0 ${textClasses.finePrint}`}>Playlist linking control room</p>
           </div>

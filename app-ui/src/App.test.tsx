@@ -6,6 +6,8 @@ import type { LibraryTracksResponse } from "./features/library/queries";
 import type { MissingLocallyResponse, UnidentifiedResponse } from "./features/maintenance/queries";
 import type {
   LinkProposalsResponse,
+  M3uExportPreviewResponse,
+  M3uExportProfileListResponse,
   PlaylistDetailResponse,
   PlaylistTracksResponse,
   StreamingPlaylistConfigResponse,
@@ -344,6 +346,36 @@ const generalSettingsResponse = {
     { id: 2, path: "/soulseek" },
   ],
 };
+const m3uExportProfilesResponse: M3uExportProfileListResponse = {
+  profiles: [
+    {
+      id: 1,
+      is_default: true,
+      library_path: "/mnt/music",
+      name: "NAS",
+    },
+  ],
+};
+const m3uExportPreviewResponse: M3uExportPreviewResponse = {
+  formats: ["m3u", "m3u8"],
+  library_path: "/mnt/music",
+  path_format: "file_url",
+  playlist_count: 1,
+  playlists: [
+    {
+      exported_track_count: 58,
+      filename_m3u: "Late Night Drive [yt].m3u",
+      filename_m3u8: "Late Night Drive [yt].m3u8",
+      filenames: ["Late Night Drive [yt].m3u", "Late Night Drive [yt].m3u8"],
+      playlist_id: 12,
+      sample_path: "file://localhost/mnt/music/Frame%20Delay/Night%20Runner.flac",
+      skipped_track_count: 4,
+      title: "Late Night Drive",
+    },
+  ],
+  total_exported_track_count: 58,
+  total_skipped_track_count: 4,
+};
 
 type MockPlaylistFetchOptions = {
   activeSyncHandler?: () => Promise<Response> | Response;
@@ -352,6 +384,9 @@ type MockPlaylistFetchOptions = {
   deleteIngestFolderHandler?: (folderId: string) => Promise<Response> | Response;
   generalSettingsHandler?: () => Promise<Response> | Response;
   linkProposalsHandler?: (url: string) => Promise<Response> | Response;
+  m3uExportHandler?: (init?: RequestInit) => Promise<Response> | Response;
+  m3uExportPreviewHandler?: (init?: RequestInit) => Promise<Response> | Response;
+  m3uExportProfilesHandler?: () => Promise<Response> | Response;
   metadataRefreshHandler?: () => Promise<Response> | Response;
   rejectProposalHandler?: (proposalId: string) => Promise<Response> | Response;
   relationshipSuggestionsHandler?: (url: string) => Promise<Response> | Response;
@@ -397,6 +432,9 @@ function mockPlaylistFetch({
   deleteIngestFolderHandler,
   generalSettingsHandler,
   linkProposalsHandler,
+  m3uExportHandler,
+  m3uExportPreviewHandler,
+  m3uExportProfilesHandler,
   metadataRefreshHandler,
   rejectProposalHandler,
   relationshipSuggestionsHandler,
@@ -422,6 +460,24 @@ function mockPlaylistFetch({
     .get("/api/maintenance/missing-locally", () => jsonResponse(missingLocallyResponse))
     .get("/api/maintenance/unidentified", () => jsonResponse(unidentifiedResponse))
     .get("/api/settings/general", () => generalSettingsHandler?.() ?? jsonResponse(generalSettingsResponse))
+    .get("/api/m3u/export-profiles", () => m3uExportProfilesHandler?.() ?? jsonResponse(m3uExportProfilesResponse))
+    .post("/api/m3u/export-profiles", ({ init }) =>
+      jsonResponse({
+        id: 2,
+        is_default: false,
+        library_path: JSON.parse(String(init?.body ?? "{}")).library_path ?? "/mnt/music",
+        name: JSON.parse(String(init?.body ?? "{}")).name ?? "USB",
+      }),
+    )
+    .post("/api/m3u/export/preview", ({ init }) => m3uExportPreviewHandler?.(init) ?? jsonResponse(m3uExportPreviewResponse))
+    .post("/api/m3u/export", ({ init }) =>
+      m3uExportHandler?.(init) ??
+      blobResponse(new Blob(["zip"], { type: "application/zip" }), {
+        headers: {
+          "Content-Disposition": 'attachment; filename="m3u-export.zip"',
+        },
+      }),
+    )
     .post("/api/settings/ingest-folders", ({ init }) =>
       createIngestFolderHandler?.(init) ?? jsonResponse({ id: 3, path: "/downloads" }),
     )
@@ -582,7 +638,7 @@ describe("App", () => {
       "max-md:flex-wrap",
       "max-md:py-2",
     );
-    expect(screen.getByText("MUSEBRIDGE")).toBeInTheDocument();
+    expect(screen.getByText("CRATELYNX")).toBeInTheDocument();
     expect(screen.getByText("Maintenance")).toBeInTheDocument();
     expect(screen.getAllByText("YouTube Music").length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText("Local Library")).toBeInTheDocument();
@@ -593,9 +649,10 @@ describe("App", () => {
     expect(await screen.findByText("321")).toBeInTheDocument();
     expect(await screen.findByRole("heading", { level: 1, name: "Late Night Drive" })).toBeInTheDocument();
     expect(screen.getByText("YouTube Music")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Open app settings" })).toBeInTheDocument();
+    const topbarActions = screen.getByRole("toolbar", { name: "Topbar actions" });
+    expect(within(topbarActions).getByRole("button", { name: "Open app settings" })).toHaveTextContent("");
     expect(screen.queryByRole("button", { name: "Configure sync" })).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Sync" })).toBeInTheDocument();
+    expect(within(topbarActions).getByRole("button", { name: "Sync" })).toHaveTextContent("");
 
     for (const viewId of [
       "proposals",
@@ -603,6 +660,7 @@ describe("App", () => {
       "unidentified",
       "missing",
       "playlists",
+      "playlist-export",
       "settings-general",
       "settings-sync-youtube-music",
       "playlist-12",
@@ -657,10 +715,11 @@ describe("App", () => {
     expect(screen.getByRole("heading", { level: 1, name: "Late Night Drive" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Late Night Drive/i })).toBeInTheDocument();
     expect(screen.getByText("YouTube Music")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Open app settings" })).toBeInTheDocument();
+    const topbarActions = screen.getByRole("toolbar", { name: "Topbar actions" });
+    expect(within(topbarActions).getByRole("button", { name: "Open app settings" })).toHaveTextContent("");
     expect(screen.queryByRole("button", { name: "Configure sync" })).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Sync" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Export M3U" })).toBeInTheDocument();
+    expect(within(topbarActions).getByRole("button", { name: "Sync" })).toHaveTextContent("");
+    expect(within(topbarActions).getByRole("button", { name: "Export M3U" })).toHaveTextContent("");
     expect(document.getElementById("proposals")).toHaveAttribute("data-view-active", "false");
     expect(document.getElementById("playlist-12")).toHaveAttribute("data-view-active", "true");
   });
@@ -1039,7 +1098,7 @@ describe("App", () => {
 
     expect(screen.getByRole("heading", { level: 1, name: "Settings" })).toBeInTheDocument();
     expect(await screen.findByRole("heading", { level: 2, name: "Playlist sync configuration" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /MUSEBRIDGE/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /CRATELYNX/i })).toBeInTheDocument();
     expect(screen.getByRole("heading", { level: 2, name: "Settings" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "General" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "YouTube Music sync" })).toBeInTheDocument();
@@ -1056,7 +1115,7 @@ describe("App", () => {
     renderApp(["/settings/sync/youtube-music"]);
 
     expect(await screen.findByRole("heading", { level: 2, name: "Playlist sync configuration" })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: /MUSEBRIDGE/i }));
+    fireEvent.click(screen.getByRole("button", { name: /CRATELYNX/i }));
 
     expect(await screen.findByRole("heading", { level: 1, name: "Link proposals" })).toBeInTheDocument();
     expect(screen.getByText("Maintenance")).toBeInTheDocument();
@@ -1490,7 +1549,7 @@ describe("App", () => {
     fireEvent.click(syncButton);
 
     expect(await screen.findByText("Syncing playlist...")).toHaveAttribute("role", "status");
-    expect(screen.getByRole("button", { name: "Syncing..." })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Syncing playlist" })).toBeDisabled();
 
     resolveSync({
       ok: true,
@@ -1525,9 +1584,29 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: "Sync" })).toBeEnabled();
   });
 
-  it("downloads an M3U export from the active playlist topbar", async () => {
+  it("opens the M3U export journey from the active playlist topbar", async () => {
     const fetchMock = mockPlaylistFetch();
-    const createObjectUrlMock = vi.fn(() => "blob:playlist-export");
+
+    renderApp();
+    fireEvent.click(await screen.findByRole("button", { name: /Late Night Drive/i }));
+
+    const exportButton = await screen.findByRole("button", { name: "Export M3U" });
+    fireEvent.click(exportButton);
+
+    expect(await screen.findByRole("heading", { level: 1, name: "M3U export" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { level: 2, name: "M3U export" })).toBeInTheDocument();
+    expect(
+      within(screen.getByRole("region", { name: "Playlist export selection" })).getByRole("button", {
+        name: /Late Night Drive/i,
+      }),
+    ).toBeInTheDocument();
+    expect(document.getElementById("playlist-export")).toHaveAttribute("data-view-active", "true");
+    expect(fetchMock).not.toHaveBeenCalledWith("/api/playlists/12/m3u");
+  });
+
+  it("previews and downloads a batch M3U ZIP", async () => {
+    const fetchMock = mockPlaylistFetch();
+    const createObjectUrlMock = vi.fn(() => "blob:m3u-export");
     const revokeObjectUrlMock = vi.fn();
     const clickMock = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
 
@@ -1540,20 +1619,127 @@ describe("App", () => {
       value: revokeObjectUrlMock,
     });
 
-    renderApp();
-    fireEvent.click(await screen.findByRole("button", { name: /Late Night Drive/i }));
+    renderApp(["/playlists/export?playlist=12"]);
 
-    const exportButton = await screen.findByRole("button", { name: "Export M3U" });
-    fireEvent.click(exportButton);
-
+    const previewButton = await screen.findByRole("button", { name: "Preview" });
     await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledWith("/api/playlists/12/m3u");
+      expect(previewButton).toBeEnabled();
+    });
+    fireEvent.click(previewButton);
+
+    expect(await screen.findByRole("region", { name: "M3U export preview" })).toBeInTheDocument();
+    expect(screen.getByText("file://localhost/mnt/music/Frame%20Delay/Night%20Runner.flac")).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledWith("/api/m3u/export/preview", {
+      body: JSON.stringify({
+        formats: ["m3u", "m3u8"],
+        path_format: "file_url",
+        playlist_ids: [12],
+        profile_id: 1,
+      }),
+      headers: {
+        "Content-Type": "application/json",
+      },
+      method: "POST",
     });
 
-    expect(await screen.findByText("M3U ready.")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Download ZIP" }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith("/api/m3u/export", {
+        body: JSON.stringify({
+          formats: ["m3u", "m3u8"],
+          path_format: "file_url",
+          playlist_ids: [12],
+          profile_id: 1,
+        }),
+        headers: {
+          "Content-Type": "application/json",
+        },
+        method: "POST",
+      });
+    });
     expect(createObjectUrlMock).toHaveBeenCalledWith(expect.any(Blob));
     expect(clickMock).toHaveBeenCalled();
-    expect(revokeObjectUrlMock).toHaveBeenCalledWith("blob:playlist-export");
+    expect(revokeObjectUrlMock).toHaveBeenCalledWith("blob:m3u-export");
+  });
+
+  it("uses the selected M3U export formats for preview and download", async () => {
+    let previewRequestBody: unknown = null;
+    let exportRequestBody: unknown = null;
+    const createObjectUrlMock = vi.fn(() => "blob:m3u8-export");
+    const revokeObjectUrlMock = vi.fn();
+    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+
+    Object.defineProperty(window.URL, "createObjectURL", {
+      configurable: true,
+      value: createObjectUrlMock,
+    });
+    Object.defineProperty(window.URL, "revokeObjectURL", {
+      configurable: true,
+      value: revokeObjectUrlMock,
+    });
+
+    mockPlaylistFetch({
+      m3uExportHandler: (init) => {
+        exportRequestBody = JSON.parse(String(init?.body ?? "{}"));
+        return blobResponse(new Blob(["zip"], { type: "application/zip" }), {
+          headers: {
+            "Content-Disposition": 'attachment; filename="m3u-export.zip"',
+          },
+        });
+      },
+      m3uExportPreviewHandler: (init) => {
+        previewRequestBody = JSON.parse(String(init?.body ?? "{}"));
+        return jsonResponse({
+          ...m3uExportPreviewResponse,
+          formats: ["m3u8"],
+          path_format: "file_url",
+          playlists: [
+            {
+              ...m3uExportPreviewResponse.playlists[0],
+              filenames: ["Late Night Drive [yt].m3u8"],
+            },
+          ],
+        });
+      },
+    });
+
+    renderApp(["/playlists/export?playlist=12"]);
+
+    const m3uCheckbox = await screen.findByRole("checkbox", { name: ".m3u" });
+    const m3u8Checkbox = screen.getByRole("checkbox", { name: ".m3u8" });
+    expect(m3uCheckbox).toBeChecked();
+    expect(m3u8Checkbox).toBeChecked();
+    fireEvent.click(m3uCheckbox);
+    expect(m3uCheckbox).not.toBeChecked();
+    expect(m3u8Checkbox).toBeChecked();
+
+    const previewButton = screen.getByRole("button", { name: "Preview" });
+    await waitFor(() => {
+      expect(previewButton).toBeEnabled();
+    });
+    fireEvent.click(previewButton);
+
+    expect(await screen.findByText("Late Night Drive [yt].m3u8")).toBeInTheDocument();
+    expect(previewRequestBody).toEqual({
+      formats: ["m3u8"],
+      path_format: "file_url",
+      playlist_ids: [12],
+      profile_id: 1,
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Download ZIP" }));
+
+    await waitFor(() => {
+      expect(exportRequestBody).toEqual({
+        formats: ["m3u8"],
+        path_format: "file_url",
+        playlist_ids: [12],
+        profile_id: 1,
+      });
+    });
+    expect(createObjectUrlMock).toHaveBeenCalledWith(expect.any(Blob));
+    expect(revokeObjectUrlMock).toHaveBeenCalledWith("blob:m3u8-export");
   });
 
   it("filters playlist tracks by status", async () => {

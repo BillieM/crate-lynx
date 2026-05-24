@@ -618,6 +618,76 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/m3u/export-profiles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Export Profiles */
+        get: operations["list_export_profiles_api_m3u_export_profiles_get"];
+        put?: never;
+        /** Create Export Profile */
+        post: operations["create_export_profile_api_m3u_export_profiles_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/m3u/export-profiles/{profile_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Export Profile */
+        delete: operations["delete_export_profile_api_m3u_export_profiles__profile_id__delete"];
+        options?: never;
+        head?: never;
+        /** Update Export Profile */
+        patch: operations["update_export_profile_api_m3u_export_profiles__profile_id__patch"];
+        trace?: never;
+    };
+    "/api/m3u/export/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Preview Export */
+        post: operations["preview_export_api_m3u_export_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/m3u/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Export M3U Zip */
+        post: operations["export_m3u_zip_api_m3u_export_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/settings/general": {
         parameters: {
             query?: never;
@@ -759,6 +829,18 @@ export interface components {
         CreateIngestFolderRequest: {
             /** Path */
             path: string;
+        };
+        /** CreateM3uExportProfileRequest */
+        CreateM3uExportProfileRequest: {
+            /** Name */
+            name: string;
+            /** Library Path */
+            library_path: string;
+            /**
+             * Is Default
+             * @default false
+             */
+            is_default: boolean;
         };
         /** CreateStreamingAccountRequest */
         CreateStreamingAccountRequest: {
@@ -969,6 +1051,78 @@ export interface components {
              */
             created_at: string;
             streaming_track: components["schemas"]["StreamingTrackSummaryResponse"];
+        };
+        /** M3uExportPlaylistPreviewResponse */
+        M3uExportPlaylistPreviewResponse: {
+            /** Playlist Id */
+            playlist_id: number;
+            /** Title */
+            title: string;
+            /** Filename M3U */
+            filename_m3u: string;
+            /** Filename M3U8 */
+            filename_m3u8: string;
+            /** Filenames */
+            filenames: string[];
+            /** Exported Track Count */
+            exported_track_count: number;
+            /** Skipped Track Count */
+            skipped_track_count: number;
+            /** Sample Path */
+            sample_path: string | null;
+        };
+        /** M3uExportPreviewResponse */
+        M3uExportPreviewResponse: {
+            /** Library Path */
+            library_path: string;
+            /** Formats */
+            formats: ("m3u" | "m3u8")[];
+            /**
+             * Path Format
+             * @enum {string}
+             */
+            path_format: "absolute" | "file_url";
+            /** Playlist Count */
+            playlist_count: number;
+            /** Total Exported Track Count */
+            total_exported_track_count: number;
+            /** Total Skipped Track Count */
+            total_skipped_track_count: number;
+            /** Playlists */
+            playlists: components["schemas"]["M3uExportPlaylistPreviewResponse"][];
+        };
+        /** M3uExportProfileListResponse */
+        M3uExportProfileListResponse: {
+            /** Profiles */
+            profiles: components["schemas"]["M3uExportProfileResponse"][];
+        };
+        /** M3uExportProfileResponse */
+        M3uExportProfileResponse: {
+            /** Id */
+            id: number;
+            /** Name */
+            name: string;
+            /** Library Path */
+            library_path: string;
+            /** Is Default */
+            is_default: boolean;
+        };
+        /** M3uExportRequest */
+        M3uExportRequest: {
+            /** Playlist Ids */
+            playlist_ids?: number[];
+            /** Formats */
+            formats?: ("m3u" | "m3u8")[];
+            /**
+             * Path Format
+             * @default absolute
+             * @enum {string}
+             */
+            path_format: "absolute" | "file_url";
+            /** Profile Id */
+            profile_id?: number | null;
+            /** Library Path */
+            library_path?: string | null;
         };
         /** MetadataFieldResponse */
         MetadataFieldResponse: {
@@ -1586,6 +1740,15 @@ export interface components {
             source_path: string;
             /** Source Size */
             source_size: number | null;
+        };
+        /** UpdateM3uExportProfileRequest */
+        UpdateM3uExportProfileRequest: {
+            /** Name */
+            name?: string | null;
+            /** Library Path */
+            library_path?: string | null;
+            /** Is Default */
+            is_default?: boolean | null;
         };
         /** UpdateStreamingAccountAuthRequest */
         UpdateStreamingAccountAuthRequest: {
@@ -2755,6 +2918,189 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["LocalTrackDetailResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_export_profiles_api_m3u_export_profiles_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["M3uExportProfileListResponse"];
+                };
+            };
+        };
+    };
+    create_export_profile_api_m3u_export_profiles_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateM3uExportProfileRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["M3uExportProfileResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_export_profile_api_m3u_export_profiles__profile_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                profile_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_export_profile_api_m3u_export_profiles__profile_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                profile_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateM3uExportProfileRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["M3uExportProfileResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    preview_export_api_m3u_export_preview_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["M3uExportRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["M3uExportPreviewResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    export_m3u_zip_api_m3u_export_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["M3uExportRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */

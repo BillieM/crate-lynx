@@ -150,6 +150,10 @@ def test_links_routes_are_mounted_under_api_prefix() -> None:
     assert "/api/settings/general" in route_paths
     assert "/api/settings/ingest-folders" in route_paths
     assert "/api/settings/ingest-folders/{folder_id}" in route_paths
+    assert "/api/m3u/export-profiles" in route_paths
+    assert "/api/m3u/export-profiles/{profile_id}" in route_paths
+    assert "/api/m3u/export/preview" in route_paths
+    assert "/api/m3u/export" in route_paths
     assert "/healthz" in route_paths
     assert "/health" not in route_paths
     assert "/ingest/status" not in route_paths

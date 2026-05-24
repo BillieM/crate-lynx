@@ -3,6 +3,7 @@ import { LocalLibraryView } from "../library/LocalLibraryView";
 import { MissingLocallyView } from "../maintenance/MissingLocallyView";
 import { UnidentifiedView } from "../maintenance/UnidentifiedView";
 import { PlaylistSyncConfiguration } from "../playlists/PlaylistSyncConfiguration";
+import { PlaylistM3uExportView } from "../playlists/PlaylistM3uExportView";
 import { PlaylistView } from "../playlists/PlaylistView";
 import type { StreamingPlaylist } from "../playlists/queries";
 import { LinkProposalsView } from "../proposals/LinkProposalsView";
@@ -12,6 +13,7 @@ import { GeneralSettingsView } from "../settings/GeneralSettingsView";
 import type { NavItem, PlaylistSyncViewState, ViewConfig } from "./types";
 
 export const playlistCollectionViewId = "playlists";
+export const playlistExportViewId = "playlist-export";
 export const streamingRelationshipsViewId = "streaming-relationships";
 export const settingsAuthenticationViewId = "settings-authentication";
 export const settingsGeneralViewId = "settings-general";
@@ -76,6 +78,14 @@ const staticViewEntries = [
     render: () => <PlaylistSyncConfiguration />,
   },
   {
+    id: playlistExportViewId,
+    title: "M3U export",
+    actionLabels: [],
+    icon: "playlist",
+    path: "/playlists/export",
+    render: () => <PlaylistM3uExportView />,
+  },
+  {
     id: settingsGeneralViewId,
     title: "Settings",
     actionLabels: [],
@@ -118,13 +128,17 @@ export function getViewPath(viewId: string) {
 }
 
 export function getViewIdFromPath(pathname: string) {
+  const normalizedPathname = pathname.replace(/\/$/, "") || "/";
+
+  if (normalizedPathname === "/playlists/export") {
+    return playlistExportViewId;
+  }
+
   const playlistRouteMatch = /^\/playlists\/(?<playlistId>\d+)\/?$/.exec(pathname);
 
   if (playlistRouteMatch?.groups?.playlistId) {
     return getPlaylistViewId(Number(playlistRouteMatch.groups.playlistId));
   }
-
-  const normalizedPathname = pathname.replace(/\/$/, "") || "/";
 
   if (normalizedPathname === "/") {
     return null;
@@ -142,12 +156,21 @@ function getPlaylistTone(playlist: StreamingPlaylist): NavItem["tone"] {
 }
 
 export function buildPlaylistNavItems(playlists: StreamingPlaylist[]): NavItem[] {
-  return playlists.map((playlist) => ({
+  const playlistItems = playlists.map((playlist) => ({
     id: getPlaylistViewId(playlist.id),
     label: playlist.title,
     badge: playlist.imported_track_count,
     tone: getPlaylistTone(playlist),
   }));
+
+  if (playlists.length === 0) {
+    return playlistItems;
+  }
+
+  return [
+    { id: playlistExportViewId, label: "M3U export", tone: "accent" },
+    ...playlistItems,
+  ];
 }
 
 export function buildMaintenanceNavItems({

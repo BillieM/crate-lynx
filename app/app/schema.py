@@ -8,6 +8,7 @@ from app.ingestion.failures import metadata as failed_ingestion_attempts_metadat
 from app.ingestion.beets_mirror import metadata as beets_mirror_metadata
 from app.links.store import metadata as links_metadata
 from app.local_tracks.store import metadata as local_tracks_metadata
+from app.m3u.models import metadata as m3u_metadata
 from app.matching.pipeline import metadata as suggested_links_metadata
 from app.relationships.models import metadata as relationships_metadata
 from app.settings.models import metadata as settings_metadata
@@ -42,6 +43,7 @@ def _app_tables() -> Iterable[Table]:
         suggested_links_metadata,
         relationships_metadata,
         settings_metadata,
+        m3u_metadata,
         failed_ingestion_attempts_metadata,
     )
     for metadata in metadatas:

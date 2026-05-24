@@ -84,6 +84,10 @@ export const controlClasses = {
   filterChipInactive:
     "border-ctp-surface1 bg-ctp-surface0 text-ctp-subtext0 hover:border-ctp-overlay0 hover:bg-ctp-surface1 hover:text-ctp-text",
   iconFrame: `flex items-center justify-center ${radiusClasses.control} bg-ctp-surface0 text-ctp-mauve`,
+  iconButton:
+    `${radiusClasses.control} inline-flex h-7 w-7 shrink-0 items-center justify-center border border-ctp-surface1 bg-ctp-surface0 p-0 text-ctp-text transition-colors hover:border-ctp-overlay0 hover:bg-ctp-surface1 focus:outline-none focus-visible:ring-2 focus-visible:ring-ctp-mauve/45 disabled:cursor-not-allowed disabled:border-ctp-surface0 disabled:bg-ctp-surface0 disabled:text-ctp-overlay1 disabled:hover:bg-ctp-surface0 [&_svg]:block [&_svg]:h-4 [&_svg]:w-4`,
+  iconButtonTooltip:
+    "pointer-events-none absolute right-0 top-[calc(100%+0.45rem)] z-20 whitespace-nowrap rounded-[6px] border border-ctp-surface1 bg-ctp-crust px-2 py-1 text-[11px] font-medium text-ctp-text opacity-0 shadow-sm shadow-ctp-crust/30 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100",
   pill: `${radiusClasses.pill} px-2 py-0.5 text-[11px] font-semibold`,
   popoverOffset: "top-[calc(100%+0.5rem)]",
   searchFrame:

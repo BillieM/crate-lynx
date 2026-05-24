@@ -1,7 +1,7 @@
 import { type QueryClient, type QueryKey, useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { z } from "zod";
 
-import { deleteJson, endpoints, fetchBlob, fetchJson, patchJson, postJson } from "../../lib/api";
+import { deleteJson, endpoints, fetchBlob, fetchJson, patchJson, postBlob, postJson } from "../../lib/api";
 import type { components } from "../../lib/api-types";
 import { invalidateQueryKeys } from "../../lib/queryInvalidation";
 import { missingLocallyInvalidationKeys } from "../maintenance/queries";
@@ -29,6 +29,17 @@ export type PlaylistTracksResponse = {
   tracks: PlaylistTrack[];
 };
 export type PlaylistM3uExport = {
+  blob: Blob;
+  filename: string;
+};
+export type M3uExportProfile = ApiSchemas["M3uExportProfileResponse"];
+export type M3uExportProfileListResponse = ApiSchemas["M3uExportProfileListResponse"];
+export type CreateM3uExportProfileInput = ApiSchemas["CreateM3uExportProfileRequest"];
+export type M3uExportRequest = ApiSchemas["M3uExportRequest"];
+export type M3uExportFormat = NonNullable<M3uExportRequest["formats"]>[number];
+export type M3uExportPathFormat = NonNullable<M3uExportRequest["path_format"]>;
+export type M3uExportPreviewResponse = ApiSchemas["M3uExportPreviewResponse"];
+export type M3uExportZip = {
   blob: Blob;
   filename: string;
 };
@@ -138,6 +149,41 @@ const playlistTracksResponseSchema: z.ZodType<PlaylistTracksResponse> = z.object
   tracks: z.array(playlistTrackSchema),
 });
 
+const m3uExportProfileSchema: z.ZodType<M3uExportProfile> = z.object({
+  id: z.number(),
+  is_default: z.boolean(),
+  library_path: z.string(),
+  name: z.string(),
+});
+
+const m3uExportProfileListResponseSchema: z.ZodType<M3uExportProfileListResponse> = z.object({
+  profiles: z.array(m3uExportProfileSchema),
+});
+
+const m3uExportFormatSchema = z.enum(["m3u", "m3u8"]);
+const m3uExportPathFormatSchema = z.enum(["absolute", "file_url"]);
+
+const m3uExportPlaylistPreviewSchema = z.object({
+  exported_track_count: z.number(),
+  filename_m3u: z.string(),
+  filename_m3u8: z.string(),
+  filenames: z.array(z.string()),
+  playlist_id: z.number(),
+  sample_path: nullableStringSchema,
+  skipped_track_count: z.number(),
+  title: z.string(),
+});
+
+const m3uExportPreviewResponseSchema: z.ZodType<M3uExportPreviewResponse> = z.object({
+  formats: z.array(m3uExportFormatSchema),
+  library_path: z.string(),
+  path_format: m3uExportPathFormatSchema,
+  playlist_count: z.number(),
+  playlists: z.array(m3uExportPlaylistPreviewSchema),
+  total_exported_track_count: z.number(),
+  total_skipped_track_count: z.number(),
+});
+
 const linkProposalConfidenceBandSchema = z.enum(["high", "medium", "low"]);
 
 const linkProposalSchema: z.ZodType<LinkProposal> = z.object({
@@ -200,6 +246,7 @@ export const playlistQueryKeys = {
   all: ["playlists"] as const,
   config: () => ["playlists", "config"] as const,
   detail: (playlistId: number | string) => ["playlists", playlistId, "detail"] as const,
+  m3uExportProfiles: () => ["playlists", "m3u", "export-profiles"] as const,
   list: () => ["playlists", "list"] as const,
   proposals: (filters: LinkProposalListFilters = {}) =>
     ["playlists", "proposals", "list", { confidenceBand: filters.confidenceBand ?? null }] as const,
@@ -295,6 +342,18 @@ export async function fetchStreamingPlaylistConfig(): Promise<StreamingPlaylistC
   return fetchJson(endpoints.api("/streaming/playlists/config"), streamingPlaylistConfigResponseSchema);
 }
 
+export async function fetchM3uExportProfiles(): Promise<M3uExportProfileListResponse> {
+  return fetchJson(endpoints.api("/m3u/export-profiles"), m3uExportProfileListResponseSchema);
+}
+
+export async function createM3uExportProfile(input: CreateM3uExportProfileInput): Promise<M3uExportProfile> {
+  return postJson(endpoints.api("/m3u/export-profiles"), {
+    body: input,
+    errorMessage: "M3U export profile create request failed",
+    schema: m3uExportProfileSchema,
+  });
+}
+
 export async function updateStreamingPlaylistConfig({
   playlistId,
   sync_mode,
@@ -387,6 +446,26 @@ export async function exportPlaylistM3u(playlistId: number | string): Promise<Pl
   };
 }
 
+export async function previewM3uExport(input: M3uExportRequest): Promise<M3uExportPreviewResponse> {
+  return postJson(endpoints.api("/m3u/export/preview"), {
+    body: input,
+    errorMessage: "M3U export preview request failed",
+    schema: m3uExportPreviewResponseSchema,
+  });
+}
+
+export async function exportM3uZip(input: M3uExportRequest): Promise<M3uExportZip> {
+  const { blob, response } = await postBlob(endpoints.api("/m3u/export"), {
+    body: input,
+    errorMessage: "M3U export request failed",
+  });
+
+  return {
+    blob,
+    filename: getFilenameFromContentDisposition(response.headers.get("Content-Disposition")),
+  };
+}
+
 export function usePlaylistDetailQuery(playlistId: number | string | null | undefined) {
   const queryPlaylistId = hasPlaylistId(playlistId) ? playlistId : null;
 
@@ -414,6 +493,13 @@ export function useStreamingPlaylistConfigQuery() {
   return useQuery({
     queryKey: playlistQueryKeys.config(),
     queryFn: fetchStreamingPlaylistConfig,
+  });
+}
+
+export function useM3uExportProfilesQuery() {
+  return useQuery({
+    queryKey: playlistQueryKeys.m3uExportProfiles(),
+    queryFn: fetchM3uExportProfiles,
   });
 }
 
