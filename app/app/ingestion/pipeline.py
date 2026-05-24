@@ -20,6 +20,7 @@ from app.core.db import create_database_engine
 from app.core.paths import resolve_staging_path
 from app.local_tracks.store import LocalTrackStore
 from app.matching.jobs import MatchingJobEnqueuer
+from app.sonic.jobs import SonicJobEnqueuer
 from app.ingestion.beets_mirror_sync import (
     decode_beets_path,
     read_album,
@@ -56,6 +57,7 @@ class PreparedTrack:
     beets_id: int | None = None
     local_track_id: int | None = None
     matching_job_id: str | None = None
+    sonic_feature_job_id: str | None = None
 
 
 @dataclass(slots=True)
@@ -221,6 +223,7 @@ class IngestionProcessor:
     track_store: LocalTrackStore | None = None
     failed_attempt_store: FailedIngestionAttemptStore | None = None
     matching_job_enqueuer: MatchingJobEnqueuer | None = None
+    sonic_job_enqueuer: SonicJobEnqueuer | None = None
     database_engine: Engine | None = None
 
     def process(self, source_path: Path | str) -> PreparedTrack:
@@ -249,6 +252,15 @@ class IngestionProcessor:
             ):
                 prepared.matching_job_id = self.matching_job_enqueuer.enqueue(
                     prepared.local_track_id
+                )
+            if (
+                self.sonic_job_enqueuer is not None
+                and prepared.local_track_id is not None
+            ):
+                prepared.sonic_feature_job_id = (
+                    self.sonic_job_enqueuer.enqueue_feature_extraction(
+                        prepared.local_track_id
+                    )
                 )
             if self.failed_attempt_store is not None:
                 self.failed_attempt_store.clear_for_source_path(prepared.source_path)
@@ -363,6 +375,9 @@ def build_ingestion_processor(
         ),
         matching_job_enqueuer=(
             MatchingJobEnqueuer(resolved_redis_url) if resolved_redis_url else None
+        ),
+        sonic_job_enqueuer=(
+            SonicJobEnqueuer(resolved_redis_url) if resolved_redis_url else None
         ),
         database_engine=engine,
     )

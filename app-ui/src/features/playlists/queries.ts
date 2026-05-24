@@ -168,9 +168,11 @@ const m3uExportPlaylistPreviewSchema = z.object({
   filename_m3u: z.string(),
   filename_m3u8: z.string(),
   filenames: z.array(z.string()),
-  playlist_id: z.number(),
+  generated_playlist_id: z.number().nullable(),
+  playlist_id: z.number().nullable(),
   sample_path: nullableStringSchema,
   skipped_track_count: z.number(),
+  source: z.enum(["streaming", "generated"]),
   title: z.string(),
 });
 

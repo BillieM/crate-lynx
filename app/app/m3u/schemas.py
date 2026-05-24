@@ -39,6 +39,7 @@ class UpdateM3uExportProfileRequest(BaseModel):
 
 class M3uExportRequest(BaseModel):
     playlist_ids: list[int] = Field(default_factory=list)
+    generated_playlist_ids: list[int] = Field(default_factory=list)
     formats: list[M3uExportFormat] = Field(
         default_factory=lambda: list(DEFAULT_M3U_EXPORT_FORMATS)
     )
@@ -56,7 +57,9 @@ class M3uExportRequest(BaseModel):
 
 
 class M3uExportPlaylistPreviewResponse(BaseModel):
-    playlist_id: int
+    playlist_id: int | None
+    generated_playlist_id: int | None
+    source: str
     title: str
     filename_m3u: str
     filename_m3u8: str

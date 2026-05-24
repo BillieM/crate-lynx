@@ -23,6 +23,7 @@ from app.relationships.router import create_router as create_relationships_route
 from app.rescue.router import create_router as create_rescue_router
 from app.settings.router import create_router as create_settings_router
 from app.settings.store import GeneralSettingsStore
+from app.sonic.router import create_router as create_sonic_router
 from app.streaming import crypto
 from app.streaming.router import create_router as create_streaming_router
 
@@ -170,6 +171,12 @@ def create_app() -> FastAPI:
     )
     app.include_router(
         create_m3u_router(),
+        prefix="/api",
+    )
+    app.include_router(
+        create_sonic_router(
+            require_redis_url=require_redis_url,
+        ),
         prefix="/api",
     )
     app.include_router(

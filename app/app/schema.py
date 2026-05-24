@@ -12,6 +12,7 @@ from app.m3u.models import metadata as m3u_metadata
 from app.matching.pipeline import metadata as suggested_links_metadata
 from app.relationships.models import metadata as relationships_metadata
 from app.settings.models import metadata as settings_metadata
+from app.sonic.models import metadata as sonic_metadata
 from app.streaming.models import metadata as streaming_metadata
 
 
@@ -43,6 +44,7 @@ def _app_tables() -> Iterable[Table]:
         suggested_links_metadata,
         relationships_metadata,
         settings_metadata,
+        sonic_metadata,
         m3u_metadata,
         failed_ingestion_attempts_metadata,
     )
@@ -94,6 +96,23 @@ def _add_foreign_keys(metadata: MetaData) -> None:
                 "streaming_relationships.id",
                 "fk_streaming_relationship_suggestions_accepted_relationship",
             ),
+        ),
+        "sonic_track_features": (("local_track_id", "local_tracks.id"),),
+        "generated_playlists": (
+            ("run_id", "playlist_generation_runs.id"),
+            (
+                "parent_playlist_id",
+                "generated_playlists.id",
+                "fk_generated_playlists_parent_playlist_id_generated_playlists",
+            ),
+        ),
+        "generated_playlist_tracks": (
+            (
+                "generated_playlist_id",
+                "generated_playlists.id",
+                "fk_generated_playlist_tracks_generated_playlist_id_generated_playlists",
+            ),
+            ("local_track_id", "local_tracks.id"),
         ),
     }
     for table_name, constraints in foreign_keys.items():

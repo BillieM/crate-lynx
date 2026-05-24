@@ -14,7 +14,7 @@ export type NavItem = {
 
 export type ViewConfig = {
   actionLabels: string[];
-  icon: "spark" | "playlist" | "library" | "settings";
+  icon: "spark" | "playlist" | "library" | "settings" | "tool";
   id: string;
   playlistResourceId?: number;
   title: string;

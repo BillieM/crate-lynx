@@ -103,6 +103,7 @@ export function Sidebar({
   isSettingsMode,
   libraryItems,
   maintenanceItems,
+  generatedRunItems,
   onConfigureSync,
   onHome,
   onSelect,
@@ -110,9 +111,11 @@ export function Sidebar({
   playlistEmptyMessage,
   playlistItems,
   settingsItems,
+  toolItems,
 }: {
   activeItemId: string;
   isSettingsMode: boolean;
+  generatedRunItems: NavItem[];
   libraryItems: NavItem[];
   maintenanceItems: NavItem[];
   onConfigureSync: () => void;
@@ -122,6 +125,7 @@ export function Sidebar({
   playlistEmptyMessage: string;
   playlistItems: NavItem[];
   settingsItems: NavItem[];
+  toolItems: NavItem[];
 }) {
   return (
     <aside className={shellClasses.sidebar}>
@@ -149,6 +153,7 @@ export function Sidebar({
         ) : (
           <>
             <SidebarSection activeItemId={activeItemId} items={maintenanceItems} onSelect={onSelect} title="Maintenance" />
+            <SidebarSection activeItemId={activeItemId} items={toolItems} onSelect={onSelect} title="Tools" />
             <SidebarSection
               activeItemId={activeItemId}
               emptyActionLabel={playlistEmptyActionLabel}
@@ -158,6 +163,7 @@ export function Sidebar({
               onSelect={onSelect}
               title="YouTube Music"
             />
+            <SidebarSection activeItemId={activeItemId} items={generatedRunItems} onSelect={onSelect} title="Generated runs" />
             <SidebarSection activeItemId={activeItemId} items={libraryItems} onSelect={onSelect} title="Local Library" />
           </>
         )}

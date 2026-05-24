@@ -215,6 +215,7 @@ def _build_export_package(
     export_package = build_m3u_export_package(
         engine=engine,
         formats=payload.formats,
+        generated_playlist_ids=payload.generated_playlist_ids,
         library_path=library_path,
         path_format=payload.path_format,
         playlist_ids=payload.playlist_ids,
@@ -245,6 +246,8 @@ def _serialize_preview(export_package: M3uExportPackage) -> M3uExportPreviewResp
         playlists=[
             M3uExportPlaylistPreviewResponse(
                 playlist_id=playlist.playlist_id,
+                generated_playlist_id=playlist.generated_playlist_id,
+                source=playlist.source,
                 title=playlist.title,
                 filename_m3u=playlist.filename_m3u,
                 filename_m3u8=playlist.filename_m3u8,

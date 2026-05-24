@@ -16,7 +16,7 @@ else
     worker_pids+=("$!")
   done
 
-  RQ_QUEUE_NAMES="${RQ_BACKGROUND_QUEUE_NAMES:-matching,streaming,m3u}" python -m app.core.worker &
+  RQ_QUEUE_NAMES="${RQ_BACKGROUND_QUEUE_NAMES:-matching,streaming,m3u,sonic}" python -m app.core.worker &
   worker_pids+=("$!")
 fi
 

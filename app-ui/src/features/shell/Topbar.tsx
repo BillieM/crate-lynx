@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, BookOpenText, FileDown, ListMusic, RefreshCw, Settings, Sparkles, type LucideIcon } from "lucide-react";
+import { ArrowLeft, BookOpenText, FileDown, ListMusic, RefreshCw, Settings, SlidersHorizontal, Sparkles, type LucideIcon } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { IconButton } from "../../components/IconButton";
 import { useDelayedInvalidate } from "../../lib/useDelayedInvalidate";
@@ -23,6 +23,7 @@ const topbarIconMap = {
   playlist: ListMusic,
   settings: Settings,
   spark: Sparkles,
+  tool: SlidersHorizontal,
 } satisfies Record<ViewConfig["icon"], LucideIcon>;
 
 export function PlaylistActionStatus({

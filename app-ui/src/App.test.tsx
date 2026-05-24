@@ -14,6 +14,11 @@ import type {
   StreamingPlaylistsResponse,
 } from "./features/playlists/queries";
 import type { StreamingRelationshipSuggestionsResponse } from "./features/relationships/queries";
+import type {
+  GeneratedPlaylistListResponse,
+  PlaylistGenerationRunListResponse,
+  SonicFeatureSummary,
+} from "./features/sonic/queries";
 import { getProgressColor } from "./features/shell/progress";
 import { blobResponse, createMockApi, emptyResponse, failUnexpectedFetch, jsonResponse } from "./test/mockApi";
 
@@ -346,6 +351,56 @@ const generalSettingsResponse = {
     { id: 2, path: "/soulseek" },
   ],
 };
+const sonicFeatureSummaryResponse: SonicFeatureSummary = {
+  failed_tracks: 0,
+  missing_tracks: 2,
+  pending_tracks: 1,
+  ready_tracks: 58,
+  total_tracks: 61,
+};
+const sonicRunsResponse: PlaylistGenerationRunListResponse = {
+  runs: [
+    {
+      completed_at: "2026-05-24T12:00:00Z",
+      created_at: "2026-05-24T11:55:00Z",
+      error_detail: null,
+      generation_config: {
+        clustering_method: "kmeans",
+        feature_profile: "balanced_v1",
+        max_children: 4,
+        max_depth: 2,
+        min_playlist_size: 8,
+        random_seed: 42,
+        target_playlist_size: 25,
+      },
+      id: 501,
+      playlist_count: 2,
+      source_filter: {
+        source_type: "all_local",
+        streaming_playlist_ids: [],
+        tag_filters: [],
+      },
+      status: "completed",
+      track_count: 58,
+      updated_at: "2026-05-24T12:00:00Z",
+    },
+  ],
+};
+const generatedPlaylistsResponse: GeneratedPlaylistListResponse = {
+  playlists: [
+    {
+      created_at: "2026-05-24T12:00:00Z",
+      depth: 0,
+      id: 7001,
+      name: "Fast Bright",
+      parent_playlist_id: null,
+      position: 1,
+      run_id: 501,
+      summary: { top_deltas: [] },
+      track_count: 24,
+    },
+  ],
+};
 const m3uExportProfilesResponse: M3uExportProfileListResponse = {
   profiles: [
     {
@@ -367,9 +422,11 @@ const m3uExportPreviewResponse: M3uExportPreviewResponse = {
       filename_m3u: "Late Night Drive [yt].m3u",
       filename_m3u8: "Late Night Drive [yt].m3u8",
       filenames: ["Late Night Drive [yt].m3u", "Late Night Drive [yt].m3u8"],
+      generated_playlist_id: null,
       playlist_id: 12,
       sample_path: "file://localhost/mnt/music/Frame%20Delay/Night%20Runner.flac",
       skipped_track_count: 4,
+      source: "streaming",
       title: "Late Night Drive",
     },
   ],
@@ -459,6 +516,32 @@ function mockPlaylistFetch({
     .get("/api/library/tracks", () => jsonResponse(libraryTracksResponse))
     .get("/api/maintenance/missing-locally", () => jsonResponse(missingLocallyResponse))
     .get("/api/maintenance/unidentified", () => jsonResponse(unidentifiedResponse))
+    .get("/api/sonic/features/summary", () => jsonResponse(sonicFeatureSummaryResponse))
+    .get("/api/sonic/runs", () => jsonResponse(sonicRunsResponse))
+    .get("/api/sonic/generated-playlists", () => jsonResponse(generatedPlaylistsResponse))
+    .get("/api/sonic/runs/501", () =>
+      jsonResponse({
+        playlists: generatedPlaylistsResponse.playlists,
+        run: sonicRunsResponse.runs[0],
+      }),
+    )
+    .get("/api/sonic/generated-playlists/7001/tracks", () =>
+      jsonResponse({
+        tracks: [
+          {
+            album: "Late Night Drive",
+            artist: "Frame Delay",
+            duration_ms: 214000,
+            file_path: "Frame Delay/Night Runner.mp3",
+            id: 1,
+            library_root_rel_path: "Frame Delay/Night Runner.mp3",
+            local_track_id: 501,
+            position: 1,
+            title: "Night Runner",
+          },
+        ],
+      }),
+    )
     .get("/api/settings/general", () => generalSettingsHandler?.() ?? jsonResponse(generalSettingsResponse))
     .get("/api/m3u/export-profiles", () => m3uExportProfilesHandler?.() ?? jsonResponse(m3uExportProfilesResponse))
     .post("/api/m3u/export-profiles", ({ init }) =>

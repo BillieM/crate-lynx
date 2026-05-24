@@ -14,6 +14,7 @@ from sqlalchemy.engine import Engine
 from app.core.db import create_database_engine
 from app.core.paths import default_staging_path, resolve_staging_path
 from app.local_tracks.store import local_tracks_table
+from app.ingestion.beets_mirror import beets_items_table
 from app.streaming.models import (
     PLAYLIST_SYNC_MODE_FULL,
     playlist_membership_table,
@@ -119,24 +120,117 @@ def build_m3u_playlist_export(
                 ).mappings()
             }
 
+    export_rows = []
+    for row in rows:
+        resolved_link = resolved_links_by_track_id.get(int(row["streaming_track_id"]))
+        if resolved_link is None:
+            export_rows.append(None)
+            continue
+
+        local_path = local_paths_by_id.get(resolved_link.local_track_id)
+        if local_path is None:
+            export_rows.append(None)
+            continue
+
+        export_rows.append(
+            {
+                "artist": row["artist"],
+                "title": row["title"],
+                "duration_ms": row["duration_ms"],
+                "local_path": local_path,
+            }
+        )
+
+    return _render_m3u_export_rows(
+        export_rows,
+        base_path=base_path,
+        include_extinf=include_extinf,
+        path_format=export_path_format,
+    )
+
+
+def build_generated_m3u_playlist_export(
+    generated_playlist_id: int,
+    base_path: Path | str,
+    *,
+    include_extinf: bool = True,
+    path_format: str = DEFAULT_M3U_EXPORT_PATH_FORMAT,
+    engine: Engine | None = None,
+) -> M3uPlaylistExport:
+    base_path = str(base_path)
+    export_path_format = normalize_m3u_export_path_format(path_format)
+    engine = engine or create_database_engine()
+
+    from app.sonic.models import generated_playlist_tracks_table
+
+    query = (
+        select(
+            local_tracks_table.c.library_root_rel_path,
+            beets_items_table.c.title,
+            beets_items_table.c.artist,
+            beets_items_table.c.length,
+        )
+        .select_from(
+            generated_playlist_tracks_table.join(
+                local_tracks_table,
+                local_tracks_table.c.id
+                == generated_playlist_tracks_table.c.local_track_id,
+            ).outerjoin(
+                beets_items_table,
+                beets_items_table.c.beets_id == local_tracks_table.c.beets_id,
+            )
+        )
+        .where(
+            generated_playlist_tracks_table.c.generated_playlist_id
+            == generated_playlist_id
+        )
+        .order_by(generated_playlist_tracks_table.c.position.asc())
+    )
+
+    with engine.connect() as connection:
+        rows = connection.execute(query).mappings().all()
+
+    return _render_m3u_export_rows(
+        [
+            {
+                "artist": row["artist"] or "Unknown artist",
+                "title": row["title"] or Path(row["library_root_rel_path"]).stem,
+                "duration_ms": (
+                    int(float(row["length"]) * 1000)
+                    if row["length"] is not None
+                    else None
+                ),
+                "local_path": row["library_root_rel_path"],
+            }
+            for row in rows
+        ],
+        base_path=base_path,
+        include_extinf=include_extinf,
+        path_format=export_path_format,
+    )
+
+
+def _render_m3u_export_rows(
+    rows: list[dict[str, object] | None],
+    *,
+    base_path: str,
+    include_extinf: bool,
+    path_format: M3uExportPathFormat,
+) -> M3uPlaylistExport:
     lines = ["#EXTM3U"]
     exported_track_count = 0
     skipped_track_count = 0
     sample_path = None
     for row in rows:
-        resolved_link = resolved_links_by_track_id.get(int(row["streaming_track_id"]))
-        if resolved_link is None:
+        if row is None:
             skipped_track_count += 1
             continue
 
-        local_path = local_paths_by_id.get(resolved_link.local_track_id)
-        if local_path is None:
-            skipped_track_count += 1
-            continue
-
-        duration_seconds = _format_duration_seconds(row["duration_ms"])
-        resolved_path = format_export_audio_path(base_path, local_path)
-        rendered_path = format_m3u_entry_path(resolved_path, export_path_format)
+        duration_seconds = _format_duration_seconds(
+            row["duration_ms"] if isinstance(row["duration_ms"], int) else None
+        )
+        resolved_path = format_export_audio_path(base_path, str(row["local_path"]))
+        rendered_path = format_m3u_entry_path(resolved_path, path_format)
         sample_path = sample_path or rendered_path
         exported_track_count += 1
         if include_extinf:

@@ -33,6 +33,7 @@ from app.ingestion.pipeline import (
     UnsupportedAudioFormatError,
 )
 from app.matching.jobs import MatchingJobEnqueuer
+from app.sonic.jobs import SonicJobEnqueuer
 from app.ingestion.watcher import FileSnapshot, IngestionEventHandler, IngestionWatcher
 from app.ingestion.pipeline import IngestionProcessor
 from app.ingestion.failures import (
@@ -1265,6 +1266,8 @@ def test_ingestion_processor_enqueues_matching_job_after_persisting(
     fingerprint_generator.generate.return_value = "fp-42"
     enqueuer = Mock(spec=MatchingJobEnqueuer)
     enqueuer.enqueue.return_value = "job-123"
+    sonic_enqueuer = Mock(spec=SonicJobEnqueuer)
+    sonic_enqueuer.enqueue_feature_extraction.return_value = "sonic-job-123"
 
     database_url = f"sqlite:///{tmp_path / 'app.db'}"
     engine = create_engine(database_url)
@@ -1277,11 +1280,16 @@ def test_ingestion_processor_enqueues_matching_job_after_persisting(
         fingerprint_generator=fingerprint_generator,
         track_store=LocalTrackStore(database_url),
         matching_job_enqueuer=enqueuer,
+        sonic_job_enqueuer=sonic_enqueuer,
     ).process(source)
 
     assert result.local_track_id is not None
     assert result.matching_job_id == "job-123"
+    assert result.sonic_feature_job_id == "sonic-job-123"
     enqueuer.enqueue.assert_called_once_with(result.local_track_id)
+    sonic_enqueuer.enqueue_feature_extraction.assert_called_once_with(
+        result.local_track_id
+    )
 
 
 def test_ingestion_processor_retry_updates_existing_local_track_by_beets_id(

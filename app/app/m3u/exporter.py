@@ -15,9 +15,11 @@ from app.m3u.generator import (
     DEFAULT_M3U_EXPORT_PATH_FORMAT,
     M3uExportPathFormat,
     M3uPlaylistExport,
+    build_generated_m3u_playlist_export,
     build_m3u_playlist_export,
     normalize_m3u_export_path_format,
 )
+from app.sonic.models import generated_playlists_table
 from app.streaming.models import (
     PLAYLIST_SYNC_MODE_FULL,
     YOUTUBE_MUSIC_PROVIDER,
@@ -46,7 +48,9 @@ class M3uExportPlaylistNotFoundError(ValueError):
 
 @dataclass(frozen=True, slots=True)
 class M3uExportPlaylist:
-    playlist_id: int
+    playlist_id: int | None
+    generated_playlist_id: int | None
+    source: str
     title: str
     filename_m3u: str
     filename_m3u8: str
@@ -84,6 +88,7 @@ def build_m3u_export_package(
     *,
     engine: Engine | None = None,
     formats: Iterable[str] = DEFAULT_M3U_EXPORT_FORMATS,
+    generated_playlist_ids: list[int] | None = None,
     library_path: str,
     path_format: str = DEFAULT_M3U_EXPORT_PATH_FORMAT,
     playlist_ids: list[int],
@@ -92,7 +97,8 @@ def build_m3u_export_package(
     export_formats = normalize_m3u_export_formats(formats)
     export_path_format = normalize_m3u_export_path_format(path_format)
     normalized_ids = _normalize_playlist_ids(playlist_ids)
-    if not normalized_ids:
+    normalized_generated_ids = _normalize_playlist_ids(generated_playlist_ids or [])
+    if not normalized_ids and not normalized_generated_ids:
         return M3uExportPackage(
             library_path=library_path,
             formats=export_formats,
@@ -100,8 +106,11 @@ def build_m3u_export_package(
             playlists=[],
         )
 
+    playlists: list[M3uExportPlaylist] = []
+    filename_stem_inputs: list[tuple[str, str]] = []
+
     with engine.connect() as connection:
-        rows = (
+        streaming_rows = (
             connection.execute(
                 select(
                     streaming_playlists_table.c.id,
@@ -121,8 +130,20 @@ def build_m3u_export_package(
             .mappings()
             .all()
         )
+        generated_rows = (
+            connection.execute(
+                select(
+                    generated_playlists_table.c.id,
+                    generated_playlists_table.c.name,
+                ).where(generated_playlists_table.c.id.in_(normalized_generated_ids))
+            )
+            .mappings()
+            .all()
+            if normalized_generated_ids
+            else []
+        )
 
-    rows_by_id = {int(row["id"]): row for row in rows}
+    rows_by_id = {int(row["id"]): row for row in streaming_rows}
     missing_ids = [
         playlist_id for playlist_id in normalized_ids if playlist_id not in rows_by_id
     ]
@@ -131,26 +152,69 @@ def build_m3u_export_package(
             f"Full-sync playlist not found: {missing_ids[0]}"
         )
 
-    filename_stems = _dedupe_filename_stems(
-        [
-            build_m3u_export_filename_stem(
+    generated_rows_by_id = {int(row["id"]): row for row in generated_rows}
+    missing_generated_ids = [
+        playlist_id
+        for playlist_id in normalized_generated_ids
+        if playlist_id not in generated_rows_by_id
+    ]
+    if missing_generated_ids:
+        raise M3uExportPlaylistNotFoundError(
+            f"Generated playlist not found: {missing_generated_ids[0]}"
+        )
+
+    for playlist_id in normalized_ids:
+        filename_stem_inputs.append(
+            (
                 rows_by_id[playlist_id]["title"],
                 _provider_suffix(rows_by_id[playlist_id]["provider"]),
             )
-            for playlist_id in normalized_ids
+        )
+    for playlist_id in normalized_generated_ids:
+        filename_stem_inputs.append((generated_rows_by_id[playlist_id]["name"], "gen"))
+
+    filename_stems = _dedupe_filename_stems(
+        [
+            build_m3u_export_filename_stem(title, provider_suffix)
+            for title, provider_suffix in filename_stem_inputs
         ]
     )
 
-    playlists = []
-    for playlist_id, filename_stem in zip(normalized_ids, filename_stems, strict=True):
+    filename_index = 0
+    for playlist_id in normalized_ids:
+        filename_stem = filename_stems[filename_index]
+        filename_index += 1
         row = rows_by_id[playlist_id]
         playlists.append(
             M3uExportPlaylist(
                 playlist_id=playlist_id,
+                generated_playlist_id=None,
+                source="streaming",
                 title=row["title"],
                 filename_m3u=f"{filename_stem}.m3u",
                 filename_m3u8=f"{filename_stem}.m3u8",
                 rendered=build_m3u_playlist_export(
+                    playlist_id,
+                    library_path,
+                    include_extinf=False,
+                    path_format=export_path_format,
+                    engine=engine,
+                ),
+            )
+        )
+    for playlist_id in normalized_generated_ids:
+        filename_stem = filename_stems[filename_index]
+        filename_index += 1
+        row = generated_rows_by_id[playlist_id]
+        playlists.append(
+            M3uExportPlaylist(
+                playlist_id=None,
+                generated_playlist_id=playlist_id,
+                source="generated",
+                title=row["name"],
+                filename_m3u=f"{filename_stem}.m3u",
+                filename_m3u8=f"{filename_stem}.m3u8",
+                rendered=build_generated_m3u_playlist_export(
                     playlist_id,
                     library_path,
                     include_extinf=False,

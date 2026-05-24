@@ -10,10 +10,14 @@ import { LinkProposalsView } from "../proposals/LinkProposalsView";
 import { StreamingRelationshipsView } from "../relationships/StreamingRelationshipsView";
 import { AuthenticationSettingsView } from "../settings/AuthenticationSettingsView";
 import { GeneralSettingsView } from "../settings/GeneralSettingsView";
+import { GeneratedRunView } from "../sonic/GeneratedRunView";
+import { PlaylistGeneratorView } from "../sonic/PlaylistGeneratorView";
+import type { PlaylistGenerationRun } from "../sonic/queries";
 import type { NavItem, PlaylistSyncViewState, ViewConfig } from "./types";
 
 export const playlistCollectionViewId = "playlists";
 export const playlistExportViewId = "playlist-export";
+export const playlistGeneratorViewId = "playlist-generator";
 export const streamingRelationshipsViewId = "streaming-relationships";
 export const settingsAuthenticationViewId = "settings-authentication";
 export const settingsGeneralViewId = "settings-general";
@@ -86,6 +90,14 @@ const staticViewEntries = [
     render: () => <PlaylistM3uExportView />,
   },
   {
+    id: playlistGeneratorViewId,
+    title: "Playlist generator",
+    actionLabels: [],
+    icon: "tool",
+    path: "/playlist-generator",
+    render: () => <PlaylistGeneratorView />,
+  },
+  {
     id: settingsGeneralViewId,
     title: "Settings",
     actionLabels: [],
@@ -119,8 +131,16 @@ export function getPlaylistViewId(playlistId: number) {
   return `playlist-${playlistId}`;
 }
 
+export function getGeneratedRunViewId(runId: number) {
+  return `generated-run-${runId}`;
+}
+
 export function getViewPath(viewId: string) {
-  if (viewId.startsWith("playlist-")) {
+  if (/^generated-run-\d+$/.test(viewId)) {
+    return `/generated-runs/${viewId.replace("generated-run-", "")}`;
+  }
+
+  if (/^playlist-\d+$/.test(viewId)) {
     return `/playlists/${viewId.replace("playlist-", "")}`;
   }
 
@@ -140,6 +160,12 @@ export function getViewIdFromPath(pathname: string) {
     return getPlaylistViewId(Number(playlistRouteMatch.groups.playlistId));
   }
 
+  const generatedRunRouteMatch = /^\/generated-runs\/(?<runId>\d+)\/?$/.exec(pathname);
+
+  if (generatedRunRouteMatch?.groups?.runId) {
+    return getGeneratedRunViewId(Number(generatedRunRouteMatch.groups.runId));
+  }
+
   if (normalizedPathname === "/") {
     return null;
   }
@@ -156,21 +182,28 @@ function getPlaylistTone(playlist: StreamingPlaylist): NavItem["tone"] {
 }
 
 export function buildPlaylistNavItems(playlists: StreamingPlaylist[]): NavItem[] {
-  const playlistItems = playlists.map((playlist) => ({
+  return playlists.map((playlist) => ({
     id: getPlaylistViewId(playlist.id),
     label: playlist.title,
     badge: playlist.imported_track_count,
     tone: getPlaylistTone(playlist),
   }));
+}
 
-  if (playlists.length === 0) {
-    return playlistItems;
-  }
-
+export function buildToolNavItems(): NavItem[] {
   return [
+    { id: playlistGeneratorViewId, label: "Playlist generator", tone: "accent" },
     { id: playlistExportViewId, label: "M3U export", tone: "accent" },
-    ...playlistItems,
   ];
+}
+
+export function buildGeneratedRunNavItems(runs: PlaylistGenerationRun[]): NavItem[] {
+  return runs.map((run) => ({
+    id: getGeneratedRunViewId(run.id),
+    label: `Run #${run.id}`,
+    badge: run.playlist_count,
+    tone: run.status === "failed" ? "alert" : run.status === "completed" ? "linked" : "pending",
+  }));
 }
 
 export function buildMaintenanceNavItems({
@@ -221,6 +254,21 @@ function buildPlaylistViewEntries(playlists: StreamingPlaylist[]): AppViewEntry[
   }));
 }
 
-export function buildViewEntries(playlists: StreamingPlaylist[]): AppViewEntry[] {
-  return [...staticViewEntries, ...buildPlaylistViewEntries(playlists)];
+function buildGeneratedRunViewEntries(runs: PlaylistGenerationRun[]): AppViewEntry[] {
+  return runs.map((run) => ({
+    id: getGeneratedRunViewId(run.id),
+    title: `Generated run #${run.id}`,
+    actionLabels: [],
+    icon: "tool",
+    path: getViewPath(getGeneratedRunViewId(run.id)),
+    render: () => <GeneratedRunView />,
+  }));
+}
+
+export function buildViewEntries(playlists: StreamingPlaylist[], runs: PlaylistGenerationRun[] = []): AppViewEntry[] {
+  return [
+    ...staticViewEntries,
+    ...buildPlaylistViewEntries(playlists),
+    ...buildGeneratedRunViewEntries(runs),
+  ];
 }
