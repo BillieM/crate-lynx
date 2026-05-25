@@ -379,11 +379,16 @@ class SonicStore:
     ) -> list[int]:
         now = datetime.now(UTC)
         retryable_feature = sonic_track_features_table.c.attempt_count < max_attempts
+        outdated_feature = or_(
+            sonic_track_features_table.c.analyzer_key != analyzer_key,
+            sonic_track_features_table.c.analyzer_version != analyzer_version,
+        )
         retryable_statuses = [
+            outdated_feature,
             and_(
                 sonic_track_features_table.c.status == SONIC_FEATURE_STATUS_FAILED,
                 retryable_feature,
-            )
+            ),
         ]
         if pending_stale_before is not None:
             retryable_statuses.append(
@@ -397,6 +402,7 @@ class SonicStore:
             select(
                 local_tracks_table.c.id.label("local_track_id"),
                 sonic_track_features_table.c.id.label("feature_id"),
+                outdated_feature.label("is_outdated"),
             )
             .select_from(
                 local_tracks_table.outerjoin(
@@ -428,6 +434,8 @@ class SonicStore:
                     "failure_detail": None,
                     "updated_at": now,
                 }
+                if feature_id is not None and row["is_outdated"]:
+                    values["attempt_count"] = 0
                 if feature_id is None:
                     connection.execute(
                         insert(sonic_track_features_table).values(

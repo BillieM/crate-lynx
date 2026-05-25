@@ -159,6 +159,7 @@ export function PlaylistGeneratorView() {
   }
 
   const summary = featureSummaryQuery.data;
+  const hasBackfillableFeatures = summary.missing_tracks > 0 || summary.failed_tracks > 0;
   const preview = sourceIsInvalid ? undefined : previewQuery.data;
   const generateDisabled =
     createRunMutation.isPending ||
@@ -185,7 +186,7 @@ export function PlaylistGeneratorView() {
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <ActionButton
-            disabled={backfillMutation.isPending || summary.missing_tracks === 0}
+            disabled={backfillMutation.isPending || !hasBackfillableFeatures}
             onClick={() => backfillMutation.mutate({ limit: sonicBackfillLimit })}
             type="button"
           >

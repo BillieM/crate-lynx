@@ -708,7 +708,7 @@ export function PlaylistM3uExportView() {
   }
 
   return (
-    <form className="flex min-h-0 flex-1 flex-col gap-4" onSubmit={handlePreview}>
+    <form className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto pr-1" onSubmit={handlePreview}>
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h2 className={textClasses.sectionTitle}>M3U export</h2>

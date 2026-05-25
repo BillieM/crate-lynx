@@ -269,6 +269,7 @@ def test_claim_missing_feature_track_ids_reclaims_stale_pending_with_retry_budge
     stale_pending_track_id = factory.local_track(file_path="Stale.mp3")
     fresh_pending_track_id = factory.local_track(file_path="Fresh.mp3")
     exhausted_failed_track_id = factory.local_track(file_path="Exhausted.mp3")
+    outdated_ready_track_id = factory.local_track(file_path="Outdated.mp3")
     missing_track_id = factory.local_track(file_path="Missing.mp3")
     factory.sonic_track_feature(
         attempt_count=1,
@@ -289,6 +290,13 @@ def test_claim_missing_feature_track_ids_reclaims_stale_pending_with_retry_budge
         status=SONIC_FEATURE_STATUS_FAILED,
         updated_at=now - timedelta(hours=2),
     )
+    factory.sonic_track_feature(
+        analyzer_version="0",
+        attempt_count=MAX_SONIC_FEATURE_ATTEMPTS,
+        local_track_id=outdated_ready_track_id,
+        status=SONIC_FEATURE_STATUS_READY,
+        updated_at=now - timedelta(hours=2),
+    )
 
     claimed_ids = SonicStore(database_url).claim_missing_feature_track_ids(
         analyzer_key="librosa_v1",
@@ -298,7 +306,11 @@ def test_claim_missing_feature_track_ids_reclaims_stale_pending_with_retry_budge
         pending_stale_before=now - timedelta(hours=1),
     )
 
-    assert claimed_ids == [stale_pending_track_id, missing_track_id]
+    assert claimed_ids == [
+        stale_pending_track_id,
+        outdated_ready_track_id,
+        missing_track_id,
+    ]
 
     with engine.connect() as connection:
         rows = {
@@ -315,5 +327,8 @@ def test_claim_missing_feature_track_ids_reclaims_stale_pending_with_retry_budge
     assert (
         rows[exhausted_failed_track_id]["attempt_count"] == MAX_SONIC_FEATURE_ATTEMPTS
     )
+    assert rows[outdated_ready_track_id]["status"] == SONIC_FEATURE_STATUS_PENDING
+    assert rows[outdated_ready_track_id]["analyzer_version"] == "1"
+    assert rows[outdated_ready_track_id]["attempt_count"] == 0
     assert rows[missing_track_id]["status"] == SONIC_FEATURE_STATUS_PENDING
     assert rows[missing_track_id]["attempt_count"] == 0

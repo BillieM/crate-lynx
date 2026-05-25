@@ -4,6 +4,8 @@ import inspect
 from pathlib import Path
 from types import SimpleNamespace
 
+from fastapi import HTTPException
+import pytest
 from sqlalchemy import create_engine, select
 
 from app.ingestion.beets_mirror import metadata as beets_metadata
@@ -13,11 +15,13 @@ from app.sonic.jobs import (
     SONIC_FEATURE_RECONCILIATION_FUNC,
 )
 from app.sonic.models import (
+    PLAYLIST_GENERATION_STATUS_FAILED,
     SONIC_ANALYZER_LIBROSA_V1,
     SONIC_FEATURE_STATUS_FAILED,
     SONIC_FEATURE_STATUS_PENDING,
     SONIC_FEATURE_STATUS_READY,
     metadata as sonic_metadata,
+    playlist_generation_runs_table,
     sonic_track_features_table,
 )
 from app.sonic.router import create_router
@@ -208,6 +212,44 @@ def test_create_generation_run_endpoint_persists_and_enqueues(
         "balanced_v1"
     )
     assert seen == {"redis_url": "redis://example/0", "run_id": response.run.id}
+
+
+def test_create_generation_run_marks_run_failed_when_enqueue_fails(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    engine = _create_engine(tmp_path / "sonic-create-run-enqueue-fail.db")
+
+    class FakeSonicJobEnqueuer:
+        def __init__(self, redis_url: str) -> None:
+            self.redis_url = redis_url
+
+        def enqueue_generation(self, run_id: int) -> str:
+            raise RuntimeError(f"redis unavailable for run {run_id}")
+
+    monkeypatch.setattr("app.sonic.router.SonicJobEnqueuer", FakeSonicJobEnqueuer)
+
+    router = create_router(require_redis_url=lambda: "redis://example/0")
+    with pytest.raises(HTTPException) as exc_info:
+        _call_endpoint(
+            _route(router, "POST", "/sonic/runs").endpoint,
+            CreatePlaylistGenerationRunRequest.model_validate(
+                {
+                    "generation_config": {"feature_profile": "balanced_v1"},
+                    "source_filter": {"source_type": "all_local"},
+                }
+            ),
+            engine=engine,
+        )
+
+    assert exc_info.value.status_code == 503
+    with engine.connect() as connection:
+        row = (
+            connection.execute(select(playlist_generation_runs_table)).mappings().one()
+        )
+
+    assert row["status"] == PLAYLIST_GENERATION_STATUS_FAILED
+    assert "redis unavailable" in row["error_detail"]
 
 
 def test_preview_generation_run_endpoint_counts_selected_source(tmp_path: Path) -> None:

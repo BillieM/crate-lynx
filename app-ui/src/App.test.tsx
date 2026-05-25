@@ -477,6 +477,7 @@ type MockPlaylistFetchOptions = {
   rejectProposalHandler?: (proposalId: string) => Promise<Response> | Response;
   relationshipSuggestionsHandler?: (url: string) => Promise<Response> | Response;
   selectedSyncHandler?: () => Promise<Response> | Response;
+  sonicFeatureSummaryHandler?: () => Promise<Response> | Response;
   sonicGenerationPreviewHandler?: (init?: RequestInit) => Promise<Response> | Response;
   sonicRunDetailHandler?: (runId: string) => Promise<Response> | Response;
   sonicRunsHandler?: () => Promise<Response> | Response;
@@ -528,6 +529,7 @@ function mockPlaylistFetch({
   rejectProposalHandler,
   relationshipSuggestionsHandler,
   selectedSyncHandler,
+  sonicFeatureSummaryHandler,
   sonicGenerationPreviewHandler,
   sonicRunDetailHandler,
   sonicRunsHandler,
@@ -551,7 +553,9 @@ function mockPlaylistFetch({
     .get("/api/library/tracks", () => jsonResponse(libraryTracksResponse))
     .get("/api/maintenance/missing-locally", () => jsonResponse(missingLocallyResponse))
     .get("/api/maintenance/unidentified", () => jsonResponse(unidentifiedResponse))
-    .get("/api/sonic/features/summary", () => jsonResponse(sonicFeatureSummaryResponse))
+    .get("/api/sonic/features/summary", () =>
+      sonicFeatureSummaryHandler?.() ?? jsonResponse(sonicFeatureSummaryResponse),
+    )
     .post("/api/sonic/runs/preview", ({ init }) =>
       sonicGenerationPreviewHandler?.(init) ?? jsonResponse(sonicGenerationPreviewResponse),
     )
@@ -986,6 +990,22 @@ describe("App", () => {
     expect(within(sourceFilters).getByText("Balanced")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Generate/ })).toBeDisabled();
     expect(screen.getByText("Selected source has no compatible analyzed tracks.")).toBeInTheDocument();
+  });
+
+  it("allows sonic feature backfill when failed tracks can be retried", async () => {
+    mockPlaylistFetch({
+      sonicFeatureSummaryHandler: () =>
+        jsonResponse({
+          ...sonicFeatureSummaryResponse,
+          failed_tracks: 3,
+          missing_tracks: 0,
+        }),
+    });
+
+    renderApp(["/playlist-generator"]);
+
+    expect(await screen.findByRole("heading", { level: 1, name: "Playlist generator" })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "Backfill" })).toBeEnabled();
   });
 
   it("keeps source readiness stable when generation-only controls change", async () => {
@@ -1904,6 +1924,9 @@ describe("App", () => {
       }),
     ).toBeInTheDocument();
     expect(document.getElementById("playlist-export")).toHaveAttribute("data-view-active", "true");
+    expect(screen.getByRole("heading", { level: 2, name: "M3U export" }).closest("form")).toHaveClass(
+      "overflow-y-auto",
+    );
     expect(fetchMock).not.toHaveBeenCalledWith("/api/playlists/12/m3u");
   });
 

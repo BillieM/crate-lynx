@@ -124,11 +124,23 @@ def create_router(
         generation_config = normalize_generation_config(
             payload.generation_config.model_dump()
         )
-        run = _store(engine).create_generation_run(
+        store = _store(engine)
+        enqueuer = _enqueuer()
+        run = store.create_generation_run(
             generation_config=generation_config,
             source_filter=source_filter,
         )
-        job_id = _enqueuer().enqueue_generation(run.id)
+        try:
+            job_id = enqueuer.enqueue_generation(run.id)
+        except Exception as exc:
+            store.mark_generation_run_failed(
+                run.id,
+                f"Failed to enqueue playlist generation job: {exc}",
+            )
+            raise HTTPException(
+                status_code=503,
+                detail="Failed to enqueue playlist generation job",
+            ) from exc
         return CreatePlaylistGenerationRunResponse(
             run=_run_response(run),
             job_id=job_id,
