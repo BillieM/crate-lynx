@@ -16,8 +16,14 @@ else
     worker_pids+=("$!")
   done
 
-  RQ_QUEUE_NAMES="${RQ_BACKGROUND_QUEUE_NAMES:-matching,streaming,m3u,sonic}" python -m app.core.worker &
+  RQ_QUEUE_NAMES="${RQ_BACKGROUND_QUEUE_NAMES:-matching,streaming,m3u}" python -m app.core.worker &
   worker_pids+=("$!")
+
+  SONIC_WORKER_COUNT="${SONIC_WORKER_COUNT:-2}"
+  for ((i = 0; i < SONIC_WORKER_COUNT; i++)); do
+    RQ_QUEUE_NAMES=sonic python -m app.core.worker &
+    worker_pids+=("$!")
+  done
 fi
 
 shutdown() {

@@ -20,6 +20,9 @@ from sqlalchemy import (
 
 
 SONIC_ANALYZER_LIBROSA_V1 = "librosa_v1"
+DEFAULT_SONIC_BACKFILL_LIMIT = 500
+MAX_SONIC_BACKFILL_LIMIT = 1000
+MAX_SONIC_FEATURE_ATTEMPTS = 3
 SONIC_FEATURE_STATUS_PENDING = "pending"
 SONIC_FEATURE_STATUS_READY = "ready"
 SONIC_FEATURE_STATUS_FAILED = "failed"
@@ -42,7 +45,9 @@ PLAYLIST_GENERATION_STATUSES = (
 
 PLAYLIST_GENERATION_METHOD_KMEANS = "kmeans"
 PLAYLIST_GENERATION_METHOD_AGGLOMERATIVE = "agglomerative"
+PLAYLIST_GENERATION_METHOD_DJ_HIERARCHICAL = "dj_hierarchical_v1"
 PLAYLIST_GENERATION_METHODS = (
+    PLAYLIST_GENERATION_METHOD_DJ_HIERARCHICAL,
     PLAYLIST_GENERATION_METHOD_KMEANS,
     PLAYLIST_GENERATION_METHOD_AGGLOMERATIVE,
 )
@@ -78,6 +83,7 @@ sonic_track_features_table = Table(
     Column("vector_json", JSON, nullable=True),
     Column("failure_detail", Text, nullable=True),
     Column("extracted_at", DateTime(timezone=True), nullable=True),
+    Column("attempt_count", Integer, server_default="0", nullable=False),
     Column(
         "created_at", DateTime(timezone=True), server_default=func.now(), nullable=False
     ),
@@ -86,6 +92,7 @@ sonic_track_features_table = Table(
     ),
     UniqueConstraint("local_track_id", name="uq_sonic_track_features_local_track_id"),
     Index("ix_sonic_track_features_status", "status"),
+    Index("ix_sonic_track_features_status_updated_at", "status", "updated_at"),
     Index("ix_sonic_track_features_analyzer_key", "analyzer_key"),
 )
 
@@ -160,6 +167,7 @@ class SonicTrackFeatureRecord:
     vector_json: list[float] | None
     failure_detail: str | None
     extracted_at: datetime | None
+    attempt_count: int
     created_at: datetime
     updated_at: datetime
 

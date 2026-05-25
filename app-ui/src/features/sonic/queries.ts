@@ -14,6 +14,7 @@ export type SonicSourceFilter = ApiSchemas["SonicSourceFilterRequest"];
 export type PlaylistGenerationConfig = ApiSchemas["PlaylistGenerationConfigRequest"];
 export type CreatePlaylistGenerationRunRequest = ApiSchemas["CreatePlaylistGenerationRunRequest"];
 export type CreatePlaylistGenerationRunResponse = ApiSchemas["CreatePlaylistGenerationRunResponse"];
+export type SonicGenerationPreview = ApiSchemas["SonicGenerationPreviewResponse"];
 export type PlaylistGenerationRun = ApiSchemas["PlaylistGenerationRunResponse"];
 export type PlaylistGenerationRunListResponse = ApiSchemas["PlaylistGenerationRunListResponse"];
 export type GeneratedPlaylist = ApiSchemas["GeneratedPlaylistResponse"];
@@ -25,6 +26,7 @@ export type GeneratedPlaylistTracksResponse = ApiSchemas["GeneratedPlaylistTrack
 const nullableStringSchema = z.string().nullable();
 const dateStringSchema = z.string();
 const runStatusSchema = z.enum(["pending", "running", "completed", "failed"]);
+const generationRunPollingIntervalMs = 2_000;
 
 const sonicFeatureSummarySchema: z.ZodType<SonicFeatureSummary> = z.object({
   failed_tracks: z.number(),
@@ -37,6 +39,19 @@ const sonicFeatureSummarySchema: z.ZodType<SonicFeatureSummary> = z.object({
 const sonicBackfillResponseSchema: z.ZodType<SonicBackfillResponse> = z.object({
   job_id: z.string(),
   limit: z.number(),
+});
+
+const sonicGenerationPreviewSchema: z.ZodType<SonicGenerationPreview> = z.object({
+  analyzer_key: z.string(),
+  analyzer_version: z.string(),
+  can_generate: z.boolean(),
+  failed_feature_count: z.number(),
+  feature_profile: z.string(),
+  missing_feature_count: z.number(),
+  pending_feature_count: z.number(),
+  ready_track_count: z.number(),
+  skipped_track_count: z.number(),
+  source_track_count: z.number(),
 });
 
 const playlistGenerationRunSchema: z.ZodType<PlaylistGenerationRun> = z.object({
@@ -98,9 +113,14 @@ export const sonicQueryKeys = {
   featureSummary: () => ["sonic", "features", "summary"] as const,
   generatedPlaylists: () => ["sonic", "generated-playlists"] as const,
   playlistTracks: (playlistId: number | string) => ["sonic", "generated-playlists", playlistId, "tracks"] as const,
+  preview: (payload: CreatePlaylistGenerationRunRequest) => ["sonic", "runs", "preview", payload] as const,
   run: (runId: number | string) => ["sonic", "runs", runId] as const,
   runs: () => ["sonic", "runs"] as const,
 };
+
+function isGenerationRunActive(run: PlaylistGenerationRun | undefined) {
+  return run?.status === "pending" || run?.status === "running";
+}
 
 export async function fetchSonicFeatureSummary(): Promise<SonicFeatureSummary> {
   return fetchJson(endpoints.api("/sonic/features/summary"), sonicFeatureSummarySchema);
@@ -110,6 +130,15 @@ export async function backfillSonicFeatures(payload: SonicBackfillRequest): Prom
   return postJson(endpoints.api("/sonic/features/backfill"), {
     body: payload,
     schema: sonicBackfillResponseSchema,
+  });
+}
+
+export async function fetchSonicGenerationPreview(
+  payload: CreatePlaylistGenerationRunRequest,
+): Promise<SonicGenerationPreview> {
+  return postJson(endpoints.api("/sonic/runs/preview"), {
+    body: payload,
+    schema: sonicGenerationPreviewSchema,
   });
 }
 
@@ -146,10 +175,24 @@ export function useSonicFeatureSummaryQuery() {
   });
 }
 
+export function useSonicGenerationPreviewQuery(
+  payload: CreatePlaylistGenerationRunRequest,
+  enabled: boolean,
+) {
+  return useQuery({
+    enabled,
+    queryKey: sonicQueryKeys.preview(payload),
+    queryFn: () => fetchSonicGenerationPreview(payload),
+    placeholderData: (previousData) => previousData,
+  });
+}
+
 export function useSonicRunsQuery() {
   return useQuery({
     queryKey: sonicQueryKeys.runs(),
     queryFn: fetchSonicRuns,
+    refetchInterval: (query) =>
+      query.state.data?.runs.some((run) => isGenerationRunActive(run)) ? generationRunPollingIntervalMs : false,
   });
 }
 
@@ -158,6 +201,8 @@ export function useSonicRunDetailQuery(runId: number | string | null) {
     queryKey: sonicQueryKeys.run(runId ?? "missing"),
     queryFn: () => fetchSonicRunDetail(runId ?? "missing"),
     enabled: runId !== null,
+    refetchInterval: (query) =>
+      isGenerationRunActive(query.state.data?.run) ? generationRunPollingIntervalMs : false,
   });
 }
 

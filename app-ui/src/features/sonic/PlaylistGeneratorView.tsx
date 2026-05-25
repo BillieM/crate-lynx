@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Activity, AudioLines, DatabaseZap, ListChecks, Plus, RotateCcw, SlidersHorizontal } from "lucide-react";
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ActionButton } from "../../components/ActionButton";
 import { EmptyStateCard } from "../../components/EmptyStateCard";
@@ -14,12 +14,15 @@ import {
   sonicQueryKeys,
   type SonicTagFilter,
   useSonicFeatureSummaryQuery,
+  useSonicGenerationPreviewQuery,
 } from "./queries";
 
 const emptyStreamingPlaylists: StreamingPlaylist[] = [];
+const sonicBackfillLimit = 500;
 
 type SourceType = "all_local" | "streaming_playlists";
-type ClusteringMethod = "kmeans" | "agglomerative";
+type ClusteringMethod = "dj_hierarchical_v1" | "kmeans" | "agglomerative";
+type FeatureProfile = "balanced_v1" | "energy_v1" | "texture_v1" | "harmony_v1";
 
 const defaultTagFilter: SonicTagFilter = {
   key: "",
@@ -27,6 +30,7 @@ const defaultTagFilter: SonicTagFilter = {
   scope: "item_attribute",
   value: "",
 };
+const previewDebounceMs = 300;
 
 export function PlaylistGeneratorView() {
   const navigate = useNavigate();
@@ -37,7 +41,8 @@ export function PlaylistGeneratorView() {
   const [sourceType, setSourceType] = useState<SourceType>("all_local");
   const [selectedPlaylistIds, setSelectedPlaylistIds] = useState<Set<number>>(new Set());
   const [tagFilters, setTagFilters] = useState<SonicTagFilter[]>([]);
-  const [clusteringMethod, setClusteringMethod] = useState<ClusteringMethod>("kmeans");
+  const [clusteringMethod, setClusteringMethod] = useState<ClusteringMethod>("dj_hierarchical_v1");
+  const [featureProfile, setFeatureProfile] = useState<FeatureProfile>("balanced_v1");
   const [maxDepth, setMaxDepth] = useState(2);
   const [targetPlaylistSize, setTargetPlaylistSize] = useState(25);
   const [minPlaylistSize, setMinPlaylistSize] = useState(8);
@@ -47,6 +52,61 @@ export function PlaylistGeneratorView() {
     () => playlists.filter((playlist) => selectedPlaylistIds.has(playlist.id)).map((playlist) => playlist.id),
     [playlists, selectedPlaylistIds],
   );
+  const sourceIsInvalid = sourceType === "streaming_playlists" && selectedPlaylistIdList.length === 0;
+  const sanitizedTagFilters = useMemo(
+    () => tagFilters.filter((filter) => filter.key.trim() && filter.value.trim()),
+    [tagFilters],
+  );
+  const sourceFilter = useMemo(
+    () => ({
+      source_type: sourceType,
+      streaming_playlist_ids: sourceType === "streaming_playlists" ? selectedPlaylistIdList : [],
+      tag_filters: sanitizedTagFilters,
+    }),
+    [sanitizedTagFilters, selectedPlaylistIdList, sourceType],
+  );
+  const debouncedPreviewSourceFilter = useDebouncedValue(sourceFilter, previewDebounceMs);
+  const generationPayload = useMemo(
+    () => ({
+      generation_config: {
+        clustering_method: clusteringMethod,
+        feature_profile: featureProfile,
+        max_children: maxChildren,
+        max_depth: maxDepth,
+        min_playlist_size: minPlaylistSize,
+        random_seed: randomSeed,
+        target_playlist_size: targetPlaylistSize,
+      },
+      source_filter: sourceFilter,
+    }),
+    [
+      clusteringMethod,
+      featureProfile,
+      maxChildren,
+      maxDepth,
+      minPlaylistSize,
+      randomSeed,
+      sourceFilter,
+      targetPlaylistSize,
+    ],
+  );
+  const previewPayload = useMemo(
+    () => ({
+      generation_config: {
+        clustering_method: "dj_hierarchical_v1" as const,
+        feature_profile: featureProfile,
+        max_children: 4,
+        max_depth: 2,
+        min_playlist_size: 8,
+        random_seed: 42,
+        target_playlist_size: 25,
+      },
+      source_filter: debouncedPreviewSourceFilter,
+    }),
+    [debouncedPreviewSourceFilter, featureProfile],
+  );
+  const previewQuery = useSonicGenerationPreviewQuery(previewPayload, !sourceIsInvalid);
+  const previewIsSettling = sourceFilter !== debouncedPreviewSourceFilter;
   const backfillMutation = useMutation({
     mutationFn: backfillSonicFeatures,
     onSuccess: async () => {
@@ -83,22 +143,11 @@ export function PlaylistGeneratorView() {
       return;
     }
 
-    createRunMutation.mutate({
-      generation_config: {
-        clustering_method: clusteringMethod,
-        feature_profile: "balanced_v1",
-        max_children: maxChildren,
-        max_depth: maxDepth,
-        min_playlist_size: minPlaylistSize,
-        random_seed: randomSeed,
-        target_playlist_size: targetPlaylistSize,
-      },
-      source_filter: {
-        source_type: sourceType,
-        streaming_playlist_ids: sourceType === "streaming_playlists" ? selectedPlaylistIdList : [],
-        tag_filters: tagFilters.filter((filter) => filter.key.trim() && filter.value.trim()),
-      },
-    });
+    if (previewIsSettling || previewQuery.isFetching || previewQuery.data?.can_generate !== true) {
+      return;
+    }
+
+    createRunMutation.mutate(generationPayload);
   }
 
   if (featureSummaryQuery.isPending || playlistsQuery.isPending) {
@@ -110,7 +159,15 @@ export function PlaylistGeneratorView() {
   }
 
   const summary = featureSummaryQuery.data;
-  const sourceIsInvalid = sourceType === "streaming_playlists" && selectedPlaylistIdList.length === 0;
+  const preview = sourceIsInvalid ? undefined : previewQuery.data;
+  const generateDisabled =
+    createRunMutation.isPending ||
+    sourceIsInvalid ||
+    previewIsSettling ||
+    previewQuery.isPending ||
+    previewQuery.isFetching ||
+    previewQuery.isError ||
+    preview?.can_generate !== true;
 
   return (
     <form className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto pr-1" onSubmit={handleSubmit}>
@@ -129,13 +186,13 @@ export function PlaylistGeneratorView() {
         <div className="flex flex-wrap items-center gap-2">
           <ActionButton
             disabled={backfillMutation.isPending || summary.missing_tracks === 0}
-            onClick={() => backfillMutation.mutate({ limit: 100 })}
+            onClick={() => backfillMutation.mutate({ limit: sonicBackfillLimit })}
             type="button"
           >
             <RotateCcw aria-hidden="true" className="h-3.5 w-3.5" strokeWidth={1.9} />
             {backfillMutation.isPending ? "Queueing..." : "Backfill"}
           </ActionButton>
-          <ActionButton disabled={createRunMutation.isPending || sourceIsInvalid || summary.ready_tracks === 0} type="submit">
+          <ActionButton disabled={generateDisabled} type="submit">
             <Plus aria-hidden="true" className="h-3.5 w-3.5" strokeWidth={1.9} />
             {createRunMutation.isPending ? "Generating..." : "Generate"}
           </ActionButton>
@@ -144,6 +201,10 @@ export function PlaylistGeneratorView() {
 
       {backfillMutation.isError ? <StatusMessage body="Feature backfill could not be queued." status="error" title="Backfill failed" /> : null}
       {backfillMutation.isSuccess ? <StatusMessage body="Feature backfill job queued." status="success" title="Backfill queued" /> : null}
+      {previewQuery.isError ? <StatusMessage body="Selected source readiness could not be checked." status="error" title="Preview failed" /> : null}
+      {!sourceIsInvalid && preview && !preview.can_generate ? (
+        <StatusMessage body="Selected source has no compatible analyzed tracks." status="pending" title="No ready tracks" />
+      ) : null}
       {createRunMutation.isError ? <StatusMessage body="Generation run could not be queued." status="error" title="Generation failed" /> : null}
 
       <section className={`${surfaceClasses.compactCard} grid gap-3`} aria-label="Source filters">
@@ -233,11 +294,33 @@ export function PlaylistGeneratorView() {
             </div>
           ))}
         </div>
+
+        {preview ? (
+          <div className="grid gap-2 rounded-[8px] border border-ctp-surface1 bg-ctp-surface0/45 p-3 md:grid-cols-4">
+            <PreviewStat label="Source" value={preview.source_track_count} />
+            <PreviewStat label="Ready" value={preview.ready_track_count} />
+            <PreviewStat label="Skipped" value={preview.skipped_track_count} />
+            <PreviewStat label="Profile" value={profileLabel(preview.feature_profile)} />
+          </div>
+        ) : null}
       </section>
 
       <section className={`${surfaceClasses.compactCard} grid gap-3`} aria-label="Generation parameters">
         <h3 className={textClasses.label}>Generation</h3>
-        <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-6">
+        <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-7">
+          <label className="grid gap-1.5">
+            <span className={textClasses.label}>Profile</span>
+            <select
+              className={`${controlClasses.controlRadius} min-h-10 border border-ctp-surface1 bg-ctp-surface0 px-3 text-ctp-text outline-none ${textClasses.input}`}
+              onChange={(event) => setFeatureProfile(event.target.value as FeatureProfile)}
+              value={featureProfile}
+            >
+              <option value="balanced_v1">Balanced</option>
+              <option value="energy_v1">Energy</option>
+              <option value="texture_v1">Texture</option>
+              <option value="harmony_v1">Harmony</option>
+            </select>
+          </label>
           <label className="grid gap-1.5">
             <span className={textClasses.label}>Method</span>
             <select
@@ -245,6 +328,7 @@ export function PlaylistGeneratorView() {
               onChange={(event) => setClusteringMethod(event.target.value as ClusteringMethod)}
               value={clusteringMethod}
             >
+              <option value="dj_hierarchical_v1">DJ hierarchical</option>
               <option value="kmeans">K-means</option>
               <option value="agglomerative">Agglomerative</option>
             </select>
@@ -258,6 +342,41 @@ export function PlaylistGeneratorView() {
       </section>
     </form>
   );
+}
+
+function PreviewStat({ label, value }: { label: string; value: number | string }) {
+  return (
+    <div className="min-w-0">
+      <p className={textClasses.caption}>{label}</p>
+      <p className="mt-0.5 truncate text-[13px] font-semibold text-ctp-text">
+        {typeof value === "number" ? value.toLocaleString() : value}
+      </p>
+    </div>
+  );
+}
+
+function profileLabel(profile: string) {
+  if (profile === "energy_v1") {
+    return "Energy";
+  }
+  if (profile === "texture_v1") {
+    return "Texture";
+  }
+  if (profile === "harmony_v1") {
+    return "Harmony";
+  }
+  return "Balanced";
+}
+
+function useDebouncedValue<T>(value: T, delayMs: number) {
+  const [debouncedValue, setDebouncedValue] = useState(value);
+
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => setDebouncedValue(value), delayMs);
+    return () => window.clearTimeout(timeoutId);
+  }, [delayMs, value]);
+
+  return debouncedValue;
 }
 
 function NumericInput({

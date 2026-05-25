@@ -261,7 +261,7 @@ function buildGeneratedRunViewEntries(runs: PlaylistGenerationRun[]): AppViewEnt
     actionLabels: [],
     icon: "tool",
     path: getViewPath(getGeneratedRunViewId(run.id)),
-    render: () => <GeneratedRunView />,
+    render: () => <GeneratedRunView runId={run.id} />,
   }));
 }
 

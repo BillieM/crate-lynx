@@ -13,7 +13,7 @@ A local-first music asset manager that uses streaming services as a curation lay
 | `db` | PostgreSQL 16+ |
 | `redis` | Message broker for RQ background jobs |
 
-The `app` container runs the FastAPI server (`uvicorn`) plus dedicated RQ workers: one ingestion worker by default, and one worker for matching/streaming jobs. They share the same codebase and environment config.
+The `app` container runs the FastAPI server (`uvicorn`) plus dedicated RQ workers: one ingestion worker by default, one worker for matching/streaming/M3U jobs, and two sonic feature workers. They share the same codebase and environment config.
 
 ---
 
@@ -93,6 +93,7 @@ Backend services (`app`, `db`, and `redis`) stay on the internal Compose network
 | `CRATE_LYNX_STAGING_DIR` | Container base path for temporary app outputs. Defaults to `/nas/cratelynx/staging` in Compose |
 | `INGESTION_STABILITY_WORKERS` | Number of concurrent watcher stability checks. Defaults to `4` |
 | `INGESTION_WORKER_COUNT` | Number of RQ workers listening to the ingestion queue. Defaults to `1` |
+| `SONIC_WORKER_COUNT` | Number of dedicated RQ workers listening to the sonic queue. Defaults to `2` |
 | `M3U_OUTPUT_DIR` | Container path for generated M3U exports. Defaults to `/data/m3u` in Compose |
 
 ## Storage and mounts

@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   createPlaylistGenerationRun,
   fetchGeneratedPlaylistTracks,
+  fetchSonicGenerationPreview,
   fetchSonicFeatureSummary,
   fetchSonicRuns,
   sonicQueryKeys,
@@ -18,6 +19,44 @@ describe("sonic queries", () => {
     expect(sonicQueryKeys.run(12)).toEqual(["sonic", "runs", 12]);
     expect(sonicQueryKeys.generatedPlaylists()).toEqual(["sonic", "generated-playlists"]);
     expect(sonicQueryKeys.playlistTracks(7)).toEqual(["sonic", "generated-playlists", 7, "tracks"]);
+    expect(
+      sonicQueryKeys.preview({
+        generation_config: {
+          clustering_method: "kmeans",
+          feature_profile: "balanced_v1",
+          max_children: 4,
+          max_depth: 2,
+          min_playlist_size: 8,
+          random_seed: 42,
+          target_playlist_size: 25,
+        },
+        source_filter: {
+          source_type: "all_local",
+          streaming_playlist_ids: [],
+          tag_filters: [],
+        },
+      }),
+    ).toEqual([
+      "sonic",
+      "runs",
+      "preview",
+      {
+        generation_config: {
+          clustering_method: "kmeans",
+          feature_profile: "balanced_v1",
+          max_children: 4,
+          max_depth: 2,
+          min_playlist_size: 8,
+          random_seed: 42,
+          target_playlist_size: 25,
+        },
+        source_filter: {
+          source_type: "all_local",
+          streaming_playlist_ids: [],
+          tag_filters: [],
+        },
+      },
+    ]);
   });
 
   it("fetches feature summary and generation runs", async () => {
@@ -116,6 +155,52 @@ describe("sonic queries", () => {
           tag_filters: [],
         },
       }),
+      headers: {
+        "Content-Type": "application/json",
+      },
+      method: "POST",
+    });
+  });
+
+  it("fetches a playlist generation preview", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
+      jsonResponse({
+        analyzer_key: "librosa_v1",
+        analyzer_version: "1",
+        can_generate: true,
+        failed_feature_count: 1,
+        feature_profile: "energy_v1",
+        missing_feature_count: 2,
+        pending_feature_count: 3,
+        ready_track_count: 12,
+        skipped_track_count: 6,
+        source_track_count: 18,
+      }),
+    );
+    const payload = {
+      generation_config: {
+        clustering_method: "kmeans" as const,
+        feature_profile: "energy_v1" as const,
+        max_children: 4,
+        max_depth: 2,
+        min_playlist_size: 8,
+        random_seed: 42,
+        target_playlist_size: 25,
+      },
+      source_filter: {
+        source_type: "all_local" as const,
+        streaming_playlist_ids: [],
+        tag_filters: [],
+      },
+    };
+
+    await expect(fetchSonicGenerationPreview(payload)).resolves.toMatchObject({
+      can_generate: true,
+      ready_track_count: 12,
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith("/api/sonic/runs/preview", {
+      body: JSON.stringify(payload),
       headers: {
         "Content-Type": "application/json",
       },

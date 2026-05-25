@@ -2,14 +2,26 @@ from __future__ import annotations
 
 import inspect
 from pathlib import Path
+from types import SimpleNamespace
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, select
 
 from app.ingestion.beets_mirror import metadata as beets_metadata
 from app.local_tracks.store import metadata as local_tracks_metadata
-from app.sonic.models import metadata as sonic_metadata
+from app.sonic.jobs import (
+    SONIC_FEATURE_EXTRACTION_FUNC,
+    SONIC_FEATURE_RECONCILIATION_FUNC,
+)
+from app.sonic.models import (
+    SONIC_ANALYZER_LIBROSA_V1,
+    SONIC_FEATURE_STATUS_FAILED,
+    SONIC_FEATURE_STATUS_PENDING,
+    SONIC_FEATURE_STATUS_READY,
+    metadata as sonic_metadata,
+    sonic_track_features_table,
+)
 from app.sonic.router import create_router
-from app.sonic.schemas import CreatePlaylistGenerationRunRequest
+from app.sonic.schemas import CreatePlaylistGenerationRunRequest, SonicBackfillRequest
 from tests.factories import TestDataFactory
 
 
@@ -59,6 +71,95 @@ def test_sonic_feature_summary_endpoint_counts_tracks(tmp_path: Path) -> None:
     }
 
 
+def test_backfill_features_endpoint_claims_and_enqueues_immediately(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    engine = _create_engine(tmp_path / "sonic-backfill.db")
+    factory = TestDataFactory(engine)
+    ready_track_id = factory.local_track(file_path="A/Ready.mp3")
+    missing_track_id = factory.local_track(file_path="B/Missing.mp3")
+    untouched_missing_track_id = factory.local_track(file_path="C/Later.mp3")
+    factory.sonic_track_feature(
+        local_track_id=ready_track_id,
+        status=SONIC_FEATURE_STATUS_READY,
+    )
+    seen: dict[str, object] = {"jobs": []}
+
+    class FakeRedis:
+        @classmethod
+        def from_url(cls, url: str) -> object:
+            seen["redis_url"] = url
+            return object()
+
+    class FakeQueue:
+        def __init__(self, name: str, connection: object) -> None:
+            seen["queue_name"] = name
+            seen["connection"] = connection
+
+        def enqueue(
+            self,
+            func: str,
+            local_track_id: int | None = None,
+            *,
+            depends_on: object | None = None,
+            job_timeout: str,
+        ) -> SimpleNamespace:
+            if func == SONIC_FEATURE_RECONCILIATION_FUNC:
+                seen["reconciliation_job"] = (func, job_timeout, depends_on)
+                return SimpleNamespace(id="sonic-reconciliation-job")
+            seen["jobs"].append((func, local_track_id, job_timeout))
+            return SimpleNamespace(id=f"sonic-job-{local_track_id}")
+
+    class FakeDependency:
+        def __init__(self, *, jobs: list[SimpleNamespace], allow_failure: bool) -> None:
+            seen["dependency_jobs"] = [job.id for job in jobs]
+            seen["dependency_allow_failure"] = allow_failure
+
+    monkeypatch.setattr("app.sonic.jobs.Redis", FakeRedis)
+    monkeypatch.setattr("app.sonic.jobs.Queue", FakeQueue)
+    monkeypatch.setattr("app.sonic.jobs.Dependency", FakeDependency)
+
+    router = create_router(require_redis_url=lambda: "redis://example/0")
+    response = _call_endpoint(
+        _route(router, "POST", "/sonic/features/backfill").endpoint,
+        SonicBackfillRequest(limit=1),
+        engine=engine,
+    )
+
+    assert response.job_id == "sonic-reconciliation-job"
+    assert response.limit == 1
+    assert seen == {
+        "redis_url": "redis://example/0",
+        "queue_name": "sonic",
+        "connection": seen["connection"],
+        "dependency_jobs": [f"sonic-job-{missing_track_id}"],
+        "dependency_allow_failure": True,
+        "reconciliation_job": (
+            SONIC_FEATURE_RECONCILIATION_FUNC,
+            "30m",
+            seen["reconciliation_job"][2],
+        ),
+        "jobs": [
+            (
+                SONIC_FEATURE_EXTRACTION_FUNC,
+                missing_track_id,
+                "30m",
+            ),
+        ],
+    }
+
+    with engine.connect() as connection:
+        rows = {
+            int(row["local_track_id"]): row
+            for row in connection.execute(select(sonic_track_features_table)).mappings()
+        }
+
+    assert rows[ready_track_id]["status"] == SONIC_FEATURE_STATUS_READY
+    assert rows[missing_track_id]["status"] == SONIC_FEATURE_STATUS_PENDING
+    assert untouched_missing_track_id not in rows
+
+
 def test_create_generation_run_endpoint_persists_and_enqueues(
     monkeypatch,
     tmp_path: Path,
@@ -103,4 +204,51 @@ def test_create_generation_run_endpoint_persists_and_enqueues(
     assert response.job_id == "sonic-job-1"
     assert response.run.status == "pending"
     assert response.run.generation_config["clustering_method"] == "agglomerative"
+    assert response.run.generation_config["resolved_feature_profile"]["key"] == (
+        "balanced_v1"
+    )
     assert seen == {"redis_url": "redis://example/0", "run_id": response.run.id}
+
+
+def test_preview_generation_run_endpoint_counts_selected_source(tmp_path: Path) -> None:
+    engine = _create_engine(tmp_path / "sonic-preview.db")
+    factory = TestDataFactory(engine)
+    ready_track_id = factory.local_track(file_path="Ready.mp3")
+    failed_track_id = factory.local_track(file_path="Failed.mp3")
+    old_track_id = factory.local_track(file_path="Old.mp3")
+    factory.local_track(file_path="Missing.mp3")
+    factory.sonic_track_feature(local_track_id=ready_track_id)
+    factory.sonic_track_feature(
+        local_track_id=failed_track_id,
+        status=SONIC_FEATURE_STATUS_FAILED,
+    )
+    factory.sonic_track_feature(
+        analyzer_key=SONIC_ANALYZER_LIBROSA_V1,
+        analyzer_version="0",
+        local_track_id=old_track_id,
+    )
+
+    router = create_router(require_redis_url=lambda: "redis://example/0")
+    response = _call_endpoint(
+        _route(router, "POST", "/sonic/runs/preview").endpoint,
+        CreatePlaylistGenerationRunRequest.model_validate(
+            {
+                "generation_config": {"feature_profile": "texture_v1"},
+                "source_filter": {"source_type": "all_local"},
+            }
+        ),
+        engine=engine,
+    )
+
+    assert response.model_dump() == {
+        "analyzer_key": SONIC_ANALYZER_LIBROSA_V1,
+        "analyzer_version": "1",
+        "can_generate": True,
+        "failed_feature_count": 1,
+        "feature_profile": "texture_v1",
+        "missing_feature_count": 1,
+        "pending_feature_count": 0,
+        "ready_track_count": 1,
+        "skipped_track_count": 3,
+        "source_track_count": 4,
+    }

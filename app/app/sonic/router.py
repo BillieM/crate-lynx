@@ -7,7 +7,7 @@ from sqlalchemy.engine import Engine
 
 from app.core.db import get_engine
 from app.sonic.generation import normalize_generation_config
-from app.sonic.jobs import SonicJobEnqueuer
+from app.sonic.jobs import SonicJobEnqueuer, enqueue_sonic_feature_backfill
 from app.sonic.schemas import (
     CreatePlaylistGenerationRunRequest,
     CreatePlaylistGenerationRunResponse,
@@ -21,7 +21,9 @@ from app.sonic.schemas import (
     SonicBackfillRequest,
     SonicBackfillResponse,
     SonicFeatureSummaryResponse,
+    SonicGenerationPreviewResponse,
 )
+from app.sonic.profiles import resolve_feature_profile_from_config
 from app.sonic.store import SonicStore
 
 
@@ -34,13 +36,16 @@ def create_router(
     def _store(engine: Engine) -> SonicStore:
         return SonicStore(engine=engine)
 
-    def _enqueuer() -> SonicJobEnqueuer:
+    def _redis_url() -> str:
         if require_redis_url is None:
             raise HTTPException(
                 status_code=503,
                 detail="REDIS_URL must be configured for sonic background jobs",
             )
-        return SonicJobEnqueuer(require_redis_url())
+        return require_redis_url()
+
+    def _enqueuer() -> SonicJobEnqueuer:
+        return SonicJobEnqueuer(_redis_url())
 
     @router.get("/sonic/features/summary", response_model=SonicFeatureSummaryResponse)
     def get_feature_summary(
@@ -58,9 +63,14 @@ def create_router(
     @router.post("/sonic/features/backfill", response_model=SonicBackfillResponse)
     def backfill_features(
         payload: SonicBackfillRequest,
+        engine: Engine = Depends(get_engine),
     ) -> SonicBackfillResponse:
-        job_id = _enqueuer().enqueue_feature_backfill(limit=payload.limit)
-        return SonicBackfillResponse(job_id=job_id, limit=payload.limit)
+        result = enqueue_sonic_feature_backfill(
+            limit=payload.limit,
+            redis_url=_redis_url(),
+            store=_store(engine),
+        )
+        return SonicBackfillResponse(job_id=result.job_id, limit=payload.limit)
 
     @router.get("/sonic/runs", response_model=PlaylistGenerationRunListResponse)
     def list_generation_runs(
@@ -68,6 +78,37 @@ def create_router(
     ) -> PlaylistGenerationRunListResponse:
         return PlaylistGenerationRunListResponse(
             runs=[_run_response(run) for run in _store(engine).list_generation_runs()]
+        )
+
+    @router.post(
+        "/sonic/runs/preview",
+        response_model=SonicGenerationPreviewResponse,
+    )
+    def preview_generation_run(
+        payload: CreatePlaylistGenerationRunRequest,
+        engine: Engine = Depends(get_engine),
+    ) -> SonicGenerationPreviewResponse:
+        generation_config = normalize_generation_config(
+            payload.generation_config.model_dump()
+        )
+        profile = resolve_feature_profile_from_config(generation_config)
+        preview = _store(engine).generation_preview(
+            payload.source_filter.model_dump(),
+            analyzer_key=profile.analyzer_key,
+            analyzer_version=profile.analyzer_version,
+            feature_profile=profile.key,
+        )
+        return SonicGenerationPreviewResponse(
+            analyzer_key=preview.analyzer_key,
+            analyzer_version=preview.analyzer_version,
+            can_generate=preview.can_generate,
+            failed_feature_count=preview.failed_feature_count,
+            feature_profile=preview.feature_profile,
+            missing_feature_count=preview.missing_feature_count,
+            pending_feature_count=preview.pending_feature_count,
+            ready_track_count=preview.ready_track_count,
+            skipped_track_count=preview.skipped_track_count,
+            source_track_count=preview.source_track_count,
         )
 
     @router.post(

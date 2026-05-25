@@ -18,6 +18,7 @@ import type {
   GeneratedPlaylistListResponse,
   PlaylistGenerationRunListResponse,
   SonicFeatureSummary,
+  SonicGenerationPreview,
 } from "./features/sonic/queries";
 import { getProgressColor } from "./features/shell/progress";
 import { blobResponse, createMockApi, emptyResponse, failUnexpectedFetch, jsonResponse } from "./test/mockApi";
@@ -358,6 +359,18 @@ const sonicFeatureSummaryResponse: SonicFeatureSummary = {
   ready_tracks: 58,
   total_tracks: 61,
 };
+const sonicGenerationPreviewResponse: SonicGenerationPreview = {
+  analyzer_key: "librosa_v1",
+  analyzer_version: "1",
+  can_generate: true,
+  failed_feature_count: 0,
+  feature_profile: "balanced_v1",
+  missing_feature_count: 2,
+  pending_feature_count: 1,
+  ready_track_count: 58,
+  skipped_track_count: 3,
+  source_track_count: 61,
+};
 const sonicRunsResponse: PlaylistGenerationRunListResponse = {
   runs: [
     {
@@ -396,8 +409,24 @@ const generatedPlaylistsResponse: GeneratedPlaylistListResponse = {
       parent_playlist_id: null,
       position: 1,
       run_id: 501,
-      summary: { top_deltas: [] },
+      summary: {
+        common_tags: [{ count: 14, value: "ambient dub" }],
+        representative_tracks: [{ artist: "Frame Delay", local_track_id: 501, title: "Night Runner" }],
+        source_summary: { ready_track_count: 58, skipped_track_count: 3 },
+        top_deltas: [{ label: "Fast" }],
+      },
       track_count: 24,
+    },
+    {
+      created_at: "2026-05-24T12:00:00Z",
+      depth: 1,
+      id: 7002,
+      name: "Warm Dense",
+      parent_playlist_id: 7001,
+      position: 1,
+      run_id: 501,
+      summary: { top_deltas: [] },
+      track_count: 12,
     },
   ],
 };
@@ -448,6 +477,9 @@ type MockPlaylistFetchOptions = {
   rejectProposalHandler?: (proposalId: string) => Promise<Response> | Response;
   relationshipSuggestionsHandler?: (url: string) => Promise<Response> | Response;
   selectedSyncHandler?: () => Promise<Response> | Response;
+  sonicGenerationPreviewHandler?: (init?: RequestInit) => Promise<Response> | Response;
+  sonicRunDetailHandler?: (runId: string) => Promise<Response> | Response;
+  sonicRunsHandler?: () => Promise<Response> | Response;
 };
 
 function buildPlaylistDetail(id: number, name: string): PlaylistDetailResponse {
@@ -496,6 +528,9 @@ function mockPlaylistFetch({
   rejectProposalHandler,
   relationshipSuggestionsHandler,
   selectedSyncHandler,
+  sonicGenerationPreviewHandler,
+  sonicRunDetailHandler,
+  sonicRunsHandler,
 }: MockPlaylistFetchOptions = {}) {
   const playlistDetailsById = new Map<string, typeof playlistDetailResponse>([
     ["12", playlistDetailResponse],
@@ -517,9 +552,13 @@ function mockPlaylistFetch({
     .get("/api/maintenance/missing-locally", () => jsonResponse(missingLocallyResponse))
     .get("/api/maintenance/unidentified", () => jsonResponse(unidentifiedResponse))
     .get("/api/sonic/features/summary", () => jsonResponse(sonicFeatureSummaryResponse))
-    .get("/api/sonic/runs", () => jsonResponse(sonicRunsResponse))
+    .post("/api/sonic/runs/preview", ({ init }) =>
+      sonicGenerationPreviewHandler?.(init) ?? jsonResponse(sonicGenerationPreviewResponse),
+    )
+    .get("/api/sonic/runs", () => sonicRunsHandler?.() ?? jsonResponse(sonicRunsResponse))
     .get("/api/sonic/generated-playlists", () => jsonResponse(generatedPlaylistsResponse))
-    .get("/api/sonic/runs/501", () =>
+    .get(/^\/api\/sonic\/runs\/(\d+)$/, ({ match }) =>
+      sonicRunDetailHandler?.(match![1]) ??
       jsonResponse({
         playlists: generatedPlaylistsResponse.playlists,
         run: sonicRunsResponse.runs[0],
@@ -822,6 +861,187 @@ describe("App", () => {
     expect(screen.getByText("Loose Cable.mp3")).toBeInTheDocument();
     expect(document.getElementById("proposals")).toHaveAttribute("data-view-active", "true");
     expect(document.getElementById("playlists")).toHaveAttribute("data-view-active", "false");
+  });
+
+  it("opens a generated run routed view from the URL", async () => {
+    const fetchMock = mockPlaylistFetch();
+
+    renderApp(["/generated-runs/501"]);
+
+    expect(await screen.findByRole("heading", { level: 1, name: "Generated run #501" })).toBeInTheDocument();
+    expect(screen.queryByText("Generated run route is invalid.")).not.toBeInTheDocument();
+    expect(await screen.findByRole("heading", { level: 2, name: "Run #501" })).toBeInTheDocument();
+    const playlistTree = await screen.findByRole("tree", { name: "Generated playlists" });
+    const rootPlaylist = within(playlistTree).getByRole("treeitem", { name: "Fast Bright, 24 tracks" });
+    const childPlaylist = within(playlistTree).getByRole("treeitem", { name: "Warm Dense, 12 tracks" });
+    expect(rootPlaylist).toHaveAttribute("aria-level", "1");
+    expect(rootPlaylist).toHaveAttribute("aria-selected", "true");
+    expect(childPlaylist).toHaveAttribute("aria-level", "2");
+    expect(await screen.findByText("Night Runner")).toBeInTheDocument();
+    const tracksRegion = screen.getByRole("region", { name: "Generated playlist tracks" });
+    expect(within(tracksRegion).getByRole("table")).toBeInTheDocument();
+    expect(within(tracksRegion).getByRole("button", { name: /Position/ })).toBeInTheDocument();
+    expect(within(tracksRegion).getByRole("button", { name: /Path/ })).toBeInTheDocument();
+    expect(within(tracksRegion).getByText("Frame Delay/Night Runner.mp3")).toBeInTheDocument();
+    const playlistSummary = screen.getByRole("region", { name: "Generated playlist summary" });
+    expect(within(playlistSummary).getByText("Tags: ambient dub")).toBeInTheDocument();
+    expect(within(playlistSummary).getByText("Traits: Fast")).toBeInTheDocument();
+    expect(within(playlistSummary).getByText("Seeds: Night Runner - Frame Delay")).toBeInTheDocument();
+    expect(within(playlistSummary).getByText("Source: 58 ready, 3 skipped")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(countFetches(fetchMock, "/api/sonic/runs/501")).toBeGreaterThanOrEqual(1);
+    });
+    expect(document.getElementById("generated-run-501")).toHaveAttribute("data-view-active", "true");
+    expect(document.getElementById("playlists")).toHaveAttribute("data-view-active", "false");
+  });
+
+  it("shows generation progress and polls a pending run until it completes", async () => {
+    vi.useFakeTimers();
+    const pendingRun = {
+      ...sonicRunsResponse.runs[0],
+      completed_at: null,
+      playlist_count: 0,
+      status: "pending" as const,
+      track_count: 0,
+      updated_at: "2026-05-24T11:56:00Z",
+    };
+    const runningRun = {
+      ...pendingRun,
+      status: "running" as const,
+      updated_at: "2026-05-24T11:57:00Z",
+    };
+    const completedRun = sonicRunsResponse.runs[0];
+    const detailResponses = [
+      { playlists: [], run: pendingRun },
+      { playlists: [], run: runningRun },
+      { playlists: generatedPlaylistsResponse.playlists, run: completedRun },
+    ];
+    let detailRequestCount = 0;
+    let listRequestCount = 0;
+    const fetchMock = mockPlaylistFetch({
+      sonicRunDetailHandler: () => {
+        const response = detailResponses[Math.min(detailRequestCount, detailResponses.length - 1)];
+        detailRequestCount += 1;
+        return jsonResponse(response);
+      },
+      sonicRunsHandler: () => {
+        const run = listRequestCount < 2 ? pendingRun : completedRun;
+        listRequestCount += 1;
+        return jsonResponse({ runs: [run] });
+      },
+    });
+
+    renderApp(["/generated-runs/501"]);
+    await flushAsyncWork();
+    await flushAsyncWork();
+
+    expect(screen.getByRole("progressbar", { name: "Generation progress" })).toHaveAttribute(
+      "aria-valuetext",
+      "Waiting for worker",
+    );
+    expect(screen.getByText("Waiting for worker")).toBeInTheDocument();
+
+    await advanceTimers(2100);
+    await flushAsyncWork();
+    expect(screen.getByRole("progressbar", { name: "Generation progress" })).toHaveAttribute(
+      "aria-valuetext",
+      "Building playlists",
+    );
+    expect(screen.getByText("Building playlists")).toBeInTheDocument();
+
+    await advanceTimers(2100);
+    await flushAsyncWork();
+    expect(screen.queryByRole("progressbar", { name: "Generation progress" })).not.toBeInTheDocument();
+    expect(screen.getByRole("treeitem", { name: "Fast Bright, 24 tracks" })).toBeInTheDocument();
+
+    const detailFetchesAfterCompletion = countFetches(fetchMock, "/api/sonic/runs/501");
+    await advanceTimers(5000);
+    await flushAsyncWork();
+
+    expect(countFetches(fetchMock, "/api/sonic/runs/501")).toBe(detailFetchesAfterCompletion);
+  });
+
+  it("checks selected source readiness before enabling playlist generation", async () => {
+    mockPlaylistFetch({
+      sonicGenerationPreviewHandler: () =>
+        jsonResponse({
+          ...sonicGenerationPreviewResponse,
+          can_generate: false,
+          ready_track_count: 0,
+          skipped_track_count: 61,
+        }),
+    });
+
+    renderApp(["/playlist-generator"]);
+
+    expect(await screen.findByRole("heading", { level: 1, name: "Playlist generator" })).toBeInTheDocument();
+    const sourceFilters = await screen.findByRole("region", { name: "Source filters" });
+    expect(within(sourceFilters).getAllByText("Source").length).toBeGreaterThan(0);
+    await waitFor(() => {
+      expect(within(sourceFilters).getAllByText("61").length).toBe(2);
+    });
+    expect(within(sourceFilters).getByText("Ready")).toBeInTheDocument();
+    expect(within(sourceFilters).getByText("0")).toBeInTheDocument();
+    expect(within(sourceFilters).getByText("Skipped")).toBeInTheDocument();
+    expect(within(sourceFilters).getByText("Balanced")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Generate/ })).toBeDisabled();
+    expect(screen.getByText("Selected source has no compatible analyzed tracks.")).toBeInTheDocument();
+  });
+
+  it("keeps source readiness stable when generation-only controls change", async () => {
+    let previewRequestCount = 0;
+    mockPlaylistFetch({
+      sonicGenerationPreviewHandler: () => {
+        previewRequestCount += 1;
+        return jsonResponse(sonicGenerationPreviewResponse);
+      },
+    });
+
+    renderApp(["/playlist-generator"]);
+
+    expect(await screen.findByRole("heading", { level: 1, name: "Playlist generator" })).toBeInTheDocument();
+    await waitFor(() => {
+      expect(previewRequestCount).toBe(1);
+    });
+
+    fireEvent.change(screen.getByLabelText("Leaf size"), { target: { value: "30" } });
+    fireEvent.change(screen.getByLabelText("Depth"), { target: { value: "3" } });
+    await new Promise((resolve) => {
+      window.setTimeout(resolve, 50);
+    });
+
+    expect(previewRequestCount).toBe(1);
+  });
+
+  it("debounces source readiness while editing Beets filter text", async () => {
+    let previewRequestCount = 0;
+    mockPlaylistFetch({
+      sonicGenerationPreviewHandler: () => {
+        previewRequestCount += 1;
+        return jsonResponse(sonicGenerationPreviewResponse);
+      },
+    });
+
+    renderApp(["/playlist-generator"]);
+
+    expect(await screen.findByRole("heading", { level: 1, name: "Playlist generator" })).toBeInTheDocument();
+    await waitFor(() => {
+      expect(previewRequestCount).toBe(1);
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Add filter" }));
+    fireEvent.change(screen.getByPlaceholderText("genre"), { target: { value: "genre" } });
+    fireEvent.change(screen.getByPlaceholderText("ambient"), { target: { value: "a" } });
+    fireEvent.change(screen.getByPlaceholderText("ambient"), { target: { value: "am" } });
+    fireEvent.change(screen.getByPlaceholderText("ambient"), { target: { value: "amb" } });
+    await new Promise((resolve) => {
+      window.setTimeout(resolve, 100);
+    });
+
+    expect(previewRequestCount).toBe(1);
+    await waitFor(() => {
+      expect(previewRequestCount).toBe(2);
+    });
   });
 
   it("opens the streaming relationships maintenance routed view from the URL", async () => {

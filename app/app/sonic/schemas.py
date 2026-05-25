@@ -7,7 +7,10 @@ from pydantic import BaseModel, Field, model_validator
 
 from app.sonic.generation import DEFAULT_GENERATION_CONFIG, normalize_generation_config
 from app.sonic.models import (
+    DEFAULT_SONIC_BACKFILL_LIMIT,
+    MAX_SONIC_BACKFILL_LIMIT,
     PLAYLIST_GENERATION_METHOD_AGGLOMERATIVE,
+    PLAYLIST_GENERATION_METHOD_DJ_HIERARCHICAL,
     PLAYLIST_GENERATION_METHOD_KMEANS,
     SONIC_SOURCE_ALL_LOCAL,
     SONIC_SOURCE_STREAMING_PLAYLISTS,
@@ -16,6 +19,7 @@ from app.sonic.models import (
     SONIC_TAG_FILTER_MATCH_CONTAINS,
     SONIC_TAG_FILTER_MATCH_EQUALS,
 )
+from app.sonic.profiles import SONIC_FEATURE_PROFILE_KEYS
 
 
 class SonicFeatureSummaryResponse(BaseModel):
@@ -27,7 +31,11 @@ class SonicFeatureSummaryResponse(BaseModel):
 
 
 class SonicBackfillRequest(BaseModel):
-    limit: int = Field(default=100, ge=1, le=1000)
+    limit: int = Field(
+        default=DEFAULT_SONIC_BACKFILL_LIMIT,
+        ge=1,
+        le=MAX_SONIC_BACKFILL_LIMIT,
+    )
 
 
 class SonicBackfillResponse(BaseModel):
@@ -73,8 +81,8 @@ class SonicSourceFilterRequest(BaseModel):
 
 
 class PlaylistGenerationConfigRequest(BaseModel):
-    clustering_method: Literal["kmeans", "agglomerative"] = (
-        PLAYLIST_GENERATION_METHOD_KMEANS
+    clustering_method: Literal["dj_hierarchical_v1", "kmeans", "agglomerative"] = (
+        PLAYLIST_GENERATION_METHOD_DJ_HIERARCHICAL
     )
     max_depth: int = Field(default=DEFAULT_GENERATION_CONFIG["max_depth"], ge=1, le=5)
     target_playlist_size: int = Field(
@@ -92,7 +100,12 @@ class PlaylistGenerationConfigRequest(BaseModel):
         ge=2,
         le=10,
     )
-    feature_profile: str = DEFAULT_GENERATION_CONFIG["feature_profile"]
+    feature_profile: Literal[
+        "balanced_v1",
+        "energy_v1",
+        "texture_v1",
+        "harmony_v1",
+    ] = DEFAULT_GENERATION_CONFIG["feature_profile"]
     random_seed: int = DEFAULT_GENERATION_CONFIG["random_seed"]
 
     @model_validator(mode="after")
@@ -115,6 +128,19 @@ class CreatePlaylistGenerationRunRequest(BaseModel):
     generation_config: PlaylistGenerationConfigRequest = Field(
         default_factory=PlaylistGenerationConfigRequest
     )
+
+
+class SonicGenerationPreviewResponse(BaseModel):
+    analyzer_key: str
+    analyzer_version: str
+    can_generate: bool
+    failed_feature_count: int
+    feature_profile: str
+    missing_feature_count: int
+    pending_feature_count: int
+    ready_track_count: int
+    skipped_track_count: int
+    source_track_count: int
 
 
 class PlaylistGenerationRunResponse(BaseModel):
@@ -185,6 +211,8 @@ SONIC_TAG_FILTER_MATCH_VALUES = (
     SONIC_TAG_FILTER_MATCH_CONTAINS,
 )
 PLAYLIST_GENERATION_METHOD_VALUES = (
+    PLAYLIST_GENERATION_METHOD_DJ_HIERARCHICAL,
     PLAYLIST_GENERATION_METHOD_KMEANS,
     PLAYLIST_GENERATION_METHOD_AGGLOMERATIVE,
 )
+SONIC_FEATURE_PROFILE_VALUES = SONIC_FEATURE_PROFILE_KEYS

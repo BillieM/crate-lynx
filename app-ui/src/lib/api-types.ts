@@ -740,6 +740,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/sonic/runs/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Preview Generation Run */
+        post: operations["preview_generation_run_api_sonic_runs_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/sonic/runs/{run_id}": {
         parameters: {
             query?: never;
@@ -1378,10 +1395,10 @@ export interface components {
         PlaylistGenerationConfigRequest: {
             /**
              * Clustering Method
-             * @default kmeans
+             * @default dj_hierarchical_v1
              * @enum {string}
              */
-            clustering_method: "kmeans" | "agglomerative";
+            clustering_method: "dj_hierarchical_v1" | "kmeans" | "agglomerative";
             /**
              * Max Depth
              * @default 2
@@ -1405,8 +1422,9 @@ export interface components {
             /**
              * Feature Profile
              * @default balanced_v1
+             * @enum {string}
              */
-            feature_profile: string;
+            feature_profile: "balanced_v1" | "energy_v1" | "texture_v1" | "harmony_v1";
             /**
              * Random Seed
              * @default 42
@@ -1557,7 +1575,7 @@ export interface components {
         SonicBackfillRequest: {
             /**
              * Limit
-             * @default 100
+             * @default 500
              */
             limit: number;
         };
@@ -1580,6 +1598,29 @@ export interface components {
             failed_tracks: number;
             /** Missing Tracks */
             missing_tracks: number;
+        };
+        /** SonicGenerationPreviewResponse */
+        SonicGenerationPreviewResponse: {
+            /** Analyzer Key */
+            analyzer_key: string;
+            /** Analyzer Version */
+            analyzer_version: string;
+            /** Can Generate */
+            can_generate: boolean;
+            /** Failed Feature Count */
+            failed_feature_count: number;
+            /** Feature Profile */
+            feature_profile: string;
+            /** Missing Feature Count */
+            missing_feature_count: number;
+            /** Pending Feature Count */
+            pending_feature_count: number;
+            /** Ready Track Count */
+            ready_track_count: number;
+            /** Skipped Track Count */
+            skipped_track_count: number;
+            /** Source Track Count */
+            source_track_count: number;
         };
         /** SonicSourceFilterRequest */
         SonicSourceFilterRequest: {
@@ -3527,6 +3568,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CreatePlaylistGenerationRunResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    preview_generation_run_api_sonic_runs_preview_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreatePlaylistGenerationRunRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SonicGenerationPreviewResponse"];
                 };
             };
             /** @description Validation Error */

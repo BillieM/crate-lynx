@@ -270,20 +270,24 @@ class TestDataFactory:
         *,
         analyzer_key: str = SONIC_ANALYZER_LIBROSA_V1,
         analyzer_version: str = "1",
+        attempt_count: int = 0,
         descriptor_json: dict[str, object] | None = None,
         failure_detail: str | None = None,
         local_track_id: int,
         status: str = SONIC_FEATURE_STATUS_READY,
+        updated_at: datetime | None = None,
         vector_json: list[float] | None = None,
     ) -> int:
         return self._insert(
             sonic_track_features_table,
             analyzer_key=analyzer_key,
             analyzer_version=analyzer_version,
+            attempt_count=attempt_count,
             descriptor_json=descriptor_json or {"tempo_bpm": 120.0},
             failure_detail=failure_detail,
             local_track_id=local_track_id,
             status=status,
+            updated_at=updated_at or datetime(2026, 5, 1, tzinfo=UTC),
             vector_json=vector_json or [120.0, 0.5],
         )
 
