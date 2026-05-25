@@ -3,15 +3,21 @@ import { LocalLibraryView } from "../library/LocalLibraryView";
 import { MissingLocallyView } from "../maintenance/MissingLocallyView";
 import { UnidentifiedView } from "../maintenance/UnidentifiedView";
 import { PlaylistSyncConfiguration } from "../playlists/PlaylistSyncConfiguration";
+import { PlaylistM3uExportView } from "../playlists/PlaylistM3uExportView";
 import { PlaylistView } from "../playlists/PlaylistView";
 import type { StreamingPlaylist } from "../playlists/queries";
 import { LinkProposalsView } from "../proposals/LinkProposalsView";
 import { StreamingRelationshipsView } from "../relationships/StreamingRelationshipsView";
 import { AuthenticationSettingsView } from "../settings/AuthenticationSettingsView";
 import { GeneralSettingsView } from "../settings/GeneralSettingsView";
+import { GeneratedRunView } from "../sonic/GeneratedRunView";
+import { PlaylistGeneratorView } from "../sonic/PlaylistGeneratorView";
+import type { PlaylistGenerationRun } from "../sonic/queries";
 import type { NavItem, PlaylistSyncViewState, ViewConfig } from "./types";
 
 export const playlistCollectionViewId = "playlists";
+export const playlistExportViewId = "playlist-export";
+export const playlistGeneratorViewId = "playlist-generator";
 export const streamingRelationshipsViewId = "streaming-relationships";
 export const settingsAuthenticationViewId = "settings-authentication";
 export const settingsGeneralViewId = "settings-general";
@@ -76,6 +82,22 @@ const staticViewEntries = [
     render: () => <PlaylistSyncConfiguration />,
   },
   {
+    id: playlistExportViewId,
+    title: "M3U export",
+    actionLabels: [],
+    icon: "playlist",
+    path: "/playlists/export",
+    render: () => <PlaylistM3uExportView />,
+  },
+  {
+    id: playlistGeneratorViewId,
+    title: "Playlist generator",
+    actionLabels: [],
+    icon: "tool",
+    path: "/playlist-generator",
+    render: () => <PlaylistGeneratorView />,
+  },
+  {
     id: settingsGeneralViewId,
     title: "Settings",
     actionLabels: [],
@@ -109,8 +131,16 @@ export function getPlaylistViewId(playlistId: number) {
   return `playlist-${playlistId}`;
 }
 
+export function getGeneratedRunViewId(runId: number) {
+  return `generated-run-${runId}`;
+}
+
 export function getViewPath(viewId: string) {
-  if (viewId.startsWith("playlist-")) {
+  if (/^generated-run-\d+$/.test(viewId)) {
+    return `/generated-runs/${viewId.replace("generated-run-", "")}`;
+  }
+
+  if (/^playlist-\d+$/.test(viewId)) {
     return `/playlists/${viewId.replace("playlist-", "")}`;
   }
 
@@ -118,13 +148,23 @@ export function getViewPath(viewId: string) {
 }
 
 export function getViewIdFromPath(pathname: string) {
+  const normalizedPathname = pathname.replace(/\/$/, "") || "/";
+
+  if (normalizedPathname === "/playlists/export") {
+    return playlistExportViewId;
+  }
+
   const playlistRouteMatch = /^\/playlists\/(?<playlistId>\d+)\/?$/.exec(pathname);
 
   if (playlistRouteMatch?.groups?.playlistId) {
     return getPlaylistViewId(Number(playlistRouteMatch.groups.playlistId));
   }
 
-  const normalizedPathname = pathname.replace(/\/$/, "") || "/";
+  const generatedRunRouteMatch = /^\/generated-runs\/(?<runId>\d+)\/?$/.exec(pathname);
+
+  if (generatedRunRouteMatch?.groups?.runId) {
+    return getGeneratedRunViewId(Number(generatedRunRouteMatch.groups.runId));
+  }
 
   if (normalizedPathname === "/") {
     return null;
@@ -147,6 +187,22 @@ export function buildPlaylistNavItems(playlists: StreamingPlaylist[]): NavItem[]
     label: playlist.title,
     badge: playlist.imported_track_count,
     tone: getPlaylistTone(playlist),
+  }));
+}
+
+export function buildToolNavItems(): NavItem[] {
+  return [
+    { id: playlistGeneratorViewId, label: "Playlist generator", tone: "accent" },
+    { id: playlistExportViewId, label: "M3U export", tone: "accent" },
+  ];
+}
+
+export function buildGeneratedRunNavItems(runs: PlaylistGenerationRun[]): NavItem[] {
+  return runs.map((run) => ({
+    id: getGeneratedRunViewId(run.id),
+    label: `Run #${run.id}`,
+    badge: run.playlist_count,
+    tone: run.status === "failed" ? "alert" : run.status === "completed" ? "linked" : "pending",
   }));
 }
 
@@ -198,6 +254,21 @@ function buildPlaylistViewEntries(playlists: StreamingPlaylist[]): AppViewEntry[
   }));
 }
 
-export function buildViewEntries(playlists: StreamingPlaylist[]): AppViewEntry[] {
-  return [...staticViewEntries, ...buildPlaylistViewEntries(playlists)];
+function buildGeneratedRunViewEntries(runs: PlaylistGenerationRun[]): AppViewEntry[] {
+  return runs.map((run) => ({
+    id: getGeneratedRunViewId(run.id),
+    title: `Generated run #${run.id}`,
+    actionLabels: [],
+    icon: "tool",
+    path: getViewPath(getGeneratedRunViewId(run.id)),
+    render: () => <GeneratedRunView runId={run.id} />,
+  }));
+}
+
+export function buildViewEntries(playlists: StreamingPlaylist[], runs: PlaylistGenerationRun[] = []): AppViewEntry[] {
+  return [
+    ...staticViewEntries,
+    ...buildPlaylistViewEntries(playlists),
+    ...buildGeneratedRunViewEntries(runs),
+  ];
 }

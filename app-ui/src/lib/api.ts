@@ -12,6 +12,11 @@ type JsonRequestOptions<T> = {
   schema?: JsonSchema<T>;
 };
 
+type BlobRequestOptions = {
+  body?: unknown;
+  errorMessage?: string;
+};
+
 export class ApiRequestError extends Error {
   status: number;
 
@@ -102,6 +107,33 @@ export async function fetchBlob(
 
   if (!response.ok) {
     throw requestError(errorMessage, response.status);
+  }
+
+  return {
+    blob: await response.blob(),
+    response,
+  };
+}
+
+export async function postBlob(
+  input: RequestInfo | URL,
+  options: BlobRequestOptions = {},
+): Promise<{ blob: Blob; response: Response }> {
+  const init: RequestInit = {
+    method: "POST",
+  };
+
+  if (options.body !== undefined) {
+    init.body = JSON.stringify(options.body);
+    init.headers = {
+      "Content-Type": "application/json",
+    };
+  }
+
+  const response = await fetch(input, init);
+
+  if (!response.ok) {
+    throw requestError(options.errorMessage, response.status);
   }
 
   return {

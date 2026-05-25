@@ -4,13 +4,17 @@ import type { PropsWithChildren } from "react";
 
 import {
   approveLinkProposal,
+  createM3uExportProfile,
+  exportM3uZip,
   exportPlaylistM3u,
+  fetchM3uExportProfiles,
   fetchLinkProposals,
   fetchPlaylistDetail,
   fetchStreamingPlaylistConfig,
   fetchStreamingPlaylists,
   fetchPlaylistTracks,
   playlistQueryKeys,
+  previewM3uExport,
   rejectLinkProposal,
   refreshStreamingAccountMetadata,
   updateStreamingPlaylistConfig,
@@ -48,6 +52,7 @@ describe("playlist queries", () => {
     expect(playlistQueryKeys.all).toEqual(["playlists"]);
     expect(playlistQueryKeys.config()).toEqual(["playlists", "config"]);
     expect(playlistQueryKeys.detail(12)).toEqual(["playlists", 12, "detail"]);
+    expect(playlistQueryKeys.m3uExportProfiles()).toEqual(["playlists", "m3u", "export-profiles"]);
     expect(playlistQueryKeys.list()).toEqual(["playlists", "list"]);
     expect(playlistQueryKeys.proposals()).toEqual(["playlists", "proposals", "list", { confidenceBand: null }]);
     expect(playlistQueryKeys.proposalPages()).toEqual(["playlists", "proposals", "pages", { confidenceBand: null }]);
@@ -502,6 +507,157 @@ describe("playlist queries", () => {
       filename: "Late Night Drive.m3u",
     });
     expect(fetchMock).toHaveBeenCalledWith("/api/playlists/12/m3u");
+  });
+
+  it("fetches M3U export profiles", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        profiles: [
+          {
+            id: 1,
+            is_default: true,
+            library_path: "/mnt/music",
+            name: "NAS",
+          },
+        ],
+      }),
+    } as Response);
+
+    await expect(fetchM3uExportProfiles()).resolves.toEqual({
+      profiles: [
+        {
+          id: 1,
+          is_default: true,
+          library_path: "/mnt/music",
+          name: "NAS",
+        },
+      ],
+    });
+    expect(fetchMock).toHaveBeenCalledWith("/api/m3u/export-profiles");
+  });
+
+  it("creates an M3U export profile", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        id: 2,
+        is_default: false,
+        library_path: "/Volumes/music",
+        name: "USB",
+      }),
+    } as Response);
+
+    await expect(
+      createM3uExportProfile({
+        is_default: false,
+        library_path: "/Volumes/music",
+        name: "USB",
+      }),
+    ).resolves.toMatchObject({
+      id: 2,
+      library_path: "/Volumes/music",
+    });
+    expect(fetchMock).toHaveBeenCalledWith("/api/m3u/export-profiles", {
+      body: JSON.stringify({
+        is_default: false,
+        library_path: "/Volumes/music",
+        name: "USB",
+      }),
+      headers: {
+        "Content-Type": "application/json",
+      },
+      method: "POST",
+    });
+  });
+
+  it("previews a batch M3U export", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        formats: ["m3u8"],
+        library_path: "/mnt/music",
+        path_format: "file_url",
+        playlist_count: 1,
+        playlists: [
+          {
+            exported_track_count: 12,
+            filename_m3u: "Road Trip [yt].m3u",
+            filename_m3u8: "Road Trip [yt].m3u8",
+            filenames: ["Road Trip [yt].m3u8"],
+            generated_playlist_id: null,
+            playlist_id: 7,
+            sample_path: "/mnt/music/Artist/Track.flac",
+            skipped_track_count: 2,
+            source: "streaming",
+            title: "Road Trip",
+          },
+        ],
+        total_exported_track_count: 12,
+        total_skipped_track_count: 2,
+      }),
+    } as Response);
+
+    await expect(
+      previewM3uExport({
+        formats: ["m3u8"],
+        path_format: "file_url",
+        playlist_ids: [7],
+        profile_id: 1,
+      }),
+    ).resolves.toMatchObject({
+      formats: ["m3u8"],
+      path_format: "file_url",
+      playlist_count: 1,
+      total_exported_track_count: 12,
+    });
+    expect(fetchMock).toHaveBeenCalledWith("/api/m3u/export/preview", {
+      body: JSON.stringify({
+        formats: ["m3u8"],
+        path_format: "file_url",
+        playlist_ids: [7],
+        profile_id: 1,
+      }),
+      headers: {
+        "Content-Type": "application/json",
+      },
+      method: "POST",
+    });
+  });
+
+  it("exports a batch M3U zip", async () => {
+    const blob = new Blob(["zip"], { type: "application/zip" });
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      blob: async () => blob,
+      headers: new Headers({
+        "Content-Disposition": 'attachment; filename="m3u-export.zip"',
+      }),
+    } as Response);
+
+    await expect(
+      exportM3uZip({
+        formats: ["m3u"],
+        library_path: "/mnt/music",
+        path_format: "absolute",
+        playlist_ids: [7, 8],
+      }),
+    ).resolves.toEqual({
+      blob,
+      filename: "m3u-export.zip",
+    });
+    expect(fetchMock).toHaveBeenCalledWith("/api/m3u/export", {
+      body: JSON.stringify({
+        formats: ["m3u"],
+        library_path: "/mnt/music",
+        path_format: "absolute",
+        playlist_ids: [7, 8],
+      }),
+      headers: {
+        "Content-Type": "application/json",
+      },
+      method: "POST",
+    });
   });
 
   it("does not run the detail query without a playlist id", () => {

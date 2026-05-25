@@ -3,6 +3,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 import logging
 import sqlite3
+import stat
 import subprocess
 import threading
 import time
@@ -32,6 +33,7 @@ from app.ingestion.pipeline import (
     UnsupportedAudioFormatError,
 )
 from app.matching.jobs import MatchingJobEnqueuer
+from app.sonic.jobs import SonicJobEnqueuer
 from app.ingestion.watcher import FileSnapshot, IngestionEventHandler, IngestionWatcher
 from app.ingestion.pipeline import IngestionProcessor
 from app.ingestion.failures import (
@@ -1005,9 +1007,15 @@ def test_ingestion_processor_prepares_imports_and_deletes_source(
     preparer = Mock(spec=AudioPreparer)
     preparer.prepare.return_value = prepared
     importer = Mock(spec=BeetsImporter)
-    importer.library_root = tmp_path / "library"
+    library_root = tmp_path / "library"
+    library_path = library_root / "Artist" / "track.mp3"
+    library_path.parent.mkdir(parents=True)
+    library_path.write_bytes(b"imported")
+    library_path.parent.chmod(0o700)
+    library_path.chmod(0o600)
+    importer.library_root = library_root
     importer.import_file.return_value = ImportedTrack(
-        library_path=tmp_path / "library" / "Artist" / "track.mp3",
+        library_path=library_path,
         beets_id=17,
     )
     fingerprint_generator = Mock(spec=FingerprintGenerator)
@@ -1022,8 +1030,10 @@ def test_ingestion_processor_prepares_imports_and_deletes_source(
 
     assert result is prepared
     assert result.fingerprint == "abc123"
-    assert result.library_path == tmp_path / "library" / "Artist" / "track.mp3"
+    assert result.library_path == library_path
     assert result.beets_id == 17
+    assert stat.S_IMODE(library_path.parent.stat().st_mode) & 0o777 == 0o775
+    assert stat.S_IMODE(library_path.stat().st_mode) == 0o664
     preparer.prepare.assert_called_once_with(source, tmp_path / "staging")
     fingerprint_generator.generate.assert_called_once_with(prepared.prepared_path)
     importer.import_file.assert_called_once_with(prepared.prepared_path)
@@ -1256,6 +1266,8 @@ def test_ingestion_processor_enqueues_matching_job_after_persisting(
     fingerprint_generator.generate.return_value = "fp-42"
     enqueuer = Mock(spec=MatchingJobEnqueuer)
     enqueuer.enqueue.return_value = "job-123"
+    sonic_enqueuer = Mock(spec=SonicJobEnqueuer)
+    sonic_enqueuer.enqueue_feature_extraction.return_value = "sonic-job-123"
 
     database_url = f"sqlite:///{tmp_path / 'app.db'}"
     engine = create_engine(database_url)
@@ -1268,11 +1280,16 @@ def test_ingestion_processor_enqueues_matching_job_after_persisting(
         fingerprint_generator=fingerprint_generator,
         track_store=LocalTrackStore(database_url),
         matching_job_enqueuer=enqueuer,
+        sonic_job_enqueuer=sonic_enqueuer,
     ).process(source)
 
     assert result.local_track_id is not None
     assert result.matching_job_id == "job-123"
+    assert result.sonic_feature_job_id == "sonic-job-123"
     enqueuer.enqueue.assert_called_once_with(result.local_track_id)
+    sonic_enqueuer.enqueue_feature_extraction.assert_called_once_with(
+        result.local_track_id
+    )
 
 
 def test_ingestion_processor_retry_updates_existing_local_track_by_beets_id(

@@ -18,9 +18,7 @@ source .venv/bin/activate
 pip install -r app/requirements.txt -r requirements-dev.txt
 ```
 
-When a subtask is complete, follow the instructions in `.codex/commands/next-task.md`.
-
-To deploy to production, follow the instructions in `.codex/commands/deploy.md`.
+At the end of every completed task, deploy to production using the `gluesoup-0-docker` Docker context. Follow `.codex/commands/deploy.md`.
 
 ## Linting & tests
 

@@ -618,6 +618,196 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/m3u/export-profiles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Export Profiles */
+        get: operations["list_export_profiles_api_m3u_export_profiles_get"];
+        put?: never;
+        /** Create Export Profile */
+        post: operations["create_export_profile_api_m3u_export_profiles_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/m3u/export-profiles/{profile_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Export Profile */
+        delete: operations["delete_export_profile_api_m3u_export_profiles__profile_id__delete"];
+        options?: never;
+        head?: never;
+        /** Update Export Profile */
+        patch: operations["update_export_profile_api_m3u_export_profiles__profile_id__patch"];
+        trace?: never;
+    };
+    "/api/m3u/export/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Preview Export */
+        post: operations["preview_export_api_m3u_export_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/m3u/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Export M3U Zip */
+        post: operations["export_m3u_zip_api_m3u_export_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/sonic/features/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Feature Summary */
+        get: operations["get_feature_summary_api_sonic_features_summary_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/sonic/features/backfill": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Backfill Features */
+        post: operations["backfill_features_api_sonic_features_backfill_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/sonic/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Generation Runs */
+        get: operations["list_generation_runs_api_sonic_runs_get"];
+        put?: never;
+        /** Create Generation Run */
+        post: operations["create_generation_run_api_sonic_runs_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/sonic/runs/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Preview Generation Run */
+        post: operations["preview_generation_run_api_sonic_runs_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/sonic/runs/{run_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Generation Run */
+        get: operations["get_generation_run_api_sonic_runs__run_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/sonic/generated-playlists": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Generated Playlists */
+        get: operations["list_generated_playlists_api_sonic_generated_playlists_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/sonic/generated-playlists/{generated_playlist_id}/tracks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Generated Playlist Tracks */
+        get: operations["list_generated_playlist_tracks_api_sonic_generated_playlists__generated_playlist_id__tracks_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/settings/general": {
         parameters: {
             query?: never;
@@ -760,6 +950,29 @@ export interface components {
             /** Path */
             path: string;
         };
+        /** CreateM3uExportProfileRequest */
+        CreateM3uExportProfileRequest: {
+            /** Name */
+            name: string;
+            /** Library Path */
+            library_path: string;
+            /**
+             * Is Default
+             * @default false
+             */
+            is_default: boolean;
+        };
+        /** CreatePlaylistGenerationRunRequest */
+        CreatePlaylistGenerationRunRequest: {
+            source_filter?: components["schemas"]["SonicSourceFilterRequest"];
+            generation_config?: components["schemas"]["PlaylistGenerationConfigRequest"];
+        };
+        /** CreatePlaylistGenerationRunResponse */
+        CreatePlaylistGenerationRunResponse: {
+            run: components["schemas"]["PlaylistGenerationRunResponse"];
+            /** Job Id */
+            job_id: string;
+        };
         /** CreateStreamingAccountRequest */
         CreateStreamingAccountRequest: {
             /** Display Name */
@@ -794,6 +1007,63 @@ export interface components {
             created_count: number;
             /** Pruned Count */
             pruned_count: number;
+        };
+        /** GeneratedPlaylistListResponse */
+        GeneratedPlaylistListResponse: {
+            /** Playlists */
+            playlists: components["schemas"]["GeneratedPlaylistResponse"][];
+        };
+        /** GeneratedPlaylistResponse */
+        GeneratedPlaylistResponse: {
+            /** Id */
+            id: number;
+            /** Run Id */
+            run_id: number;
+            /** Parent Playlist Id */
+            parent_playlist_id: number | null;
+            /** Depth */
+            depth: number;
+            /** Position */
+            position: number;
+            /** Name */
+            name: string;
+            /** Summary */
+            summary: {
+                [key: string]: unknown;
+            };
+            /** Track Count */
+            track_count: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
+        /** GeneratedPlaylistTrackResponse */
+        GeneratedPlaylistTrackResponse: {
+            /** Id */
+            id: number;
+            /** Local Track Id */
+            local_track_id: number;
+            /** Position */
+            position: number;
+            /** Title */
+            title: string;
+            /** Artist */
+            artist: string | null;
+            /** Album */
+            album: string | null;
+            /** Duration Ms */
+            duration_ms: number | null;
+            /** File Path */
+            file_path: string;
+            /** Library Root Rel Path */
+            library_root_rel_path: string;
+        };
+        /** GeneratedPlaylistTracksResponse */
+        GeneratedPlaylistTracksResponse: {
+            /** Tracks */
+            tracks: components["schemas"]["GeneratedPlaylistTrackResponse"][];
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -970,6 +1240,84 @@ export interface components {
             created_at: string;
             streaming_track: components["schemas"]["StreamingTrackSummaryResponse"];
         };
+        /** M3uExportPlaylistPreviewResponse */
+        M3uExportPlaylistPreviewResponse: {
+            /** Playlist Id */
+            playlist_id: number | null;
+            /** Generated Playlist Id */
+            generated_playlist_id: number | null;
+            /** Source */
+            source: string;
+            /** Title */
+            title: string;
+            /** Filename M3U */
+            filename_m3u: string;
+            /** Filename M3U8 */
+            filename_m3u8: string;
+            /** Filenames */
+            filenames: string[];
+            /** Exported Track Count */
+            exported_track_count: number;
+            /** Skipped Track Count */
+            skipped_track_count: number;
+            /** Sample Path */
+            sample_path: string | null;
+        };
+        /** M3uExportPreviewResponse */
+        M3uExportPreviewResponse: {
+            /** Library Path */
+            library_path: string;
+            /** Formats */
+            formats: ("m3u" | "m3u8")[];
+            /**
+             * Path Format
+             * @enum {string}
+             */
+            path_format: "absolute" | "file_url";
+            /** Playlist Count */
+            playlist_count: number;
+            /** Total Exported Track Count */
+            total_exported_track_count: number;
+            /** Total Skipped Track Count */
+            total_skipped_track_count: number;
+            /** Playlists */
+            playlists: components["schemas"]["M3uExportPlaylistPreviewResponse"][];
+        };
+        /** M3uExportProfileListResponse */
+        M3uExportProfileListResponse: {
+            /** Profiles */
+            profiles: components["schemas"]["M3uExportProfileResponse"][];
+        };
+        /** M3uExportProfileResponse */
+        M3uExportProfileResponse: {
+            /** Id */
+            id: number;
+            /** Name */
+            name: string;
+            /** Library Path */
+            library_path: string;
+            /** Is Default */
+            is_default: boolean;
+        };
+        /** M3uExportRequest */
+        M3uExportRequest: {
+            /** Playlist Ids */
+            playlist_ids?: number[];
+            /** Generated Playlist Ids */
+            generated_playlist_ids?: number[];
+            /** Formats */
+            formats?: ("m3u" | "m3u8")[];
+            /**
+             * Path Format
+             * @default absolute
+             * @enum {string}
+             */
+            path_format: "absolute" | "file_url";
+            /** Profile Id */
+            profile_id?: number | null;
+            /** Library Path */
+            library_path?: string | null;
+        };
         /** MetadataFieldResponse */
         MetadataFieldResponse: {
             /** Key */
@@ -1042,6 +1390,90 @@ export interface components {
         /** PlaylistDetailResponse */
         PlaylistDetailResponse: {
             playlist: components["schemas"]["PlaylistDetail"];
+        };
+        /** PlaylistGenerationConfigRequest */
+        PlaylistGenerationConfigRequest: {
+            /**
+             * Clustering Method
+             * @default dj_hierarchical_v1
+             * @enum {string}
+             */
+            clustering_method: "dj_hierarchical_v1" | "kmeans" | "agglomerative";
+            /**
+             * Max Depth
+             * @default 2
+             */
+            max_depth: number;
+            /**
+             * Target Playlist Size
+             * @default 25
+             */
+            target_playlist_size: number;
+            /**
+             * Min Playlist Size
+             * @default 8
+             */
+            min_playlist_size: number;
+            /**
+             * Max Children
+             * @default 4
+             */
+            max_children: number;
+            /**
+             * Feature Profile
+             * @default balanced_v1
+             * @enum {string}
+             */
+            feature_profile: "balanced_v1" | "energy_v1" | "texture_v1" | "harmony_v1";
+            /**
+             * Random Seed
+             * @default 42
+             */
+            random_seed: number;
+        };
+        /** PlaylistGenerationRunDetailResponse */
+        PlaylistGenerationRunDetailResponse: {
+            run: components["schemas"]["PlaylistGenerationRunResponse"];
+            /** Playlists */
+            playlists: components["schemas"]["GeneratedPlaylistResponse"][];
+        };
+        /** PlaylistGenerationRunListResponse */
+        PlaylistGenerationRunListResponse: {
+            /** Runs */
+            runs: components["schemas"]["PlaylistGenerationRunResponse"][];
+        };
+        /** PlaylistGenerationRunResponse */
+        PlaylistGenerationRunResponse: {
+            /** Id */
+            id: number;
+            /** Status */
+            status: string;
+            /** Source Filter */
+            source_filter: {
+                [key: string]: unknown;
+            };
+            /** Generation Config */
+            generation_config: {
+                [key: string]: unknown;
+            };
+            /** Playlist Count */
+            playlist_count: number;
+            /** Track Count */
+            track_count: number;
+            /** Error Detail */
+            error_detail: string | null;
+            /** Completed At */
+            completed_at: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
         };
         /** PlaylistSyncResponse */
         PlaylistSyncResponse: {
@@ -1138,6 +1570,89 @@ export interface components {
             status: "rejected";
             /** Rejected At */
             rejected_at: string;
+        };
+        /** SonicBackfillRequest */
+        SonicBackfillRequest: {
+            /**
+             * Limit
+             * @default 500
+             */
+            limit: number;
+        };
+        /** SonicBackfillResponse */
+        SonicBackfillResponse: {
+            /** Job Id */
+            job_id: string;
+            /** Limit */
+            limit: number;
+        };
+        /** SonicFeatureSummaryResponse */
+        SonicFeatureSummaryResponse: {
+            /** Total Tracks */
+            total_tracks: number;
+            /** Ready Tracks */
+            ready_tracks: number;
+            /** Pending Tracks */
+            pending_tracks: number;
+            /** Failed Tracks */
+            failed_tracks: number;
+            /** Missing Tracks */
+            missing_tracks: number;
+        };
+        /** SonicGenerationPreviewResponse */
+        SonicGenerationPreviewResponse: {
+            /** Analyzer Key */
+            analyzer_key: string;
+            /** Analyzer Version */
+            analyzer_version: string;
+            /** Can Generate */
+            can_generate: boolean;
+            /** Failed Feature Count */
+            failed_feature_count: number;
+            /** Feature Profile */
+            feature_profile: string;
+            /** Missing Feature Count */
+            missing_feature_count: number;
+            /** Pending Feature Count */
+            pending_feature_count: number;
+            /** Ready Track Count */
+            ready_track_count: number;
+            /** Skipped Track Count */
+            skipped_track_count: number;
+            /** Source Track Count */
+            source_track_count: number;
+        };
+        /** SonicSourceFilterRequest */
+        SonicSourceFilterRequest: {
+            /**
+             * Source Type
+             * @default all_local
+             * @enum {string}
+             */
+            source_type: "all_local" | "streaming_playlists";
+            /** Streaming Playlist Ids */
+            streaming_playlist_ids?: number[];
+            /** Tag Filters */
+            tag_filters?: components["schemas"]["SonicTagFilterRequest"][];
+        };
+        /** SonicTagFilterRequest */
+        SonicTagFilterRequest: {
+            /**
+             * Scope
+             * @default item_attribute
+             * @enum {string}
+             */
+            scope: "item_field" | "item_attribute";
+            /** Key */
+            key: string;
+            /** Value */
+            value: string;
+            /**
+             * Match
+             * @default contains
+             * @enum {string}
+             */
+            match: "equals" | "contains";
         };
         /** StreamingAccountResponse */
         StreamingAccountResponse: {
@@ -1586,6 +2101,15 @@ export interface components {
             source_path: string;
             /** Source Size */
             source_size: number | null;
+        };
+        /** UpdateM3uExportProfileRequest */
+        UpdateM3uExportProfileRequest: {
+            /** Name */
+            name?: string | null;
+            /** Library Path */
+            library_path?: string | null;
+            /** Is Default */
+            is_default?: boolean | null;
         };
         /** UpdateStreamingAccountAuthRequest */
         UpdateStreamingAccountAuthRequest: {
@@ -2755,6 +3279,410 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["LocalTrackDetailResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_export_profiles_api_m3u_export_profiles_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["M3uExportProfileListResponse"];
+                };
+            };
+        };
+    };
+    create_export_profile_api_m3u_export_profiles_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateM3uExportProfileRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["M3uExportProfileResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_export_profile_api_m3u_export_profiles__profile_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                profile_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_export_profile_api_m3u_export_profiles__profile_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                profile_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateM3uExportProfileRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["M3uExportProfileResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    preview_export_api_m3u_export_preview_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["M3uExportRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["M3uExportPreviewResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    export_m3u_zip_api_m3u_export_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["M3uExportRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_feature_summary_api_sonic_features_summary_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SonicFeatureSummaryResponse"];
+                };
+            };
+        };
+    };
+    backfill_features_api_sonic_features_backfill_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SonicBackfillRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SonicBackfillResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_generation_runs_api_sonic_runs_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlaylistGenerationRunListResponse"];
+                };
+            };
+        };
+    };
+    create_generation_run_api_sonic_runs_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreatePlaylistGenerationRunRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreatePlaylistGenerationRunResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    preview_generation_run_api_sonic_runs_preview_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreatePlaylistGenerationRunRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SonicGenerationPreviewResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_generation_run_api_sonic_runs__run_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlaylistGenerationRunDetailResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_generated_playlists_api_sonic_generated_playlists_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GeneratedPlaylistListResponse"];
+                };
+            };
+        };
+    };
+    list_generated_playlist_tracks_api_sonic_generated_playlists__generated_playlist_id__tracks_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                generated_playlist_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GeneratedPlaylistTracksResponse"];
                 };
             };
             /** @description Validation Error */

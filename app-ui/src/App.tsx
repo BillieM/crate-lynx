@@ -10,10 +10,12 @@ import { ViewShell } from "./features/shell/ViewShell";
 import type { PlaylistSyncViewState } from "./features/shell/types";
 import {
   type AppViewEntry,
+  buildGeneratedRunNavItems,
   buildLibraryNavItems,
   buildMaintenanceNavItems,
   buildPlaylistNavItems,
   buildSettingsNavItems,
+  buildToolNavItems,
   buildViewEntries,
   getPlaylistViewId,
   getViewIdFromPath,
@@ -24,8 +26,10 @@ import {
   settingsSyncYoutubeMusicViewId,
   staticViewRoutes,
 } from "./features/shell/viewRegistry";
+import { type PlaylistGenerationRun, useSonicRunsQuery } from "./features/sonic/queries";
 
 const emptyStreamingPlaylists: StreamingPlaylist[] = [];
+const emptySonicRuns: PlaylistGenerationRun[] = [];
 
 function App() {
   const location = useLocation();
@@ -38,8 +42,10 @@ function App() {
   const missingLocallyQuery = useMissingLocallyTracksQuery();
   const playlistsQuery = useStreamingPlaylistsQuery();
   const relationshipSuggestionsQuery = useStreamingRelationshipSuggestionsQuery();
+  const sonicRunsQuery = useSonicRunsQuery();
   const unidentifiedQuery = useUnidentifiedTracksQuery();
   const streamingPlaylists = playlistsQuery.data?.playlists ?? emptyStreamingPlaylists;
+  const sonicRuns = sonicRunsQuery.data?.runs ?? emptySonicRuns;
   const activeUnidentifiedCount = unidentifiedQuery.data?.tracks.filter((track) => track.ignored_at === null).length;
   const defaultPlaylistViewId = streamingPlaylists[0] ? getPlaylistViewId(streamingPlaylists[0].id) : settingsSyncYoutubeMusicViewId;
   const libraryStats = libraryTracksQuery.data?.pages[0]?.stats;
@@ -63,8 +69,10 @@ function App() {
     ],
   );
   const playlistItems = useMemo(() => buildPlaylistNavItems(streamingPlaylists), [streamingPlaylists]);
+  const generatedRunItems = useMemo(() => buildGeneratedRunNavItems(sonicRuns), [sonicRuns]);
   const settingsItems = useMemo(() => buildSettingsNavItems(), []);
-  const viewConfigs = useMemo(() => buildViewEntries(streamingPlaylists), [streamingPlaylists]);
+  const toolItems = useMemo(() => buildToolNavItems(), []);
+  const viewConfigs = useMemo(() => buildViewEntries(streamingPlaylists, sonicRuns), [sonicRuns, streamingPlaylists]);
   const viewConfigById = useMemo(
     () => Object.fromEntries(viewConfigs.map((view) => [view.id, view])) as Record<string, AppViewEntry>,
     [viewConfigs],
@@ -129,6 +137,7 @@ function App() {
     <div className="flex h-full min-h-0 w-full flex-1 flex-row overflow-hidden bg-ctp-base text-ctp-text max-md:flex-col">
       <Sidebar
         activeItemId={activeViewId}
+        generatedRunItems={generatedRunItems}
         isSettingsMode={isSettingsView}
         libraryItems={libraryItems}
         maintenanceItems={maintenanceItems}
@@ -139,6 +148,7 @@ function App() {
         playlistEmptyMessage={playlistEmptyMessage}
         playlistItems={playlistItems}
         settingsItems={settingsItems}
+        toolItems={toolItems}
       />
 
       <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-ctp-base">

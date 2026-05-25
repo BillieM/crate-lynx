@@ -1,5 +1,47 @@
 # TASKS
 
+## Sonic Playlist Generation
+
+### Notes
+
+- Keep generated playlists as internal, immutable snapshots for v1; do not push them to streaming providers.
+- Store audio-analysis descriptors and vectors as JSON so feature profiles can iterate without schema churn.
+- Treat Beets item fields and item attributes as the first version of tag filtering.
+- Keep M3U export backward-compatible for existing streaming playlist exports.
+
+### Tasks
+
+- [x] Add sonic persistence foundation.
+  - Add Alembic migration, SQLAlchemy metadata, schema registration, and test factories for track features, generation runs, generated playlists, and generated playlist tracks.
+  - Persist per-track feature status, analyzer version, descriptors, vectors, failures, and timestamps.
+  - Persist immutable run config/source filters, generated playlist tree nodes, and explicit track memberships for parent and child playlists.
+
+- [x] Build feature extraction and generation jobs.
+  - Add a pluggable analyzer interface with a `librosa_v1` implementation.
+  - Add RQ enqueuers/jobs for single-track feature extraction, missing-feature backfill, and playlist generation.
+  - Enqueue feature extraction after successful ingestion.
+  - Generate recursive playlist trees with k-means and agglomerative clustering.
+  - Auto-name playlists from dominant descriptor deltas.
+
+- [x] Add sonic API routes.
+  - Expose feature readiness, backfill enqueue, run creation, run listing, run detail, generated playlist tracks, and generated playlist export metadata.
+  - Support source filters for all local tracks, selected synced streaming playlists resolved to local tracks, and Beets item field/attribute filters.
+
+- [x] Integrate generated playlists with M3U export.
+  - Add `generated_playlist_ids` to preview/export requests without changing existing `playlist_ids` behavior.
+  - Render generated playlist M3U files from local track membership and existing export path formatting.
+
+- [x] Build the frontend experience.
+  - Add a Tools sidebar section with M3U export and Playlist generator.
+  - Add a Generated runs sidebar section with timestamped run links.
+  - Build generator configuration, readiness/backfill controls, run creation, run detail tree, playlist track preview, and export actions.
+
+- [x] Final integration and validation.
+  - Regenerate OpenAPI/types.
+  - Run backend validation: `ruff check .`, `ruff format --check .`, and `pytest`.
+  - Run frontend validation: `npm run lint`, `npm test`, and `npm run build`.
+  - Commit, deploy with the `gluesoup-0-docker` Docker context, and verify service health.
+
 ## Streaming Track Relationships
 
 ### Notes

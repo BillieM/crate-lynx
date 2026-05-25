@@ -1,8 +1,9 @@
 import { render, screen } from "@testing-library/react";
-import { Music2 } from "lucide-react";
+import { Music2, Settings } from "lucide-react";
 
 import { ActionButton } from "./ActionButton";
 import { EmptyStateCard } from "./EmptyStateCard";
+import { IconButton } from "./IconButton";
 import { MetricCard } from "./MetricCard";
 import { Pill } from "./Pill";
 import { StatusMessage } from "./StatusMessage";
@@ -18,6 +19,25 @@ describe("shared UI primitives", () => {
       "text-ctp-text",
       "disabled:cursor-not-allowed",
     );
+  });
+
+  it("renders icon buttons with accessible labels and tooltips", () => {
+    render(
+      <IconButton disabled label="Open app settings">
+        <Settings data-testid="settings-icon" />
+      </IconButton>,
+    );
+
+    const button = screen.getByRole("button", { name: "Open app settings" });
+    const tooltip = screen.getByRole("tooltip");
+
+    expect(button).toBeDisabled();
+    expect(button).toHaveAttribute("title", "Open app settings");
+    expect(button).toHaveAttribute("aria-describedby", tooltip.id);
+    expect(button).toHaveTextContent("");
+    expect(button).toHaveClass("h-7", "w-7", "disabled:cursor-not-allowed");
+    expect(screen.getByTestId("settings-icon")).toBeInTheDocument();
+    expect(tooltip).toHaveTextContent("Open app settings");
   });
 
   it("renders toneable pills for repeated badges", () => {

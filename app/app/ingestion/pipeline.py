@@ -20,6 +20,7 @@ from app.core.db import create_database_engine
 from app.core.paths import resolve_staging_path
 from app.local_tracks.store import LocalTrackStore
 from app.matching.jobs import MatchingJobEnqueuer
+from app.sonic.jobs import SonicJobEnqueuer
 from app.ingestion.beets_mirror_sync import (
     decode_beets_path,
     read_album,
@@ -34,6 +35,8 @@ logger = logging.getLogger(__name__)
 
 SUPPORTED_AUDIO_EXTENSIONS = {".mp3", ".flac", ".wav", ".aiff", ".aif"}
 LOSSLESS_AUDIO_EXTENSIONS = {".flac", ".wav", ".aiff", ".aif"}
+IMPORTED_AUDIO_FILE_MODE = 0o664
+IMPORTED_AUDIO_DIRECTORY_MODE = 0o2775
 
 
 class UnsupportedAudioFormatError(ValueError):
@@ -54,6 +57,7 @@ class PreparedTrack:
     beets_id: int | None = None
     local_track_id: int | None = None
     matching_job_id: str | None = None
+    sonic_feature_job_id: str | None = None
 
 
 @dataclass(slots=True)
@@ -219,6 +223,7 @@ class IngestionProcessor:
     track_store: LocalTrackStore | None = None
     failed_attempt_store: FailedIngestionAttemptStore | None = None
     matching_job_enqueuer: MatchingJobEnqueuer | None = None
+    sonic_job_enqueuer: SonicJobEnqueuer | None = None
     database_engine: Engine | None = None
 
     def process(self, source_path: Path | str) -> PreparedTrack:
@@ -229,6 +234,7 @@ class IngestionProcessor:
                 prepared.prepared_path
             )
             imported_track = self.beets_importer.import_file(prepared.prepared_path)
+            self._normalize_import_permissions(imported_track.library_path)
             prepared.library_path = imported_track.library_path
             prepared.beets_id = imported_track.beets_id
             self._mirror_imported_track(imported_track)
@@ -246,6 +252,15 @@ class IngestionProcessor:
             ):
                 prepared.matching_job_id = self.matching_job_enqueuer.enqueue(
                     prepared.local_track_id
+                )
+            if (
+                self.sonic_job_enqueuer is not None
+                and prepared.local_track_id is not None
+            ):
+                prepared.sonic_feature_job_id = (
+                    self.sonic_job_enqueuer.enqueue_feature_extraction(
+                        prepared.local_track_id
+                    )
                 )
             if self.failed_attempt_store is not None:
                 self.failed_attempt_store.clear_for_source_path(prepared.source_path)
@@ -271,6 +286,19 @@ class IngestionProcessor:
                     ),
                 )
             raise
+
+    def _normalize_import_permissions(self, library_path: Path) -> None:
+        try:
+            normalize_imported_track_permissions(
+                library_root=self.beets_importer.library_root,
+                library_path=library_path,
+            )
+        except (OSError, ValueError):
+            logger.warning(
+                "Failed to normalize imported track permissions for %s",
+                library_path,
+                exc_info=True,
+            )
 
     def _mirror_imported_track(self, imported_track: ImportedTrack) -> None:
         if self.database_engine is None or imported_track.beets_id is None:
@@ -348,6 +376,9 @@ def build_ingestion_processor(
         matching_job_enqueuer=(
             MatchingJobEnqueuer(resolved_redis_url) if resolved_redis_url else None
         ),
+        sonic_job_enqueuer=(
+            SonicJobEnqueuer(resolved_redis_url) if resolved_redis_url else None
+        ),
         database_engine=engine,
     )
 
@@ -384,6 +415,50 @@ def _link_or_copy(source: Path, destination: Path) -> None:
         os.link(source, destination)
     except OSError:
         shutil.copy2(source, destination)
+
+
+def normalize_imported_track_permissions(
+    *,
+    library_root: Path | str,
+    library_path: Path | str,
+    file_mode: int = IMPORTED_AUDIO_FILE_MODE,
+    directory_mode: int = IMPORTED_AUDIO_DIRECTORY_MODE,
+) -> None:
+    resolved_library_root = Path(library_root).resolve()
+    resolved_library_path = Path(library_path).resolve()
+    resolved_library_path.relative_to(resolved_library_root)
+
+    group_id = resolved_library_root.stat().st_gid
+    for directory in _library_path_directories(
+        library_root=resolved_library_root,
+        library_path=resolved_library_path,
+    ):
+        _chgrp_if_needed(directory, group_id)
+        directory.chmod(directory_mode)
+
+    _chgrp_if_needed(resolved_library_path, group_id)
+    resolved_library_path.chmod(file_mode)
+
+
+def _library_path_directories(
+    *,
+    library_root: Path,
+    library_path: Path,
+) -> list[Path]:
+    directories = []
+    current = library_path.parent
+    while current != library_root.parent:
+        directories.append(current)
+        if current == library_root:
+            break
+        current = current.parent
+
+    return list(reversed(directories))
+
+
+def _chgrp_if_needed(path: Path, group_id: int) -> None:
+    if path.stat().st_gid != group_id:
+        os.chown(path, -1, group_id)
 
 
 def _resolve_import_lock_path(

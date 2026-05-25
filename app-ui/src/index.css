@@ -54,3 +54,29 @@ select {
 button {
   cursor: pointer;
 }
+
+@keyframes sonic-progress-indeterminate {
+  0% {
+    transform: translateX(-120%) scaleX(0.55);
+  }
+
+  50% {
+    transform: translateX(105%) scaleX(1);
+  }
+
+  100% {
+    transform: translateX(330%) scaleX(0.55);
+  }
+}
+
+.sonic-progress-indicator {
+  animation: sonic-progress-indeterminate 1.25s ease-in-out infinite;
+  transform-origin: left center;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sonic-progress-indicator {
+    animation: none;
+    transform: translateX(100%);
+  }
+}

@@ -26,6 +26,15 @@ from app.relationships.models import (
     streaming_relationship_suggestions_table,
     streaming_relationships_table,
 )
+from app.sonic.models import (
+    PLAYLIST_GENERATION_STATUS_COMPLETED,
+    SONIC_ANALYZER_LIBROSA_V1,
+    SONIC_FEATURE_STATUS_READY,
+    generated_playlist_tracks_table,
+    generated_playlists_table,
+    playlist_generation_runs_table,
+    sonic_track_features_table,
+)
 from app.streaming.models import (
     PLAYLIST_SYNC_MODE_OFF,
     YOUTUBE_MUSIC_PROVIDER,
@@ -254,6 +263,87 @@ class TestDataFactory:
             relationship_type=relationship_type,
             score=score,
             status=status,
+        )
+
+    def sonic_track_feature(
+        self,
+        *,
+        analyzer_key: str = SONIC_ANALYZER_LIBROSA_V1,
+        analyzer_version: str = "1",
+        attempt_count: int = 0,
+        descriptor_json: dict[str, object] | None = None,
+        failure_detail: str | None = None,
+        local_track_id: int,
+        status: str = SONIC_FEATURE_STATUS_READY,
+        updated_at: datetime | None = None,
+        vector_json: list[float] | None = None,
+    ) -> int:
+        return self._insert(
+            sonic_track_features_table,
+            analyzer_key=analyzer_key,
+            analyzer_version=analyzer_version,
+            attempt_count=attempt_count,
+            descriptor_json=descriptor_json or {"tempo_bpm": 120.0},
+            failure_detail=failure_detail,
+            local_track_id=local_track_id,
+            status=status,
+            updated_at=updated_at or datetime(2026, 5, 1, tzinfo=UTC),
+            vector_json=vector_json or [120.0, 0.5],
+        )
+
+    def playlist_generation_run(
+        self,
+        *,
+        generation_config_json: dict[str, object] | None = None,
+        playlist_count: int = 0,
+        source_filter_json: dict[str, object] | None = None,
+        status: str = PLAYLIST_GENERATION_STATUS_COMPLETED,
+        track_count: int = 0,
+    ) -> int:
+        return self._insert(
+            playlist_generation_runs_table,
+            generation_config_json=generation_config_json
+            or {"clustering_method": "kmeans"},
+            playlist_count=playlist_count,
+            source_filter_json=source_filter_json or {"source_type": "all_local"},
+            status=status,
+            track_count=track_count,
+        )
+
+    def generated_playlist(
+        self,
+        *,
+        depth: int = 0,
+        name: str = "Fast Bright",
+        parent_playlist_id: int | None = None,
+        position: int = 1,
+        run_id: int,
+        summary_json: dict[str, object] | None = None,
+        track_count: int = 0,
+    ) -> int:
+        return self._insert(
+            generated_playlists_table,
+            depth=depth,
+            name=name,
+            parent_playlist_id=parent_playlist_id,
+            position=position,
+            run_id=run_id,
+            summary_json=summary_json or {"top_deltas": []},
+            track_count=track_count,
+        )
+
+    def generated_playlist_track(
+        self,
+        *,
+        generated_playlist_id: int,
+        local_track_id: int,
+        position: int = 1,
+    ) -> int:
+        return self._insert(
+            generated_playlist_tracks_table,
+            generated_playlist_id=generated_playlist_id,
+            local_track_id=local_track_id,
+            position=position,
         )
 
     def _insert(self, table: Any, **values: Any) -> int:
