@@ -8,6 +8,7 @@ import { Pill, type PillTone } from "../../components/Pill";
 import { formatDuration, getMatchMethodLabel } from "../../lib/formatters";
 import { createOptimisticMutation } from "../../lib/optimisticMutation";
 import { controlClasses, layoutClasses, surfaceClasses, textClasses } from "../../styles/componentClasses";
+import { LocalTrackAudioPreview } from "../localTracks/LocalTrackAudioPreview";
 import { MatchInspectionPanel } from "../matching/MatchInspectionPanel";
 import {
   acceptStreamingRelationshipSuggestion,
@@ -235,37 +236,55 @@ function WinnerSelection({
     <fieldset className="grid gap-2 rounded-[8px] border border-ctp-yellow/30 bg-ctp-yellow/10 px-3 py-2">
       <legend className={`${textClasses.detail} text-ctp-yellow`}>Choose winning local link</legend>
       <div className="grid gap-2 sm:grid-cols-2">
-        {finalLinks.map((link) => (
-          <label
-            className="grid cursor-pointer grid-cols-[auto_minmax(0,1fr)] items-start gap-2 rounded-[8px] bg-ctp-base/42 px-2.5 py-2 text-ctp-text ring-1 ring-inset ring-ctp-surface1/60"
-            key={link.final_link_id}
-          >
-            <input
-              checked={selectedWinnerId === link.final_link_id}
-              className="mt-0.5 h-3.5 w-3.5 accent-ctp-yellow"
-              name={`relationship-${suggestion.id}-winner`}
-              onChange={() => onSelect(link.final_link_id)}
-              type="radio"
-              value={link.final_link_id}
-            />
-            <span className="grid min-w-0 gap-1">
-              <span className={`truncate ${textClasses.caption} font-medium text-ctp-text`}>
-                {getLocalLinkLabel(link)}
-              </span>
-              <span className={`truncate ${textClasses.finePrint} text-ctp-subtext0`}>
-                Final link {link.final_link_id}
-              </span>
-            </span>
-          </label>
-        ))}
+        {finalLinks.map((link) => {
+          const inputId = `relationship-${suggestion.id}-winner-${link.final_link_id}`;
+          const localLinkLabel = getLocalLinkLabel(link);
+
+          return (
+            <div
+              className="grid min-w-0 gap-2 rounded-[8px] bg-ctp-base/42 px-2.5 py-2 text-ctp-text ring-1 ring-inset ring-ctp-surface1/60"
+              key={link.final_link_id}
+            >
+              <div className="grid grid-cols-[auto_minmax(0,1fr)] items-start gap-2">
+                <input
+                  checked={selectedWinnerId === link.final_link_id}
+                  className="mt-0.5 h-3.5 w-3.5 accent-ctp-yellow"
+                  id={inputId}
+                  name={`relationship-${suggestion.id}-winner`}
+                  onChange={() => onSelect(link.final_link_id)}
+                  type="radio"
+                  value={link.final_link_id}
+                />
+                <label className="grid min-w-0 cursor-pointer gap-1" htmlFor={inputId}>
+                  <span className={`truncate ${textClasses.caption} font-medium text-ctp-text`}>
+                    {localLinkLabel}
+                  </span>
+                  <span className={`truncate ${textClasses.finePrint} text-ctp-subtext0`}>
+                    Final link {link.final_link_id}
+                  </span>
+                </label>
+              </div>
+              <LocalTrackAudioPreview
+                className="pl-5"
+                label={`Listen to ${localLinkLabel}`}
+                localTrackId={link.local_track_id}
+              />
+            </div>
+          );
+        })}
       </div>
     </fieldset>
   );
 }
 
-function localAudiosForSuggestion(suggestion: StreamingRelationshipSuggestion) {
+function localAudioLinksForSuggestion(suggestion: StreamingRelationshipSuggestion) {
+  const conflictLinks =
+    suggestion.conflict_state === "different_local_links" ? suggestion.conflict?.final_links ?? [] : [];
+  const candidateLinks =
+    conflictLinks.length > 0 ? conflictLinks : [suggestion.first_link, suggestion.second_link];
   const seenLocalTrackIds = new Set<number>();
-  return [suggestion.first_link, suggestion.second_link]
+
+  return candidateLinks
     .filter((link): link is RelationshipLocalLink => link !== null)
     .filter((link) => {
       if (seenLocalTrackIds.has(link.local_track_id)) {
@@ -273,7 +292,11 @@ function localAudiosForSuggestion(suggestion: StreamingRelationshipSuggestion) {
       }
       seenLocalTrackIds.add(link.local_track_id);
       return true;
-    })
+    });
+}
+
+function localAudiosForSuggestion(suggestion: StreamingRelationshipSuggestion) {
+  return localAudioLinksForSuggestion(suggestion)
     .map((link) => ({
       label: `Listen to ${getLocalLinkLabel(link)}`,
       localTrackId: link.local_track_id,

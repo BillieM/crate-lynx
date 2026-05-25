@@ -260,6 +260,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/local-tracks/rematch-unresolved": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Rematch Unresolved Local Tracks */
+        post: operations["rematch_unresolved_local_tracks_api_local_tracks_rematch_unresolved_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/local-tracks/{local_track_id}/rescue": {
         parameters: {
             query?: never;
@@ -1571,6 +1588,13 @@ export interface components {
             /** Rejected At */
             rejected_at: string;
         };
+        /** RematchUnresolvedLocalTracksResponse */
+        RematchUnresolvedLocalTracksResponse: {
+            /** Job Id */
+            job_id: string;
+            /** Statuses */
+            statuses: ("unlinked" | "pending")[];
+        };
         /** SonicBackfillRequest */
         SonicBackfillRequest: {
             /**
@@ -2615,6 +2639,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    rematch_unresolved_local_tracks_api_local_tracks_rematch_unresolved_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RematchUnresolvedLocalTracksResponse"];
                 };
             };
         };

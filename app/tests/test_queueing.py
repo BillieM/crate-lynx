@@ -220,6 +220,68 @@ def test_matching_job_enqueuer_uses_default_queue(monkeypatch) -> None:
     }
 
 
+def test_matching_job_enqueuer_finds_equivalent_queued_and_started_jobs(
+    monkeypatch,
+) -> None:
+    seen: dict[str, object] = {}
+    queued_job = SimpleNamespace(
+        args=(17,),
+        func_name="app.matching.jobs.run_matching_pipeline",
+    )
+    unrelated_job = SimpleNamespace(
+        args=(18,),
+        func_name="app.ingestion.jobs.run_ingestion_job",
+    )
+    malformed_job = SimpleNamespace(
+        args=("19",),
+        func_name="app.matching.jobs.run_matching_pipeline",
+    )
+    started_job = SimpleNamespace(
+        args=(23,),
+        func_name="app.matching.jobs.run_matching_pipeline",
+    )
+
+    class FakeRedis:
+        @classmethod
+        def from_url(cls, url: str) -> object:
+            seen["redis_url"] = url
+            return object()
+
+    class FakeQueue:
+        def __init__(self, name: str, connection: object) -> None:
+            seen["queue_name"] = name
+            seen["connection"] = connection
+
+        def get_jobs(self):
+            return [queued_job, unrelated_job, malformed_job]
+
+        def fetch_job(self, job_id: str):
+            return {"started-23": started_job, "missing": None}[job_id]
+
+    class FakeStartedJobRegistry:
+        def __init__(self, *, queue: FakeQueue) -> None:
+            seen["registry_queue"] = queue
+
+        def get_job_ids(self):
+            return ["started-23", "missing"]
+
+    monkeypatch.setattr("app.matching.jobs.Redis", FakeRedis)
+    monkeypatch.setattr("app.matching.jobs.Queue", FakeQueue)
+    monkeypatch.setattr("app.matching.jobs.StartedJobRegistry", FakeStartedJobRegistry)
+
+    local_track_ids = MatchingJobEnqueuer(
+        redis_url="redis://redis:6379/0"
+    ).queued_or_started_local_track_ids({17, 19, 23, 99})
+
+    assert local_track_ids == {17, 23}
+    assert seen == {
+        "redis_url": "redis://redis:6379/0",
+        "queue_name": "matching",
+        "connection": seen["connection"],
+        "registry_queue": seen["registry_queue"],
+    }
+
+
 def test_queue_depth_reader_reads_counts(monkeypatch) -> None:
     seen: dict[str, object] = {}
 

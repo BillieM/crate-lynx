@@ -221,6 +221,46 @@ function mockPaginatedLibraryFetch() {
   });
 }
 
+function mockPaginatedLibraryFetchWithUnresolvedRematch() {
+  return vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+    const url = String(input);
+
+    if (url === "/api/local-tracks/rematch-unresolved" && init?.method === "POST") {
+      return {
+        ok: true,
+        json: async () => ({
+          job_id: "local-rematch-backfill-123",
+          statuses: ["unlinked", "pending"],
+        }),
+      } as Response;
+    }
+
+    if (url === "/api/library/tracks") {
+      return {
+        ok: true,
+        json: async () => ({
+          next_cursor: 1001,
+          stats: libraryTracksResponse.stats,
+          tracks: [libraryTracksResponse.tracks[0]],
+        }),
+      } as Response;
+    }
+
+    if (url === "/api/library/tracks?cursor=1001") {
+      return {
+        ok: true,
+        json: async () => ({
+          next_cursor: null,
+          stats: libraryTracksResponse.stats,
+          tracks: libraryTracksResponse.tracks.slice(1),
+        }),
+      } as Response;
+    }
+
+    throw new Error(`Unexpected fetch ${url}`);
+  });
+}
+
 function renderWithQueryClient(ui: ReactElement) {
   const queryClient = new QueryClient({
     defaultOptions: {
@@ -259,6 +299,7 @@ describe("LocalLibraryView", () => {
     expect(within(filters).getByRole("button", { name: "Linked 2" })).toHaveAttribute("aria-pressed", "false");
     expect(within(filters).getByRole("button", { name: "Pending 2" })).toHaveAttribute("aria-pressed", "false");
     expect(within(filters).getByRole("button", { name: "Unlinked 1" })).toHaveAttribute("aria-pressed", "false");
+    expect(within(filters).getByRole("button", { name: "Re-match all unresolved" })).toBeEnabled();
     expect(within(filters).getByRole("button", { name: "Reset library filters" })).toBeDisabled();
     expect(fetchMock).toHaveBeenCalledWith("/api/library/tracks");
   });
@@ -324,6 +365,46 @@ describe("LocalLibraryView", () => {
     expect(within(trackList).queryByRole("button", { name: "Load more" })).not.toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledWith("/api/library/tracks");
     expect(fetchMock).toHaveBeenCalledWith("/api/library/tracks?cursor=1001");
+  });
+
+  it("queues all unresolved local tracks without loading every page", async () => {
+    const fetchMock = mockPaginatedLibraryFetchWithUnresolvedRematch();
+
+    renderWithQueryClient(<LocalLibraryView />);
+
+    const filters = await screen.findByRole("region", { name: "Library filters" });
+    expect(await screen.findByText("Showing 1 of 5 rows")).toBeInTheDocument();
+
+    fireEvent.click(within(filters).getByRole("button", { name: "Re-match all unresolved" }));
+
+    expect(await screen.findByText("Unresolved re-match queued")).toBeInTheDocument();
+    expect(screen.getByText("Pending and unlinked local tracks were queued for re-matching.")).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledWith("/api/local-tracks/rematch-unresolved", { method: "POST" });
+    expect(fetchMock).not.toHaveBeenCalledWith("/api/library/tracks?cursor=1001");
+
+    const singleRematchCalls = fetchMock.mock.calls.filter(([input, init]) => {
+      const url = String(input);
+      return /\/api\/local-tracks\/\d+\/rematch$/.test(url) && init?.method === "POST";
+    });
+    expect(singleRematchCalls).toHaveLength(0);
+  });
+
+  it("disables all-unresolved re-match when there are no unresolved tracks", async () => {
+    mockLibraryFetch({
+      next_cursor: null,
+      stats: {
+        linked: 2,
+        pending: 0,
+        total: 2,
+        unlinked: 0,
+      },
+      tracks: libraryTracksResponse.tracks.filter((track) => track.link_status === "linked"),
+    });
+
+    renderWithQueryClient(<LocalLibraryView />);
+
+    const filters = await screen.findByRole("region", { name: "Library filters" });
+    expect(within(filters).getByRole("button", { name: "Re-match all unresolved" })).toBeDisabled();
   });
 
   it("omits per-row detail and re-match actions", async () => {

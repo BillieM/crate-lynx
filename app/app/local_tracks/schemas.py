@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel
 
@@ -34,6 +35,11 @@ class LocalTrackSearchResultResponse(BaseModel):
 
 class LocalTrackSearchResponse(BaseModel):
     tracks: list[LocalTrackSearchResultResponse]
+
+
+class RematchUnresolvedLocalTracksResponse(BaseModel):
+    job_id: str
+    statuses: list[Literal["unlinked", "pending"]]
 
 
 class LocalTrackFinalLinkResponse(BaseModel):

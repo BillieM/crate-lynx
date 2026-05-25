@@ -7,8 +7,13 @@ from sqlalchemy import select
 from sqlalchemy.engine import Engine
 
 from app.core.db import create_database_engine, get_engine
+from app.local_tracks.schemas import RematchUnresolvedLocalTracksResponse
 from app.local_tracks.store import local_tracks_table
-from app.matching.jobs import MatchingJobEnqueuer
+from app.matching.jobs import (
+    LocalTrackRematchBackfillJobEnqueuer,
+    MatchingJobEnqueuer,
+    UNRESOLVED_LOCAL_TRACK_STATUSES,
+)
 from app.matching.pipeline import SuggestedLinkStore
 
 
@@ -48,5 +53,17 @@ def create_router(
             "local_track_id": local_track_id,
             "job_id": job_id,
         }
+
+    @router.post(
+        "/local-tracks/rematch-unresolved",
+        response_model=RematchUnresolvedLocalTracksResponse,
+        status_code=202,
+    )
+    def rematch_unresolved_local_tracks() -> RematchUnresolvedLocalTracksResponse:
+        job_id = LocalTrackRematchBackfillJobEnqueuer(require_redis_url()).enqueue()
+        return RematchUnresolvedLocalTracksResponse(
+            job_id=job_id,
+            statuses=list(UNRESOLVED_LOCAL_TRACK_STATUSES),
+        )
 
     return router

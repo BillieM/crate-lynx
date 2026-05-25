@@ -15,6 +15,7 @@ from app.ingestion.failures import (
 )
 from app.ingestion.pipeline import build_ingestion_processor
 from app.local_tracks.store import (
+    LocalTrackStore,
     local_tracks_table,
     metadata as local_tracks_metadata,
 )
@@ -26,6 +27,7 @@ from app.matching.pipeline import (
     metadata as suggested_links_metadata,
     suggested_links_table,
 )
+from app.matching.jobs import run_unresolved_local_tracks_rematch_backfill
 from app.relationships.models import (
     STREAMING_RELATIONSHIP_TYPE_EQUIVALENT,
     STREAMING_RELATIONSHIP_TYPE_RELATED,
@@ -146,6 +148,7 @@ def test_links_routes_are_mounted_under_api_prefix() -> None:
     assert "/api/streaming/tracks/{streaming_track_id}" in route_paths
     assert "/api/streaming/relationships" in route_paths
     assert "/api/streaming/relationships/{relationship_id}" in route_paths
+    assert "/api/local-tracks/rematch-unresolved" in route_paths
     assert "/api/local-tracks/{local_track_id}/rematch" in route_paths
     assert "/api/settings/general" in route_paths
     assert "/api/settings/ingest-folders" in route_paths
@@ -2596,6 +2599,251 @@ def test_local_track_rematch_endpoint_returns_404_for_unknown_track(
         assert exc.detail == "Local track not found"
     else:
         raise AssertionError("Expected HTTPException for missing local track")
+
+
+def test_local_track_store_lists_unresolved_pending_and_unlinked_tracks(
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite:///{tmp_path / 'unresolved-local-tracks.db'}"
+    engine = create_engine(database_url)
+    local_tracks_metadata.create_all(engine)
+    suggested_links_metadata.create_all(engine)
+    links_metadata.create_all(engine)
+    store = LocalTrackStore(engine=engine)
+
+    with engine.begin() as connection:
+        connection.execute(
+            insert(local_tracks_table),
+            [
+                {
+                    "id": 21,
+                    "file_path": "Artist/pending.mp3",
+                    "library_root_rel_path": "Artist/pending.mp3",
+                },
+                {
+                    "id": 22,
+                    "file_path": "Artist/unlinked.mp3",
+                    "library_root_rel_path": "Artist/unlinked.mp3",
+                },
+                {
+                    "id": 23,
+                    "file_path": "Artist/linked.mp3",
+                    "library_root_rel_path": "Artist/linked.mp3",
+                },
+            ],
+        )
+        connection.execute(
+            insert(suggested_links_table).values(
+                local_track_id=21,
+                streaming_track_id=501,
+                match_method="tag",
+                score=0.72,
+                status="pending",
+            )
+        )
+        connection.execute(
+            insert(final_links_table).values(
+                local_track_id=23,
+                streaming_track_id=503,
+            )
+        )
+
+    assert store.list_unresolved_local_track_ids() == [21, 22]
+
+
+def test_local_track_rematch_unresolved_endpoint_enqueues_backfill_job(
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("REDIS_URL", "redis://redis:6379/9")
+    seen: dict[str, object] = {}
+
+    class FakeBackfillEnqueuer:
+        def __init__(self, redis_url: str) -> None:
+            seen["redis_url"] = redis_url
+
+        def enqueue(self) -> str:
+            seen["enqueued"] = True
+            return "local-rematch-backfill-123"
+
+    monkeypatch.setattr(
+        "app.matching.router.LocalTrackRematchBackfillJobEnqueuer",
+        FakeBackfillEnqueuer,
+    )
+
+    app = create_app()
+    route = next(
+        route
+        for route in app.routes
+        if getattr(route, "path", None) == "/api/local-tracks/rematch-unresolved"
+        and "POST" in getattr(route, "methods", set())
+    )
+    response = _call_endpoint(route.endpoint)
+
+    assert response.job_id == "local-rematch-backfill-123"
+    assert response.statuses == ["unlinked", "pending"]
+    assert seen == {
+        "redis_url": "redis://redis:6379/9",
+        "enqueued": True,
+    }
+
+
+def test_unresolved_local_track_rematch_backfill_queues_targets_and_skips_duplicates(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite:///{tmp_path / 'unresolved-rematch-backfill.db'}"
+    engine = create_engine(database_url)
+    local_tracks_metadata.create_all(engine)
+    suggested_links_metadata.create_all(engine)
+    links_metadata.create_all(engine)
+    monkeypatch.setenv("DATABASE_URL", database_url)
+    monkeypatch.setenv("REDIS_URL", "redis://redis:6379/10")
+
+    with engine.begin() as connection:
+        connection.execute(
+            insert(local_tracks_table),
+            [
+                {
+                    "id": 31,
+                    "file_path": "Artist/skipped-pending.mp3",
+                    "library_root_rel_path": "Artist/skipped-pending.mp3",
+                },
+                {
+                    "id": 32,
+                    "file_path": "Artist/rematched-pending.mp3",
+                    "library_root_rel_path": "Artist/rematched-pending.mp3",
+                },
+                {
+                    "id": 33,
+                    "file_path": "Artist/rematched-unlinked.mp3",
+                    "library_root_rel_path": "Artist/rematched-unlinked.mp3",
+                },
+                {
+                    "id": 34,
+                    "file_path": "Artist/linked.mp3",
+                    "library_root_rel_path": "Artist/linked.mp3",
+                },
+            ],
+        )
+        connection.execute(
+            insert(suggested_links_table),
+            [
+                {
+                    "local_track_id": 31,
+                    "streaming_track_id": 601,
+                    "match_method": "tag",
+                    "score": 0.61,
+                    "status": "pending",
+                },
+                {
+                    "local_track_id": 32,
+                    "streaming_track_id": 602,
+                    "match_method": "tag",
+                    "score": 0.62,
+                    "status": "pending",
+                },
+                {
+                    "local_track_id": 32,
+                    "streaming_track_id": 603,
+                    "match_method": "manual_break",
+                    "score": 0.0,
+                    "status": "rejected",
+                },
+                {
+                    "local_track_id": 32,
+                    "streaming_track_id": 604,
+                    "match_method": "isrc",
+                    "score": 1.0,
+                    "status": "approved",
+                },
+                {
+                    "local_track_id": 34,
+                    "streaming_track_id": 605,
+                    "match_method": "tag",
+                    "score": 0.65,
+                    "status": "pending",
+                },
+            ],
+        )
+        connection.execute(
+            insert(final_links_table).values(
+                local_track_id=34,
+                streaming_track_id=605,
+            )
+        )
+
+    seen: dict[str, object] = {}
+
+    class FakeMatchingEnqueuer:
+        def __init__(self, redis_url: str) -> None:
+            seen["redis_url"] = redis_url
+            seen["enqueued"] = []
+
+        def queued_or_started_local_track_ids(
+            self,
+            local_track_ids: list[int],
+        ) -> set[int]:
+            seen["target_ids"] = local_track_ids
+            return {31}
+
+        def enqueue(self, local_track_id: int) -> str:
+            seen["enqueued"].append(local_track_id)
+            return f"match-job-{local_track_id}"
+
+    monkeypatch.setattr("app.matching.jobs.MatchingJobEnqueuer", FakeMatchingEnqueuer)
+
+    result = run_unresolved_local_tracks_rematch_backfill()
+
+    assert result == {
+        "statuses": ["unlinked", "pending"],
+        "target_count": 3,
+        "enqueued": {32: "match-job-32", 33: "match-job-33"},
+        "skipped_existing": [31],
+    }
+    assert seen == {
+        "redis_url": "redis://redis:6379/10",
+        "target_ids": [31, 32, 33],
+        "enqueued": [32, 33],
+    }
+
+    with engine.connect() as connection:
+        suggestions = (
+            connection.execute(
+                select(
+                    suggested_links_table.c.local_track_id,
+                    suggested_links_table.c.streaming_track_id,
+                    suggested_links_table.c.status,
+                ).order_by(
+                    suggested_links_table.c.local_track_id.asc(),
+                    suggested_links_table.c.streaming_track_id.asc(),
+                )
+            )
+            .mappings()
+            .all()
+        )
+
+    assert [dict(row) for row in suggestions] == [
+        {
+            "local_track_id": 31,
+            "streaming_track_id": 601,
+            "status": "pending",
+        },
+        {
+            "local_track_id": 32,
+            "streaming_track_id": 603,
+            "status": "rejected",
+        },
+        {
+            "local_track_id": 32,
+            "streaming_track_id": 604,
+            "status": "approved",
+        },
+        {
+            "local_track_id": 34,
+            "streaming_track_id": 605,
+            "status": "pending",
+        },
+    ]
 
 
 def test_local_track_detail_endpoint_returns_combined_track_context(

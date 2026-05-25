@@ -1254,9 +1254,14 @@ def test_streaming_account_store_marks_auth_errors_without_crashing(
         fake_from_browser_auth,
     )
 
-    synced = store.sync_youtube_music_account(account_id=account.id)
+    after_success_calls: list[str] = []
+    synced = store.sync_youtube_music_account(
+        account_id=account.id,
+        after_success=lambda: after_success_calls.append("backfill"),
+    )
 
     assert synced == []
+    assert after_success_calls == []
 
     persisted = store.list_accounts()[0]
     assert persisted.auth_state == "error"
@@ -1361,26 +1366,118 @@ def test_streaming_account_store_clears_auth_errors_after_successful_sync(
     assert persisted.auth_error_at is None
 
 
+def test_streaming_account_store_runs_account_after_success_after_relationships(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite:///{tmp_path / 'streaming-account-after-success.db'}"
+    engine = create_engine(database_url)
+    _create_streaming_schema(engine)
+    monkeypatch.setenv("TOKEN_ENCRYPTION_KEY", Fernet.generate_key().decode("utf-8"))
+
+    store = StreamingAccountStore(database_url)
+    account = store.create_youtube_music_account(
+        display_name="Listener",
+        browser_headers={"refresh_token": "refresh-token"},
+    )
+    events: list[str] = []
+
+    def fake_generate_streaming_relationship_suggestions() -> None:
+        events.append("relationships")
+
+    store.generate_streaming_relationship_suggestions = (
+        fake_generate_streaming_relationship_suggestions
+    )
+
+    class FakeAdapter:
+        def list_library_playlists(self):
+            return [YouTubeMusicPlaylist(provider_playlist_id="PL9", title="Gym")]
+
+        def list_playlist_tracks(self, playlist_id, *, limit=100):
+            assert limit is None
+            return []
+
+    monkeypatch.setattr(
+        "app.streaming.store.YouTubeMusicAdapter.from_browser_auth",
+        lambda auth, *, user=None, language="en", location="": FakeAdapter(),
+    )
+
+    synced = store.sync_youtube_music_account(
+        account_id=account.id,
+        after_success=lambda: events.append("backfill"),
+    )
+
+    assert synced == []
+    assert events == ["relationships", "backfill"]
+
+
 def test_run_youtube_music_sync_job_uses_database(
     monkeypatch,
 ) -> None:
     monkeypatch.setenv("DATABASE_URL", "sqlite:///worker.db")
+    monkeypatch.setenv("REDIS_URL", "redis://redis:6379/0")
     seen: dict[str, object] = {}
 
     class FakeStore:
         def __init__(self, database_url: str) -> None:
             seen["database_url"] = database_url
 
-        def sync_youtube_music_account(self, *, account_id) -> list[object]:
+        def sync_youtube_music_account(
+            self, *, account_id, after_success
+        ) -> list[object]:
             seen["account_id"] = account_id
+            after_success()
+            return []
+
+    class FakeBackfillEnqueuer:
+        def __init__(self, redis_url: str) -> None:
+            seen["redis_url"] = redis_url
+
+        def enqueue(self) -> str:
+            seen["backfill_enqueued"] = True
+            return "local-rematch-backfill-123"
+
+    monkeypatch.setattr("app.streaming.jobs.StreamingAccountStore", FakeStore)
+    monkeypatch.setattr(
+        "app.matching.jobs.LocalTrackRematchBackfillJobEnqueuer",
+        FakeBackfillEnqueuer,
+    )
+
+    run_youtube_music_sync_job(7)
+
+    assert seen["database_url"] == "sqlite:///worker.db"
+    assert seen["account_id"] == 7
+    assert seen["redis_url"] == "redis://redis:6379/0"
+    assert seen["backfill_enqueued"] is True
+
+
+def test_run_youtube_music_sync_job_does_not_enqueue_backfill_when_sync_fails(
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("DATABASE_URL", "sqlite:///worker.db")
+    monkeypatch.delenv("REDIS_URL", raising=False)
+    seen: dict[str, object] = {}
+
+    class FakeStore:
+        def __init__(self, database_url: str) -> None:
+            seen["database_url"] = database_url
+
+        def sync_youtube_music_account(
+            self, *, account_id, after_success
+        ) -> list[object]:
+            seen["account_id"] = account_id
+            seen["after_success_callable"] = callable(after_success)
             return []
 
     monkeypatch.setattr("app.streaming.jobs.StreamingAccountStore", FakeStore)
 
     run_youtube_music_sync_job(7)
 
-    assert seen["database_url"] == "sqlite:///worker.db"
-    assert seen["account_id"] == 7
+    assert seen == {
+        "database_url": "sqlite:///worker.db",
+        "account_id": 7,
+        "after_success_callable": True,
+    }
 
 
 def test_run_youtube_music_playlist_metadata_refresh_job_uses_database(

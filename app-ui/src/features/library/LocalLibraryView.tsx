@@ -13,7 +13,7 @@ import { formatDuration } from "../../lib/formatters";
 import { settleInChunks } from "../../lib/settleInChunks";
 import { useDelayedInvalidate } from "../../lib/useDelayedInvalidate";
 import { controlClasses, surfaceClasses, textClasses } from "../../styles/componentClasses";
-import { rematchLocalTrack } from "../localTracks/queries";
+import { rematchLocalTrack, useRematchUnresolvedLocalTracksMutation } from "../localTracks/queries";
 import { TrackDetailDrawer } from "../tracks/TrackDetailDrawer";
 import { deleteFinalLink } from "../playlists/queries";
 import {
@@ -86,17 +86,22 @@ function LibraryFilterBar({
   disabled = false,
   linkStatusFilter,
   onLinkStatusFilterChange,
+  onRematchUnresolved,
   onResetFilters,
+  rematchUnresolvedBusy = false,
   stats,
 }: {
   disabled?: boolean;
   linkStatusFilter: LibraryLinkStatusFilter;
   onLinkStatusFilterChange: (value: LibraryLinkStatusFilter) => void;
+  onRematchUnresolved: () => void;
   onResetFilters: () => void;
+  rematchUnresolvedBusy?: boolean;
   stats: LibraryStats;
 }) {
   const hasActiveFilters = linkStatusFilter !== "all";
   const linkStatusFilters = buildLinkStatusFilters(stats);
+  const unresolvedCount = stats.pending + stats.unlinked;
 
   return (
     <section
@@ -122,15 +127,25 @@ function LibraryFilterBar({
           </div>
         </div>
       </div>
-      <ActionButton
-        aria-label="Reset library filters"
-        className={`${controlClasses.actionButtonCompact} inline-flex items-center gap-1.5`}
-        disabled={disabled || !hasActiveFilters}
-        onClick={onResetFilters}
-      >
-        <RotateCcw aria-hidden="true" className="h-3.5 w-3.5" strokeWidth={1.9} />
-        Reset
-      </ActionButton>
+      <div className="flex flex-wrap items-center justify-end gap-2">
+        <ActionButton
+          className={`${controlClasses.actionButtonCompact} inline-flex items-center gap-1.5`}
+          disabled={disabled || unresolvedCount === 0 || rematchUnresolvedBusy}
+          onClick={onRematchUnresolved}
+        >
+          <RotateCcw aria-hidden="true" className="h-3.5 w-3.5" strokeWidth={1.9} />
+          {rematchUnresolvedBusy ? "Queueing..." : "Re-match all unresolved"}
+        </ActionButton>
+        <ActionButton
+          aria-label="Reset library filters"
+          className={`${controlClasses.actionButtonCompact} inline-flex items-center gap-1.5`}
+          disabled={disabled || !hasActiveFilters}
+          onClick={onResetFilters}
+        >
+          <RotateCcw aria-hidden="true" className="h-3.5 w-3.5" strokeWidth={1.9} />
+          Reset
+        </ActionButton>
+      </div>
     </section>
   );
 }
@@ -151,6 +166,7 @@ export function LocalLibraryView({ isPending = false, state, tracksResponse }: L
   const [bulkStatus, setBulkStatus] = useState<BulkLibraryStatus | null>(null);
   const [isBulkRematching, setIsBulkRematching] = useState(false);
   const [isBulkUnlinking, setIsBulkUnlinking] = useState(false);
+  const rematchUnresolvedMutation = useRematchUnresolvedLocalTracksMutation();
   const libraryTracksQuery = useLibraryTracksQuery({ enabled: tracksResponse === undefined });
   const queryTracks = useMemo(
     () => libraryTracksQuery.data?.pages.flatMap((page) => page.tracks) ?? emptyLibraryTracks,
@@ -181,7 +197,8 @@ export function LocalLibraryView({ isPending = false, state, tracksResponse }: L
     [selectedTracks],
   );
   const controlsDisabled = resolvedState !== "ready" || isPending;
-  const isBulkBusy = isBulkRematching || isBulkUnlinking;
+  const unresolvedCount = stats.pending + stats.unlinked;
+  const isBulkBusy = isBulkRematching || isBulkUnlinking || rematchUnresolvedMutation.isPending;
   const openTrackDetail = useCallback(
     (track: LibraryTrack) => {
       const nextParams = new URLSearchParams(searchParams);
@@ -266,6 +283,32 @@ export function LocalLibraryView({ isPending = false, state, tracksResponse }: L
     delayedInvalidate(libraryLinkMutationInvalidationKeys());
   }
 
+  async function handleRematchUnresolved() {
+    if (unresolvedCount === 0 || controlsDisabled || rematchUnresolvedMutation.isPending) {
+      return;
+    }
+
+    setBulkStatus(null);
+
+    try {
+      await rematchUnresolvedMutation.mutateAsync();
+      await invalidateLibraryTables();
+      scheduleRematchRefresh();
+      setRowSelection({});
+      setBulkStatus({
+        body: "Pending and unlinked local tracks were queued for re-matching.",
+        status: "success",
+        title: "Unresolved re-match queued",
+      });
+    } catch {
+      setBulkStatus({
+        body: "Pending and unlinked local tracks could not be queued for re-matching.",
+        status: "error",
+        title: "Unresolved re-match failed",
+      });
+    }
+  }
+
   async function handleBulkRematch() {
     const rematchableTracks = selectedRematchableTracks.filter((track) => track.link_status !== "linked");
 
@@ -337,10 +380,12 @@ export function LocalLibraryView({ isPending = false, state, tracksResponse }: L
 
       <section className="flex min-h-0 flex-1 flex-col gap-4">
         <LibraryFilterBar
-          disabled={controlsDisabled}
+          disabled={controlsDisabled || isBulkBusy}
           linkStatusFilter={activeLinkStatusFilter}
           onLinkStatusFilterChange={handleLinkStatusFilterChange}
+          onRematchUnresolved={handleRematchUnresolved}
           onResetFilters={resetFilters}
+          rematchUnresolvedBusy={rematchUnresolvedMutation.isPending}
           stats={stats}
         />
 

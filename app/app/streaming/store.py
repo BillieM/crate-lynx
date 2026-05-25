@@ -892,6 +892,7 @@ class StreamingAccountStore:
         self,
         *,
         account_id: int,
+        after_success: Callable[[], object] | None = None,
     ) -> list[PlaylistMembershipRecord]:
         return self._run_youtube_music_sync(
             account_id=account_id,
@@ -900,7 +901,10 @@ class StreamingAccountStore:
                 adapter=adapter,
                 playlist_store=self,
             ),
-            after_success=self.generate_streaming_relationship_suggestions,
+            after_success=_compose_after_success(
+                self.generate_streaming_relationship_suggestions,
+                after_success,
+            ),
         )
 
     def sync_youtube_music_playlist(
@@ -935,8 +939,12 @@ class StreamingAccountStore:
         self,
         *,
         account_id: int,
+        after_success: Callable[[], object] | None = None,
     ) -> list[PlaylistMembershipRecord]:
-        return self.sync_youtube_music_playlist_tracks(account_id=account_id)
+        return self.sync_youtube_music_playlist_tracks(
+            account_id=account_id,
+            after_success=after_success,
+        )
 
     def generate_streaming_relationship_suggestions(
         self,
@@ -975,6 +983,17 @@ def _format_auth_error(error: Exception) -> str:
     if not message:
         return "Authentication with YouTube Music failed."
     return f"YouTube Music authentication failed: {message}"
+
+
+def _compose_after_success(
+    *callbacks: Callable[[], object] | None,
+) -> Callable[[], None]:
+    def run_callbacks() -> None:
+        for callback in callbacks:
+            if callback is not None:
+                callback()
+
+    return run_callbacks
 
 
 def _streaming_account_record(row) -> StreamingAccountRecord:

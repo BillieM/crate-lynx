@@ -3,7 +3,12 @@ from __future__ import annotations
 import logging
 
 from app.matching.isrc import IsrcMatcher
-from app.matching.jobs import MatchingJobEnqueuer, run_matching_pipeline
+from app.matching.jobs import (
+    LocalTrackRematchBackfillJobEnqueuer,
+    MatchingJobEnqueuer,
+    run_matching_pipeline,
+    run_unresolved_local_tracks_rematch_backfill,
+)
 from app.matching.models import ConfidenceBand, MatchResult
 from app.matching.pipeline import (
     MatchingPipeline,
@@ -20,6 +25,7 @@ logger = logging.getLogger(__name__)
 __all__ = [
     "ConfidenceBand",
     "IsrcMatcher",
+    "LocalTrackRematchBackfillJobEnqueuer",
     "MatchResult",
     "MatchingJobEnqueuer",
     "MatchingPipeline",
@@ -27,5 +33,6 @@ __all__ = [
     "TagMatcher",
     "fetch_suggested_links",
     "run_matching_pipeline",
+    "run_unresolved_local_tracks_rematch_backfill",
     "suggested_links_table",
 ]

@@ -478,6 +478,22 @@ class LocalTrackStore:
         file_path = row["file_path"]
         return file_path if isinstance(file_path, str) else None
 
+    def list_unresolved_local_track_ids(self) -> list[int]:
+        query = (
+            select(local_tracks_table.c.id)
+            .select_from(
+                local_tracks_table.outerjoin(
+                    final_links_view,
+                    final_links_view.c.local_track_id == local_tracks_table.c.id,
+                )
+            )
+            .where(final_links_view.c.id.is_(None))
+            .order_by(local_tracks_table.c.id.asc())
+        )
+
+        with self._engine.connect() as connection:
+            return [int(local_track_id) for local_track_id in connection.scalars(query)]
+
     def search(
         self, *, query: str = "", limit: int = 20
     ) -> list[LocalTrackSearchResultRecord]:

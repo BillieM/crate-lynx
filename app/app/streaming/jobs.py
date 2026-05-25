@@ -8,14 +8,25 @@ from app.streaming.store import StreamingAccountStore
 def run_youtube_music_sync_job(
     account_id: int,
 ) -> None:
+    from app.matching.jobs import LocalTrackRematchBackfillJobEnqueuer
+
     database_url = os.environ.get("DATABASE_URL")
     if not database_url:
         raise RuntimeError(
             "DATABASE_URL must be configured for YouTube Music sync jobs"
         )
 
+    def enqueue_local_rematch_backfill() -> None:
+        redis_url = os.environ.get("REDIS_URL")
+        if not redis_url:
+            raise RuntimeError(
+                "REDIS_URL must be configured for YouTube Music sync jobs"
+            )
+        LocalTrackRematchBackfillJobEnqueuer(redis_url).enqueue()
+
     StreamingAccountStore(database_url).sync_youtube_music_account(
-        account_id=account_id
+        account_id=account_id,
+        after_success=enqueue_local_rematch_backfill,
     )
 
 

@@ -196,6 +196,45 @@ const conflictingRelatedSuggestion: StreamingRelationshipSuggestion = {
   },
 };
 
+const conflictingFinalLinksDifferentSuggestion: StreamingRelationshipSuggestion = {
+  ...conflictingEquivalentSuggestion,
+  id: 95,
+  first_link: {
+    ...conflictingEquivalentSuggestion.first_link!,
+    final_link_id: 7101,
+    local_file_path: "Frame Delay/Resolved Night Runner.flac",
+    local_title: "Resolved Night Runner",
+    local_track_id: 601,
+  },
+  second_link: {
+    ...conflictingEquivalentSuggestion.second_link!,
+    final_link_id: 7102,
+    local_file_path: "Frame Delay/Resolved Night Runner Alt.flac",
+    local_title: "Resolved Night Runner Alt",
+    local_track_id: 602,
+  },
+  conflict: {
+    ...conflictingEquivalentSuggestion.conflict!,
+    final_links: [
+      {
+        ...conflictingEquivalentSuggestion.conflict!.final_links[0],
+        final_link_id: 7201,
+        local_file_path: "Frame Delay/Conflict Winner A.flac",
+        local_title: "Conflict Winner A",
+        local_track_id: 701,
+      },
+      {
+        ...conflictingEquivalentSuggestion.conflict!.final_links[1],
+        final_link_id: 7202,
+        local_file_path: "Frame Delay/Conflict Winner B.flac",
+        local_title: "Conflict Winner B",
+        local_track_id: 702,
+      },
+    ],
+    local_track_ids: [701, 702],
+  },
+};
+
 const relationshipSuggestionsResponse: StreamingRelationshipSuggestionsResponse = {
   limit: 50,
   next_cursor: null,
@@ -527,6 +566,8 @@ describe("StreamingRelationshipsView", () => {
 
     expect(within(conflictRow).getByText("Choose winning local link")).toBeInTheDocument();
     expect(within(relatedRow).queryByText("Choose winning local link")).not.toBeInTheDocument();
+    expect(within(conflictRow).getByRole("button", { name: "Play Listen to Night Runner.flac" })).toBeInTheDocument();
+    expect(within(conflictRow).getByRole("button", { name: "Play Listen to Night Runner Alt.flac" })).toBeInTheDocument();
 
     const alternateWinner = within(conflictRow).getByRole("radio", { name: /Night Runner Alt\.flac/ });
     fireEvent.click(alternateWinner);
@@ -554,6 +595,36 @@ describe("StreamingRelationshipsView", () => {
         suggestion_id: 93,
       }),
     );
+  });
+
+  it("uses conflict final links for inspection audio when they differ from the resolved track links", async () => {
+    mockRelationshipFetch({
+      response: {
+        limit: 50,
+        next_cursor: null,
+        returned_count: 1,
+        suggestions: [conflictingFinalLinksDifferentSuggestion],
+        total_count: 1,
+      },
+    });
+
+    renderStreamingRelationshipsView();
+
+    const conflictRow = await screen.findByRole("listitem", {
+      name: "Suggestion 95: Night Runner to Night Runner",
+    });
+
+    expect(within(conflictRow).getByRole("button", { name: "Play Listen to Conflict Winner A.flac" })).toBeInTheDocument();
+    expect(within(conflictRow).getByRole("button", { name: "Play Listen to Conflict Winner B.flac" })).toBeInTheDocument();
+
+    fireEvent.click(within(conflictRow).getByRole("button", { name: "Inspect suggestion 95" }));
+
+    expect(within(conflictRow).getAllByRole("button", { name: "Play Listen to Conflict Winner A.flac" })).toHaveLength(2);
+    expect(within(conflictRow).getAllByRole("button", { name: "Play Listen to Conflict Winner B.flac" })).toHaveLength(2);
+    expect(within(conflictRow).queryByRole("button", { name: "Play Listen to Resolved Night Runner.flac" })).not.toBeInTheDocument();
+    expect(
+      within(conflictRow).queryByRole("button", { name: "Play Listen to Resolved Night Runner Alt.flac" }),
+    ).not.toBeInTheDocument();
   });
 
   it("does not send a conflict winner when the chosen action is related", async () => {

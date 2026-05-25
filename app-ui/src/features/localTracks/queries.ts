@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 
 import { endpoints, fetchJson, postJson } from "../../lib/api";
 
@@ -40,6 +40,11 @@ export type RematchLocalTrackResponse = {
   local_track_id: number;
 };
 
+export type RematchUnresolvedLocalTracksResponse = {
+  job_id: string;
+  statuses: ["unlinked", "pending"];
+};
+
 export type RescuedLocalTrack = {
   beets_id: number | null;
   file_path: string;
@@ -63,6 +68,18 @@ export async function rematchLocalTrack(localTrackId: number | string): Promise<
       errorMessage: "Re-match request failed",
     },
   );
+}
+
+export async function rematchUnresolvedLocalTracks(): Promise<RematchUnresolvedLocalTracksResponse> {
+  return postJson<RematchUnresolvedLocalTracksResponse>(endpoints.api("/local-tracks/rematch-unresolved"), {
+    errorMessage: "Unresolved re-match request failed",
+  });
+}
+
+export function useRematchUnresolvedLocalTracksMutation() {
+  return useMutation({
+    mutationFn: rematchUnresolvedLocalTracks,
+  });
 }
 
 export async function rescueLocalTrackMetadata(localTrackId: number | string): Promise<RescuedLocalTrack> {
