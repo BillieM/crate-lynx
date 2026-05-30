@@ -10,6 +10,7 @@ from app.ingestion.failures import failed_ingestion_attempts_table
 from app.ingestion.pipeline import SUPPORTED_AUDIO_EXTENSIONS
 from app.links.store import final_links_table
 from app.local_tracks.store import local_tracks_table
+from app.soulseek.models import MissingTrackSoulseekSummary
 from app.streaming.models import (
     PLAYLIST_SYNC_MODE_FULL,
     playlist_membership_table,
@@ -29,6 +30,7 @@ class MissingLocallyTrackRecord:
     playlist_count: int
     playlist_ids: list[int]
     playlist_titles: list[str]
+    soulseek_acquisition: MissingTrackSoulseekSummary | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -56,6 +58,7 @@ class _MissingLocallyAccumulator:
     artist: str
     album: str | None
     duration_ms: int | None
+    soulseek_acquisition: MissingTrackSoulseekSummary | None = None
     playlist_titles_by_id: dict[int, str] = field(default_factory=dict)
 
     def to_record(self) -> MissingLocallyTrackRecord:
@@ -69,6 +72,7 @@ class _MissingLocallyAccumulator:
             playlist_count=len(self.playlist_titles_by_id),
             playlist_ids=list(self.playlist_titles_by_id.keys()),
             playlist_titles=list(self.playlist_titles_by_id.values()),
+            soulseek_acquisition=self.soulseek_acquisition,
         )
 
 
@@ -135,6 +139,16 @@ class MaintenanceStore:
                     track.playlist_titles_by_id[row["playlist_id"]] = row[
                         "playlist_title"
                     ]
+
+        from app.soulseek.store import SoulseekStore
+
+        soulseek_summaries = SoulseekStore(
+            engine=self._engine
+        ).latest_summaries_for_tracks(tracks_by_id.keys())
+        for track_id, summary in soulseek_summaries.items():
+            track = tracks_by_id.get(track_id)
+            if track is not None:
+                track.soulseek_acquisition = summary
 
         return [track.to_record() for track in tracks_by_id.values()]
 

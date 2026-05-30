@@ -101,7 +101,7 @@ describe("MissingLocallyView", () => {
     expect(within(trackList).getByText("Jon Hopkins")).toBeInTheDocument();
     expect(within(trackList).getByText("Immunity")).toBeInTheDocument();
     expect(within(trackList).getByTitle("Late Night Drive")).toHaveTextContent("1 playlist");
-    expect(within(trackList).getByText("ytm:VLPL_missing_018")).toBeInTheDocument();
+    expect(within(trackList).queryByText("ytm:VLPL_missing_018")).not.toBeInTheDocument();
     expect(within(trackList).getByTitle("2 playlists: Focus Queue, Late Night Drive")).toHaveTextContent("2 playlists");
     expect(within(trackList).queryByText("High gap")).not.toBeInTheDocument();
     expect(within(trackList).queryByText("Streaming only")).not.toBeInTheDocument();
@@ -147,6 +147,90 @@ describe("MissingLocallyView", () => {
     expect(fetchMock.mock.calls.filter(([url]) => String(url).includes("/api/streaming/playlists/11/sync"))).toHaveLength(1);
     expect(await screen.findByText("Playlist sync queued")).toBeInTheDocument();
     expect(screen.getByText("3 playlists were queued for sync.")).toBeInTheDocument();
+  });
+
+  it("queues a Soulseek search for a missing row", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async (url, init) => {
+      if (url === "/api/maintenance/missing-locally") {
+        return {
+          ok: true,
+          json: async () => missingLocallyResponse,
+        } as Response;
+      }
+
+      if (url === "/api/soulseek/missing-tracks/5001/search" && init?.method === "POST") {
+        return {
+          ok: true,
+          json: async () => ({
+            acquisition: {
+              candidate_count: 0,
+              enqueue_job_id: null,
+              error_detail: null,
+              id: "acq-1",
+              job_id: "soulseek-job-1",
+              refresh_job_id: null,
+              selected_candidate_id: null,
+              slskd_batch_id: null,
+              status: "searching",
+            },
+            job_id: "soulseek-job-1",
+          }),
+        } as Response;
+      }
+
+      throw new Error(`Unexpected request: ${String(url)}`);
+    });
+
+    renderWithQueryClient(<MissingLocallyView />);
+
+    const trackList = screen.getByRole("region", { name: "Missing local tracks" });
+    await within(trackList).findByText("Open Eye Signal");
+
+    fireEvent.click(screen.getByRole("button", { name: "Search Soulseek for Open Eye Signal" }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith("/api/soulseek/missing-tracks/5001/search", { method: "POST" });
+    });
+    expect(await screen.findByText("Soulseek search queued")).toBeInTheDocument();
+    expect(screen.getByText("Open Eye Signal was queued for Soulseek search.")).toBeInTheDocument();
+  });
+
+  it("shows candidate status without opening row-level candidate approval", async () => {
+    const responseWithCandidates: MissingLocallyResponse = {
+      tracks: [
+        {
+          ...missingLocallyResponse.tracks[0],
+          soulseek_acquisition: {
+            candidate_count: 1,
+            enqueue_job_id: null,
+            error_detail: null,
+            id: "acq-1",
+            job_id: "search-job-1",
+            refresh_job_id: null,
+            selected_candidate_id: null,
+            slskd_batch_id: null,
+            status: "candidates_found",
+          },
+        },
+      ],
+    };
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (url) => {
+      if (url === "/api/maintenance/missing-locally") {
+        return {
+          ok: true,
+          json: async () => responseWithCandidates,
+        } as Response;
+      }
+
+      throw new Error(`Unexpected request: ${String(url)}`);
+    });
+
+    renderWithQueryClient(<MissingLocallyView />);
+
+    await screen.findByText("Open Eye Signal");
+    expect(screen.getByText("Review")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "View Soulseek candidates for Open Eye Signal" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("dialog", { name: /Soulseek candidates/i })).not.toBeInTheDocument();
   });
 
   it("renders a pending status while missing-local matching is running", () => {

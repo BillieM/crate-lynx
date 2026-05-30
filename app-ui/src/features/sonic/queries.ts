@@ -1,7 +1,7 @@
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { z } from "zod";
 
-import { endpoints, fetchJson, postJson } from "../../lib/api";
+import { deleteJson, endpoints, fetchJson, postJson } from "../../lib/api";
 import type { components } from "../../lib/api-types";
 
 type ApiSchemas = components["schemas"];
@@ -59,6 +59,7 @@ const playlistGenerationRunSchema: z.ZodType<PlaylistGenerationRun> = z.object({
   created_at: dateStringSchema,
   error_detail: nullableStringSchema,
   generation_config: z.record(z.string(), z.unknown()),
+  generation_number: z.number(),
   id: z.number(),
   playlist_count: z.number(),
   source_filter: z.record(z.string(), z.unknown()),
@@ -158,6 +159,12 @@ export async function fetchSonicRunDetail(runId: number | string): Promise<Playl
   return fetchJson(endpoints.api(`/sonic/runs/${runId}`), sonicRunDetailResponseSchema);
 }
 
+export async function deletePlaylistGenerationRun(runId: number | string): Promise<void> {
+  await deleteJson<void>(endpoints.api(`/sonic/runs/${encodeURIComponent(String(runId))}`), {
+    errorMessage: "Playlist generation run delete request failed",
+  });
+}
+
 export async function fetchGeneratedPlaylists(): Promise<GeneratedPlaylistListResponse> {
   return fetchJson(endpoints.api("/sonic/generated-playlists"), generatedPlaylistsResponseSchema);
 }
@@ -203,6 +210,21 @@ export function useSonicRunDetailQuery(runId: number | string | null) {
     enabled: runId !== null,
     refetchInterval: (query) =>
       isGenerationRunActive(query.state.data?.run) ? generationRunPollingIntervalMs : false,
+  });
+}
+
+export function useDeletePlaylistGenerationRunMutation() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: deletePlaylistGenerationRun,
+    onSuccess: async (_data, runId) => {
+      queryClient.removeQueries({ queryKey: sonicQueryKeys.run(runId) });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: sonicQueryKeys.runs() }),
+        queryClient.invalidateQueries({ queryKey: sonicQueryKeys.generatedPlaylists() }),
+      ]);
+    },
   });
 }
 

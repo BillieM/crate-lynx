@@ -246,6 +246,7 @@ class IngestionProcessor:
                     beets_id=imported_track.beets_id,
                 )
                 prepared.local_track_id = persisted.id
+                self._mark_soulseek_acquisition_ingested(prepared)
             if (
                 self.matching_job_enqueuer is not None
                 and prepared.local_track_id is not None
@@ -285,6 +286,7 @@ class IngestionProcessor:
                         prepared.local_track_id if prepared is not None else None
                     ),
                 )
+            self._mark_soulseek_acquisition_failed(source_path, exc)
             raise
 
     def _normalize_import_permissions(self, library_path: Path) -> None:
@@ -329,6 +331,56 @@ class IngestionProcessor:
             upsert_item(pg_conn, item_row)
             if album_row is not None:
                 upsert_album(pg_conn, album_row)
+
+    def _mark_soulseek_acquisition_ingested(self, prepared: PreparedTrack) -> None:
+        if self.database_engine is None or prepared.local_track_id is None:
+            return
+
+        try:
+            from app.soulseek.store import SoulseekStore
+
+            result = SoulseekStore(
+                engine=self.database_engine
+            ).mark_ingested_and_auto_link_from_source_path(
+                local_track_id=prepared.local_track_id,
+                source_path=str(prepared.source_path),
+            )
+            if result is not None and result.affected_playlist_ids:
+                redis_url = os.environ.get("REDIS_URL")
+                if redis_url:
+                    from app.m3u.jobs import M3uRegenerationJobEnqueuer
+
+                    M3uRegenerationJobEnqueuer(redis_url).enqueue_playlists(
+                        result.affected_playlist_ids
+                    )
+        except Exception:
+            logger.warning(
+                "Failed to mark Soulseek acquisition ingested for source_path=%s",
+                prepared.source_path,
+                exc_info=True,
+            )
+
+    def _mark_soulseek_acquisition_failed(
+        self,
+        source_path: Path | str,
+        exc: Exception,
+    ) -> None:
+        if self.database_engine is None:
+            return
+
+        try:
+            from app.soulseek.store import SoulseekStore
+
+            SoulseekStore(engine=self.database_engine).mark_failed_from_source_path(
+                error_detail=str(exc),
+                source_path=str(source_path),
+            )
+        except Exception:
+            logger.warning(
+                "Failed to mark Soulseek acquisition failed for source_path=%s",
+                source_path,
+                exc_info=True,
+            )
 
     def _cleanup_source(self, source_path: Path) -> None:
         if source_path.exists():

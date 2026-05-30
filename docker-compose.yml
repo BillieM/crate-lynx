@@ -49,16 +49,28 @@ services:
       REDIS_URL: redis://redis:6379/0
       TOKEN_ENCRYPTION_KEY: ${TOKEN_ENCRYPTION_KEY:?set TOKEN_ENCRYPTION_KEY in .env with a Fernet key}
       LIBRARY_ROOT: ${LIBRARY_ROOT:-/nas/media/music}
+      LOCAL_DEDUPE_QUARANTINE_ROOT: ${LOCAL_DEDUPE_QUARANTINE_ROOT:-/nas/cratelynx/dedupe-quarantine}
       BEETS_LIBRARY: ${BEETS_LIBRARY:-/data/beets/library.db}
       CRATE_LYNX_STAGING_DIR: ${CRATE_LYNX_STAGING_DIR:-/nas/cratelynx/staging}
       INGESTION_ROOT: ${INGESTION_ROOT:-/nas/cratelynx/music-in}
       M3U_OUTPUT_DIR: ${M3U_OUTPUT_DIR:-/data/m3u}
+      SLSKD_BASE_URL: ${SLSKD_BASE_URL:-}
+      SLSKD_API_KEY: ${SLSKD_API_KEY:-}
+      SLSKD_VERIFY_SSL: ${SLSKD_VERIFY_SSL:-true}
+      SLSKD_SEARCH_POLL_TIMEOUT_SECONDS: ${SLSKD_SEARCH_POLL_TIMEOUT_SECONDS:-30}
+      SLSKD_SEARCH_POLL_INTERVAL_SECONDS: ${SLSKD_SEARCH_POLL_INTERVAL_SECONDS:-2}
+      SLSKD_WEBHOOK_TOKEN: ${SLSKD_WEBHOOK_TOKEN:-}
+      SLSKD_DOWNLOADS_CONTAINER_ROOT: ${SLSKD_DOWNLOADS_CONTAINER_ROOT:-/data/soulseek/downloads}
+      SLSKD_DOWNLOADS_APP_ROOT: ${SLSKD_DOWNLOADS_APP_ROOT:-/nas/soulseek/downloads}
     ports:
       - "18101:8000"
     volumes:
       # Keep /nas paths in sync with DEFAULT_INGEST_FOLDER_PATHS in app/app/settings/models.py.
       - ${NAS_DATA_HOST_PATH:-/mnt/nas_data}:/nas
       - ${APP_DATA_HOST_PATH:-/docker/appdata/cratelynx}/app:/data
+    networks:
+      - default
+      - music
     healthcheck:
       test:
         - CMD
@@ -98,3 +110,6 @@ services:
 networks:
   cratelynx:
     name: cratelynx
+  music:
+    name: music
+    external: true

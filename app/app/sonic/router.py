@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy.engine import Engine
 
 from app.core.db import get_engine
@@ -24,7 +24,11 @@ from app.sonic.schemas import (
     SonicGenerationPreviewResponse,
 )
 from app.sonic.profiles import resolve_feature_profile_from_config
-from app.sonic.store import SonicStore
+from app.sonic.store import (
+    PlaylistGenerationRunActiveError,
+    PlaylistGenerationRunNotFoundError,
+    SonicStore,
+)
 
 
 def create_router(
@@ -167,6 +171,25 @@ def create_router(
             ],
         )
 
+    @router.delete("/sonic/runs/{run_id}", status_code=204)
+    def delete_generation_run(
+        run_id: int,
+        engine: Engine = Depends(get_engine),
+    ) -> Response:
+        try:
+            _store(engine).delete_generation_run(run_id)
+        except PlaylistGenerationRunNotFoundError as exc:
+            raise HTTPException(
+                status_code=404, detail="Generation run not found"
+            ) from exc
+        except PlaylistGenerationRunActiveError as exc:
+            raise HTTPException(
+                status_code=409,
+                detail="Active generation runs cannot be deleted",
+            ) from exc
+
+        return Response(status_code=204)
+
     @router.get(
         "/sonic/generated-playlists",
         response_model=GeneratedPlaylistListResponse,
@@ -216,6 +239,7 @@ def create_router(
 def _run_response(run) -> PlaylistGenerationRunResponse:
     return PlaylistGenerationRunResponse(
         id=run.id,
+        generation_number=run.generation_number,
         status=run.status,
         source_filter=run.source_filter_json,
         generation_config=run.generation_config_json,

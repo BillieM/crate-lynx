@@ -37,11 +37,21 @@ class InvalidM3uExportPathFormatError(ValueError):
 
 
 @dataclass(frozen=True, slots=True)
+class M3uPlaylistExportEntry:
+    artist: str
+    title: str
+    album: str | None
+    duration_ms: int | None
+    local_path: str
+
+
+@dataclass(frozen=True, slots=True)
 class M3uPlaylistExport:
     content: str
     exported_track_count: int
     skipped_track_count: int
     sample_path: str | None
+    entries: tuple[M3uPlaylistExportEntry, ...]
 
 
 def get_m3u_output_dir() -> Path:
@@ -77,6 +87,7 @@ def build_m3u_playlist_export(
     query = (
         select(
             streaming_tracks_table.c.id.label("streaming_track_id"),
+            streaming_tracks_table.c.album,
             streaming_tracks_table.c.artist,
             streaming_tracks_table.c.title,
             streaming_tracks_table.c.duration_ms,
@@ -135,6 +146,7 @@ def build_m3u_playlist_export(
         export_rows.append(
             {
                 "artist": row["artist"],
+                "album": row["album"],
                 "title": row["title"],
                 "duration_ms": row["duration_ms"],
                 "local_path": local_path,
@@ -168,6 +180,7 @@ def build_generated_m3u_playlist_export(
             local_tracks_table.c.library_root_rel_path,
             beets_items_table.c.title,
             beets_items_table.c.artist,
+            beets_items_table.c.album,
             beets_items_table.c.length,
         )
         .select_from(
@@ -194,6 +207,7 @@ def build_generated_m3u_playlist_export(
         [
             {
                 "artist": row["artist"] or "Unknown artist",
+                "album": row["album"],
                 "title": row["title"] or Path(row["library_root_rel_path"]).stem,
                 "duration_ms": (
                     int(float(row["length"]) * 1000)
@@ -221,6 +235,7 @@ def _render_m3u_export_rows(
     exported_track_count = 0
     skipped_track_count = 0
     sample_path = None
+    entries: list[M3uPlaylistExportEntry] = []
     for row in rows:
         if row is None:
             skipped_track_count += 1
@@ -233,6 +248,17 @@ def _render_m3u_export_rows(
         rendered_path = format_m3u_entry_path(resolved_path, path_format)
         sample_path = sample_path or rendered_path
         exported_track_count += 1
+        entries.append(
+            M3uPlaylistExportEntry(
+                album=str(row["album"]) if row.get("album") is not None else None,
+                artist=str(row["artist"]),
+                duration_ms=(
+                    row["duration_ms"] if isinstance(row["duration_ms"], int) else None
+                ),
+                local_path=str(row["local_path"]),
+                title=str(row["title"]),
+            )
+        )
         if include_extinf:
             lines.append(f"#EXTINF:{duration_seconds},{row['artist']} - {row['title']}")
         lines.append(rendered_path)
@@ -242,6 +268,7 @@ def _render_m3u_export_rows(
         exported_track_count=exported_track_count,
         skipped_track_count=skipped_track_count,
         sample_path=sample_path,
+        entries=tuple(entries),
     )
 
 

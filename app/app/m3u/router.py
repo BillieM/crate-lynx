@@ -10,8 +10,10 @@ from app.m3u.exporter import (
     InvalidM3uExportFormatError,
     M3uExportPackage,
     M3uExportPlaylistNotFoundError,
+    build_full_rekordbox_xml_export_package,
     build_m3u_export_package,
     build_m3u_export_zip,
+    build_rekordbox_xml,
 )
 from app.m3u.generator import InvalidM3uExportPathFormatError
 from app.m3u.schemas import (
@@ -189,6 +191,72 @@ def create_router(
             },
         )
 
+    @router.post("/m3u/export/rekordbox-xml")
+    def export_rekordbox_xml(
+        payload: M3uExportRequest,
+        engine: Engine = Depends(get_engine),
+    ) -> Response:
+        try:
+            export_package = _build_export_package(
+                payload,
+                engine=_engine(engine),
+                persist_initial_profile=True,
+            )
+        except M3uExportProfileNotFoundError as exc:
+            raise HTTPException(
+                status_code=404, detail="Export profile not found"
+            ) from exc
+        except M3uExportPlaylistNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except InvalidM3uExportFormatError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except InvalidM3uExportPathFormatError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except InvalidM3uExportLibraryPathError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+        return Response(
+            content=build_rekordbox_xml(export_package),
+            media_type="application/xml",
+            headers={
+                "Content-Disposition": 'attachment; filename="rekordbox.xml"',
+            },
+        )
+
+    @router.post("/m3u/export/rekordbox-xml/full")
+    def export_full_rekordbox_xml(
+        payload: M3uExportRequest,
+        engine: Engine = Depends(get_engine),
+    ) -> Response:
+        try:
+            resolved_engine = _engine(engine)
+            library_path = _resolve_library_path(
+                payload,
+                engine=resolved_engine,
+                persist_initial_profile=True,
+            )
+            export_package = build_full_rekordbox_xml_export_package(
+                engine=resolved_engine,
+                library_path=library_path,
+                path_format=payload.path_format,
+            )
+        except M3uExportProfileNotFoundError as exc:
+            raise HTTPException(
+                status_code=404, detail="Export profile not found"
+            ) from exc
+        except InvalidM3uExportPathFormatError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except InvalidM3uExportLibraryPathError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+        return Response(
+            content=build_rekordbox_xml(export_package),
+            media_type="application/xml",
+            headers={
+                "Content-Disposition": 'attachment; filename="crate-lynx-rekordbox.xml"',
+            },
+        )
+
     return router
 
 
@@ -198,6 +266,29 @@ def _build_export_package(
     engine: Engine,
     persist_initial_profile: bool,
 ) -> M3uExportPackage:
+    library_path = _resolve_library_path(
+        payload,
+        engine=engine,
+        persist_initial_profile=persist_initial_profile,
+    )
+
+    return build_m3u_export_package(
+        engine=engine,
+        formats=payload.formats,
+        generated_playlist_ids=payload.generated_playlist_ids,
+        generated_run_ids=payload.generated_run_ids,
+        library_path=library_path,
+        path_format=payload.path_format,
+        playlist_ids=payload.playlist_ids,
+    )
+
+
+def _resolve_library_path(
+    payload: M3uExportRequest,
+    *,
+    engine: Engine,
+    persist_initial_profile: bool,
+) -> str:
     store = M3uExportProfileStore(engine=engine)
     should_persist_initial_profile = False
     if payload.profile_id is not None:
@@ -212,18 +303,10 @@ def _build_export_package(
         if persist_initial_profile:
             should_persist_initial_profile = True
 
-    export_package = build_m3u_export_package(
-        engine=engine,
-        formats=payload.formats,
-        generated_playlist_ids=payload.generated_playlist_ids,
-        library_path=library_path,
-        path_format=payload.path_format,
-        playlist_ids=payload.playlist_ids,
-    )
     if should_persist_initial_profile:
         store.create_default_profile_if_none(library_path=library_path)
 
-    return export_package
+    return library_path
 
 
 def _serialize_profile(profile: object) -> M3uExportProfileResponse:
@@ -247,11 +330,15 @@ def _serialize_preview(export_package: M3uExportPackage) -> M3uExportPreviewResp
             M3uExportPlaylistPreviewResponse(
                 playlist_id=playlist.playlist_id,
                 generated_playlist_id=playlist.generated_playlist_id,
+                generated_run_id=playlist.generated_run_id,
                 source=playlist.source,
                 title=playlist.title,
                 filename_m3u=playlist.filename_m3u,
                 filename_m3u8=playlist.filename_m3u8,
                 filenames=playlist.filenames(export_package.formats),
+                archive_path_m3u=playlist.archive_path_m3u,
+                archive_path_m3u8=playlist.archive_path_m3u8,
+                archive_paths=playlist.archive_paths(export_package.formats),
                 exported_track_count=playlist.rendered.exported_track_count,
                 skipped_track_count=playlist.rendered.skipped_track_count,
                 sample_path=playlist.rendered.sample_path,

@@ -56,6 +56,10 @@ class PlaylistGenerationRunNotFoundError(ValueError):
     pass
 
 
+class PlaylistGenerationRunActiveError(ValueError):
+    pass
+
+
 class GeneratedPlaylistNotFoundError(ValueError):
     pass
 
@@ -623,26 +627,24 @@ class SonicStore:
                 )
             )
             run_id = result.inserted_primary_key[0]
-            row = (
-                connection.execute(
-                    select(playlist_generation_runs_table).where(
-                        playlist_generation_runs_table.c.id == run_id
-                    )
-                )
-                .mappings()
-                .one()
-            )
 
-        return _run_record(row)
+        run = self.get_generation_run(run_id)
+        if run is None:
+            raise PlaylistGenerationRunNotFoundError(str(run_id))
+        return run
 
     def list_generation_runs(
         self, *, limit: int = 50
     ) -> list[PlaylistGenerationRunRecord]:
+        numbered_runs = _numbered_generation_runs_query()
         with self._engine.connect() as connection:
             rows = (
                 connection.execute(
-                    select(playlist_generation_runs_table)
-                    .order_by(playlist_generation_runs_table.c.created_at.desc())
+                    select(numbered_runs)
+                    .order_by(
+                        numbered_runs.c.created_at.desc(),
+                        numbered_runs.c.id.desc(),
+                    )
                     .limit(limit)
                 )
                 .mappings()
@@ -652,18 +654,61 @@ class SonicStore:
         return [_run_record(row) for row in rows]
 
     def get_generation_run(self, run_id: int) -> PlaylistGenerationRunRecord | None:
+        numbered_runs = _numbered_generation_runs_query()
         with self._engine.connect() as connection:
             row = (
                 connection.execute(
-                    select(playlist_generation_runs_table).where(
-                        playlist_generation_runs_table.c.id == run_id
-                    )
+                    select(numbered_runs).where(numbered_runs.c.id == run_id)
                 )
                 .mappings()
                 .one_or_none()
             )
 
         return _run_record(row) if row is not None else None
+
+    def delete_generation_run(self, run_id: int) -> None:
+        with self._engine.begin() as connection:
+            row = (
+                connection.execute(
+                    select(
+                        playlist_generation_runs_table.c.id,
+                        playlist_generation_runs_table.c.status,
+                    ).where(playlist_generation_runs_table.c.id == run_id)
+                )
+                .mappings()
+                .one_or_none()
+            )
+            if row is None:
+                raise PlaylistGenerationRunNotFoundError(str(run_id))
+
+            if row["status"] in (
+                PLAYLIST_GENERATION_STATUS_PENDING,
+                PLAYLIST_GENERATION_STATUS_RUNNING,
+            ):
+                raise PlaylistGenerationRunActiveError(str(run_id))
+
+            generated_playlist_ids = select(generated_playlists_table.c.id).where(
+                generated_playlists_table.c.run_id == run_id
+            )
+            connection.execute(
+                delete(generated_playlist_tracks_table).where(
+                    generated_playlist_tracks_table.c.generated_playlist_id.in_(
+                        generated_playlist_ids
+                    )
+                )
+            )
+            connection.execute(
+                delete(generated_playlists_table).where(
+                    generated_playlists_table.c.run_id == run_id
+                )
+            )
+            result = connection.execute(
+                delete(playlist_generation_runs_table).where(
+                    playlist_generation_runs_table.c.id == run_id
+                )
+            )
+            if result.rowcount == 0:
+                raise PlaylistGenerationRunNotFoundError(str(run_id))
 
     def mark_generation_run_running(self, run_id: int) -> None:
         self._update_run(
@@ -1106,9 +1151,32 @@ def _feature_record(row: Any) -> SonicTrackFeatureRecord:
     )
 
 
+def _numbered_generation_runs_query():
+    generation_number = func.row_number().over(
+        order_by=(
+            playlist_generation_runs_table.c.created_at.asc(),
+            playlist_generation_runs_table.c.id.asc(),
+        )
+    )
+    return select(
+        playlist_generation_runs_table.c.id,
+        playlist_generation_runs_table.c.status,
+        playlist_generation_runs_table.c.source_filter_json,
+        playlist_generation_runs_table.c.generation_config_json,
+        playlist_generation_runs_table.c.playlist_count,
+        playlist_generation_runs_table.c.track_count,
+        playlist_generation_runs_table.c.error_detail,
+        playlist_generation_runs_table.c.completed_at,
+        playlist_generation_runs_table.c.created_at,
+        playlist_generation_runs_table.c.updated_at,
+        generation_number.label("generation_number"),
+    ).subquery()
+
+
 def _run_record(row: Any) -> PlaylistGenerationRunRecord:
     return PlaylistGenerationRunRecord(
         id=row["id"],
+        generation_number=int(row["generation_number"]),
         status=row["status"],
         source_filter_json=dict(row["source_filter_json"] or {}),
         generation_config_json=dict(row["generation_config_json"] or {}),

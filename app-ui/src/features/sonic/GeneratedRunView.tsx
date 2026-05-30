@@ -1,17 +1,20 @@
 import { createColumnHelper, type SortingState } from "@tanstack/react-table";
-import { FileDown, ListTree, Music2 } from "lucide-react";
+import { FileDown, ListTree, Music2, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ActionButton } from "../../components/ActionButton";
 import { DataTable } from "../../components/DataTable";
 import { EmptyStateCard } from "../../components/EmptyStateCard";
 import { Pill } from "../../components/Pill";
+import { StatusMessage } from "../../components/StatusMessage";
 import { formatDuration } from "../../lib/formatters";
 import { controlClasses, layoutClasses, surfaceClasses, textClasses } from "../../styles/componentClasses";
 import type { PillTone } from "../../styles/toneClasses";
 import {
   type GeneratedPlaylist,
   type GeneratedPlaylistTrack,
+  type PlaylistGenerationRun,
+  useDeletePlaylistGenerationRunMutation,
   useGeneratedPlaylistTracksQuery,
   useSonicRunDetailQuery,
 } from "./queries";
@@ -133,6 +136,125 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+function stringValue(record: Record<string, unknown>, key: string) {
+  const value = record[key];
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function displayConfigValue(config: Record<string, unknown>, key: string) {
+  const value = config[key];
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value.toLocaleString();
+  }
+  if (typeof value === "string" && value.trim()) {
+    return value.trim();
+  }
+  return "Unknown";
+}
+
+function methodLabel(method: string | null) {
+  if (method === "dj_hierarchical_v1") {
+    return "DJ hierarchical";
+  }
+  if (method === "agglomerative") {
+    return "Agglomerative";
+  }
+  if (method === "kmeans") {
+    return "K-means";
+  }
+  return method ?? "Unknown";
+}
+
+function profileLabel(profile: string | null) {
+  if (profile === "energy_v1") {
+    return "Energy";
+  }
+  if (profile === "texture_v1") {
+    return "Texture";
+  }
+  if (profile === "harmony_v1") {
+    return "Harmony";
+  }
+  if (profile === "balanced_v1") {
+    return "Balanced";
+  }
+  return profile ?? "Unknown";
+}
+
+function sourceTypeLabel(sourceType: string | null) {
+  if (sourceType === "streaming_playlists") {
+    return "Streaming playlists";
+  }
+  if (sourceType === "all_local") {
+    return "All local tracks";
+  }
+  return sourceType ?? "Unknown";
+}
+
+function tagFilterLabel(filter: unknown) {
+  if (!isRecord(filter)) {
+    return null;
+  }
+
+  const key = stringValue(filter, "key");
+  const value = stringValue(filter, "value");
+  if (!key || !value) {
+    return null;
+  }
+
+  const scope = stringValue(filter, "scope") === "item_field" ? "Field" : "Attribute";
+  const match = stringValue(filter, "match") === "equals" ? "equals" : "contains";
+  return `${scope} ${key} ${match} ${value}`;
+}
+
+function sourceFilterDetails(sourceFilter: Record<string, unknown>) {
+  const details: { label: string; value: string }[] = [];
+  const playlistIds = Array.isArray(sourceFilter.streaming_playlist_ids)
+    ? sourceFilter.streaming_playlist_ids.filter((value): value is number => typeof value === "number")
+    : [];
+  const tagFilters = Array.isArray(sourceFilter.tag_filters)
+    ? sourceFilter.tag_filters.map(tagFilterLabel).filter((value): value is string => value !== null)
+    : [];
+
+  if (playlistIds.length > 0) {
+    details.push({ label: "Playlist IDs", value: playlistIds.map((playlistId) => playlistId.toLocaleString()).join(", ") });
+  }
+  if (tagFilters.length > 0) {
+    details.push({ label: "Filters", value: tagFilters.join("; ") });
+  }
+
+  return details;
+}
+
+function RunMetadata({ run }: { run: PlaylistGenerationRun }) {
+  const config = run.generation_config;
+  const sourceFilter = run.source_filter;
+  const metadata = [
+    { label: "Method", value: methodLabel(stringValue(config, "clustering_method")) },
+    { label: "Profile", value: profileLabel(stringValue(config, "feature_profile")) },
+    { label: "Leaf size", value: displayConfigValue(config, "target_playlist_size") },
+    { label: "Min size", value: displayConfigValue(config, "min_playlist_size") },
+    { label: "Depth", value: displayConfigValue(config, "max_depth") },
+    { label: "Children", value: displayConfigValue(config, "max_children") },
+    { label: "Seed", value: displayConfigValue(config, "random_seed") },
+    { label: "Source", value: sourceTypeLabel(stringValue(sourceFilter, "source_type")) },
+    ...sourceFilterDetails(sourceFilter),
+  ];
+
+  return (
+    <section className="mt-3 grid gap-2 border-t border-ctp-surface1 pt-3" aria-label="Generation metadata">
+      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+        {metadata.map((item) => (
+          <div className="min-w-0 rounded-[8px] border border-ctp-surface1 bg-ctp-surface0/45 px-3 py-2" key={item.label}>
+            <p className={textClasses.caption}>{item.label}</p>
+            <p className="mt-0.5 truncate text-[13px] font-semibold text-ctp-text">{item.value}</p>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function PlaylistTreeGuides({
   ancestorLastFlags,
   isLastSibling,
@@ -168,9 +290,11 @@ function PlaylistTreeGuides({
 export function GeneratedRunView({ runId }: { runId: number }) {
   const navigate = useNavigate();
   const runQuery = useSonicRunDetailQuery(runId);
+  const deleteRunMutation = useDeletePlaylistGenerationRunMutation();
   const playlists = runQuery.data?.playlists ?? emptyGeneratedPlaylists;
   const playlistRows = useMemo(() => buildPlaylistRows(playlists), [playlists]);
   const [selectedPlaylistId, setSelectedPlaylistId] = useState<number | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const [trackSorting, setTrackSorting] = useState<SortingState>([]);
   const tracksQuery = useGeneratedPlaylistTracksQuery(selectedPlaylistId);
   const trackColumns = useMemo(
@@ -243,6 +367,10 @@ export function GeneratedRunView({ runId }: { runId: number }) {
     setSelectedPlaylistId(playlistRows[0].id);
   }, [playlistRows, selectedPlaylistId]);
 
+  useEffect(() => {
+    setConfirmDelete(false);
+  }, [runId]);
+
   if (runQuery.isPending) {
     return <EmptyStateCard body="Loading generated run..." className={layoutClasses.emptyStateNarrow} title="Loading run" />;
   }
@@ -257,6 +385,17 @@ export function GeneratedRunView({ runId }: { runId: number }) {
   const run = runQuery.data.run;
   const showProgress = isRunInProgress(run.status);
   const progressLabel = getProgressLabel(run.status);
+  const canDeleteRun = run.status === "completed" || run.status === "failed";
+
+  function handleDeleteRun() {
+    if (!canDeleteRun || deleteRunMutation.isPending) {
+      return;
+    }
+
+    deleteRunMutation.mutate(run.id, {
+      onSuccess: () => navigate("/playlist-generator"),
+    });
+  }
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-hidden">
@@ -264,19 +403,28 @@ export function GeneratedRunView({ runId }: { runId: number }) {
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
-              <h2 className={textClasses.sectionTitle}>Run #{run.id}</h2>
+              <h2 className={textClasses.sectionTitle}>Generation {run.generation_number}</h2>
               <Pill tone={runStatusTone(run.status)}>{run.status}</Pill>
             </div>
             <p className={`mt-1 ${textClasses.bodyMuted}`}>
-              {run.playlist_count.toLocaleString()} playlists · {run.track_count.toLocaleString()} tracks
+              Run ID {run.id.toLocaleString()} · {run.playlist_count.toLocaleString()} playlists ·{" "}
+              {run.track_count.toLocaleString()} tracks
             </p>
           </div>
-          {selectedPlaylist ? (
-            <ActionButton onClick={() => navigate(`/playlists/export?generated_playlist=${selectedPlaylist.id}`)} type="button">
-              <FileDown aria-hidden="true" className="h-3.5 w-3.5" strokeWidth={1.9} />
-              Export
-            </ActionButton>
-          ) : null}
+          <div className="flex flex-wrap items-center gap-2">
+            {playlists.length > 0 ? (
+              <ActionButton onClick={() => navigate(`/playlists/export?generated_run=${run.id}`)} type="button">
+                <FileDown aria-hidden="true" className="h-3.5 w-3.5" strokeWidth={1.9} />
+                Export run
+              </ActionButton>
+            ) : null}
+            {canDeleteRun ? (
+              <ActionButton disabled={deleteRunMutation.isPending} onClick={() => setConfirmDelete(true)} tone="danger" type="button">
+                <Trash2 aria-hidden="true" className="h-3.5 w-3.5" strokeWidth={1.9} />
+                Delete
+              </ActionButton>
+            ) : null}
+          </div>
         </div>
 
         {showProgress ? (
@@ -295,7 +443,30 @@ export function GeneratedRunView({ runId }: { runId: number }) {
             </div>
           </div>
         ) : null}
+
+        <RunMetadata run={run} />
       </section>
+
+      {confirmDelete ? (
+        <section className={`${surfaceClasses.compactCard} border-ctp-red/40`} aria-label="Delete generation confirmation">
+          <p className={textClasses.label}>Delete generation {run.generation_number}</p>
+          <p className={`mt-1 ${textClasses.bodyMuted}`}>
+            Generated playlists and generated playlist tracks for run ID {run.id.toLocaleString()} will be removed.
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <ActionButton disabled={deleteRunMutation.isPending} onClick={handleDeleteRun} tone="danger" type="button">
+              {deleteRunMutation.isPending ? "Deleting..." : "Confirm delete"}
+            </ActionButton>
+            <ActionButton disabled={deleteRunMutation.isPending} onClick={() => setConfirmDelete(false)} type="button">
+              Cancel
+            </ActionButton>
+          </div>
+        </section>
+      ) : null}
+
+      {deleteRunMutation.isError ? (
+        <StatusMessage body="The generation could not be deleted." status="error" title="Delete failed" />
+      ) : null}
 
       {run.error_detail ? (
         <section className={`${surfaceClasses.compactCard} border-ctp-red/40`}>

@@ -6,7 +6,7 @@ from types import SimpleNamespace
 
 from fastapi import HTTPException
 import pytest
-from sqlalchemy import create_engine, select
+from sqlalchemy import create_engine, insert, select
 
 from app.ingestion.beets_mirror import metadata as beets_metadata
 from app.local_tracks.store import metadata as local_tracks_metadata
@@ -15,11 +15,15 @@ from app.sonic.jobs import (
     SONIC_FEATURE_RECONCILIATION_FUNC,
 )
 from app.sonic.models import (
+    PLAYLIST_GENERATION_STATUS_COMPLETED,
     PLAYLIST_GENERATION_STATUS_FAILED,
+    PLAYLIST_GENERATION_STATUS_PENDING,
     SONIC_ANALYZER_LIBROSA_V1,
     SONIC_FEATURE_STATUS_FAILED,
     SONIC_FEATURE_STATUS_PENDING,
     SONIC_FEATURE_STATUS_READY,
+    generated_playlist_tracks_table,
+    generated_playlists_table,
     metadata as sonic_metadata,
     playlist_generation_runs_table,
     sonic_track_features_table,
@@ -212,6 +216,117 @@ def test_create_generation_run_endpoint_persists_and_enqueues(
         "balanced_v1"
     )
     assert seen == {"redis_url": "redis://example/0", "run_id": response.run.id}
+
+
+def test_list_generation_runs_uses_retained_run_ordinal_for_generation_number(
+    tmp_path: Path,
+) -> None:
+    engine = _create_engine(tmp_path / "sonic-run-numbering.db")
+    factory = TestDataFactory(engine)
+    for _ in range(18):
+        factory.playlist_generation_run(status=PLAYLIST_GENERATION_STATUS_COMPLETED)
+    with engine.begin() as connection:
+        connection.execute(
+            insert(playlist_generation_runs_table).values(
+                id=50,
+                generation_config_json={"clustering_method": "kmeans"},
+                playlist_count=43,
+                source_filter_json={"source_type": "all_local"},
+                status=PLAYLIST_GENERATION_STATUS_COMPLETED,
+                track_count=1361,
+            )
+        )
+
+    router = create_router(require_redis_url=lambda: "redis://example/0")
+    response = _call_endpoint(
+        _route(router, "GET", "/sonic/runs").endpoint,
+        engine=engine,
+    )
+
+    newest_run = response.runs[0]
+    assert newest_run.id == 50
+    assert newest_run.generation_number == 19
+
+
+def test_delete_generation_run_endpoint_removes_generated_tree(
+    tmp_path: Path,
+) -> None:
+    engine = _create_engine(tmp_path / "sonic-delete-run.db")
+    factory = TestDataFactory(engine)
+    run_id = factory.playlist_generation_run(
+        playlist_count=2,
+        status=PLAYLIST_GENERATION_STATUS_COMPLETED,
+        track_count=2,
+    )
+    first_track_id = factory.local_track(file_path="A/First.mp3")
+    second_track_id = factory.local_track(file_path="A/Second.mp3")
+    root_playlist_id = factory.generated_playlist(run_id=run_id, track_count=2)
+    child_playlist_id = factory.generated_playlist(
+        depth=1,
+        name="Child",
+        parent_playlist_id=root_playlist_id,
+        position=1,
+        run_id=run_id,
+        track_count=1,
+    )
+    factory.generated_playlist_track(
+        generated_playlist_id=root_playlist_id,
+        local_track_id=first_track_id,
+    )
+    factory.generated_playlist_track(
+        generated_playlist_id=child_playlist_id,
+        local_track_id=second_track_id,
+    )
+
+    router = create_router(require_redis_url=lambda: "redis://example/0")
+    response = _call_endpoint(
+        _route(router, "DELETE", "/sonic/runs/{run_id}").endpoint,
+        run_id,
+        engine=engine,
+    )
+
+    assert response.status_code == 204
+    with engine.connect() as connection:
+        assert connection.execute(select(playlist_generation_runs_table)).all() == []
+        assert connection.execute(select(generated_playlists_table)).all() == []
+        assert connection.execute(select(generated_playlist_tracks_table)).all() == []
+
+
+def test_delete_generation_run_endpoint_returns_404_for_missing_run(
+    tmp_path: Path,
+) -> None:
+    engine = _create_engine(tmp_path / "sonic-delete-run-missing.db")
+    router = create_router(require_redis_url=lambda: "redis://example/0")
+
+    with pytest.raises(HTTPException) as exc_info:
+        _call_endpoint(
+            _route(router, "DELETE", "/sonic/runs/{run_id}").endpoint,
+            404,
+            engine=engine,
+        )
+
+    assert exc_info.value.status_code == 404
+    assert exc_info.value.detail == "Generation run not found"
+
+
+def test_delete_generation_run_endpoint_blocks_active_run(
+    tmp_path: Path,
+) -> None:
+    engine = _create_engine(tmp_path / "sonic-delete-run-active.db")
+    run_id = TestDataFactory(engine).playlist_generation_run(
+        status=PLAYLIST_GENERATION_STATUS_PENDING
+    )
+    router = create_router(require_redis_url=lambda: "redis://example/0")
+
+    with pytest.raises(HTTPException) as exc_info:
+        _call_endpoint(
+            _route(router, "DELETE", "/sonic/runs/{run_id}").endpoint,
+            run_id,
+            engine=engine,
+        )
+
+    assert exc_info.value.status_code == 409
+    assert exc_info.value.detail == "Active generation runs cannot be deleted"
 
 
 def test_create_generation_run_marks_run_failed_when_enqueue_fails(

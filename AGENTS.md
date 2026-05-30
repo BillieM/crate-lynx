@@ -20,6 +20,8 @@ pip install -r app/requirements.txt -r requirements-dev.txt
 
 At the end of every completed task, deploy to production using the `gluesoup-0-docker` Docker context. Follow `.codex/commands/deploy.md`.
 
+After a completed task is verified and deployed, commit the relevant changes unless the user explicitly asks not to commit.
+
 ## Linting & tests
 
 **Backend (`app/`)**

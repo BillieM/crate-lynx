@@ -1,5 +1,7 @@
 from pydantic import BaseModel
 
+from app.soulseek.schemas import SoulseekAcquisitionSummaryResponse
+
 
 class MissingLocallyTrackResponse(BaseModel):
     id: int
@@ -11,6 +13,7 @@ class MissingLocallyTrackResponse(BaseModel):
     playlist_count: int
     playlist_ids: list[int]
     playlist_titles: list[str]
+    soulseek_acquisition: SoulseekAcquisitionSummaryResponse | None = None
 
 
 class MissingLocallyResponse(BaseModel):

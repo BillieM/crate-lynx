@@ -18,6 +18,7 @@ export type MissingLocallyTrack = {
   playlist_ids: number[];
   playlist_titles: string[];
   provider_track_id: string;
+  soulseek_acquisition?: SoulseekAcquisitionSummary | null;
   title: string;
 };
 
@@ -63,6 +64,72 @@ export type UnidentifiedRestoreResponse = {
   source_path: string;
 };
 
+export type SoulseekAcquisitionSummary = {
+  candidate_count: number;
+  completed_source_path?: string | null;
+  enqueue_job_id: string | null;
+  error_detail: string | null;
+  final_link_id?: number | null;
+  id: string;
+  job_id: string | null;
+  link_error_detail?: string | null;
+  local_track_id?: number | null;
+  refresh_job_id: string | null;
+  selected_candidate_id: string | null;
+  slskd_batch_id: string | null;
+  slskd_completed_event_id?: string | null;
+  slskd_transfer_id?: string | null;
+  status: string;
+};
+
+export type SoulseekCandidate = {
+  acquisition_id: string;
+  bit_depth: number | null;
+  bit_rate: number | null;
+  created_at: string;
+  duration_seconds: number | null;
+  extension: string | null;
+  filename: string;
+  has_free_upload_slot: boolean;
+  id: string;
+  is_variable_bit_rate: boolean | null;
+  queue_length: number | null;
+  sample_rate: number | null;
+  score: number;
+  size: number;
+  slskd_search_id: string;
+  upload_speed: number | null;
+  username: string;
+};
+
+export type SoulseekCandidatesResponse = {
+  acquisition: SoulseekAcquisitionSummary;
+  candidates: SoulseekCandidate[];
+};
+
+export type SoulseekSearchResponse = {
+  acquisition: SoulseekAcquisitionSummary;
+  job_id: string;
+};
+
+export type SoulseekBulkSearchResponse = {
+  jobs: Array<{
+    acquisition: SoulseekAcquisitionSummary;
+    job_id: string;
+    streaming_track_id: number;
+  }>;
+};
+
+export type SoulseekEnqueueResponse = {
+  acquisition: SoulseekAcquisitionSummary;
+  job_id: string | null;
+};
+
+export type SoulseekRefreshResponse = {
+  acquisition: SoulseekAcquisitionSummary;
+  job_id: string;
+};
+
 export { rematchLocalTrack, rescueLocalTrackMetadata };
 export type { RematchLocalTrackResponse, RescuedLocalTrack };
 
@@ -73,6 +140,8 @@ export function getMaintenanceRequestStatus(error: unknown): number | null {
 export const maintenanceQueryKeys = {
   all: ["maintenance"] as const,
   missingLocally: () => ["maintenance", "missing-locally"] as const,
+  soulseekCandidates: (acquisitionId: number | string | null) =>
+    ["maintenance", "missing-locally", "soulseek", acquisitionId] as const,
   unidentified: () => ["maintenance", "unidentified"] as const,
 };
 
@@ -100,6 +169,40 @@ export async function fetchUnidentifiedTracks(): Promise<UnidentifiedResponse> {
   return fetchJson<UnidentifiedResponse>(endpoints.api("/maintenance/unidentified"));
 }
 
+export async function searchMissingTrack(streamingTrackId: number | string): Promise<SoulseekSearchResponse> {
+  return postJson<SoulseekSearchResponse>(
+    endpoints.api(`/soulseek/missing-tracks/${encodeURIComponent(String(streamingTrackId))}/search`),
+    { errorMessage: "Soulseek search request failed" },
+  );
+}
+
+export async function searchSelectedMissingTracks(streamingTrackIds: number[]): Promise<SoulseekBulkSearchResponse> {
+  return postJson<SoulseekBulkSearchResponse>(endpoints.api("/soulseek/missing-tracks/search-selected"), {
+    body: { streaming_track_ids: streamingTrackIds },
+    errorMessage: "Soulseek bulk search request failed",
+  });
+}
+
+export async function fetchSoulseekCandidates(acquisitionId: number | string): Promise<SoulseekCandidatesResponse> {
+  return fetchJson<SoulseekCandidatesResponse>(
+    endpoints.api(`/soulseek/acquisitions/${encodeURIComponent(String(acquisitionId))}/candidates`),
+  );
+}
+
+export async function enqueueSoulseekCandidate(candidateId: number | string): Promise<SoulseekEnqueueResponse> {
+  return postJson<SoulseekEnqueueResponse>(
+    endpoints.api(`/soulseek/candidates/${encodeURIComponent(String(candidateId))}/enqueue`),
+    { errorMessage: "Soulseek download request failed" },
+  );
+}
+
+export async function refreshSoulseekAcquisition(acquisitionId: number | string): Promise<SoulseekRefreshResponse> {
+  return postJson<SoulseekRefreshResponse>(
+    endpoints.api(`/soulseek/acquisitions/${encodeURIComponent(String(acquisitionId))}/refresh`),
+    { errorMessage: "Soulseek refresh request failed" },
+  );
+}
+
 export async function retryUnidentifiedTrack(attemptId: number | string): Promise<UnidentifiedRetryResponse> {
   return postJson<UnidentifiedRetryResponse>(
     endpoints.api(`/maintenance/unidentified/${encodeURIComponent(String(attemptId))}/retry`),
@@ -125,6 +228,14 @@ export function useMissingLocallyTracksQuery() {
   return useQuery({
     queryKey: maintenanceQueryKeys.missingLocally(),
     queryFn: fetchMissingLocallyTracks,
+  });
+}
+
+export function useSoulseekCandidatesQuery(acquisitionId: string | null, { enabled = true }: { enabled?: boolean } = {}) {
+  return useQuery({
+    enabled: enabled && acquisitionId !== null,
+    queryKey: maintenanceQueryKeys.soulseekCandidates(acquisitionId),
+    queryFn: () => fetchSoulseekCandidates(acquisitionId ?? ""),
   });
 }
 

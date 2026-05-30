@@ -635,6 +635,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/local-dedupe/queue": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Local Dedupe Queue */
+        get: operations["list_local_dedupe_queue_api_local_dedupe_queue_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/local-dedupe/groups/{group_key}/resolve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Resolve Local Dedupe Group */
+        post: operations["resolve_local_dedupe_group_api_local_dedupe_groups__group_key__resolve_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/local-dedupe/groups/{group_key}/dismiss": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Dismiss Local Dedupe Group */
+        post: operations["dismiss_local_dedupe_group_api_local_dedupe_groups__group_key__dismiss_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/m3u/export-profiles": {
         parameters: {
             query?: never;
@@ -699,6 +750,40 @@ export interface paths {
         put?: never;
         /** Export M3U Zip */
         post: operations["export_m3u_zip_api_m3u_export_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/m3u/export/rekordbox-xml": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Export Rekordbox Xml */
+        post: operations["export_rekordbox_xml_api_m3u_export_rekordbox_xml_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/m3u/export/rekordbox-xml/full": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Export Full Rekordbox Xml */
+        post: operations["export_full_rekordbox_xml_api_m3u_export_rekordbox_xml_full_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -785,7 +870,8 @@ export interface paths {
         get: operations["get_generation_run_api_sonic_runs__run_id__get"];
         put?: never;
         post?: never;
-        delete?: never;
+        /** Delete Generation Run */
+        delete: operations["delete_generation_run_api_sonic_runs__run_id__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -819,6 +905,176 @@ export interface paths {
         get: operations["list_generated_playlist_tracks_api_sonic_generated_playlists__generated_playlist_id__tracks_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/soulseek/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Soulseek Status */
+        get: operations["get_soulseek_status_api_soulseek_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/soulseek/missing-tracks/{streaming_track_id}/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Search Missing Track */
+        post: operations["search_missing_track_api_soulseek_missing_tracks__streaming_track_id__search_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/soulseek/missing-tracks/search-selected": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Search Selected Missing Tracks */
+        post: operations["search_selected_missing_tracks_api_soulseek_missing_tracks_search_selected_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/soulseek/queue": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Soulseek Queue */
+        get: operations["list_soulseek_queue_api_soulseek_queue_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/soulseek/acquisitions/{acquisition_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Acquisition Detail */
+        get: operations["get_acquisition_detail_api_soulseek_acquisitions__acquisition_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/soulseek/acquisitions/{acquisition_id}/candidates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Candidates */
+        get: operations["list_candidates_api_soulseek_acquisitions__acquisition_id__candidates_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/soulseek/candidates/{candidate_id}/enqueue": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Enqueue Candidate */
+        post: operations["enqueue_candidate_api_soulseek_candidates__candidate_id__enqueue_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/soulseek/candidates/{candidate_id}/approve-download": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Approve Candidate Download */
+        post: operations["approve_candidate_download_api_soulseek_candidates__candidate_id__approve_download_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/soulseek/acquisitions/{acquisition_id}/refresh": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Refresh Acquisition */
+        post: operations["refresh_acquisition_api_soulseek_acquisitions__acquisition_id__refresh_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/soulseek/slskd/download-complete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Receive Slskd Download Complete */
+        post: operations["receive_slskd_download_complete_api_soulseek_slskd_download_complete_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1145,6 +1401,103 @@ export interface components {
             /** Next Cursor */
             next_cursor: number | null;
         };
+        /** LocalDedupeDecisionResponse */
+        LocalDedupeDecisionResponse: {
+            /**
+             * Action
+             * @enum {string}
+             */
+            action: "resolved" | "dismissed";
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Group Key */
+            group_key: string;
+            /** Id */
+            id: number;
+            /** Keeper Local Track Id */
+            keeper_local_track_id: number | null;
+            /** Match Score */
+            match_score: number | null;
+            /** Quarantine Paths */
+            quarantine_paths: string[];
+            /** Quarantined Local Track Ids */
+            quarantined_local_track_ids: number[];
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "fingerprint_exact" | "fingerprint_similar" | "isrc" | "metadata";
+            /** Track Ids */
+            track_ids: number[];
+        };
+        /** LocalDedupeGroupResponse */
+        LocalDedupeGroupResponse: {
+            /** Group Key */
+            group_key: string;
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "fingerprint_exact" | "fingerprint_similar" | "isrc" | "metadata";
+            /** Match Score */
+            match_score: number;
+            /** Tracks */
+            tracks: components["schemas"]["LocalDedupeTrackResponse"][];
+        };
+        /** LocalDedupeQueueResponse */
+        LocalDedupeQueueResponse: {
+            /** Groups */
+            groups: components["schemas"]["LocalDedupeGroupResponse"][];
+            /** Total Count */
+            total_count: number;
+        };
+        /** LocalDedupeResolveResponse */
+        LocalDedupeResolveResponse: {
+            decision: components["schemas"]["LocalDedupeDecisionResponse"];
+            /** Affected Playlist Ids */
+            affected_playlist_ids: number[];
+        };
+        /** LocalDedupeTrackResponse */
+        LocalDedupeTrackResponse: {
+            /** Id */
+            id: number;
+            /** Album */
+            album: string | null;
+            /** Artist */
+            artist: string | null;
+            /** Beets Id */
+            beets_id: number | null;
+            /** Bitdepth */
+            bitdepth: number | null;
+            /** Bitrate */
+            bitrate: number | null;
+            /** Duration Ms */
+            duration_ms: number | null;
+            /** File Path */
+            file_path: string;
+            /** Final Link Id */
+            final_link_id: number | null;
+            /** Fingerprint */
+            fingerprint: string | null;
+            /** Format */
+            format: string | null;
+            /** Isrc */
+            isrc: string | null;
+            /** Library Root Rel Path */
+            library_root_rel_path: string;
+            /**
+             * Link Status
+             * @enum {string}
+             */
+            link_status: "linked" | "pending" | "unlinked";
+            /** Samplerate */
+            samplerate: number | null;
+            /** Title */
+            title: string | null;
+        };
         /** LocalTrackDetailResponse */
         LocalTrackDetailResponse: {
             /** Id */
@@ -1263,6 +1616,8 @@ export interface components {
             playlist_id: number | null;
             /** Generated Playlist Id */
             generated_playlist_id: number | null;
+            /** Generated Run Id */
+            generated_run_id: number | null;
             /** Source */
             source: string;
             /** Title */
@@ -1273,6 +1628,12 @@ export interface components {
             filename_m3u8: string;
             /** Filenames */
             filenames: string[];
+            /** Archive Path M3U */
+            archive_path_m3u: string;
+            /** Archive Path M3U8 */
+            archive_path_m3u8: string;
+            /** Archive Paths */
+            archive_paths: string[];
             /** Exported Track Count */
             exported_track_count: number;
             /** Skipped Track Count */
@@ -1322,6 +1683,8 @@ export interface components {
             playlist_ids?: number[];
             /** Generated Playlist Ids */
             generated_playlist_ids?: number[];
+            /** Generated Run Ids */
+            generated_run_ids?: number[];
             /** Formats */
             formats?: ("m3u" | "m3u8")[];
             /**
@@ -1367,6 +1730,7 @@ export interface components {
             playlist_ids: number[];
             /** Playlist Titles */
             playlist_titles: string[];
+            soulseek_acquisition?: components["schemas"]["SoulseekAcquisitionSummaryResponse"] | null;
         };
         /** PlaylistDetail */
         PlaylistDetail: {
@@ -1463,6 +1827,8 @@ export interface components {
         PlaylistGenerationRunResponse: {
             /** Id */
             id: number;
+            /** Generation Number */
+            generation_number: number;
             /** Status */
             status: string;
             /** Source Filter */
@@ -1595,6 +1961,38 @@ export interface components {
             /** Statuses */
             statuses: ("unlinked" | "pending")[];
         };
+        /** ResolveLocalDedupeGroupRequest */
+        ResolveLocalDedupeGroupRequest: {
+            /** Keeper Local Track Id */
+            keeper_local_track_id: number;
+        };
+        /** SlskdDownloadCompleteWebhook */
+        SlskdDownloadCompleteWebhook: {
+            /** Id */
+            id: string;
+            /** Type */
+            type: string;
+            /** Version */
+            version?: number | null;
+            /** Localfilename */
+            localFilename: string;
+            /** Remotefilename */
+            remoteFilename?: string | null;
+            transfer: components["schemas"]["SlskdTransferEventPayload"];
+        };
+        /** SlskdTransferEventPayload */
+        SlskdTransferEventPayload: {
+            /** Id */
+            id: string;
+            /** Username */
+            username?: string | null;
+            /** Filename */
+            filename?: string | null;
+            /** Size */
+            size?: number | null;
+            /** State */
+            state?: string | string[] | null;
+        };
         /** SonicBackfillRequest */
         SonicBackfillRequest: {
             /**
@@ -1677,6 +2075,235 @@ export interface components {
              * @enum {string}
              */
             match: "equals" | "contains";
+        };
+        /** SoulseekAcquisitionDetailResponse */
+        SoulseekAcquisitionDetailResponse: {
+            /** Id */
+            id: string;
+            /** Status */
+            status: string;
+            /** Candidate Count */
+            candidate_count: number;
+            /** Selected Candidate Id */
+            selected_candidate_id: string | null;
+            /** Slskd Batch Id */
+            slskd_batch_id: string | null;
+            /** Slskd Transfer Id */
+            slskd_transfer_id?: string | null;
+            /** Completed Source Path */
+            completed_source_path?: string | null;
+            /** Slskd Completed Event Id */
+            slskd_completed_event_id?: string | null;
+            /** Job Id */
+            job_id: string | null;
+            /** Enqueue Job Id */
+            enqueue_job_id: string | null;
+            /** Refresh Job Id */
+            refresh_job_id: string | null;
+            /** Local Track Id */
+            local_track_id?: number | null;
+            /** Final Link Id */
+            final_link_id?: number | null;
+            /** Error Detail */
+            error_detail: string | null;
+            /** Link Error Detail */
+            link_error_detail?: string | null;
+            /** Streaming Track Id */
+            streaming_track_id: number;
+            /** Search Text */
+            search_text: string | null;
+            /** Fallback Search Text */
+            fallback_search_text: string | null;
+            /** Slskd Search Id */
+            slskd_search_id: string | null;
+            /** Slskd Fallback Search Id */
+            slskd_fallback_search_id: string | null;
+            /** Destination */
+            destination: string | null;
+            /** Searched At */
+            searched_at: string | null;
+            /** Queued At */
+            queued_at: string | null;
+            /** Completed At */
+            completed_at: string | null;
+            /** Ingested At */
+            ingested_at: string | null;
+            /** Proposal Available At */
+            proposal_available_at: string | null;
+            /** Linked At */
+            linked_at: string | null;
+            /** Failed At */
+            failed_at: string | null;
+            /** Created At */
+            created_at: string;
+            /** Updated At */
+            updated_at: string;
+        };
+        /** SoulseekAcquisitionSummaryResponse */
+        SoulseekAcquisitionSummaryResponse: {
+            /** Id */
+            id: string;
+            /** Status */
+            status: string;
+            /** Candidate Count */
+            candidate_count: number;
+            /** Selected Candidate Id */
+            selected_candidate_id: string | null;
+            /** Slskd Batch Id */
+            slskd_batch_id: string | null;
+            /** Slskd Transfer Id */
+            slskd_transfer_id?: string | null;
+            /** Completed Source Path */
+            completed_source_path?: string | null;
+            /** Slskd Completed Event Id */
+            slskd_completed_event_id?: string | null;
+            /** Job Id */
+            job_id: string | null;
+            /** Enqueue Job Id */
+            enqueue_job_id: string | null;
+            /** Refresh Job Id */
+            refresh_job_id: string | null;
+            /** Local Track Id */
+            local_track_id?: number | null;
+            /** Final Link Id */
+            final_link_id?: number | null;
+            /** Error Detail */
+            error_detail: string | null;
+            /** Link Error Detail */
+            link_error_detail?: string | null;
+        };
+        /** SoulseekBulkSearchItemResponse */
+        SoulseekBulkSearchItemResponse: {
+            acquisition: components["schemas"]["SoulseekAcquisitionSummaryResponse"];
+            /** Job Id */
+            job_id: string;
+            /** Streaming Track Id */
+            streaming_track_id: number;
+        };
+        /** SoulseekBulkSearchRequest */
+        SoulseekBulkSearchRequest: {
+            /** Streaming Track Ids */
+            streaming_track_ids: number[];
+        };
+        /** SoulseekBulkSearchResponse */
+        SoulseekBulkSearchResponse: {
+            /** Jobs */
+            jobs: components["schemas"]["SoulseekBulkSearchItemResponse"][];
+        };
+        /** SoulseekCandidateResponse */
+        SoulseekCandidateResponse: {
+            /** Id */
+            id: string;
+            /** Acquisition Id */
+            acquisition_id: string;
+            /** Slskd Search Id */
+            slskd_search_id: string;
+            /** Username */
+            username: string;
+            /** Filename */
+            filename: string;
+            /** Size */
+            size: number;
+            /** Extension */
+            extension: string | null;
+            /** Duration Seconds */
+            duration_seconds: number | null;
+            /** Bit Rate */
+            bit_rate: number | null;
+            /** Bit Depth */
+            bit_depth: number | null;
+            /** Sample Rate */
+            sample_rate: number | null;
+            /** Is Variable Bit Rate */
+            is_variable_bit_rate: boolean | null;
+            /** Has Free Upload Slot */
+            has_free_upload_slot: boolean;
+            /** Queue Length */
+            queue_length: number | null;
+            /** Upload Speed */
+            upload_speed: number | null;
+            /** Score */
+            score: number;
+            /** Created At */
+            created_at: string;
+        };
+        /** SoulseekCandidatesResponse */
+        SoulseekCandidatesResponse: {
+            acquisition: components["schemas"]["SoulseekAcquisitionSummaryResponse"];
+            /** Candidates */
+            candidates: components["schemas"]["SoulseekCandidateResponse"][];
+        };
+        /** SoulseekEnqueueResponse */
+        SoulseekEnqueueResponse: {
+            acquisition: components["schemas"]["SoulseekAcquisitionSummaryResponse"];
+            /** Job Id */
+            job_id?: string | null;
+        };
+        /** SoulseekQueueItemResponse */
+        SoulseekQueueItemResponse: {
+            acquisition: components["schemas"]["SoulseekAcquisitionDetailResponse"] | null;
+            /** Candidates */
+            candidates: components["schemas"]["SoulseekCandidateResponse"][];
+            /** Playlist Count */
+            playlist_count: number;
+            /** Playlist Ids */
+            playlist_ids: number[];
+            /** Playlist Titles */
+            playlist_titles: string[];
+            selected_candidate: components["schemas"]["SoulseekCandidateResponse"] | null;
+            streaming_track: components["schemas"]["SoulseekStreamingTrackResponse"];
+        };
+        /** SoulseekQueueResponse */
+        SoulseekQueueResponse: {
+            /**
+             * Filter
+             * @enum {string}
+             */
+            filter: "all" | "needs_search" | "review" | "active" | "downloading" | "failed" | "linked";
+            /** Items */
+            items: components["schemas"]["SoulseekQueueItemResponse"][];
+            /** Total Count */
+            total_count: number;
+        };
+        /** SoulseekRefreshResponse */
+        SoulseekRefreshResponse: {
+            acquisition: components["schemas"]["SoulseekAcquisitionSummaryResponse"];
+            /** Job Id */
+            job_id: string;
+        };
+        /** SoulseekSearchResponse */
+        SoulseekSearchResponse: {
+            acquisition: components["schemas"]["SoulseekAcquisitionSummaryResponse"];
+            /** Job Id */
+            job_id: string;
+        };
+        /** SoulseekStatusResponse */
+        SoulseekStatusResponse: {
+            /** Configured */
+            configured: boolean;
+            /** Ok */
+            ok: boolean;
+            /** Detail */
+            detail?: string | null;
+        };
+        /** SoulseekStreamingTrackResponse */
+        SoulseekStreamingTrackResponse: {
+            /** Id */
+            id: number;
+            /** Title */
+            title: string;
+            /** Artist */
+            artist: string;
+            /** Album */
+            album: string | null;
+            /** Duration Ms */
+            duration_ms: number | null;
+        };
+        /** SoulseekWebhookResponse */
+        SoulseekWebhookResponse: {
+            /** Matched */
+            matched: boolean;
+            acquisition?: components["schemas"]["SoulseekAcquisitionSummaryResponse"] | null;
         };
         /** StreamingAccountResponse */
         StreamingAccountResponse: {
@@ -3336,6 +3963,92 @@ export interface operations {
             };
         };
     };
+    list_local_dedupe_queue_api_local_dedupe_queue_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LocalDedupeQueueResponse"];
+                };
+            };
+        };
+    };
+    resolve_local_dedupe_group_api_local_dedupe_groups__group_key__resolve_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                group_key: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ResolveLocalDedupeGroupRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LocalDedupeResolveResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    dismiss_local_dedupe_group_api_local_dedupe_groups__group_key__dismiss_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                group_key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LocalDedupeDecisionResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_export_profiles_api_m3u_export_profiles_get: {
         parameters: {
             query?: never;
@@ -3487,6 +4200,72 @@ export interface operations {
         };
     };
     export_m3u_zip_api_m3u_export_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["M3uExportRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    export_rekordbox_xml_api_m3u_export_rekordbox_xml_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["M3uExportRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    export_full_rekordbox_xml_api_m3u_export_rekordbox_xml_full_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -3689,6 +4468,35 @@ export interface operations {
             };
         };
     };
+    delete_generation_run_api_sonic_runs__run_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_generated_playlists_api_sonic_generated_playlists_get: {
         parameters: {
             query?: never;
@@ -3727,6 +4535,311 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["GeneratedPlaylistTracksResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_soulseek_status_api_soulseek_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SoulseekStatusResponse"];
+                };
+            };
+        };
+    };
+    search_missing_track_api_soulseek_missing_tracks__streaming_track_id__search_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                streaming_track_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SoulseekSearchResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    search_selected_missing_tracks_api_soulseek_missing_tracks_search_selected_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SoulseekBulkSearchRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SoulseekBulkSearchResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_soulseek_queue_api_soulseek_queue_get: {
+        parameters: {
+            query?: {
+                filter?: "all" | "needs_search" | "review" | "active" | "downloading" | "failed" | "linked";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SoulseekQueueResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_acquisition_detail_api_soulseek_acquisitions__acquisition_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                acquisition_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SoulseekQueueItemResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_candidates_api_soulseek_acquisitions__acquisition_id__candidates_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                acquisition_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SoulseekCandidatesResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    enqueue_candidate_api_soulseek_candidates__candidate_id__enqueue_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                candidate_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SoulseekEnqueueResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    approve_candidate_download_api_soulseek_candidates__candidate_id__approve_download_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                candidate_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SoulseekEnqueueResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    refresh_acquisition_api_soulseek_acquisitions__acquisition_id__refresh_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                acquisition_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SoulseekRefreshResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    receive_slskd_download_complete_api_soulseek_slskd_download_complete_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-CrateLynx-Webhook-Token"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SlskdDownloadCompleteWebhook"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SoulseekWebhookResponse"];
                 };
             };
             /** @description Validation Error */

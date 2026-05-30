@@ -12,6 +12,7 @@ RUN apt-get update \
         build-essential \
         ffmpeg \
         gcc \
+        libchromaprint1 \
         libchromaprint-tools \
     && rm -rf /var/lib/apt/lists/*
 

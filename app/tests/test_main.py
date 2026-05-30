@@ -37,6 +37,7 @@ from app.relationships.models import (
 from app.settings.models import metadata as settings_metadata
 from app.settings.schemas import CreateIngestFolderRequest
 from app.settings.store import GeneralSettingsStore
+from app.soulseek.models import metadata as soulseek_metadata
 from app.streaming.crypto import TokenEncryptionKeyError
 from app.streaming.schemas import (
     CreateStreamingAccountRequest,
@@ -157,6 +158,18 @@ def test_links_routes_are_mounted_under_api_prefix() -> None:
     assert "/api/m3u/export-profiles/{profile_id}" in route_paths
     assert "/api/m3u/export/preview" in route_paths
     assert "/api/m3u/export" in route_paths
+    assert "/api/m3u/export/rekordbox-xml" in route_paths
+    assert "/api/m3u/export/rekordbox-xml/full" in route_paths
+    assert "/api/soulseek/status" in route_paths
+    assert "/api/soulseek/queue" in route_paths
+    assert "/api/soulseek/missing-tracks/{streaming_track_id}/search" in route_paths
+    assert "/api/soulseek/missing-tracks/search-selected" in route_paths
+    assert "/api/soulseek/acquisitions/{acquisition_id}" in route_paths
+    assert "/api/soulseek/acquisitions/{acquisition_id}/candidates" in route_paths
+    assert "/api/soulseek/candidates/{candidate_id}/approve-download" in route_paths
+    assert "/api/soulseek/candidates/{candidate_id}/enqueue" in route_paths
+    assert "/api/soulseek/acquisitions/{acquisition_id}/refresh" in route_paths
+    assert "/api/soulseek/slskd/download-complete" in route_paths
     assert "/healthz" in route_paths
     assert "/health" not in route_paths
     assert "/ingest/status" not in route_paths
@@ -1155,6 +1168,7 @@ def test_wanted_playlist_endpoints_return_404_for_non_full_playlists(
     local_tracks_metadata.create_all(engine)
     links_metadata.create_all(engine)
     relationships_metadata.create_all(engine)
+    soulseek_metadata.create_all(engine)
     monkeypatch.setenv("DATABASE_URL", database_url)
 
     with engine.begin() as connection:
@@ -1639,6 +1653,7 @@ def test_missing_locally_endpoint_aggregates_playlist_usage_and_excludes_links(
     local_tracks_metadata.create_all(engine)
     links_metadata.create_all(engine)
     relationships_metadata.create_all(engine)
+    soulseek_metadata.create_all(engine)
     monkeypatch.setenv("DATABASE_URL", database_url)
 
     with engine.begin() as connection:
@@ -1797,6 +1812,7 @@ def test_missing_locally_endpoint_aggregates_playlist_usage_and_excludes_links(
                 "playlist_count": 1,
                 "playlist_ids": [1],
                 "playlist_titles": ["Morning Mix"],
+                "soulseek_acquisition": None,
             },
             {
                 "id": 11,
@@ -1808,6 +1824,7 @@ def test_missing_locally_endpoint_aggregates_playlist_usage_and_excludes_links(
                 "playlist_count": 1,
                 "playlist_ids": [1],
                 "playlist_titles": ["Morning Mix"],
+                "soulseek_acquisition": None,
             },
             {
                 "id": 16,
@@ -1819,6 +1836,7 @@ def test_missing_locally_endpoint_aggregates_playlist_usage_and_excludes_links(
                 "playlist_count": 1,
                 "playlist_ids": [1],
                 "playlist_titles": ["Morning Mix"],
+                "soulseek_acquisition": None,
             },
         ]
     }

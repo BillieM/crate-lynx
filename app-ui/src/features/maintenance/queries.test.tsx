@@ -4,14 +4,20 @@ import type { PropsWithChildren } from "react";
 
 import {
   fetchMissingLocallyTracks,
+  fetchSoulseekCandidates,
   fetchUnidentifiedTracks,
   ignoreUnidentifiedTrack,
   maintenanceQueryKeys,
   rematchLocalTrack,
   rescueLocalTrackMetadata,
   restoreUnidentifiedTrack,
+  searchMissingTrack,
+  searchSelectedMissingTracks,
+  enqueueSoulseekCandidate,
+  refreshSoulseekAcquisition,
   retryUnidentifiedTrack,
   useMissingLocallyTracksQuery,
+  useSoulseekCandidatesQuery,
   useUnidentifiedTracksQuery,
 } from "./queries";
 
@@ -37,6 +43,12 @@ describe("maintenance queries", () => {
   it("builds stable query keys for maintenance reports", () => {
     expect(maintenanceQueryKeys.all).toEqual(["maintenance"]);
     expect(maintenanceQueryKeys.missingLocally()).toEqual(["maintenance", "missing-locally"]);
+    expect(maintenanceQueryKeys.soulseekCandidates("acq-1")).toEqual([
+      "maintenance",
+      "missing-locally",
+      "soulseek",
+      "acq-1",
+    ]);
     expect(maintenanceQueryKeys.unidentified()).toEqual(["maintenance", "unidentified"]);
   });
 
@@ -222,6 +234,89 @@ describe("maintenance queries", () => {
     });
   });
 
+  it("calls Soulseek search, candidate, enqueue, and refresh endpoints", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async (url, init) => {
+      if (url === "/api/soulseek/missing-tracks/5001/search" && init?.method === "POST") {
+        return {
+          ok: true,
+          json: async () => ({
+            acquisition: soulseekAcquisition("acq-1", "searching"),
+            job_id: "search-job-1",
+          }),
+        } as Response;
+      }
+
+      if (url === "/api/soulseek/missing-tracks/search-selected" && init?.method === "POST") {
+        return {
+          ok: true,
+          json: async () => ({
+            jobs: [{ acquisition: soulseekAcquisition("acq-1", "searching"), job_id: "search-job-1", streaming_track_id: 5001 }],
+          }),
+        } as Response;
+      }
+
+      if (url === "/api/soulseek/acquisitions/acq-1/candidates") {
+        return {
+          ok: true,
+          json: async () => ({
+            acquisition: soulseekAcquisition("acq-1", "candidates_found"),
+            candidates: [
+              {
+                acquisition_id: "acq-1",
+                bit_depth: 16,
+                bit_rate: null,
+                created_at: "2026-05-25T10:00:00Z",
+                duration_seconds: 270,
+                extension: ".flac",
+                filename: "Jon Hopkins - Open Eye Signal.flac",
+                has_free_upload_slot: true,
+                id: "candidate-1",
+                is_variable_bit_rate: null,
+                queue_length: 0,
+                sample_rate: 44100,
+                score: 0.91,
+                size: 30000000,
+                slskd_search_id: "search-1",
+                upload_speed: 500000,
+                username: "peer",
+              },
+            ],
+          }),
+        } as Response;
+      }
+
+      if (url === "/api/soulseek/candidates/candidate-1/enqueue" && init?.method === "POST") {
+        return {
+          ok: true,
+          json: async () => ({ acquisition: soulseekAcquisition("acq-1", "queued"), job_id: "enqueue-job-1" }),
+        } as Response;
+      }
+
+      if (url === "/api/soulseek/acquisitions/acq-1/refresh" && init?.method === "POST") {
+        return {
+          ok: true,
+          json: async () => ({ acquisition: soulseekAcquisition("acq-1", "downloading"), job_id: "refresh-job-1" }),
+        } as Response;
+      }
+
+      throw new Error(`Unexpected request: ${String(url)}`);
+    });
+
+    await expect(searchMissingTrack(5001)).resolves.toMatchObject({ job_id: "search-job-1" });
+    await expect(searchSelectedMissingTracks([5001])).resolves.toMatchObject({ jobs: [{ streaming_track_id: 5001 }] });
+    await expect(fetchSoulseekCandidates("acq-1")).resolves.toMatchObject({
+      candidates: [{ id: "candidate-1", username: "peer" }],
+    });
+    await expect(enqueueSoulseekCandidate("candidate-1")).resolves.toMatchObject({ job_id: "enqueue-job-1" });
+    await expect(refreshSoulseekAcquisition("acq-1")).resolves.toMatchObject({ job_id: "refresh-job-1" });
+
+    expect(fetchMock).toHaveBeenCalledWith("/api/soulseek/missing-tracks/search-selected", {
+      body: JSON.stringify({ streaming_track_ids: [5001] }),
+      headers: { "Content-Type": "application/json" },
+      method: "POST",
+    });
+  });
+
   it("throws a status-coded error when a maintenance report request fails", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue({
       ok: false,
@@ -323,4 +418,38 @@ describe("maintenance queries", () => {
       local_track_id: 1004,
     });
   });
+
+  it("runs the Soulseek candidates hook", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        acquisition: soulseekAcquisition("acq-1", "candidates_found"),
+        candidates: [],
+      }),
+    } as Response);
+
+    const { result } = renderHook(() => useSoulseekCandidatesQuery("acq-1"), {
+      wrapper: createWrapper(),
+    });
+
+    await waitFor(() => {
+      expect(result.current.isSuccess).toBe(true);
+    });
+
+    expect(result.current.data?.acquisition.id).toBe("acq-1");
+  });
 });
+
+function soulseekAcquisition(id: string, status: string) {
+  return {
+    candidate_count: status === "candidates_found" ? 1 : 0,
+    enqueue_job_id: null,
+    error_detail: null,
+    id,
+    job_id: null,
+    refresh_job_id: null,
+    selected_candidate_id: null,
+    slskd_batch_id: null,
+    status,
+  };
+}

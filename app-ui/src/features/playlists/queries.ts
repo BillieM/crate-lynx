@@ -43,6 +43,10 @@ export type M3uExportZip = {
   blob: Blob;
   filename: string;
 };
+export type RekordboxXmlExport = {
+  blob: Blob;
+  filename: string;
+};
 export type LinkProposal = ApiSchemas["ProposalResponse"];
 export type LinkProposalsResponse = ApiSchemas["ProposalListResponse"];
 
@@ -164,11 +168,15 @@ const m3uExportFormatSchema = z.enum(["m3u", "m3u8"]);
 const m3uExportPathFormatSchema = z.enum(["absolute", "file_url"]);
 
 const m3uExportPlaylistPreviewSchema = z.object({
+  archive_path_m3u: z.string(),
+  archive_path_m3u8: z.string(),
+  archive_paths: z.array(z.string()),
   exported_track_count: z.number(),
   filename_m3u: z.string(),
   filename_m3u8: z.string(),
   filenames: z.array(z.string()),
   generated_playlist_id: z.number().nullable(),
+  generated_run_id: z.number().nullable(),
   playlist_id: z.number().nullable(),
   sample_path: nullableStringSchema,
   skipped_track_count: z.number(),
@@ -318,9 +326,7 @@ function hasPlaylistId(playlistId: number | string | null | undefined): playlist
   return typeof playlistId === "string" && playlistId.trim().length > 0;
 }
 
-function getFilenameFromContentDisposition(contentDisposition: string | null) {
-  const fallbackFilename = "playlist.m3u";
-
+function getFilenameFromContentDisposition(contentDisposition: string | null, fallbackFilename = "playlist.m3u") {
   if (!contentDisposition) {
     return fallbackFilename;
   }
@@ -465,6 +471,30 @@ export async function exportM3uZip(input: M3uExportRequest): Promise<M3uExportZi
   return {
     blob,
     filename: getFilenameFromContentDisposition(response.headers.get("Content-Disposition")),
+  };
+}
+
+export async function exportRekordboxXml(input: M3uExportRequest): Promise<RekordboxXmlExport> {
+  const { blob, response } = await postBlob(endpoints.api("/m3u/export/rekordbox-xml"), {
+    body: input,
+    errorMessage: "Rekordbox XML export request failed",
+  });
+
+  return {
+    blob,
+    filename: getFilenameFromContentDisposition(response.headers.get("Content-Disposition"), "rekordbox.xml"),
+  };
+}
+
+export async function exportFullRekordboxXml(input: M3uExportRequest): Promise<RekordboxXmlExport> {
+  const { blob, response } = await postBlob(endpoints.api("/m3u/export/rekordbox-xml/full"), {
+    body: input,
+    errorMessage: "Full Rekordbox XML export request failed",
+  });
+
+  return {
+    blob,
+    filename: getFilenameFromContentDisposition(response.headers.get("Content-Disposition"), "crate-lynx-rekordbox.xml"),
   };
 }
 

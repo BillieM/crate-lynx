@@ -1,16 +1,17 @@
 import { createColumnHelper, type RowSelectionState, type SortingState } from "@tanstack/react-table";
-import { useQueryClient } from "@tanstack/react-query";
-import { ListMusic, RadioTower, RefreshCw, SearchX } from "lucide-react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { ListMusic, RadioTower, RefreshCw, Search, SearchX } from "lucide-react";
 import { useMemo, useState } from "react";
 import { ActionButton } from "../../components/ActionButton";
 import { DataTable } from "../../components/DataTable";
 import { EmptyStateCard } from "../../components/EmptyStateCard";
 import { MetricCard } from "../../components/MetricCard";
+import { Pill, type PillTone } from "../../components/Pill";
 import { StatusMessage } from "../../components/StatusMessage";
 import { formatDuration } from "../../lib/formatters";
 import { settleInChunks } from "../../lib/settleInChunks";
 import { useDelayedInvalidate } from "../../lib/useDelayedInvalidate";
-import { textClasses } from "../../styles/componentClasses";
+import { controlClasses, textClasses } from "../../styles/componentClasses";
 import {
   playlistSyncJobInvalidationKeys,
   syncStreamingPlaylist,
@@ -19,6 +20,9 @@ import {
   invalidateMissingLocallyQueries,
   type MissingLocallyResponse,
   type MissingLocallyTrack,
+  refreshSoulseekAcquisition,
+  searchMissingTrack,
+  searchSelectedMissingTracks,
   useMissingLocallyTracksQuery,
 } from "./queries";
 
@@ -47,6 +51,91 @@ function getPlaylistCountLabel(track: MissingLocallyTrack) {
   return `${track.playlist_count} ${track.playlist_count === 1 ? "playlist" : "playlists"}`;
 }
 
+function getSoulseekStatusLabel(track: MissingLocallyTrack) {
+  const status = track.soulseek_acquisition?.status;
+  if (!status) {
+    return "Not searched";
+  }
+
+  return (
+    {
+      candidates_found: "Review",
+      completed: "Downloaded",
+      downloading: "Downloading",
+      failed: "Failed",
+      ingested: "Ingesting",
+      link_failed: "Link failed",
+      linked: "Auto-linked",
+      no_candidates: "No candidates",
+      proposal_available: "Link review",
+      queued: "Queued",
+      searching: "Searching",
+    }[status] ?? status
+  );
+}
+
+function getSoulseekStatusTone(track: MissingLocallyTrack): PillTone {
+  const status = track.soulseek_acquisition?.status;
+  if (status === "failed" || status === "link_failed" || status === "no_candidates") {
+    return "danger";
+  }
+  if (status === "completed" || status === "ingested" || status === "proposal_available" || status === "linked") {
+    return "success";
+  }
+  if (status === "queued" || status === "downloading" || status === "searching") {
+    return "pending";
+  }
+  if (status === "candidates_found") {
+    return "info";
+  }
+  return "neutral";
+}
+
+function MissingSoulseekRowActions({
+  actionsDisabled,
+  isRefreshing,
+  isSearching,
+  onRefresh,
+  onSearch,
+  track,
+}: {
+  actionsDisabled: boolean;
+  isRefreshing: boolean;
+  isSearching: boolean;
+  onRefresh: (track: MissingLocallyTrack) => void;
+  onSearch: (track: MissingLocallyTrack) => void;
+  track: MissingLocallyTrack;
+}) {
+  const acquisition = track.soulseek_acquisition ?? null;
+
+  return (
+    <div className="flex items-center justify-end gap-1">
+      <button
+        aria-label={`Search Soulseek for ${track.title}`}
+        className={controlClasses.iconButton}
+        disabled={actionsDisabled}
+        title="Search Soulseek"
+        type="button"
+        onClick={() => onSearch(track)}
+      >
+        <Search aria-hidden="true" className={isSearching ? "animate-spin" : ""} strokeWidth={1.9} />
+      </button>
+      {acquisition?.slskd_batch_id ? (
+        <button
+          aria-label={`Refresh Soulseek download for ${track.title}`}
+          className={controlClasses.iconButton}
+          disabled={actionsDisabled}
+          title="Refresh Soulseek download"
+          type="button"
+          onClick={() => onRefresh(track)}
+        >
+          <RefreshCw aria-hidden="true" className={isRefreshing ? "animate-spin" : ""} strokeWidth={1.9} />
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
 type MissingLocallyViewProps = {
   isPending?: boolean;
   state?: MaintenanceViewState;
@@ -61,6 +150,13 @@ export function MissingLocallyView({ isPending = false, state, tracksResponse }:
   const [sorting, setSorting] = useState<SortingState>([]);
   const [bulkSyncStatus, setBulkSyncStatus] = useState<BulkMissingStatus | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [bulkSearchStatus, setBulkSearchStatus] = useState<BulkMissingStatus | null>(null);
+  const [isSearching, setIsSearching] = useState(false);
+  const [rowActionStatus, setRowActionStatus] = useState<BulkMissingStatus | null>(null);
+  const [pendingSoulseekAction, setPendingSoulseekAction] = useState<{
+    action: "refresh" | "search";
+    trackId: number;
+  } | null>(null);
   const resolvedState =
     state ?? (missingLocallyQuery.isPending ? "loading" : missingLocallyQuery.isError ? "error" : "ready");
   const tracks = tracksResponse?.tracks ?? missingLocallyQuery.data?.tracks ?? emptyMissingLocallyTracks;
@@ -70,6 +166,61 @@ export function MissingLocallyView({ isPending = false, state, tracksResponse }:
     () => Array.from(new Set(selectedTracks.flatMap((track) => track.playlist_ids))),
     [selectedTracks],
   );
+  const selectedSearchTrackIds = useMemo(() => selectedTracks.map((track) => track.id), [selectedTracks]);
+  const actionsDisabled = resolvedState !== "ready" || isPending;
+  const rowActionMutationPending = pendingSoulseekAction !== null;
+  const rowSearchMutation = useMutation({
+    mutationFn: (track: MissingLocallyTrack) => searchMissingTrack(track.id),
+    onError: (_error, track) => {
+      setRowActionStatus({
+        body: `Soulseek search could not be queued for ${track.title}.`,
+        status: "error",
+        title: "Soulseek search failed",
+      });
+    },
+    onMutate: (track) => {
+      setRowActionStatus(null);
+      setPendingSoulseekAction({ action: "search", trackId: track.id });
+    },
+    onSettled: () => setPendingSoulseekAction(null),
+    onSuccess: async (_response, track) => {
+      await invalidateMissingLocallyQueries(queryClient);
+      setRowActionStatus({
+        body: `${track.title} was queued for Soulseek search.`,
+        status: "success",
+        title: "Soulseek search queued",
+      });
+    },
+  });
+  const rowRefreshMutation = useMutation({
+    mutationFn: (track: MissingLocallyTrack) => {
+      const acquisitionId = track.soulseek_acquisition?.id;
+      if (!acquisitionId) {
+        throw new Error("Soulseek acquisition is missing");
+      }
+      return refreshSoulseekAcquisition(acquisitionId);
+    },
+    onError: (_error, track) => {
+      setRowActionStatus({
+        body: `Soulseek status could not be refreshed for ${track.title}.`,
+        status: "error",
+        title: "Soulseek refresh failed",
+      });
+    },
+    onMutate: (track) => {
+      setRowActionStatus(null);
+      setPendingSoulseekAction({ action: "refresh", trackId: track.id });
+    },
+    onSettled: () => setPendingSoulseekAction(null),
+    onSuccess: async (_response, track) => {
+      await invalidateMissingLocallyQueries(queryClient);
+      setRowActionStatus({
+        body: `${track.title} was queued for Soulseek status refresh.`,
+        status: "success",
+        title: "Soulseek refresh queued",
+      });
+    },
+  });
   const columns = useMemo(
     () => [
       columnHelper.display({
@@ -83,29 +234,29 @@ export function MissingLocallyView({ isPending = false, state, tracksResponse }:
         enableSorting: false,
         header: "Status",
         meta: {
-          widthClass: "w-20",
+          widthClass: "w-8",
         },
       }),
       columnHelper.accessor("title", {
-        cell: (info) => <span className="block max-w-[18rem] truncate font-semibold">{info.getValue()}</span>,
+        cell: (info) => <span className="block max-w-[10rem] truncate font-semibold">{info.getValue()}</span>,
         header: "Title",
         meta: {
-          widthClass: "min-w-[12rem]",
+          widthClass: "min-w-[8rem]",
         },
       }),
       columnHelper.accessor("artist", {
-        cell: (info) => <span className="block max-w-[14rem] truncate">{info.getValue()}</span>,
+        cell: (info) => <span className="block max-w-[9rem] truncate">{info.getValue()}</span>,
         header: "Artist",
         meta: {
-          widthClass: "min-w-[10rem]",
+          widthClass: "min-w-[7rem]",
         },
       }),
       columnHelper.accessor("album", {
-        cell: (info) => <span className="block max-w-[14rem] truncate">{info.getValue() ?? "Album unavailable"}</span>,
+        cell: (info) => <span className="block max-w-[9rem] truncate">{info.getValue() ?? "Album unavailable"}</span>,
         header: "Album",
         meta: {
           hideBelow: "md",
-          widthClass: "min-w-[11rem]",
+          widthClass: "min-w-[7rem]",
         },
       }),
       columnHelper.accessor("duration_ms", {
@@ -113,30 +264,63 @@ export function MissingLocallyView({ isPending = false, state, tracksResponse }:
         header: "Duration",
         meta: {
           align: "end",
+          widthClass: "w-16",
+        },
+      }),
+      columnHelper.display({
+        cell: (info) => (
+          <span className="block max-w-[6rem] truncate" title={formatPlaylistUsage(info.row.original)}>
+            {getPlaylistCountLabel(info.row.original)}
+          </span>
+        ),
+        header: "Playlists",
+        meta: {
           widthClass: "w-24",
         },
       }),
       columnHelper.display({
         cell: (info) => (
-          <span className="block max-w-[16rem] truncate" title={formatPlaylistUsage(info.row.original)}>
-            {getPlaylistCountLabel(info.row.original)}
-          </span>
+          <Pill className="whitespace-nowrap" tone={getSoulseekStatusTone(info.row.original)}>
+            {getSoulseekStatusLabel(info.row.original)}
+          </Pill>
         ),
-        header: "Affected playlists",
+        header: "Soulseek",
         meta: {
-          widthClass: "min-w-[10rem]",
+          widthClass: "w-28",
         },
       }),
-      columnHelper.accessor("provider_track_id", {
-        cell: (info) => <span className="block max-w-[14rem] truncate font-mono text-[11px]">{info.getValue()}</span>,
-        header: "Provider ID",
+      columnHelper.display({
+        cell: (info) => (
+          <MissingSoulseekRowActions
+            actionsDisabled={actionsDisabled || rowActionMutationPending}
+            isRefreshing={
+              pendingSoulseekAction?.action === "refresh" &&
+              pendingSoulseekAction.trackId === info.row.original.id
+            }
+            isSearching={
+              pendingSoulseekAction?.action === "search" &&
+              pendingSoulseekAction.trackId === info.row.original.id
+            }
+            onRefresh={(track) => rowRefreshMutation.mutate(track)}
+            onSearch={(track) => rowSearchMutation.mutate(track)}
+            track={info.row.original}
+          />
+        ),
+        enableSorting: false,
+        header: "Actions",
         meta: {
-          hideBelow: "lg",
-          widthClass: "min-w-[10rem]",
+          align: "end",
+          widthClass: "w-24",
         },
       }),
     ],
-    [],
+    [
+      actionsDisabled,
+      pendingSoulseekAction,
+      rowActionMutationPending,
+      rowRefreshMutation,
+      rowSearchMutation,
+    ],
   );
 
   async function handleBulkSync() {
@@ -146,6 +330,7 @@ export function MissingLocallyView({ isPending = false, state, tracksResponse }:
 
     setIsSyncing(true);
     setBulkSyncStatus(null);
+    setRowActionStatus(null);
 
     const results = await settleInChunks(selectedPlaylistIds, 5, syncStreamingPlaylist);
     const successCount = results.filter((result) => result.status === "fulfilled").length;
@@ -164,6 +349,42 @@ export function MissingLocallyView({ isPending = false, state, tracksResponse }:
       status: failureCount > 0 ? "error" : "success",
       title: failureCount > 0 ? "Playlist sync partially failed" : "Playlist sync queued",
     });
+  }
+
+  async function handleBulkSearch() {
+    if (selectedSearchTrackIds.length === 0 || isSearching) {
+      return;
+    }
+    if (selectedSearchTrackIds.length > 25) {
+      setBulkSearchStatus({
+        body: "Select 25 or fewer rows for Soulseek search.",
+        status: "error",
+        title: "Search selection too large",
+      });
+      return;
+    }
+
+    setIsSearching(true);
+    setBulkSearchStatus(null);
+    setRowActionStatus(null);
+    try {
+      const response = await searchSelectedMissingTracks(selectedSearchTrackIds);
+      await invalidateMissingLocallyQueries(queryClient);
+      setRowSelection({});
+      setBulkSearchStatus({
+        body: `${response.jobs.length} ${response.jobs.length === 1 ? "track was" : "tracks were"} queued for Soulseek search.`,
+        status: "success",
+        title: "Soulseek search queued",
+      });
+    } catch {
+      setBulkSearchStatus({
+        body: "Soulseek search jobs could not be queued.",
+        status: "error",
+        title: "Soulseek search failed",
+      });
+    } finally {
+      setIsSearching(false);
+    }
   }
 
   return (
@@ -195,6 +416,9 @@ export function MissingLocallyView({ isPending = false, state, tracksResponse }:
         {bulkSyncStatus ? (
           <StatusMessage body={bulkSyncStatus.body} status={bulkSyncStatus.status} title={bulkSyncStatus.title} />
         ) : null}
+        {bulkSearchStatus ? (
+          <StatusMessage body={bulkSearchStatus.body} status={bulkSearchStatus.status} title={bulkSearchStatus.title} />
+        ) : null}
         {resolvedState === "loading" ? (
           <EmptyStateCard
             body="Checking synced streaming tracks against the local library."
@@ -221,17 +445,33 @@ export function MissingLocallyView({ isPending = false, state, tracksResponse }:
             </div>
             <DataTable
               bulkActionSlot={
-                <ActionButton
-                  className="inline-flex items-center gap-1.5"
-                  disabled={selectedPlaylistIds.length === 0 || isSyncing}
-                  onClick={handleBulkSync}
-                >
-                  <RefreshCw aria-hidden="true" className="h-3.5 w-3.5" strokeWidth={1.9} />
-                  {isSyncing ? "Syncing..." : "Sync affected playlists"}
-                </ActionButton>
+                <>
+                  <ActionButton
+                    className="inline-flex items-center gap-1.5"
+                    disabled={
+                      selectedSearchTrackIds.length === 0 ||
+                      selectedSearchTrackIds.length > 25 ||
+                      isSearching ||
+                      actionsDisabled
+                    }
+                    onClick={handleBulkSearch}
+                  >
+                    <Search aria-hidden="true" className="h-3.5 w-3.5" strokeWidth={1.9} />
+                    {isSearching ? "Searching..." : "Search selected"}
+                  </ActionButton>
+                  <ActionButton
+                    className="inline-flex items-center gap-1.5"
+                    disabled={selectedPlaylistIds.length === 0 || isSyncing}
+                    onClick={handleBulkSync}
+                  >
+                    <RefreshCw aria-hidden="true" className="h-3.5 w-3.5" strokeWidth={1.9} />
+                    {isSyncing ? "Syncing..." : "Sync affected playlists"}
+                  </ActionButton>
+                </>
               }
               columns={columns}
               data={tracks}
+              density="tight"
               rowId={(track) => String(track.id)}
               rowSelection={rowSelection}
               sorting={sorting}
@@ -244,6 +484,16 @@ export function MissingLocallyView({ isPending = false, state, tracksResponse }:
           <EmptyStateCard body="Every synced streaming track has a local match." className="text-left" title="No missing tracks" />
         )}
       </div>
+      {rowActionStatus ? (
+        <div aria-live="polite" className="pointer-events-none fixed bottom-4 right-4 z-50 w-[min(22rem,calc(100vw-2rem))]">
+          <StatusMessage
+            body={rowActionStatus.body}
+            className="pointer-events-auto shadow-lg shadow-ctp-crust/35"
+            status={rowActionStatus.status}
+            title={rowActionStatus.title}
+          />
+        </div>
+      ) : null}
     </section>
   );
 }

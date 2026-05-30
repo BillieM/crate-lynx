@@ -27,6 +27,7 @@ import {
   staticViewRoutes,
 } from "./features/shell/viewRegistry";
 import { type PlaylistGenerationRun, useSonicRunsQuery } from "./features/sonic/queries";
+import { useSoulseekQueueQuery } from "./features/soulseek/queries";
 
 const emptyStreamingPlaylists: StreamingPlaylist[] = [];
 const emptySonicRuns: PlaylistGenerationRun[] = [];
@@ -43,6 +44,7 @@ function App() {
   const playlistsQuery = useStreamingPlaylistsQuery();
   const relationshipSuggestionsQuery = useStreamingRelationshipSuggestionsQuery();
   const sonicRunsQuery = useSonicRunsQuery();
+  const soulseekQueueQuery = useSoulseekQueueQuery();
   const unidentifiedQuery = useUnidentifiedTracksQuery();
   const streamingPlaylists = playlistsQuery.data?.playlists ?? emptyStreamingPlaylists;
   const sonicRuns = sonicRunsQuery.data?.runs ?? emptySonicRuns;
@@ -59,6 +61,7 @@ function App() {
         missingCount: missingLocallyQuery.data?.tracks.length,
         proposalCount: linkProposalsQuery.data?.total_count,
         relationshipCount: relationshipSuggestionsQuery.data?.total_count,
+        soulseekCount: soulseekQueueQuery.data?.items.filter((item) => item.acquisition?.status !== "linked").length,
         unidentifiedCount: activeUnidentifiedCount,
       }),
     [
@@ -66,6 +69,7 @@ function App() {
       linkProposalsQuery.data?.total_count,
       missingLocallyQuery.data?.tracks.length,
       relationshipSuggestionsQuery.data?.total_count,
+      soulseekQueueQuery.data?.items,
     ],
   );
   const playlistItems = useMemo(() => buildPlaylistNavItems(streamingPlaylists), [streamingPlaylists]);

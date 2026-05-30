@@ -71,7 +71,7 @@ export function AudioPreviewPlayer({ label, src }: AudioPreviewPlayerProps) {
   }
 
   return (
-    <div className="grid min-w-0 gap-2 rounded-[8px] border border-ctp-surface1 bg-ctp-crust px-3 py-2 text-ctp-text shadow-sm shadow-ctp-crust/30">
+    <div className="grid min-w-0 w-full max-w-full gap-2 overflow-hidden rounded-[8px] border border-ctp-surface1 bg-ctp-crust px-3 py-2 text-ctp-text shadow-sm shadow-ctp-crust/30">
       <audio
         aria-label={label}
         className="sr-only"
@@ -85,7 +85,7 @@ export function AudioPreviewPlayer({ label, src }: AudioPreviewPlayerProps) {
         ref={audioRef}
         src={src}
       />
-      <div className="grid min-w-0 grid-cols-[auto_auto_minmax(0,1fr)_auto] items-center gap-2">
+      <div className="grid min-w-0 max-w-full grid-cols-[auto_auto_minmax(3rem,1fr)] items-center gap-2 sm:grid-cols-[auto_auto_minmax(4rem,1fr)_auto]">
         <button
           aria-label={`${isPlaying ? "Pause" : "Play"} ${label}`}
           className={`${controlClasses.actionButton} ${controlClasses.actionButtonCompact} inline-flex h-8 w-8 items-center justify-center border-ctp-surface1 bg-ctp-surface0 px-0 text-ctp-text hover:bg-ctp-surface1`}
@@ -108,7 +108,7 @@ export function AudioPreviewPlayer({ label, src }: AudioPreviewPlayerProps) {
         </button>
         <input
           aria-label={`${label} progress`}
-          className="h-1.5 min-w-0 accent-ctp-mauve"
+          className="h-1.5 min-w-0 max-w-full accent-ctp-mauve"
           disabled={progressMax === 0}
           max={progressMax}
           min={0}
@@ -117,7 +117,7 @@ export function AudioPreviewPlayer({ label, src }: AudioPreviewPlayerProps) {
           value={Math.min(currentTime, progressMax)}
           onChange={(event) => updateProgress(event.currentTarget.value)}
         />
-        <span className={`${textClasses.finePrint} tabular-nums text-ctp-subtext0`}>
+        <span className={`${textClasses.finePrint} col-span-3 justify-self-end tabular-nums text-ctp-subtext0 sm:col-span-1`}>
           {formatPlaybackTime(currentTime)} / {formatPlaybackTime(duration)}
         </span>
       </div>

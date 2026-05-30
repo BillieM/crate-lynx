@@ -7,12 +7,14 @@ from sqlalchemy import ForeignKeyConstraint, MetaData, Table
 from app.ingestion.failures import metadata as failed_ingestion_attempts_metadata
 from app.ingestion.beets_mirror import metadata as beets_mirror_metadata
 from app.links.store import metadata as links_metadata
+from app.local_dedupe.models import metadata as local_dedupe_metadata
 from app.local_tracks.store import metadata as local_tracks_metadata
 from app.m3u.models import metadata as m3u_metadata
 from app.matching.pipeline import metadata as suggested_links_metadata
 from app.relationships.models import metadata as relationships_metadata
 from app.settings.models import metadata as settings_metadata
 from app.sonic.models import metadata as sonic_metadata
+from app.soulseek.models import metadata as soulseek_metadata
 from app.streaming.models import metadata as streaming_metadata
 
 
@@ -45,6 +47,8 @@ def _app_tables() -> Iterable[Table]:
         relationships_metadata,
         settings_metadata,
         sonic_metadata,
+        soulseek_metadata,
+        local_dedupe_metadata,
         m3u_metadata,
         failed_ingestion_attempts_metadata,
     )
@@ -98,6 +102,12 @@ def _add_foreign_keys(metadata: MetaData) -> None:
             ),
         ),
         "sonic_track_features": (("local_track_id", "local_tracks.id"),),
+        "soulseek_acquisitions": (
+            ("streaming_track_id", "streaming_tracks.id"),
+            ("local_track_id", "local_tracks.id"),
+            ("final_link_id", "final_links.id"),
+        ),
+        "soulseek_candidates": (("acquisition_id", "soulseek_acquisitions.id"),),
         "generated_playlists": (
             ("run_id", "playlist_generation_runs.id"),
             (

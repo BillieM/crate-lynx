@@ -3,6 +3,7 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import { MemoryRouter } from "react-router-dom";
 import App from "./App";
 import type { LibraryTracksResponse } from "./features/library/queries";
+import type { LocalDedupeQueueResponse } from "./features/localDedupe/queries";
 import type { MissingLocallyResponse, UnidentifiedResponse } from "./features/maintenance/queries";
 import type {
   LinkProposalsResponse,
@@ -20,6 +21,7 @@ import type {
   SonicFeatureSummary,
   SonicGenerationPreview,
 } from "./features/sonic/queries";
+import type { SoulseekQueueResponse } from "./features/soulseek/queries";
 import { getProgressColor } from "./features/shell/progress";
 import { blobResponse, createMockApi, emptyResponse, failUnexpectedFetch, jsonResponse } from "./test/mockApi";
 
@@ -312,6 +314,10 @@ const libraryTracksResponse: LibraryTracksResponse = {
     },
   ],
 };
+const localDedupeQueueResponse: LocalDedupeQueueResponse = {
+  groups: [],
+  total_count: 0,
+};
 const missingLocallyResponse: MissingLocallyResponse = {
   tracks: [
     {
@@ -326,6 +332,78 @@ const missingLocallyResponse: MissingLocallyResponse = {
       title: "Open Eye Signal",
     },
   ],
+};
+const soulseekQueueResponse: SoulseekQueueResponse = {
+  filter: "all",
+  items: [
+    {
+      acquisition: {
+        candidate_count: 1,
+        completed_at: null,
+        completed_source_path: null,
+        created_at: "2026-05-25T10:00:00Z",
+        destination: null,
+        enqueue_job_id: null,
+        error_detail: null,
+        failed_at: null,
+        fallback_search_text: null,
+        final_link_id: null,
+        id: "acq-1",
+        ingested_at: null,
+        job_id: "search-job-1",
+        link_error_detail: null,
+        linked_at: null,
+        local_track_id: null,
+        proposal_available_at: null,
+        queued_at: null,
+        refresh_job_id: null,
+        searched_at: "2026-05-25T10:00:00Z",
+        search_text: "Jon Hopkins Open Eye Signal",
+        selected_candidate_id: null,
+        slskd_batch_id: null,
+        slskd_completed_event_id: null,
+        slskd_fallback_search_id: null,
+        slskd_search_id: "search-1",
+        slskd_transfer_id: null,
+        status: "candidates_found",
+        streaming_track_id: 5001,
+        updated_at: "2026-05-25T10:00:00Z",
+      },
+      candidates: [
+        {
+          acquisition_id: "acq-1",
+          bit_depth: 16,
+          bit_rate: null,
+          created_at: "2026-05-25T10:00:00Z",
+          duration_seconds: 270,
+          extension: ".flac",
+          filename: "Jon Hopkins - Open Eye Signal.flac",
+          has_free_upload_slot: true,
+          id: "candidate-1",
+          is_variable_bit_rate: null,
+          queue_length: 0,
+          sample_rate: 44100,
+          score: 0.91,
+          size: 30000000,
+          slskd_search_id: "search-1",
+          upload_speed: 500000,
+          username: "peer",
+        },
+      ],
+      playlist_count: 2,
+      playlist_ids: [11, 12],
+      playlist_titles: ["Late Night Drive", "Focus Queue"],
+      selected_candidate: null,
+      streaming_track: {
+        album: "Immunity",
+        artist: "Jon Hopkins",
+        duration_ms: 270000,
+        id: 5001,
+        title: "Open Eye Signal",
+      },
+    },
+  ],
+  total_count: 1,
 };
 const unidentifiedResponse: UnidentifiedResponse = {
   tracks: [
@@ -386,6 +464,7 @@ const sonicRunsResponse: PlaylistGenerationRunListResponse = {
         random_seed: 42,
         target_playlist_size: 25,
       },
+      generation_number: 19,
       id: 501,
       playlist_count: 2,
       source_filter: {
@@ -447,11 +526,15 @@ const m3uExportPreviewResponse: M3uExportPreviewResponse = {
   playlist_count: 1,
   playlists: [
     {
+      archive_path_m3u: "Late Night Drive [yt].m3u",
+      archive_path_m3u8: "Late Night Drive [yt].m3u8",
+      archive_paths: ["Late Night Drive [yt].m3u", "Late Night Drive [yt].m3u8"],
       exported_track_count: 58,
       filename_m3u: "Late Night Drive [yt].m3u",
       filename_m3u8: "Late Night Drive [yt].m3u8",
       filenames: ["Late Night Drive [yt].m3u", "Late Night Drive [yt].m3u8"],
       generated_playlist_id: null,
+      generated_run_id: null,
       playlist_id: 12,
       sample_path: "file://localhost/mnt/music/Frame%20Delay/Night%20Runner.flac",
       skipped_track_count: 4,
@@ -473,6 +556,8 @@ type MockPlaylistFetchOptions = {
   m3uExportHandler?: (init?: RequestInit) => Promise<Response> | Response;
   m3uExportPreviewHandler?: (init?: RequestInit) => Promise<Response> | Response;
   m3uExportProfilesHandler?: () => Promise<Response> | Response;
+  rekordboxXmlExportHandler?: (init?: RequestInit) => Promise<Response> | Response;
+  fullRekordboxXmlExportHandler?: (init?: RequestInit) => Promise<Response> | Response;
   metadataRefreshHandler?: () => Promise<Response> | Response;
   rejectProposalHandler?: (proposalId: string) => Promise<Response> | Response;
   relationshipSuggestionsHandler?: (url: string) => Promise<Response> | Response;
@@ -481,6 +566,9 @@ type MockPlaylistFetchOptions = {
   sonicGenerationPreviewHandler?: (init?: RequestInit) => Promise<Response> | Response;
   sonicRunDetailHandler?: (runId: string) => Promise<Response> | Response;
   sonicRunsHandler?: () => Promise<Response> | Response;
+  deleteSonicRunHandler?: (runId: string) => Promise<Response> | Response;
+  soulseekQueueHandler?: () => Promise<Response> | Response;
+  localDedupeQueueHandler?: () => Promise<Response> | Response;
 };
 
 function buildPlaylistDetail(id: number, name: string): PlaylistDetailResponse {
@@ -525,6 +613,8 @@ function mockPlaylistFetch({
   m3uExportHandler,
   m3uExportPreviewHandler,
   m3uExportProfilesHandler,
+  rekordboxXmlExportHandler,
+  fullRekordboxXmlExportHandler,
   metadataRefreshHandler,
   rejectProposalHandler,
   relationshipSuggestionsHandler,
@@ -533,6 +623,9 @@ function mockPlaylistFetch({
   sonicGenerationPreviewHandler,
   sonicRunDetailHandler,
   sonicRunsHandler,
+  deleteSonicRunHandler,
+  soulseekQueueHandler,
+  localDedupeQueueHandler,
 }: MockPlaylistFetchOptions = {}) {
   const playlistDetailsById = new Map<string, typeof playlistDetailResponse>([
     ["12", playlistDetailResponse],
@@ -551,8 +644,11 @@ function mockPlaylistFetch({
     )
     .get(/^\/api\/proposals(?:\?|$)/, ({ url }) => linkProposalsHandler?.(url) ?? jsonResponse(linkProposalsResponse))
     .get("/api/library/tracks", () => jsonResponse(libraryTracksResponse))
+    .get("/api/local-dedupe/queue", () => localDedupeQueueHandler?.() ?? jsonResponse(localDedupeQueueResponse))
     .get("/api/maintenance/missing-locally", () => jsonResponse(missingLocallyResponse))
     .get("/api/maintenance/unidentified", () => jsonResponse(unidentifiedResponse))
+    .get("/api/soulseek/queue", () => soulseekQueueHandler?.() ?? jsonResponse(soulseekQueueResponse))
+    .get(/^\/api\/soulseek\/acquisitions\/([^/]+)$/, () => jsonResponse(soulseekQueueResponse.items[0]))
     .get("/api/sonic/features/summary", () =>
       sonicFeatureSummaryHandler?.() ?? jsonResponse(sonicFeatureSummaryResponse),
     )
@@ -567,6 +663,9 @@ function mockPlaylistFetch({
         playlists: generatedPlaylistsResponse.playlists,
         run: sonicRunsResponse.runs[0],
       }),
+    )
+    .delete(/^\/api\/sonic\/runs\/(\d+)$/, ({ match }) =>
+      deleteSonicRunHandler?.(match![1]) ?? emptyResponse({ status: 204 }),
     )
     .get("/api/sonic/generated-playlists/7001/tracks", () =>
       jsonResponse({
@@ -601,6 +700,22 @@ function mockPlaylistFetch({
       blobResponse(new Blob(["zip"], { type: "application/zip" }), {
         headers: {
           "Content-Disposition": 'attachment; filename="m3u-export.zip"',
+        },
+      }),
+    )
+    .post("/api/m3u/export/rekordbox-xml", ({ init }) =>
+      rekordboxXmlExportHandler?.(init) ??
+      blobResponse(new Blob(["xml"], { type: "application/xml" }), {
+        headers: {
+          "Content-Disposition": 'attachment; filename="rekordbox.xml"',
+        },
+      }),
+    )
+    .post("/api/m3u/export/rekordbox-xml/full", ({ init }) =>
+      fullRekordboxXmlExportHandler?.(init) ??
+      blobResponse(new Blob(["xml"], { type: "application/xml" }), {
+        headers: {
+          "Content-Disposition": 'attachment; filename="crate-lynx-rekordbox.xml"',
         },
       }),
     )
@@ -782,6 +897,7 @@ describe("App", () => {
 
     for (const viewId of [
       "proposals",
+      "soulseek-queue",
       "streaming-relationships",
       "unidentified",
       "missing",
@@ -813,6 +929,7 @@ describe("App", () => {
 
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "Link proposals 3" })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Soulseek queue 1" })).toBeInTheDocument();
       expect(screen.getByRole("button", { name: "Streaming relationships 27933" })).toBeInTheDocument();
       expect(screen.getByRole("button", { name: "Unidentified 1" })).toBeInTheDocument();
       expect(screen.getByRole("button", { name: "Missing locally 1" })).toBeInTheDocument();
@@ -872,9 +989,15 @@ describe("App", () => {
 
     renderApp(["/generated-runs/501"]);
 
-    expect(await screen.findByRole("heading", { level: 1, name: "Generated run #501" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { level: 1, name: "Generation 19" })).toBeInTheDocument();
     expect(screen.queryByText("Generated run route is invalid.")).not.toBeInTheDocument();
-    expect(await screen.findByRole("heading", { level: 2, name: "Run #501" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { level: 2, name: "Generation 19" })).toBeInTheDocument();
+    expect(screen.getByText("Run ID 501 · 2 playlists · 58 tracks")).toBeInTheDocument();
+    const metadataRegion = screen.getByRole("region", { name: "Generation metadata" });
+    expect(within(metadataRegion).getByText("Leaf size")).toBeInTheDocument();
+    expect(within(metadataRegion).getByText("25")).toBeInTheDocument();
+    expect(within(metadataRegion).getByText("K-means")).toBeInTheDocument();
+    expect(within(metadataRegion).getByText("All local tracks")).toBeInTheDocument();
     const playlistTree = await screen.findByRole("tree", { name: "Generated playlists" });
     const rootPlaylist = within(playlistTree).getByRole("treeitem", { name: "Fast Bright, 24 tracks" });
     const childPlaylist = within(playlistTree).getByRole("treeitem", { name: "Warm Dense, 12 tracks" });
@@ -892,11 +1015,31 @@ describe("App", () => {
     expect(within(playlistSummary).getByText("Traits: Fast")).toBeInTheDocument();
     expect(within(playlistSummary).getByText("Seeds: Night Runner - Frame Delay")).toBeInTheDocument();
     expect(within(playlistSummary).getByText("Source: 58 ready, 3 skipped")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Export run" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Delete" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Export playlist" })).not.toBeInTheDocument();
     await waitFor(() => {
       expect(countFetches(fetchMock, "/api/sonic/runs/501")).toBeGreaterThanOrEqual(1);
     });
     expect(document.getElementById("generated-run-501")).toHaveAttribute("data-view-active", "true");
     expect(document.getElementById("playlists")).toHaveAttribute("data-view-active", "false");
+  });
+
+  it("deletes a completed generated run after confirmation", async () => {
+    const fetchMock = mockPlaylistFetch();
+
+    renderApp(["/generated-runs/501"]);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Delete" }));
+    const confirmation = await screen.findByRole("region", { name: "Delete generation confirmation" });
+    expect(within(confirmation).getByText("Delete generation 19")).toBeInTheDocument();
+    expect(within(confirmation).getByText("Generated playlists and generated playlist tracks for run ID 501 will be removed.")).toBeInTheDocument();
+    fireEvent.click(within(confirmation).getByRole("button", { name: "Confirm delete" }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith("/api/sonic/runs/501", { method: "DELETE" });
+    });
+    expect(await screen.findByRole("heading", { level: 1, name: "Playlist generator" })).toBeInTheDocument();
   });
 
   it("shows generation progress and polls a pending run until it completes", async () => {
@@ -1136,7 +1279,7 @@ describe("App", () => {
     expect(screen.getByLabelText("Missing locally summary")).toBeInTheDocument();
     expect(screen.getByRole("region", { name: "Missing local tracks" })).toBeInTheDocument();
     expect(await screen.findByText("Open Eye Signal")).toBeInTheDocument();
-    expect(screen.getByText("ytm:VLPL_missing_018")).toBeInTheDocument();
+    expect(screen.queryByText("ytm:VLPL_missing_018")).not.toBeInTheDocument();
     expect(document.getElementById("missing")).toHaveAttribute("data-view-active", "true");
     expect(document.getElementById("playlists")).toHaveAttribute("data-view-active", "false");
   });
@@ -1987,6 +2130,101 @@ describe("App", () => {
     expect(createObjectUrlMock).toHaveBeenCalledWith(expect.any(Blob));
     expect(clickMock).toHaveBeenCalled();
     expect(revokeObjectUrlMock).toHaveBeenCalledWith("blob:m3u-export");
+
+    fireEvent.click(screen.getByRole("button", { name: "Download XML" }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith("/api/m3u/export/rekordbox-xml", {
+        body: JSON.stringify({
+          formats: ["m3u", "m3u8"],
+          path_format: "file_url",
+          playlist_ids: [12],
+          profile_id: 1,
+        }),
+        headers: {
+          "Content-Type": "application/json",
+        },
+        method: "POST",
+      });
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Download all XML" }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith("/api/m3u/export/rekordbox-xml/full", {
+        body: JSON.stringify({
+          formats: ["m3u"],
+          path_format: "file_url",
+          playlist_ids: [],
+          profile_id: 1,
+        }),
+        headers: {
+          "Content-Type": "application/json",
+        },
+        method: "POST",
+      });
+    });
+  });
+
+  it("opens generated run hierarchy export from the generated run view", async () => {
+    let previewRequestBody: unknown = null;
+    mockPlaylistFetch({
+      m3uExportPreviewHandler: (init) => {
+        previewRequestBody = JSON.parse(String(init?.body ?? "{}"));
+        return jsonResponse({
+          ...m3uExportPreviewResponse,
+          playlist_count: 2,
+          playlists: [
+            {
+              archive_path_m3u: "Generated Run 501/Fast Bright [gen].m3u",
+              archive_path_m3u8: "Generated Run 501/Fast Bright [gen].m3u8",
+              archive_paths: [
+                "Generated Run 501/Fast Bright [gen].m3u",
+                "Generated Run 501/Fast Bright [gen].m3u8",
+              ],
+              exported_track_count: 24,
+              filename_m3u: "Fast Bright [gen].m3u",
+              filename_m3u8: "Fast Bright [gen].m3u8",
+              filenames: ["Fast Bright [gen].m3u", "Fast Bright [gen].m3u8"],
+              generated_playlist_id: 7001,
+              generated_run_id: 501,
+              playlist_id: null,
+              sample_path: "file://localhost/mnt/music/Frame%20Delay/Night%20Runner.flac",
+              skipped_track_count: 0,
+              source: "generated",
+              title: "Fast Bright",
+            },
+          ],
+          total_exported_track_count: 24,
+          total_skipped_track_count: 0,
+        });
+      },
+    });
+
+    renderApp(["/generated-runs/501"]);
+    fireEvent.click(await screen.findByRole("button", { name: "Export run" }));
+
+    expect(await screen.findByRole("heading", { level: 1, name: "M3U export" })).toBeInTheDocument();
+    const generatedRunSelection = await screen.findByRole("region", { name: "Generated run export selection" });
+    expect(generatedRunSelection).toHaveTextContent("Generation 19");
+    expect(generatedRunSelection).toHaveTextContent("Run ID 501");
+
+    const previewButton = await screen.findByRole("button", { name: "Preview" });
+    await waitFor(() => {
+      expect(previewButton).toBeEnabled();
+    });
+    fireEvent.click(previewButton);
+
+    await waitFor(() => {
+      expect(previewRequestBody).toEqual({
+        formats: ["m3u", "m3u8"],
+        generated_run_ids: [501],
+        path_format: "file_url",
+        playlist_ids: [],
+        profile_id: 1,
+      });
+    });
+    expect(await screen.findByText("Generated Run 501/Fast Bright [gen].m3u + Generated Run 501/Fast Bright [gen].m3u8")).toBeInTheDocument();
   });
 
   it("uses the selected M3U export formats for preview and download", async () => {
@@ -2023,6 +2261,7 @@ describe("App", () => {
           playlists: [
             {
               ...m3uExportPreviewResponse.playlists[0],
+              archive_paths: ["Late Night Drive [yt].m3u8"],
               filenames: ["Late Night Drive [yt].m3u8"],
             },
           ],

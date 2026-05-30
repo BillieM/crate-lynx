@@ -24,7 +24,7 @@ declare module "@tanstack/react-table" {
   }
 }
 
-type Density = "compact";
+type Density = "compact" | "tight";
 
 // Heterogeneous table columns naturally carry different TValue generics.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -77,6 +77,10 @@ const densityClasses = {
   compact: {
     cell: "px-3 py-2",
     row: "min-h-10",
+  },
+  tight: {
+    cell: "px-2 py-1.5",
+    row: "min-h-9",
   },
 };
 
@@ -349,7 +353,7 @@ export function DataTable<TRow>({
             {table.getHeaderGroups().map((headerGroup) => (
               <tr key={headerGroup.id} className="border-b border-ctp-surface1 bg-ctp-surface0/95">
                 {enableRowSelection ? (
-                  <th className="w-10 px-3 py-2 text-left">
+                  <th className={`w-10 ${tableDensity.cell} text-left`}>
                     <input
                       aria-label="Select all visible rows"
                       checked={headerSelectionState === "all"}
@@ -408,7 +412,7 @@ export function DataTable<TRow>({
                 onKeyDown={isRowInteractive ? (event) => handleRowKeyDown(event, rowIndex, row.original) : undefined}
               >
                 {enableRowSelection ? (
-                  <td className="w-10 px-3 py-2">
+                  <td className={`w-10 ${tableDensity.cell}`}>
                     <input
                       aria-label={`Select row ${rowIndex + 1}`}
                       checked={row.getIsSelected()}

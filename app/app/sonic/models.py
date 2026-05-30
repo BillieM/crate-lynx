@@ -184,6 +184,7 @@ class SonicFeatureSummaryRecord:
 @dataclass(frozen=True, slots=True)
 class PlaylistGenerationRunRecord:
     id: int
+    generation_number: int
     status: str
     source_filter_json: dict[str, Any]
     generation_config_json: dict[str, Any]

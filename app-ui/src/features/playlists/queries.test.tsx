@@ -5,8 +5,10 @@ import type { PropsWithChildren } from "react";
 import {
   approveLinkProposal,
   createM3uExportProfile,
+  exportFullRekordboxXml,
   exportM3uZip,
   exportPlaylistM3u,
+  exportRekordboxXml,
   fetchM3uExportProfiles,
   fetchLinkProposals,
   fetchPlaylistDetail,
@@ -581,11 +583,15 @@ describe("playlist queries", () => {
         playlist_count: 1,
         playlists: [
           {
+            archive_path_m3u: "Road Trip [yt].m3u",
+            archive_path_m3u8: "Road Trip [yt].m3u8",
+            archive_paths: ["Road Trip [yt].m3u8"],
             exported_track_count: 12,
             filename_m3u: "Road Trip [yt].m3u",
             filename_m3u8: "Road Trip [yt].m3u8",
             filenames: ["Road Trip [yt].m3u8"],
             generated_playlist_id: null,
+            generated_run_id: null,
             playlist_id: 7,
             sample_path: "/mnt/music/Artist/Track.flac",
             skipped_track_count: 2,
@@ -625,6 +631,68 @@ describe("playlist queries", () => {
     });
   });
 
+  it("previews a generated run M3U export with archive paths", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        formats: ["m3u"],
+        library_path: "/mnt/music",
+        path_format: "absolute",
+        playlist_count: 1,
+        playlists: [
+          {
+            archive_path_m3u: "Generated Run 501/Root Mix [gen].m3u",
+            archive_path_m3u8: "Generated Run 501/Root Mix [gen].m3u8",
+            archive_paths: ["Generated Run 501/Root Mix [gen].m3u"],
+            exported_track_count: 12,
+            filename_m3u: "Root Mix [gen].m3u",
+            filename_m3u8: "Root Mix [gen].m3u8",
+            filenames: ["Root Mix [gen].m3u"],
+            generated_playlist_id: 7001,
+            generated_run_id: 501,
+            playlist_id: null,
+            sample_path: "/mnt/music/Artist/Track.flac",
+            skipped_track_count: 0,
+            source: "generated",
+            title: "Root Mix",
+          },
+        ],
+        total_exported_track_count: 12,
+        total_skipped_track_count: 0,
+      }),
+    } as Response);
+
+    await expect(
+      previewM3uExport({
+        formats: ["m3u"],
+        generated_run_ids: [501],
+        library_path: "/mnt/music",
+        path_format: "absolute",
+        playlist_ids: [],
+      }),
+    ).resolves.toMatchObject({
+      playlists: [
+        {
+          archive_paths: ["Generated Run 501/Root Mix [gen].m3u"],
+          generated_run_id: 501,
+        },
+      ],
+    });
+    expect(fetchMock).toHaveBeenCalledWith("/api/m3u/export/preview", {
+      body: JSON.stringify({
+        formats: ["m3u"],
+        generated_run_ids: [501],
+        library_path: "/mnt/music",
+        path_format: "absolute",
+        playlist_ids: [],
+      }),
+      headers: {
+        "Content-Type": "application/json",
+      },
+      method: "POST",
+    });
+  });
+
   it("exports a batch M3U zip", async () => {
     const blob = new Blob(["zip"], { type: "application/zip" });
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({
@@ -652,6 +720,74 @@ describe("playlist queries", () => {
         library_path: "/mnt/music",
         path_format: "absolute",
         playlist_ids: [7, 8],
+      }),
+      headers: {
+        "Content-Type": "application/json",
+      },
+      method: "POST",
+    });
+  });
+
+  it("exports a rekordbox XML file", async () => {
+    const blob = new Blob(["xml"], { type: "application/xml" });
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      blob: async () => blob,
+      headers: new Headers({
+        "Content-Disposition": 'attachment; filename="rekordbox.xml"',
+      }),
+    } as Response);
+
+    await expect(
+      exportRekordboxXml({
+        generated_run_ids: [501],
+        library_path: "/mnt/music",
+        path_format: "file_url",
+        playlist_ids: [],
+      }),
+    ).resolves.toEqual({
+      blob,
+      filename: "rekordbox.xml",
+    });
+    expect(fetchMock).toHaveBeenCalledWith("/api/m3u/export/rekordbox-xml", {
+      body: JSON.stringify({
+        generated_run_ids: [501],
+        library_path: "/mnt/music",
+        path_format: "file_url",
+        playlist_ids: [],
+      }),
+      headers: {
+        "Content-Type": "application/json",
+      },
+      method: "POST",
+    });
+  });
+
+  it("exports a full rekordbox XML file", async () => {
+    const blob = new Blob(["xml"], { type: "application/xml" });
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      blob: async () => blob,
+      headers: new Headers({
+        "Content-Disposition": 'attachment; filename="crate-lynx-rekordbox.xml"',
+      }),
+    } as Response);
+
+    await expect(
+      exportFullRekordboxXml({
+        library_path: "/mnt/music",
+        path_format: "file_url",
+        playlist_ids: [],
+      }),
+    ).resolves.toEqual({
+      blob,
+      filename: "crate-lynx-rekordbox.xml",
+    });
+    expect(fetchMock).toHaveBeenCalledWith("/api/m3u/export/rekordbox-xml/full", {
+      body: JSON.stringify({
+        library_path: "/mnt/music",
+        path_format: "file_url",
+        playlist_ids: [],
       }),
       headers: {
         "Content-Type": "application/json",

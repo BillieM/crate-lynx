@@ -88,6 +88,7 @@ Backend services (`app`, `db`, and `redis`) stay on the internal Compose network
 |---|---|
 | `TOKEN_ENCRYPTION_KEY` | Fernet key for encrypting streaming auth tokens. Generate one with `python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())'` |
 | `LIBRARY_ROOT` | Container path where processed music is stored. Defaults to `/nas/media/music` |
+| `LOCAL_DEDUPE_QUARANTINE_ROOT` | Container path where deduplicated local files are moved. Defaults to `/nas/cratelynx/dedupe-quarantine` |
 | `BEETS_LIBRARY` | Container path for the Beets SQLite database. Defaults to `/data/beets/library.db` |
 | `BEETS_IMPORT_LOCK_PATH` | Optional path for the cross-process Beets import lock. Defaults next to `BEETS_LIBRARY` |
 | `CRATE_LYNX_STAGING_DIR` | Container base path for temporary app outputs. Defaults to `/nas/cratelynx/staging` in Compose |
@@ -95,6 +96,17 @@ Backend services (`app`, `db`, and `redis`) stay on the internal Compose network
 | `INGESTION_WORKER_COUNT` | Number of RQ workers listening to the ingestion queue. Defaults to `1` |
 | `SONIC_WORKER_COUNT` | Number of dedicated RQ workers listening to the sonic queue. Defaults to `2` |
 | `M3U_OUTPUT_DIR` | Container path for generated M3U exports. Defaults to `/data/m3u` in Compose |
+| `SLSKD_BASE_URL` | Base URL for the slskd HTTP API. Required for Soulseek search/download actions |
+| `SLSKD_API_KEY` | slskd API key sent as `X-API-Key`. Required for Soulseek search/download actions |
+| `SLSKD_VERIFY_SSL` | Whether to verify slskd HTTPS certificates. Defaults to `true` |
+| `SLSKD_SEARCH_POLL_TIMEOUT_SECONDS` | Maximum seconds to poll slskd search responses before ranking the final result set. Defaults to `30` |
+| `SLSKD_SEARCH_POLL_INTERVAL_SECONDS` | Seconds between slskd search response polls. Defaults to `2` |
+| `SLSKD_WEBHOOK_TOKEN` | Shared token required by the internal slskd download-complete webhook |
+| `SLSKD_DOWNLOADS_CONTAINER_ROOT` | slskd container download root reported in webhook payloads. Defaults to `/data/soulseek/downloads` |
+| `SLSKD_DOWNLOADS_APP_ROOT` | CrateLynx app container path for the same downloads. Defaults to `/nas/soulseek/downloads` |
+
+Production Compose attaches the backend app container to the external `music` Docker network so `SLSKD_BASE_URL=http://slskd:5030` can reach the existing slskd container.
+Configure slskd to send `DownloadFileComplete` webhooks to `http://crate-lynx-app-1:8000/api/soulseek/slskd/download-complete` on the shared Docker network with header `X-CrateLynx-Webhook-Token: <SLSKD_WEBHOOK_TOKEN>`.
 
 ## Storage and mounts
 
@@ -116,6 +128,7 @@ For same-filesystem moves and MP3 hardlinks, keep ingest inputs, staging, and th
 | `/mnt/nas_data/cratelynx/music-in` | `/nas/cratelynx/music-in` | Default manual ingest input |
 | `/mnt/nas_data/soulseek/downloads` | `/nas/soulseek/downloads` | Default Soulseek download ingest input |
 | `/mnt/nas_data/cratelynx/staging` | `/nas/cratelynx/staging` | Temporary ingestion staging |
+| `/mnt/nas_data/cratelynx/dedupe-quarantine` | `/nas/cratelynx/dedupe-quarantine` | Quarantined duplicate local files |
 | `/mnt/nas_data/media/music` | `/nas/media/music` | Processed library output managed by Beets |
 
 Application state is stored under `APP_DATA_HOST_PATH`:

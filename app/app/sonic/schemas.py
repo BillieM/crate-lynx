@@ -145,6 +145,7 @@ class SonicGenerationPreviewResponse(BaseModel):
 
 class PlaylistGenerationRunResponse(BaseModel):
     id: int
+    generation_number: int
     status: str
     source_filter: dict[str, Any]
     generation_config: dict[str, Any]

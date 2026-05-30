@@ -18,6 +18,7 @@ from app.maintenance.schemas import (
     UnidentifiedTrackResponse,
 )
 from app.maintenance.store import MaintenanceStore
+from app.soulseek.schemas import SoulseekAcquisitionSummaryResponse
 
 
 def create_router(
@@ -55,6 +56,29 @@ def create_router(
                     playlist_count=track.playlist_count,
                     playlist_ids=track.playlist_ids,
                     playlist_titles=track.playlist_titles,
+                    soulseek_acquisition=(
+                        SoulseekAcquisitionSummaryResponse(
+                            id=track.soulseek_acquisition.id,
+                            status=track.soulseek_acquisition.status,
+                            candidate_count=track.soulseek_acquisition.candidate_count,
+                            selected_candidate_id=track.soulseek_acquisition.selected_candidate_id,
+                            slskd_batch_id=track.soulseek_acquisition.slskd_batch_id,
+                            slskd_transfer_id=_slskd_transfer_id(
+                                track.soulseek_acquisition.slskd_batch_id
+                            ),
+                            completed_source_path=track.soulseek_acquisition.completed_source_path,
+                            slskd_completed_event_id=track.soulseek_acquisition.slskd_completed_event_id,
+                            job_id=track.soulseek_acquisition.job_id,
+                            enqueue_job_id=track.soulseek_acquisition.enqueue_job_id,
+                            refresh_job_id=track.soulseek_acquisition.refresh_job_id,
+                            local_track_id=track.soulseek_acquisition.local_track_id,
+                            final_link_id=track.soulseek_acquisition.final_link_id,
+                            error_detail=track.soulseek_acquisition.error_detail,
+                            link_error_detail=track.soulseek_acquisition.link_error_detail,
+                        )
+                        if track.soulseek_acquisition is not None
+                        else None
+                    ),
                 )
                 for track in tracks
             ]
@@ -164,3 +188,12 @@ def create_router(
         )
 
     return router
+
+
+def _slskd_transfer_id(stored_id: str | None) -> str | None:
+    if stored_id is None:
+        return None
+    if stored_id.startswith("transfer:"):
+        transfer_id = stored_id[len("transfer:") :].strip()
+        return transfer_id or None
+    return stored_id

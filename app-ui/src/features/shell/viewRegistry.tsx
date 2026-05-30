@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { LocalDedupeView } from "../localDedupe/LocalDedupeView";
 import { LocalLibraryView } from "../library/LocalLibraryView";
 import { MissingLocallyView } from "../maintenance/MissingLocallyView";
 import { UnidentifiedView } from "../maintenance/UnidentifiedView";
@@ -13,11 +14,14 @@ import { GeneralSettingsView } from "../settings/GeneralSettingsView";
 import { GeneratedRunView } from "../sonic/GeneratedRunView";
 import { PlaylistGeneratorView } from "../sonic/PlaylistGeneratorView";
 import type { PlaylistGenerationRun } from "../sonic/queries";
+import { SoulseekQueueView } from "../soulseek/SoulseekQueueView";
 import type { NavItem, PlaylistSyncViewState, ViewConfig } from "./types";
 
 export const playlistCollectionViewId = "playlists";
+export const localDedupeViewId = "local-dedupe";
 export const playlistExportViewId = "playlist-export";
 export const playlistGeneratorViewId = "playlist-generator";
+export const soulseekQueueViewId = "soulseek-queue";
 export const streamingRelationshipsViewId = "streaming-relationships";
 export const settingsAuthenticationViewId = "settings-authentication";
 export const settingsGeneralViewId = "settings-general";
@@ -41,6 +45,14 @@ const staticViewEntries = [
     icon: "spark",
     path: "/proposals",
     render: () => <LinkProposalsView />,
+  },
+  {
+    id: soulseekQueueViewId,
+    title: "Soulseek Queue",
+    actionLabels: [],
+    icon: "tool",
+    path: "/soulseek",
+    render: () => <SoulseekQueueView />,
   },
   {
     id: streamingRelationshipsViewId,
@@ -73,6 +85,14 @@ const staticViewEntries = [
     icon: "library",
     path: "/library",
     render: () => <LocalLibraryView />,
+  },
+  {
+    id: localDedupeViewId,
+    title: "Deduplicate tracks",
+    actionLabels: [],
+    icon: "tool",
+    path: "/tools/dedupe",
+    render: () => <LocalDedupeView />,
   },
   {
     id: playlistCollectionViewId,
@@ -190,8 +210,9 @@ export function buildPlaylistNavItems(playlists: StreamingPlaylist[]): NavItem[]
   }));
 }
 
-export function buildToolNavItems(): NavItem[] {
+export function buildToolNavItems(dedupeCount?: number): NavItem[] {
   return [
+    { id: localDedupeViewId, label: "Deduplicate tracks", badge: dedupeCount, tone: "pending" },
     { id: playlistGeneratorViewId, label: "Playlist generator", tone: "accent" },
     { id: playlistExportViewId, label: "M3U export", tone: "accent" },
   ];
@@ -200,7 +221,7 @@ export function buildToolNavItems(): NavItem[] {
 export function buildGeneratedRunNavItems(runs: PlaylistGenerationRun[]): NavItem[] {
   return runs.map((run) => ({
     id: getGeneratedRunViewId(run.id),
-    label: `Run #${run.id}`,
+    label: `Generation ${run.generation_number}`,
     badge: run.playlist_count,
     tone: run.status === "failed" ? "alert" : run.status === "completed" ? "linked" : "pending",
   }));
@@ -210,15 +231,18 @@ export function buildMaintenanceNavItems({
   missingCount,
   proposalCount,
   relationshipCount,
+  soulseekCount,
   unidentifiedCount,
 }: {
   missingCount?: number;
   proposalCount?: number;
   relationshipCount?: number;
+  soulseekCount?: number;
   unidentifiedCount?: number;
 }): NavItem[] {
   return [
     { id: "proposals", label: "Link proposals", badge: proposalCount, tone: "pending" },
+    { id: soulseekQueueViewId, label: "Soulseek queue", badge: soulseekCount, tone: "accent" },
     { id: streamingRelationshipsViewId, label: "Streaming relationships", badge: relationshipCount, tone: "pending" },
     { id: "unidentified", label: "Unidentified", badge: unidentifiedCount, tone: "alert" },
     { id: "missing", label: "Missing locally", badge: missingCount, tone: "accent" },
@@ -257,7 +281,7 @@ function buildPlaylistViewEntries(playlists: StreamingPlaylist[]): AppViewEntry[
 function buildGeneratedRunViewEntries(runs: PlaylistGenerationRun[]): AppViewEntry[] {
   return runs.map((run) => ({
     id: getGeneratedRunViewId(run.id),
-    title: `Generated run #${run.id}`,
+    title: `Generation ${run.generation_number}`,
     actionLabels: [],
     icon: "tool",
     path: getViewPath(getGeneratedRunViewId(run.id)),

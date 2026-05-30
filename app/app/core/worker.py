@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+import logging
 import os
 
 from redis import Redis
 from rq import Queue, Worker
 
 
-DEFAULT_QUEUE_NAMES = ("ingestion", "matching", "streaming", "m3u", "sonic")
+DEFAULT_QUEUE_NAMES = ("ingestion", "matching", "streaming", "m3u", "sonic", "soulseek")
 DEFAULT_REDIS_URL = "redis://localhost:6379/0"
 
 
@@ -38,7 +39,17 @@ def build_worker(
     return Worker(queues, connection=connection)
 
 
+def configure_logging() -> None:
+    level_name = os.environ.get("LOG_LEVEL", "INFO").upper()
+    level = getattr(logging, level_name, logging.INFO)
+    logging.basicConfig(
+        format="%(levelname)s:%(name)s:%(message)s",
+        level=level,
+    )
+
+
 def main() -> None:
+    configure_logging()
     worker = build_worker()
     worker.work()
 

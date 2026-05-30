@@ -6,10 +6,12 @@ import { ActionButton } from "../../components/ActionButton";
 import { EmptyStateCard } from "../../components/EmptyStateCard";
 import { StatusMessage } from "../../components/StatusMessage";
 import { controlClasses, layoutClasses, surfaceClasses, textClasses } from "../../styles/componentClasses";
-import { type GeneratedPlaylist, useGeneratedPlaylistsQuery } from "../sonic/queries";
+import { type PlaylistGenerationRun, useSonicRunsQuery } from "../sonic/queries";
 import {
   createM3uExportProfile,
+  exportFullRekordboxXml,
   exportM3uZip,
+  exportRekordboxXml,
   playlistQueryKeys,
   previewM3uExport,
   type M3uExportFormat,
@@ -24,7 +26,7 @@ import {
 
 const emptyPlaylists: StreamingPlaylist[] = [];
 const emptyProfiles: M3uExportProfile[] = [];
-const emptyGeneratedPlaylists: GeneratedPlaylist[] = [];
+const emptyGeneratedRuns: PlaylistGenerationRun[] = [];
 const exportFormatOptions = [
   { label: ".m3u", value: "m3u" },
   { label: ".m3u8", value: "m3u8" },
@@ -65,20 +67,20 @@ function getPreviewKey(request: M3uExportRequest | null) {
 
 function buildExportRequest({
   formats,
-  generatedPlaylistIds,
+  generatedRunIds,
   libraryPath,
   pathFormat,
   playlistIds,
   selectedProfileId,
 }: {
   formats: M3uExportFormat[];
-  generatedPlaylistIds: number[];
+  generatedRunIds: number[];
   libraryPath: string;
   pathFormat: M3uExportPathFormat;
   playlistIds: number[];
   selectedProfileId: number | null;
 }): M3uExportRequest | null {
-  if ((playlistIds.length === 0 && generatedPlaylistIds.length === 0) || formats.length === 0) {
+  if ((playlistIds.length === 0 && generatedRunIds.length === 0) || formats.length === 0) {
     return null;
   }
 
@@ -89,8 +91,8 @@ function buildExportRequest({
       playlist_ids: playlistIds,
       profile_id: selectedProfileId,
     };
-    if (generatedPlaylistIds.length > 0) {
-      request.generated_playlist_ids = generatedPlaylistIds;
+    if (generatedRunIds.length > 0) {
+      request.generated_run_ids = generatedRunIds;
     }
     return request;
   }
@@ -106,10 +108,41 @@ function buildExportRequest({
     path_format: pathFormat,
     playlist_ids: playlistIds,
   };
-  if (generatedPlaylistIds.length > 0) {
-    request.generated_playlist_ids = generatedPlaylistIds;
+  if (generatedRunIds.length > 0) {
+    request.generated_run_ids = generatedRunIds;
   }
   return request;
+}
+
+function buildFullRekordboxXmlRequest({
+  libraryPath,
+  pathFormat,
+  selectedProfileId,
+}: {
+  libraryPath: string;
+  pathFormat: M3uExportPathFormat;
+  selectedProfileId: number | null;
+}): M3uExportRequest | null {
+  if (selectedProfileId !== null) {
+    return {
+      formats: ["m3u"],
+      path_format: pathFormat,
+      playlist_ids: [],
+      profile_id: selectedProfileId,
+    };
+  }
+
+  const trimmedLibraryPath = libraryPath.trim();
+  if (!trimmedLibraryPath) {
+    return null;
+  }
+
+  return {
+    formats: ["m3u"],
+    library_path: trimmedLibraryPath,
+    path_format: pathFormat,
+    playlist_ids: [],
+  };
 }
 
 function ExportProfileSelector({
@@ -339,7 +372,7 @@ function PlaylistSelectionList({
   }
 
   return (
-    <section className="grid min-h-0 gap-3" aria-label="Playlist export selection">
+    <section className="grid shrink-0 gap-3" aria-label="Playlist export selection">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h2 className={textClasses.sectionTitle}>Playlists</h2>
@@ -372,7 +405,7 @@ function PlaylistSelectionList({
         />
       </div>
 
-      <div className="min-h-0 overflow-y-auto pr-1">
+      <div className="max-h-[28rem] overflow-y-auto pr-1">
         <div className="grid gap-2.5">
           {filteredPlaylists.map((playlist) => {
             const isSelected = selectedPlaylistIds.has(playlist.id);
@@ -411,86 +444,88 @@ function PlaylistSelectionList({
   );
 }
 
-function GeneratedPlaylistSelectionList({
-  generatedPlaylists,
-  selectedGeneratedPlaylistIds,
-  setSelectedGeneratedPlaylistIds,
+function GeneratedRunSelectionList({
+  generatedRuns,
+  selectedGeneratedRunIds,
+  setSelectedGeneratedRunIds,
 }: {
-  generatedPlaylists: GeneratedPlaylist[];
-  selectedGeneratedPlaylistIds: Set<number>;
-  setSelectedGeneratedPlaylistIds: (playlistIds: Set<number>) => void;
+  generatedRuns: PlaylistGenerationRun[];
+  selectedGeneratedRunIds: Set<number>;
+  setSelectedGeneratedRunIds: (runIds: Set<number>) => void;
 }) {
-  const selectedCount = generatedPlaylists.filter((playlist) => selectedGeneratedPlaylistIds.has(playlist.id)).length;
+  const selectedCount = generatedRuns.filter((run) => selectedGeneratedRunIds.has(run.id)).length;
 
-  function togglePlaylist(playlistId: number) {
-    const nextSelection = new Set(selectedGeneratedPlaylistIds);
-    if (nextSelection.has(playlistId)) {
-      nextSelection.delete(playlistId);
+  function toggleRun(runId: number) {
+    const nextSelection = new Set(selectedGeneratedRunIds);
+    if (nextSelection.has(runId)) {
+      nextSelection.delete(runId);
     } else {
-      nextSelection.add(playlistId);
+      nextSelection.add(runId);
     }
-    setSelectedGeneratedPlaylistIds(nextSelection);
+    setSelectedGeneratedRunIds(nextSelection);
   }
 
-  if (generatedPlaylists.length === 0) {
+  if (generatedRuns.length === 0) {
     return null;
   }
 
   return (
-    <section className="grid min-h-0 gap-3" aria-label="Generated playlist export selection">
+    <section className="grid shrink-0 gap-3" aria-label="Generated run export selection">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h2 className={textClasses.sectionTitle}>Generated playlists</h2>
+          <h2 className={textClasses.sectionTitle}>Generated runs</h2>
           <p className={`mt-1 ${textClasses.bodyMuted}`}>
-            {selectedCount} of {generatedPlaylists.length} selected
+            {selectedCount} of {generatedRuns.length} selected
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <ActionButton
             className={controlClasses.actionButtonCompact}
-            onClick={() => setSelectedGeneratedPlaylistIds(new Set(generatedPlaylists.map((playlist) => playlist.id)))}
+            onClick={() => setSelectedGeneratedRunIds(new Set(generatedRuns.map((run) => run.id)))}
             type="button"
           >
             All
           </ActionButton>
-          <ActionButton className={controlClasses.actionButtonCompact} onClick={() => setSelectedGeneratedPlaylistIds(new Set())} type="button">
+          <ActionButton className={controlClasses.actionButtonCompact} onClick={() => setSelectedGeneratedRunIds(new Set())} type="button">
             None
           </ActionButton>
         </div>
       </div>
+      <div className="max-h-[28rem] overflow-y-auto pr-1">
+        <div className="grid gap-2.5 md:grid-cols-2">
+          {generatedRuns.map((run) => {
+            const isSelected = selectedGeneratedRunIds.has(run.id);
 
-      <div className="grid gap-2.5 md:grid-cols-2">
-        {generatedPlaylists.map((playlist) => {
-          const isSelected = selectedGeneratedPlaylistIds.has(playlist.id);
-
-          return (
-            <button
-              className={`${surfaceClasses.rowCardCompact} text-left transition-colors ${
-                isSelected ? "border-ctp-green/45 bg-ctp-green/10" : "hover:border-ctp-surface2"
-              }`}
-              key={playlist.id}
-              onClick={() => togglePlaylist(playlist.id)}
-              type="button"
-            >
-              <span className="flex min-w-0 items-center gap-3">
-                <span
-                  aria-hidden="true"
-                  className={`${controlClasses.iconFrame} h-8 w-8 shrink-0 ${
-                    isSelected ? "border-ctp-green/45 text-ctp-green" : ""
-                  }`}
-                >
-                  {isSelected ? <Check className="h-4 w-4" /> : <Music2 className="h-4 w-4" />}
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className={`block truncate ${textClasses.title}`}>{playlist.name}</span>
-                  <span className={`mt-1 block ${textClasses.caption}`}>
-                    Run #{playlist.run_id} · {playlist.track_count.toLocaleString()} tracks
+            return (
+              <button
+                className={`${surfaceClasses.rowCardCompact} text-left transition-colors ${
+                  isSelected ? "border-ctp-green/45 bg-ctp-green/10" : "hover:border-ctp-surface2"
+                }`}
+                key={run.id}
+                onClick={() => toggleRun(run.id)}
+                type="button"
+              >
+                <span className="flex min-w-0 items-center gap-3">
+                  <span
+                    aria-hidden="true"
+                    className={`${controlClasses.iconFrame} h-8 w-8 shrink-0 ${
+                      isSelected ? "border-ctp-green/45 text-ctp-green" : ""
+                    }`}
+                  >
+                    {isSelected ? <Check className="h-4 w-4" /> : <Folder className="h-4 w-4" />}
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className={`block truncate ${textClasses.title}`}>Generation {run.generation_number}</span>
+                    <span className={`mt-1 block ${textClasses.caption}`}>
+                      Run ID {run.id.toLocaleString()} · {run.playlist_count.toLocaleString()} playlists ·{" "}
+                      {run.track_count.toLocaleString()} tracks · {run.status}
+                    </span>
                   </span>
                 </span>
-              </span>
-            </button>
-          );
-        })}
+              </button>
+            );
+          })}
+        </div>
       </div>
     </section>
   );
@@ -524,7 +559,7 @@ function ExportPreview({ preview }: { preview: M3uExportPreviewResponse }) {
           >
             <span className={`min-w-0 truncate ${textClasses.bodyRelaxed}`}>{playlist.title}</span>
             <span className={`font-mono ${textClasses.caption}`}>
-              {playlist.filenames.join(" + ")}
+              {playlist.archive_paths.join(" + ")}
             </span>
           </div>
         ))}
@@ -537,10 +572,10 @@ export function PlaylistM3uExportView() {
   const queryClient = useQueryClient();
   const [searchParams] = useSearchParams();
   const playlistsQuery = useStreamingPlaylistsQuery();
-  const generatedPlaylistsQuery = useGeneratedPlaylistsQuery();
+  const generatedRunsQuery = useSonicRunsQuery();
   const profilesQuery = useM3uExportProfilesQuery();
   const playlists = playlistsQuery.data?.playlists ?? emptyPlaylists;
-  const generatedPlaylists = generatedPlaylistsQuery.data?.playlists ?? emptyGeneratedPlaylists;
+  const generatedRuns = generatedRunsQuery.data?.runs ?? emptyGeneratedRuns;
   const profiles = profilesQuery.data?.profiles ?? emptyProfiles;
   const [selectedProfileId, setSelectedProfileId] = useState<number | null>(null);
   const [libraryPath, setLibraryPath] = useState("");
@@ -551,7 +586,7 @@ export function PlaylistM3uExportView() {
     new Set(exportFormatOptions.map((option) => option.value)),
   );
   const [selectedPlaylistIds, setSelectedPlaylistIds] = useState<Set<number>>(new Set());
-  const [selectedGeneratedPlaylistIds, setSelectedGeneratedPlaylistIds] = useState<Set<number>>(new Set());
+  const [selectedGeneratedRunIds, setSelectedGeneratedRunIds] = useState<Set<number>>(new Set());
   const [hasSeededSelection, setHasSeededSelection] = useState(false);
   const [lastPreviewKey, setLastPreviewKey] = useState<string | null>(null);
   const selectedFormatList = useMemo(
@@ -562,15 +597,20 @@ export function PlaylistM3uExportView() {
     () => playlists.filter((playlist) => selectedPlaylistIds.has(playlist.id)).map((playlist) => playlist.id),
     [playlists, selectedPlaylistIds],
   );
-  const selectedGeneratedPlaylistIdList = useMemo(
-    () => generatedPlaylists.filter((playlist) => selectedGeneratedPlaylistIds.has(playlist.id)).map((playlist) => playlist.id),
-    [generatedPlaylists, selectedGeneratedPlaylistIds],
+  const exportableGeneratedRuns = useMemo(
+    () => generatedRuns.filter((run) => run.playlist_count > 0),
+    [generatedRuns],
   );
+  const selectedGeneratedRunIdList = useMemo(
+    () => exportableGeneratedRuns.filter((run) => selectedGeneratedRunIds.has(run.id)).map((run) => run.id),
+    [exportableGeneratedRuns, selectedGeneratedRunIds],
+  );
+  const selectedExportTargetCount = selectedPlaylistIdList.length + selectedGeneratedRunIdList.length;
   const exportRequest = useMemo(
     () =>
       buildExportRequest({
         formats: selectedFormatList,
-        generatedPlaylistIds: selectedGeneratedPlaylistIdList,
+        generatedRunIds: selectedGeneratedRunIdList,
         libraryPath,
         pathFormat,
         playlistIds: selectedPlaylistIdList,
@@ -580,10 +620,19 @@ export function PlaylistM3uExportView() {
       libraryPath,
       pathFormat,
       selectedFormatList,
-      selectedGeneratedPlaylistIdList,
+      selectedGeneratedRunIdList,
       selectedPlaylistIdList,
       selectedProfileId,
     ],
+  );
+  const fullRekordboxXmlRequest = useMemo(
+    () =>
+      buildFullRekordboxXmlRequest({
+        libraryPath,
+        pathFormat,
+        selectedProfileId,
+      }),
+    [libraryPath, pathFormat, selectedProfileId],
   );
   const exportRequestKey = getPreviewKey(exportRequest);
   const previewMutation = useMutation({
@@ -592,6 +641,20 @@ export function PlaylistM3uExportView() {
   });
   const exportMutation = useMutation({
     mutationFn: exportM3uZip,
+    onSuccess: ({ blob, filename }) => {
+      downloadBlob(blob, filename);
+      void queryClient.invalidateQueries({ queryKey: playlistQueryKeys.m3uExportProfiles() });
+    },
+  });
+  const rekordboxXmlMutation = useMutation({
+    mutationFn: exportRekordboxXml,
+    onSuccess: ({ blob, filename }) => {
+      downloadBlob(blob, filename);
+      void queryClient.invalidateQueries({ queryKey: playlistQueryKeys.m3uExportProfiles() });
+    },
+  });
+  const fullRekordboxXmlMutation = useMutation({
+    mutationFn: exportFullRekordboxXml,
     onSuccess: ({ blob, filename }) => {
       downloadBlob(blob, filename);
       void queryClient.invalidateQueries({ queryKey: playlistQueryKeys.m3uExportProfiles() });
@@ -618,27 +681,30 @@ export function PlaylistM3uExportView() {
   }, [profiles, selectedProfileId]);
 
   useEffect(() => {
-    if (hasSeededSelection || playlistsQuery.isPending || generatedPlaylistsQuery.isPending) {
+    if (hasSeededSelection || playlistsQuery.isPending || generatedRunsQuery.isPending) {
       return;
     }
 
-    const requestedGeneratedPlaylistId = Number(searchParams.get("generated_playlist"));
-    const requestedGeneratedPlaylist = generatedPlaylists.find((playlist) => playlist.id === requestedGeneratedPlaylistId);
+    const requestedGeneratedRunId = Number(searchParams.get("generated_run"));
+    const requestedGeneratedRun = exportableGeneratedRuns.find((run) => run.id === requestedGeneratedRunId);
     const requestedPlaylistId = Number(searchParams.get("playlist"));
     const requestedPlaylist = playlists.find((playlist) => playlist.id === requestedPlaylistId);
-    if (requestedGeneratedPlaylist) {
+    if (requestedGeneratedRun) {
       setSelectedPlaylistIds(new Set());
-      setSelectedGeneratedPlaylistIds(new Set([requestedGeneratedPlaylist.id]));
+      setSelectedGeneratedRunIds(new Set([requestedGeneratedRun.id]));
+    } else if (Number.isFinite(requestedGeneratedRunId) && requestedGeneratedRunId > 0) {
+      setSelectedPlaylistIds(new Set());
+      setSelectedGeneratedRunIds(new Set());
     } else {
       setSelectedPlaylistIds(
         new Set(requestedPlaylist ? [requestedPlaylist.id] : playlists.map((playlist) => playlist.id)),
       );
-      setSelectedGeneratedPlaylistIds(new Set());
+      setSelectedGeneratedRunIds(new Set());
     }
     setHasSeededSelection(true);
   }, [
-    generatedPlaylists,
-    generatedPlaylistsQuery.isPending,
+    exportableGeneratedRuns,
+    generatedRunsQuery.isPending,
     hasSeededSelection,
     playlists,
     playlistsQuery.isPending,
@@ -682,11 +748,27 @@ export function PlaylistM3uExportView() {
     exportMutation.mutate(exportRequest);
   }
 
-  if (playlistsQuery.isPending || generatedPlaylistsQuery.isPending || profilesQuery.isPending) {
+  function handleRekordboxXmlExport() {
+    if (exportRequest === null || !isPreviewCurrent || rekordboxXmlMutation.isPending) {
+      return;
+    }
+
+    rekordboxXmlMutation.mutate(exportRequest);
+  }
+
+  function handleFullRekordboxXmlExport() {
+    if (fullRekordboxXmlRequest === null || fullRekordboxXmlMutation.isPending) {
+      return;
+    }
+
+    fullRekordboxXmlMutation.mutate(fullRekordboxXmlRequest);
+  }
+
+  if (playlistsQuery.isPending || generatedRunsQuery.isPending || profilesQuery.isPending) {
     return <EmptyStateCard body="Loading M3U export state..." className={layoutClasses.emptyStateNarrow} title="Loading export" />;
   }
 
-  if (playlistsQuery.isError || generatedPlaylistsQuery.isError || profilesQuery.isError) {
+  if (playlistsQuery.isError || generatedRunsQuery.isError || profilesQuery.isError) {
     return (
       <EmptyStateCard
         body="M3U export data is unavailable right now."
@@ -697,10 +779,10 @@ export function PlaylistM3uExportView() {
     );
   }
 
-  if (playlists.length === 0 && generatedPlaylists.length === 0) {
+  if (playlists.length === 0 && exportableGeneratedRuns.length === 0) {
     return (
       <EmptyStateCard
-        body="Exportable streaming or generated playlists are required before exporting M3U files."
+        body="Full-sync streaming playlists or generated runs are required before exporting M3U files."
         className={layoutClasses.emptyStateNarrow}
         title="No exportable playlists"
       />
@@ -713,8 +795,7 @@ export function PlaylistM3uExportView() {
         <div>
           <h2 className={textClasses.sectionTitle}>M3U export</h2>
           <p className={`mt-1 ${textClasses.bodyMuted}`}>
-            {selectedPlaylistIdList.length + selectedGeneratedPlaylistIdList.length}{" "}
-            {selectedPlaylistIdList.length + selectedGeneratedPlaylistIdList.length === 1 ? "playlist" : "playlists"} selected.
+            {selectedExportTargetCount} {selectedExportTargetCount === 1 ? "export target" : "export targets"} selected.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -725,6 +806,18 @@ export function PlaylistM3uExportView() {
           <ActionButton disabled={!isPreviewCurrent || exportMutation.isPending} onClick={handleExport} type="button">
             <FileDown aria-hidden="true" className="h-3.5 w-3.5" strokeWidth={1.9} />
             {exportMutation.isPending ? "Exporting..." : "Download ZIP"}
+          </ActionButton>
+          <ActionButton disabled={!isPreviewCurrent || rekordboxXmlMutation.isPending} onClick={handleRekordboxXmlExport} type="button">
+            <FileDown aria-hidden="true" className="h-3.5 w-3.5" strokeWidth={1.9} />
+            {rekordboxXmlMutation.isPending ? "Exporting..." : "Download XML"}
+          </ActionButton>
+          <ActionButton
+            disabled={fullRekordboxXmlRequest === null || fullRekordboxXmlMutation.isPending}
+            onClick={handleFullRekordboxXmlExport}
+            type="button"
+          >
+            <FileDown aria-hidden="true" className="h-3.5 w-3.5" strokeWidth={1.9} />
+            {fullRekordboxXmlMutation.isPending ? "Exporting..." : "Download all XML"}
           </ActionButton>
         </div>
       </div>
@@ -738,7 +831,19 @@ export function PlaylistM3uExportView() {
       {exportMutation.isError ? (
         <StatusMessage body="The ZIP export could not be generated." status="error" title="Export failed" />
       ) : null}
+      {rekordboxXmlMutation.isError ? (
+        <StatusMessage body="The Rekordbox XML export could not be generated." status="error" title="XML export failed" />
+      ) : null}
+      {fullRekordboxXmlMutation.isError ? (
+        <StatusMessage body="The full Rekordbox XML export could not be generated." status="error" title="Full XML export failed" />
+      ) : null}
       {exportMutation.isSuccess ? <StatusMessage body="The ZIP download has started." status="success" title="Export ready" /> : null}
+      {rekordboxXmlMutation.isSuccess ? (
+        <StatusMessage body="The rekordbox.xml download has started." status="success" title="XML export ready" />
+      ) : null}
+      {fullRekordboxXmlMutation.isSuccess ? (
+        <StatusMessage body="The full rekordbox.xml download has started." status="success" title="Full XML export ready" />
+      ) : null}
 
       <ExportProfileSelector
         libraryPath={libraryPath}
@@ -757,18 +862,20 @@ export function PlaylistM3uExportView() {
 
       {isPreviewCurrent && previewMutation.data ? <ExportPreview preview={previewMutation.data} /> : null}
 
-      <PlaylistSelectionList
-        playlists={playlists}
-        searchQuery={searchQuery}
-        selectedPlaylistIds={selectedPlaylistIds}
-        setSearchQuery={setSearchQuery}
-        setSelectedPlaylistIds={setSelectedPlaylistIds}
-      />
+      {playlists.length > 0 ? (
+        <PlaylistSelectionList
+          playlists={playlists}
+          searchQuery={searchQuery}
+          selectedPlaylistIds={selectedPlaylistIds}
+          setSearchQuery={setSearchQuery}
+          setSelectedPlaylistIds={setSelectedPlaylistIds}
+        />
+      ) : null}
 
-      <GeneratedPlaylistSelectionList
-        generatedPlaylists={generatedPlaylists}
-        selectedGeneratedPlaylistIds={selectedGeneratedPlaylistIds}
-        setSelectedGeneratedPlaylistIds={setSelectedGeneratedPlaylistIds}
+      <GeneratedRunSelectionList
+        generatedRuns={exportableGeneratedRuns}
+        selectedGeneratedRunIds={selectedGeneratedRunIds}
+        setSelectedGeneratedRunIds={setSelectedGeneratedRunIds}
       />
     </form>
   );

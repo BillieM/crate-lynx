@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   createPlaylistGenerationRun,
+  deletePlaylistGenerationRun,
   fetchGeneratedPlaylistTracks,
   fetchSonicGenerationPreview,
   fetchSonicFeatureSummary,
@@ -79,6 +80,7 @@ describe("sonic queries", () => {
               created_at: "2026-05-24T12:00:00Z",
               error_detail: null,
               generation_config: { clustering_method: "kmeans" },
+              generation_number: 19,
               id: 99,
               playlist_count: 0,
               source_filter: { source_type: "all_local" },
@@ -108,6 +110,7 @@ describe("sonic queries", () => {
             created_at: "2026-05-24T12:00:00Z",
             error_detail: null,
             generation_config: { clustering_method: "agglomerative" },
+            generation_number: 20,
             id: 100,
             playlist_count: 0,
             source_filter: { source_type: "all_local" },
@@ -205,6 +208,16 @@ describe("sonic queries", () => {
         "Content-Type": "application/json",
       },
       method: "POST",
+    });
+  });
+
+  it("deletes a playlist generation run", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(jsonResponse(undefined, { status: 204 }));
+
+    await expect(deletePlaylistGenerationRun(50)).resolves.toBeUndefined();
+
+    expect(fetchMock).toHaveBeenCalledWith("/api/sonic/runs/50", {
+      method: "DELETE",
     });
   });
 
