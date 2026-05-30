@@ -182,7 +182,10 @@ class StreamingRelationshipSuggestionStore:
         if relationship_type is not None:
             _validate_relationship_type(relationship_type)
 
-        query = select(func.count()).where(
+        query = select(
+            streaming_relationship_suggestions_table.c.lower_track_id,
+            streaming_relationship_suggestions_table.c.higher_track_id,
+        ).where(
             streaming_relationship_suggestions_table.c.status
             == STREAMING_RELATIONSHIP_SUGGESTION_STATUS_PENDING
         )
@@ -193,7 +196,17 @@ class StreamingRelationshipSuggestionStore:
             )
 
         with self._engine.connect() as connection:
-            return int(connection.execute(query).scalar_one())
+            resolver = StreamingRelationshipResolver(connection)
+            return sum(
+                1
+                for row in connection.execute(query).mappings().all()
+                if not _is_stale_pending_suggestion(
+                    connection,
+                    resolver=resolver,
+                    lower_track_id=int(row["lower_track_id"]),
+                    higher_track_id=int(row["higher_track_id"]),
+                )
+            )
 
     def list_pending(
         self,
@@ -269,17 +282,28 @@ class StreamingRelationshipSuggestionStore:
                     ),
                 )
             )
-        if limit is not None:
-            query = query.limit(limit)
-
         with self._engine.connect() as connection:
             rows = connection.execute(query).mappings().all()
             resolver = StreamingRelationshipResolver(connection)
             link_contexts = _LocalLinkContextFactory(connection)
-            contexts = [
-                _suggestion_resolution_context(row=row, resolver=resolver)
-                for row in rows
-            ]
+            contexts: list[_SuggestionResolutionContext] = []
+            for row in rows:
+                lower_track_id = int(row["lower_track_id"])
+                higher_track_id = int(row["higher_track_id"])
+                if _is_stale_pending_suggestion(
+                    connection,
+                    resolver=resolver,
+                    lower_track_id=lower_track_id,
+                    higher_track_id=higher_track_id,
+                ):
+                    continue
+
+                contexts.append(
+                    _suggestion_resolution_context(row=row, resolver=resolver)
+                )
+                if limit is not None and len(contexts) >= limit:
+                    break
+
             link_contexts.prime(
                 final_link_id
                 for context in contexts

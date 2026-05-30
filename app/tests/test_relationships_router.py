@@ -14,6 +14,7 @@ from app.matching.pipeline import metadata as suggested_links_metadata
 from app.matching.pipeline import suggested_links_table
 from app.relationships.models import (
     STREAMING_RELATIONSHIP_SUGGESTION_STATUS_ACCEPTED,
+    STREAMING_RELATIONSHIP_SUGGESTION_STATUS_PENDING,
     STREAMING_RELATIONSHIP_SUGGESTION_STATUS_REJECTED,
     STREAMING_RELATIONSHIP_TYPE_EQUIVALENT,
     STREAMING_RELATIONSHIP_TYPE_RELATED,
@@ -406,7 +407,7 @@ def test_list_relationship_suggestions_filters_by_relationship_type(
     assert response.suggestions[0].relationship_type == "related"
 
 
-def test_list_relationship_suggestions_does_not_prune_stale_rows(
+def test_list_relationship_suggestions_hides_stale_rows_without_pruning(
     tmp_path: Path,
 ) -> None:
     database_url = f"sqlite:///{tmp_path / 'relationship-list-stale.db'}"
@@ -465,17 +466,26 @@ def test_list_relationship_suggestions_does_not_prune_stale_rows(
     router = create_router(require_database_url=lambda: database_url)
     response = _call_endpoint(
         _route(router, "GET", "/streaming/relationships/suggestions").endpoint,
-        limit=10,
+        limit=1,
     )
 
-    assert response.total_count == 3
-    assert response.returned_count == 3
+    assert response.total_count == 1
+    assert response.returned_count == 1
     assert response.next_cursor is None
     assert [suggestion.id for suggestion in response.suggestions] == [
-        equivalent_stale_id,
-        related_stale_id,
         fresh_id,
     ]
+    with engine.connect() as connection:
+        pending_ids = set(
+            connection.execute(
+                select(streaming_relationship_suggestions_table.c.id).where(
+                    streaming_relationship_suggestions_table.c.status
+                    == STREAMING_RELATIONSHIP_SUGGESTION_STATUS_PENDING
+                )
+            ).scalars()
+        )
+
+    assert pending_ids == {equivalent_stale_id, related_stale_id, fresh_id}
 
 
 def test_accept_equivalent_suggestion_creates_relationship(
