@@ -9,9 +9,29 @@ from app.sonic.generation import DEFAULT_GENERATION_CONFIG, normalize_generation
 from app.sonic.models import (
     DEFAULT_SONIC_BACKFILL_LIMIT,
     MAX_SONIC_BACKFILL_LIMIT,
+    PLAYLIST_DIVERSITY_MODE_BALANCED,
+    PLAYLIST_DIVERSITY_MODE_LOOSE,
+    PLAYLIST_DIVERSITY_MODE_STRICT,
     PLAYLIST_GENERATION_METHOD_AGGLOMERATIVE,
     PLAYLIST_GENERATION_METHOD_DJ_HIERARCHICAL,
     PLAYLIST_GENERATION_METHOD_KMEANS,
+    PLAYLIST_GENERATION_PRESET_DISCOVERY_SAMPLER,
+    PLAYLIST_GENERATION_PRESET_DJ_CRATE_TREE,
+    PLAYLIST_GENERATION_PRESET_METADATA_COLLECTIONS,
+    PLAYLIST_GENERATION_PRESET_MICRO_CRATES,
+    PLAYLIST_GENERATION_PRESET_SET_BUILDER,
+    PLAYLIST_NAMING_STRATEGY_CRATE_LABEL,
+    PLAYLIST_NAMING_STRATEGY_DJ_UTILITY,
+    PLAYLIST_NAMING_STRATEGY_FUNCTIONAL_SLOT,
+    PLAYLIST_NAMING_STRATEGY_METADATA_TAGLINE,
+    PLAYLIST_ORDERING_STRATEGY_CENTER_OUT,
+    PLAYLIST_ORDERING_STRATEGY_PROFILE_NEAREST,
+    PLAYLIST_ORDERING_STRATEGY_SEEDED_SHUFFLE,
+    PLAYLIST_OUTPUT_SCOPE_LEAF_ONLY,
+    PLAYLIST_OUTPUT_SCOPE_TOP_LEVEL,
+    PLAYLIST_OUTPUT_SCOPE_TREE,
+    PLAYLIST_TEMPO_MODE_MIXABLE,
+    PLAYLIST_TEMPO_MODE_RAW,
     SONIC_SOURCE_ALL_LOCAL,
     SONIC_SOURCE_STREAMING_PLAYLISTS,
     SONIC_TAG_FILTER_ITEM_ATTRIBUTE,
@@ -84,6 +104,9 @@ class PlaylistGenerationConfigRequest(BaseModel):
     clustering_method: Literal["dj_hierarchical_v1", "kmeans", "agglomerative"] = (
         PLAYLIST_GENERATION_METHOD_DJ_HIERARCHICAL
     )
+    diversity_mode: Literal["balanced_v1", "loose_v1", "strict_v1"] = (
+        PLAYLIST_DIVERSITY_MODE_BALANCED
+    )
     max_depth: int = Field(default=DEFAULT_GENERATION_CONFIG["max_depth"], ge=1, le=5)
     target_playlist_size: int = Field(
         default=DEFAULT_GENERATION_CONFIG["target_playlist_size"],
@@ -106,18 +129,46 @@ class PlaylistGenerationConfigRequest(BaseModel):
         "texture_v1",
         "harmony_v1",
     ] = DEFAULT_GENERATION_CONFIG["feature_profile"]
+    naming_strategy: Literal[
+        "dj_utility_v1",
+        "crate_label_v1",
+        "metadata_tagline_v1",
+        "functional_slot_v1",
+    ] = PLAYLIST_NAMING_STRATEGY_DJ_UTILITY
+    ordering_strategy: Literal[
+        "profile_nearest_neighbor_rolling_v2",
+        "center_out_v1",
+        "seeded_shuffle_v1",
+    ] = PLAYLIST_ORDERING_STRATEGY_PROFILE_NEAREST
+    output_scope: Literal["tree_v1", "leaf_only_v1", "top_level_v1"] = (
+        PLAYLIST_OUTPUT_SCOPE_TREE
+    )
+    preset_key: Literal[
+        "dj_crate_tree_v1",
+        "set_builder_v1",
+        "discovery_sampler_v1",
+        "metadata_collections_v1",
+        "micro_crates_v1",
+    ] = PLAYLIST_GENERATION_PRESET_DJ_CRATE_TREE
     random_seed: int = DEFAULT_GENERATION_CONFIG["random_seed"]
+    tempo_mode: Literal["mixable_v1", "raw_v1"] = PLAYLIST_TEMPO_MODE_MIXABLE
 
     @model_validator(mode="after")
     def normalize_config(self) -> "PlaylistGenerationConfigRequest":
         normalized = normalize_generation_config(self.model_dump())
         self.clustering_method = normalized["clustering_method"]
+        self.diversity_mode = normalized["diversity_mode"]
         self.max_depth = normalized["max_depth"]
         self.target_playlist_size = normalized["target_playlist_size"]
         self.min_playlist_size = normalized["min_playlist_size"]
         self.max_children = normalized["max_children"]
         self.feature_profile = normalized["feature_profile"]
+        self.naming_strategy = normalized["naming_strategy"]
+        self.ordering_strategy = normalized["ordering_strategy"]
+        self.output_scope = normalized["output_scope"]
+        self.preset_key = normalized["preset_key"]
         self.random_seed = normalized["random_seed"]
+        self.tempo_mode = normalized["tempo_mode"]
         return self
 
 
@@ -128,6 +179,18 @@ class CreatePlaylistGenerationRunRequest(BaseModel):
     generation_config: PlaylistGenerationConfigRequest = Field(
         default_factory=PlaylistGenerationConfigRequest
     )
+
+
+class PlaylistGenerationProjectionResponse(BaseModel):
+    mode: str
+    playlist_count: int
+    leaf_playlist_count: int
+    depth_counts: dict[str, int]
+    size_min: int
+    size_median: int
+    size_max: int
+    sample_names: list[str]
+    config_notes: list[str]
 
 
 class SonicGenerationPreviewResponse(BaseModel):
@@ -141,6 +204,7 @@ class SonicGenerationPreviewResponse(BaseModel):
     ready_track_count: int
     skipped_track_count: int
     source_track_count: int
+    projection: PlaylistGenerationProjectionResponse | None
 
 
 class PlaylistGenerationRunResponse(BaseModel):
@@ -237,5 +301,37 @@ PLAYLIST_GENERATION_METHOD_VALUES = (
     PLAYLIST_GENERATION_METHOD_DJ_HIERARCHICAL,
     PLAYLIST_GENERATION_METHOD_KMEANS,
     PLAYLIST_GENERATION_METHOD_AGGLOMERATIVE,
+)
+PLAYLIST_GENERATION_PRESET_VALUES = (
+    PLAYLIST_GENERATION_PRESET_DJ_CRATE_TREE,
+    PLAYLIST_GENERATION_PRESET_SET_BUILDER,
+    PLAYLIST_GENERATION_PRESET_DISCOVERY_SAMPLER,
+    PLAYLIST_GENERATION_PRESET_METADATA_COLLECTIONS,
+    PLAYLIST_GENERATION_PRESET_MICRO_CRATES,
+)
+PLAYLIST_NAMING_STRATEGY_VALUES = (
+    PLAYLIST_NAMING_STRATEGY_DJ_UTILITY,
+    PLAYLIST_NAMING_STRATEGY_CRATE_LABEL,
+    PLAYLIST_NAMING_STRATEGY_METADATA_TAGLINE,
+    PLAYLIST_NAMING_STRATEGY_FUNCTIONAL_SLOT,
+)
+PLAYLIST_ORDERING_STRATEGY_VALUES = (
+    PLAYLIST_ORDERING_STRATEGY_PROFILE_NEAREST,
+    PLAYLIST_ORDERING_STRATEGY_CENTER_OUT,
+    PLAYLIST_ORDERING_STRATEGY_SEEDED_SHUFFLE,
+)
+PLAYLIST_DIVERSITY_MODE_VALUES = (
+    PLAYLIST_DIVERSITY_MODE_BALANCED,
+    PLAYLIST_DIVERSITY_MODE_LOOSE,
+    PLAYLIST_DIVERSITY_MODE_STRICT,
+)
+PLAYLIST_TEMPO_MODE_VALUES = (
+    PLAYLIST_TEMPO_MODE_MIXABLE,
+    PLAYLIST_TEMPO_MODE_RAW,
+)
+PLAYLIST_OUTPUT_SCOPE_VALUES = (
+    PLAYLIST_OUTPUT_SCOPE_TREE,
+    PLAYLIST_OUTPUT_SCOPE_LEAF_ONLY,
+    PLAYLIST_OUTPUT_SCOPE_TOP_LEVEL,
 )
 SONIC_FEATURE_PROFILE_VALUES = SONIC_FEATURE_PROFILE_KEYS

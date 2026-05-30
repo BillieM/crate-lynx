@@ -1768,6 +1768,12 @@ export interface components {
              */
             clustering_method: "dj_hierarchical_v1" | "kmeans" | "agglomerative";
             /**
+             * Diversity Mode
+             * @default balanced_v1
+             * @enum {string}
+             */
+            diversity_mode: "balanced_v1" | "loose_v1" | "strict_v1";
+            /**
              * Max Depth
              * @default 2
              */
@@ -1794,10 +1800,63 @@ export interface components {
              */
             feature_profile: "balanced_v1" | "energy_v1" | "texture_v1" | "harmony_v1";
             /**
+             * Naming Strategy
+             * @default dj_utility_v1
+             * @enum {string}
+             */
+            naming_strategy: "dj_utility_v1" | "crate_label_v1" | "metadata_tagline_v1" | "functional_slot_v1";
+            /**
+             * Ordering Strategy
+             * @default profile_nearest_neighbor_rolling_v2
+             * @enum {string}
+             */
+            ordering_strategy: "profile_nearest_neighbor_rolling_v2" | "center_out_v1" | "seeded_shuffle_v1";
+            /**
+             * Output Scope
+             * @default tree_v1
+             * @enum {string}
+             */
+            output_scope: "tree_v1" | "leaf_only_v1" | "top_level_v1";
+            /**
+             * Preset Key
+             * @default dj_crate_tree_v1
+             * @enum {string}
+             */
+            preset_key: "dj_crate_tree_v1" | "set_builder_v1" | "discovery_sampler_v1" | "metadata_collections_v1" | "micro_crates_v1";
+            /**
              * Random Seed
              * @default 42
              */
             random_seed: number;
+            /**
+             * Tempo Mode
+             * @default mixable_v1
+             * @enum {string}
+             */
+            tempo_mode: "mixable_v1" | "raw_v1";
+        };
+        /** PlaylistGenerationProjectionResponse */
+        PlaylistGenerationProjectionResponse: {
+            /** Mode */
+            mode: string;
+            /** Playlist Count */
+            playlist_count: number;
+            /** Leaf Playlist Count */
+            leaf_playlist_count: number;
+            /** Depth Counts */
+            depth_counts: {
+                [key: string]: number;
+            };
+            /** Size Min */
+            size_min: number;
+            /** Size Median */
+            size_median: number;
+            /** Size Max */
+            size_max: number;
+            /** Sample Names */
+            sample_names: string[];
+            /** Config Notes */
+            config_notes: string[];
         };
         /** PlaylistGenerationRunDetailResponse */
         PlaylistGenerationRunDetailResponse: {
@@ -2030,6 +2089,7 @@ export interface components {
             skipped_track_count: number;
             /** Source Track Count */
             source_track_count: number;
+            projection: components["schemas"]["PlaylistGenerationProjectionResponse"] | null;
         };
         /** SonicSourceFilterRequest */
         SonicSourceFilterRequest: {

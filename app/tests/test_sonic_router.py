@@ -458,6 +458,23 @@ def test_preview_generation_run_endpoint_counts_selected_source(tmp_path: Path) 
         "feature_profile": "texture_v1",
         "missing_feature_count": 1,
         "pending_feature_count": 0,
+        "projection": {
+            "config_notes": [
+                "Ready tracks are below the minimum size, so expect one small playlist."
+            ],
+            "depth_counts": {"0": 1},
+            "leaf_playlist_count": 1,
+            "mode": "estimated",
+            "playlist_count": 1,
+            "sample_names": [
+                "Ambient Dub / 84-102 BPM",
+                "Fastest / Peak",
+                "Warm-up / Low Energy + Warm",
+            ],
+            "size_max": 1,
+            "size_median": 1,
+            "size_min": 1,
+        },
         "ready_track_count": 1,
         "skipped_track_count": 3,
         "source_track_count": 4,

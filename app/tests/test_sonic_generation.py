@@ -6,7 +6,13 @@ from app.ingestion.beets_mirror import metadata as beets_metadata
 from app.links.store import metadata as links_metadata
 from app.local_tracks.store import metadata as local_tracks_metadata
 from app.m3u.exporter import build_m3u_export_package
-from app.sonic.generation import _playlist_name, generate_playlist_tree
+from app.sonic.generation import (
+    _playlist_name,
+    adaptive_generation_defaults,
+    generate_playlist_tree,
+    normalize_generation_config,
+    project_playlist_generation,
+)
 from app.sonic.jobs import run_playlist_generation_job
 from app.sonic.models import (
     SONIC_ANALYZER_LIBROSA_V1,
@@ -138,6 +144,56 @@ def test_feature_profiles_resolve_distinct_weighted_inputs() -> None:
         harmony.descriptor_weights["chroma_00_mean"]
         > harmony.descriptor_weights["tempo_bpm"]
     )
+
+
+def test_normalize_generation_config_adds_v2_defaults_for_legacy_config() -> None:
+    config = normalize_generation_config({"max_depth": 1})
+
+    assert config["preset_key"] == "dj_crate_tree_v1"
+    assert config["naming_strategy"] == "dj_utility_v1"
+    assert config["ordering_strategy"] == "profile_nearest_neighbor_rolling_v2"
+    assert config["diversity_mode"] == "balanced_v1"
+    assert config["tempo_mode"] == "mixable_v1"
+    assert config["output_scope"] == "tree_v1"
+    assert config["max_depth"] == 1
+
+
+def test_adaptive_generation_defaults_scale_with_ready_count() -> None:
+    small = adaptive_generation_defaults(58)
+    large = adaptive_generation_defaults(900)
+    micro = adaptive_generation_defaults(900, preset_key="micro_crates_v1")
+
+    assert small["target_playlist_size"] == 24
+    assert small["min_playlist_size"] == 8
+    assert small["max_depth"] == 2
+    assert large["max_depth"] == 3
+    assert large["max_children"] == 5
+    assert micro["output_scope"] == "leaf_only_v1"
+    assert micro["target_playlist_size"] < large["target_playlist_size"]
+
+
+def test_project_playlist_generation_estimates_shape_and_notes() -> None:
+    projection = project_playlist_generation(
+        96,
+        {
+            "max_children": 4,
+            "max_depth": 2,
+            "min_playlist_size": 8,
+            "naming_strategy": "crate_label_v1",
+            "output_scope": "leaf_only_v1",
+            "target_playlist_size": 24,
+        },
+    )
+
+    assert projection["mode"] == "estimated"
+    assert projection["playlist_count"] == 4
+    assert projection["leaf_playlist_count"] == 4
+    assert projection["depth_counts"] == {"0": 1, "1": 4}
+    assert projection["size_min"] == 24
+    assert projection["size_median"] == 24
+    assert projection["size_max"] == 24
+    assert projection["sample_names"][0] == "Peak 128 BPM"
+    assert "Leaf-only output" in projection["config_notes"][0]
 
 
 def test_dj_hierarchical_auto_k_selects_target_sized_clusters() -> None:
@@ -465,6 +521,40 @@ def test_generate_playlist_tree_names_are_deterministic() -> None:
         )
         for draft in second_drafts
     ]
+
+
+def test_generate_playlist_tree_supports_alternate_naming_strategies() -> None:
+    base_config = {
+        "clustering_method": "kmeans",
+        "max_children": 4,
+        "max_depth": 2,
+        "min_playlist_size": 3,
+        "random_seed": 11,
+        "target_playlist_size": 6,
+    }
+
+    crate_drafts = generate_playlist_tree(
+        _naming_tracks(),
+        {**base_config, "naming_strategy": "crate_label_v1"},
+    )
+    functional_drafts = generate_playlist_tree(
+        _naming_tracks(),
+        {**base_config, "naming_strategy": "functional_slot_v1"},
+    )
+    metadata_drafts = generate_playlist_tree(
+        _naming_tracks(),
+        {**base_config, "naming_strategy": "metadata_tagline_v1"},
+    )
+
+    assert len({draft["name"].casefold() for draft in crate_drafts}) == len(
+        crate_drafts
+    )
+    assert all(
+        draft["summary"]["naming"]["strategy_version"] == "crate_label_v1"
+        for draft in crate_drafts
+    )
+    assert any(" / " in draft["name"] for draft in functional_drafts)
+    assert any(":" in draft["name"] for draft in metadata_drafts)
 
 
 def test_generate_playlist_tree_names_require_dominant_tags() -> None:

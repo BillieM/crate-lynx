@@ -6,7 +6,10 @@ from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy.engine import Engine
 
 from app.core.db import get_engine
-from app.sonic.generation import normalize_generation_config
+from app.sonic.generation import (
+    normalize_generation_config,
+    project_playlist_generation,
+)
 from app.sonic.jobs import SonicJobEnqueuer, enqueue_sonic_feature_backfill
 from app.sonic.schemas import (
     CreatePlaylistGenerationRunRequest,
@@ -17,6 +20,7 @@ from app.sonic.schemas import (
     GeneratedPlaylistResponse,
     GeneratedPlaylistTrackResponse,
     GeneratedPlaylistTracksResponse,
+    PlaylistGenerationProjectionResponse,
     PlaylistGenerationRunDetailResponse,
     PlaylistGenerationRunListResponse,
     PlaylistGenerationRunResponse,
@@ -104,6 +108,10 @@ def create_router(
             analyzer_version=profile.analyzer_version,
             feature_profile=profile.key,
         )
+        projection = project_playlist_generation(
+            preview.ready_track_count,
+            generation_config,
+        )
         return SonicGenerationPreviewResponse(
             analyzer_key=preview.analyzer_key,
             analyzer_version=preview.analyzer_version,
@@ -112,6 +120,7 @@ def create_router(
             feature_profile=preview.feature_profile,
             missing_feature_count=preview.missing_feature_count,
             pending_feature_count=preview.pending_feature_count,
+            projection=PlaylistGenerationProjectionResponse.model_validate(projection),
             ready_track_count=preview.ready_track_count,
             skipped_track_count=preview.skipped_track_count,
             source_track_count=preview.source_track_count,

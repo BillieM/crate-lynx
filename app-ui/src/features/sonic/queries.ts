@@ -14,6 +14,7 @@ export type SonicSourceFilter = ApiSchemas["SonicSourceFilterRequest"];
 export type PlaylistGenerationConfig = ApiSchemas["PlaylistGenerationConfigRequest"];
 export type CreatePlaylistGenerationRunRequest = ApiSchemas["CreatePlaylistGenerationRunRequest"];
 export type CreatePlaylistGenerationRunResponse = ApiSchemas["CreatePlaylistGenerationRunResponse"];
+export type PlaylistGenerationProjection = ApiSchemas["PlaylistGenerationProjectionResponse"];
 export type SonicGenerationPreview = ApiSchemas["SonicGenerationPreviewResponse"];
 export type PlaylistGenerationRun = ApiSchemas["PlaylistGenerationRunResponse"];
 export type PlaylistGenerationRunListResponse = ApiSchemas["PlaylistGenerationRunListResponse"];
@@ -43,6 +44,18 @@ const sonicBackfillResponseSchema: z.ZodType<SonicBackfillResponse> = z.object({
   limit: z.number(),
 });
 
+const playlistGenerationProjectionSchema: z.ZodType<PlaylistGenerationProjection> = z.object({
+  config_notes: z.array(z.string()),
+  depth_counts: z.record(z.string(), z.number()),
+  leaf_playlist_count: z.number(),
+  mode: z.string(),
+  playlist_count: z.number(),
+  sample_names: z.array(z.string()),
+  size_max: z.number(),
+  size_median: z.number(),
+  size_min: z.number(),
+});
+
 const sonicGenerationPreviewSchema: z.ZodType<SonicGenerationPreview> = z.object({
   analyzer_key: z.string(),
   analyzer_version: z.string(),
@@ -51,6 +64,7 @@ const sonicGenerationPreviewSchema: z.ZodType<SonicGenerationPreview> = z.object
   feature_profile: z.string(),
   missing_feature_count: z.number(),
   pending_feature_count: z.number(),
+  projection: playlistGenerationProjectionSchema.nullable(),
   ready_track_count: z.number(),
   skipped_track_count: z.number(),
   source_track_count: z.number(),

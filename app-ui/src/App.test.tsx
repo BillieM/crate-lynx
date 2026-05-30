@@ -430,6 +430,17 @@ const sonicGenerationPreviewResponse: SonicGenerationPreview = {
   feature_profile: "balanced_v1",
   missing_feature_count: 2,
   pending_feature_count: 1,
+  projection: {
+    config_notes: [],
+    depth_counts: { "0": 1, "1": 3 },
+    leaf_playlist_count: 3,
+    mode: "estimated",
+    playlist_count: 4,
+    sample_names: ["Ambient Dub / 84-102 BPM", "Fastest / Peak", "Warm-up / Low Energy + Warm"],
+    size_max: 20,
+    size_median: 19,
+    size_min: 19,
+  },
   ready_track_count: 58,
   skipped_track_count: 3,
   source_track_count: 61,
@@ -442,12 +453,18 @@ const sonicRunsResponse: PlaylistGenerationRunListResponse = {
       error_detail: null,
       generation_config: {
         clustering_method: "kmeans",
+        diversity_mode: "balanced_v1",
         feature_profile: "balanced_v1",
         max_children: 4,
         max_depth: 2,
         min_playlist_size: 8,
+        naming_strategy: "dj_utility_v1",
+        ordering_strategy: "profile_nearest_neighbor_rolling_v2",
+        output_scope: "tree_v1",
+        preset_key: "dj_crate_tree_v1",
         random_seed: 42,
         target_playlist_size: 25,
+        tempo_mode: "mixable_v1",
       },
       generation_number: 19,
       id: 501,
@@ -1204,11 +1221,11 @@ describe("App", () => {
     expect(await screen.findByText("Bulk delete completed")).toBeInTheDocument();
   });
 
-  it("keeps source readiness stable when generation-only controls change", async () => {
-    let previewRequestCount = 0;
+  it("updates generation projection when generation-only controls change", async () => {
+    const previewBodies: unknown[] = [];
     mockPlaylistFetch({
-      sonicGenerationPreviewHandler: () => {
-        previewRequestCount += 1;
+      sonicGenerationPreviewHandler: (init) => {
+        previewBodies.push(JSON.parse(String(init?.body ?? "{}")));
         return jsonResponse(sonicGenerationPreviewResponse);
       },
     });
@@ -1217,16 +1234,32 @@ describe("App", () => {
 
     expect(await screen.findByRole("heading", { level: 1, name: "Playlist generator" })).toBeInTheDocument();
     await waitFor(() => {
-      expect(previewRequestCount).toBe(1);
+      expect(previewBodies.length).toBeGreaterThanOrEqual(1);
     });
+    expect(await screen.findByRole("region", { name: "Generation projection" })).toBeInTheDocument();
+    expect(screen.getByText("Projected playlists")).toBeInTheDocument();
+    expect(screen.getByText("Ambient Dub / 84-102 BPM")).toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText("Leaf size"), { target: { value: "30" } });
     fireEvent.change(screen.getByLabelText("Depth"), { target: { value: "3" } });
-    await new Promise((resolve) => {
-      window.setTimeout(resolve, 50);
-    });
 
-    expect(previewRequestCount).toBe(1);
+    await waitFor(() => {
+      const latestPreview = previewBodies.at(-1) as { generation_config?: Record<string, unknown> };
+      expect(latestPreview.generation_config?.target_playlist_size).toBe(30);
+      expect(latestPreview.generation_config?.max_depth).toBe(3);
+    });
+  });
+
+  it("allows generation number inputs to be cleared before normalization", async () => {
+    mockPlaylistFetch();
+
+    renderApp(["/playlist-generator"]);
+
+    const leafSizeInput = await screen.findByLabelText("Leaf size");
+    fireEvent.change(leafSizeInput, { target: { value: "" } });
+    expect(leafSizeInput).toHaveValue(null);
+    fireEvent.blur(leafSizeInput);
+    expect(leafSizeInput).toHaveValue(24);
   });
 
   it("debounces source readiness while editing Beets filter text", async () => {
@@ -1242,8 +1275,9 @@ describe("App", () => {
 
     expect(await screen.findByRole("heading", { level: 1, name: "Playlist generator" })).toBeInTheDocument();
     await waitFor(() => {
-      expect(previewRequestCount).toBe(1);
+      expect(previewRequestCount).toBeGreaterThanOrEqual(1);
     });
+    const settledPreviewCount = previewRequestCount;
 
     fireEvent.click(screen.getByRole("button", { name: "Add filter" }));
     fireEvent.change(screen.getByPlaceholderText("genre"), { target: { value: "genre" } });
@@ -1254,9 +1288,9 @@ describe("App", () => {
       window.setTimeout(resolve, 100);
     });
 
-    expect(previewRequestCount).toBe(1);
+    expect(previewRequestCount).toBe(settledPreviewCount);
     await waitFor(() => {
-      expect(previewRequestCount).toBe(2);
+      expect(previewRequestCount).toBe(settledPreviewCount + 1);
     });
   });
 

@@ -1,15 +1,37 @@
 from __future__ import annotations
 
 from collections import Counter, defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from math import ceil, isfinite, sqrt
 from statistics import mean, median
 from typing import Any
 
 from app.sonic.models import (
+    PLAYLIST_DIVERSITY_MODE_BALANCED,
+    PLAYLIST_DIVERSITY_MODE_LOOSE,
+    PLAYLIST_DIVERSITY_MODE_STRICT,
+    PLAYLIST_DIVERSITY_MODES,
     PLAYLIST_GENERATION_METHOD_AGGLOMERATIVE,
     PLAYLIST_GENERATION_METHOD_DJ_HIERARCHICAL,
     PLAYLIST_GENERATION_METHOD_KMEANS,
+    PLAYLIST_GENERATION_PRESET_DJ_CRATE_TREE,
+    PLAYLIST_GENERATION_PRESETS,
+    PLAYLIST_NAMING_STRATEGIES,
+    PLAYLIST_NAMING_STRATEGY_CRATE_LABEL,
+    PLAYLIST_NAMING_STRATEGY_DJ_UTILITY,
+    PLAYLIST_NAMING_STRATEGY_FUNCTIONAL_SLOT,
+    PLAYLIST_NAMING_STRATEGY_METADATA_TAGLINE,
+    PLAYLIST_ORDERING_STRATEGIES,
+    PLAYLIST_ORDERING_STRATEGY_CENTER_OUT,
+    PLAYLIST_ORDERING_STRATEGY_PROFILE_NEAREST,
+    PLAYLIST_ORDERING_STRATEGY_SEEDED_SHUFFLE,
+    PLAYLIST_OUTPUT_SCOPE_LEAF_ONLY,
+    PLAYLIST_OUTPUT_SCOPE_TOP_LEVEL,
+    PLAYLIST_OUTPUT_SCOPE_TREE,
+    PLAYLIST_OUTPUT_SCOPES,
+    PLAYLIST_TEMPO_MODE_MIXABLE,
+    PLAYLIST_TEMPO_MODE_RAW,
+    PLAYLIST_TEMPO_MODES,
 )
 from app.sonic.profiles import (
     DEFAULT_SONIC_FEATURE_PROFILE,
@@ -21,12 +43,18 @@ from app.sonic.store import SonicReadyTrack
 
 DEFAULT_GENERATION_CONFIG = {
     "clustering_method": PLAYLIST_GENERATION_METHOD_DJ_HIERARCHICAL,
+    "diversity_mode": PLAYLIST_DIVERSITY_MODE_BALANCED,
     "max_depth": 2,
     "target_playlist_size": 25,
     "min_playlist_size": 8,
     "max_children": 4,
     "feature_profile": DEFAULT_SONIC_FEATURE_PROFILE,
+    "naming_strategy": PLAYLIST_NAMING_STRATEGY_DJ_UTILITY,
+    "ordering_strategy": PLAYLIST_ORDERING_STRATEGY_PROFILE_NEAREST,
+    "output_scope": PLAYLIST_OUTPUT_SCOPE_TREE,
+    "preset_key": PLAYLIST_GENERATION_PRESET_DJ_CRATE_TREE,
     "random_seed": 42,
+    "tempo_mode": PLAYLIST_TEMPO_MODE_MIXABLE,
 }
 
 STYLE_TAG_DOMINANCE_RATIO = 0.4
@@ -83,10 +111,229 @@ def normalize_generation_config(config: dict[str, Any]) -> dict[str, Any]:
         PLAYLIST_GENERATION_METHOD_AGGLOMERATIVE,
     ):
         normalized["clustering_method"] = PLAYLIST_GENERATION_METHOD_DJ_HIERARCHICAL
+    if normalized["preset_key"] not in PLAYLIST_GENERATION_PRESETS:
+        normalized["preset_key"] = PLAYLIST_GENERATION_PRESET_DJ_CRATE_TREE
+    if normalized["naming_strategy"] not in PLAYLIST_NAMING_STRATEGIES:
+        normalized["naming_strategy"] = PLAYLIST_NAMING_STRATEGY_DJ_UTILITY
+    if normalized["ordering_strategy"] not in PLAYLIST_ORDERING_STRATEGIES:
+        normalized["ordering_strategy"] = PLAYLIST_ORDERING_STRATEGY_PROFILE_NEAREST
+    if normalized["diversity_mode"] not in PLAYLIST_DIVERSITY_MODES:
+        normalized["diversity_mode"] = PLAYLIST_DIVERSITY_MODE_BALANCED
+    if normalized["tempo_mode"] not in PLAYLIST_TEMPO_MODES:
+        normalized["tempo_mode"] = PLAYLIST_TEMPO_MODE_MIXABLE
+    if normalized["output_scope"] not in PLAYLIST_OUTPUT_SCOPES:
+        normalized["output_scope"] = PLAYLIST_OUTPUT_SCOPE_TREE
     profile = resolve_feature_profile(str(normalized["feature_profile"]))
     normalized["feature_profile"] = profile.key
     normalized["resolved_feature_profile"] = profile.to_config()
     return normalized
+
+
+def adaptive_generation_defaults(
+    ready_track_count: int,
+    *,
+    preset_key: str | None = None,
+) -> dict[str, Any]:
+    ready_count = max(0, int(ready_track_count))
+    target = max(24, min(round(sqrt(max(ready_count, 1)) * 2.2), 48))
+    min_size = max(6, min(round(target * 0.35), 18))
+    defaults = {
+        **DEFAULT_GENERATION_CONFIG,
+        "max_children": 4 if ready_count < 500 else 5,
+        "max_depth": 2 if ready_count < 180 else 3,
+        "min_playlist_size": min_size,
+        "target_playlist_size": target,
+    }
+
+    preset = (
+        preset_key
+        if preset_key in PLAYLIST_GENERATION_PRESETS
+        else PLAYLIST_GENERATION_PRESET_DJ_CRATE_TREE
+    )
+    defaults["preset_key"] = preset
+    if preset == "set_builder_v1":
+        defaults.update(
+            {
+                "feature_profile": "energy_v1",
+                "max_children": 3,
+                "max_depth": 2,
+                "min_playlist_size": max(8, min(round(target * 0.45), 22)),
+                "naming_strategy": PLAYLIST_NAMING_STRATEGY_FUNCTIONAL_SLOT,
+                "target_playlist_size": max(target, 32),
+            }
+        )
+    elif preset == "discovery_sampler_v1":
+        defaults.update(
+            {
+                "feature_profile": "balanced_v1",
+                "max_children": 5,
+                "max_depth": 2,
+                "min_playlist_size": max(6, min(round(target * 0.3), 14)),
+                "ordering_strategy": PLAYLIST_ORDERING_STRATEGY_SEEDED_SHUFFLE,
+            }
+        )
+    elif preset == "metadata_collections_v1":
+        defaults.update(
+            {
+                "feature_profile": "texture_v1",
+                "max_children": 6,
+                "max_depth": 2,
+                "min_playlist_size": max(10, min(round(target * 0.4), 20)),
+                "naming_strategy": PLAYLIST_NAMING_STRATEGY_METADATA_TAGLINE,
+                "target_playlist_size": max(target, 36),
+            }
+        )
+    elif preset == "micro_crates_v1":
+        micro_target = max(10, min(round(sqrt(max(ready_count, 1)) * 1.35), 18))
+        defaults.update(
+            {
+                "max_children": 6 if ready_count >= 180 else 4,
+                "max_depth": 3 if ready_count >= 80 else 2,
+                "min_playlist_size": max(4, min(round(micro_target * 0.35), 8)),
+                "output_scope": PLAYLIST_OUTPUT_SCOPE_LEAF_ONLY,
+                "target_playlist_size": micro_target,
+            }
+        )
+
+    return normalize_generation_config(defaults)
+
+
+def project_playlist_generation(
+    ready_track_count: int,
+    generation_config: dict[str, Any],
+) -> dict[str, Any]:
+    config = normalize_generation_config(generation_config)
+    ready_count = max(0, int(ready_track_count))
+    if ready_count <= 0:
+        return {
+            "config_notes": ["No ready analyzed tracks are available for this source."],
+            "depth_counts": {},
+            "leaf_playlist_count": 0,
+            "mode": "estimated",
+            "playlist_count": 0,
+            "sample_names": [],
+            "size_max": 0,
+            "size_median": 0,
+            "size_min": 0,
+        }
+
+    tree_sizes = _project_tree_sizes(ready_count, config)
+    output_sizes = _project_output_sizes(tree_sizes, config)
+    leaf_sizes = [
+        size
+        for depth, sizes in tree_sizes.items()
+        for size in sizes
+        if depth == int(config["max_depth"]) - 1
+        or not _can_split(size, depth=depth, config=config)
+    ]
+    if not leaf_sizes:
+        leaf_sizes = [ready_count]
+
+    size_values = output_sizes or leaf_sizes
+    depth_counts = {
+        str(depth): len(sizes) for depth, sizes in sorted(tree_sizes.items()) if sizes
+    }
+    notes = _projection_notes(ready_count, config, tree_sizes, leaf_sizes)
+    return {
+        "config_notes": notes,
+        "depth_counts": depth_counts,
+        "leaf_playlist_count": len(leaf_sizes),
+        "mode": "estimated",
+        "playlist_count": len(output_sizes),
+        "sample_names": _projection_sample_names(str(config["naming_strategy"])),
+        "size_max": max(size_values),
+        "size_median": round(median(size_values)),
+        "size_min": min(size_values),
+    }
+
+
+def _project_tree_sizes(
+    ready_track_count: int,
+    config: dict[str, Any],
+) -> dict[int, list[int]]:
+    sizes_by_depth: dict[int, list[int]] = defaultdict(list)
+
+    def append(size: int, depth: int) -> None:
+        sizes_by_depth[depth].append(size)
+        if not _can_split(size, depth=depth, config=config):
+            return
+        for child_size in _even_child_sizes(size, _cluster_count(size, config)):
+            append(child_size, depth + 1)
+
+    append(ready_track_count, 0)
+    return dict(sizes_by_depth)
+
+
+def _project_output_sizes(
+    tree_sizes: dict[int, list[int]],
+    config: dict[str, Any],
+) -> list[int]:
+    scope = str(config["output_scope"])
+    if scope == PLAYLIST_OUTPUT_SCOPE_LEAF_ONLY:
+        return [
+            size
+            for depth, sizes in tree_sizes.items()
+            for size in sizes
+            if depth == int(config["max_depth"]) - 1
+            or not _can_split(size, depth=depth, config=config)
+        ]
+    if scope == PLAYLIST_OUTPUT_SCOPE_TOP_LEVEL:
+        return list(tree_sizes.get(0, []))
+    return [size for sizes in tree_sizes.values() for size in sizes]
+
+
+def _even_child_sizes(size: int, child_count: int) -> list[int]:
+    child_count = max(1, min(child_count, size))
+    base_size = size // child_count
+    remainder = size % child_count
+    return [base_size + (1 if index < remainder else 0) for index in range(child_count)]
+
+
+def _projection_notes(
+    ready_track_count: int,
+    config: dict[str, Any],
+    tree_sizes: dict[int, list[int]],
+    leaf_sizes: list[int],
+) -> list[str]:
+    notes = []
+    target = int(config["target_playlist_size"])
+    min_size = int(config["min_playlist_size"])
+    if ready_track_count < min_size:
+        notes.append(
+            "Ready tracks are below the minimum size, so expect one small playlist."
+        )
+    if min_size > target:
+        notes.append(
+            "Minimum size is higher than target size, so splitting will be conservative."
+        )
+    if int(config["max_depth"]) == 1:
+        notes.append("Depth 1 produces a flat run with no child playlists.")
+    if str(config["output_scope"]) == PLAYLIST_OUTPUT_SCOPE_LEAF_ONLY:
+        notes.append("Leaf-only output omits parent overview playlists from the run.")
+    if str(config["output_scope"]) == PLAYLIST_OUTPUT_SCOPE_TOP_LEVEL:
+        notes.append("Top-level output keeps only broad overview playlists.")
+    projected_playlist_count = len(_project_output_sizes(tree_sizes, config))
+    if projected_playlist_count > 200:
+        notes.append("This configuration may create a very large export set.")
+    if leaf_sizes and max(leaf_sizes) > target * 2:
+        notes.append(
+            "Some playlists may stay broad because split quality or size limits stop recursion."
+        )
+    return notes
+
+
+def _projection_sample_names(naming_strategy: str) -> list[str]:
+    if naming_strategy == PLAYLIST_NAMING_STRATEGY_CRATE_LABEL:
+        return ["Peak 128 BPM", "Warm Dense", "Ambient Dub 92 BPM"]
+    if naming_strategy == PLAYLIST_NAMING_STRATEGY_METADATA_TAGLINE:
+        return [
+            "Ambient Dub: 84-102 BPM",
+            "Deep House: Warm + Dense",
+            "Fastest: Techno",
+        ]
+    if naming_strategy == PLAYLIST_NAMING_STRATEGY_FUNCTIONAL_SLOT:
+        return ["Warm-up / Low Energy", "Build / Bright", "Peak / Fastest"]
+    return ["Ambient Dub / 84-102 BPM", "Fastest / Peak", "Warm-up / Low Energy + Warm"]
 
 
 def generate_playlist_tree(
@@ -103,6 +350,7 @@ def generate_playlist_tree(
         ordered_tracks,
         profile.descriptor_weights,
         method=str(config["clustering_method"]),
+        tempo_mode=str(config["tempo_mode"]),
     )
     cluster_indexes = _split_indexes(
         list(range(len(ordered_tracks))),
@@ -127,6 +375,7 @@ def generate_playlist_tree(
         parent_name=None,
         used_names=used_names,
     )
+    drafts = _apply_output_scope(drafts, config)
     return [
         {
             "client_key": draft.client_key,
@@ -165,6 +414,8 @@ def _append_nodes(
             cluster,
             all_tracks,
             matrix,
+            diversity_mode=str(config["diversity_mode"]),
+            ordering_strategy=str(config["ordering_strategy"]),
             random_seed=int(config["random_seed"]),
         )
         cluster_tracks = [all_tracks[index] for index in ordered_cluster_indexes]
@@ -174,6 +425,8 @@ def _append_nodes(
             cluster_descriptors,
             cluster_tracks,
             [matrix[index] for index in ordered_cluster_indexes],
+            diversity_mode=str(config["diversity_mode"]),
+            ordering_strategy=str(config["ordering_strategy"]),
             profile_weights=profile_weights,
         )
         sibling_entries.append(
@@ -200,6 +453,7 @@ def _append_nodes(
         name, name_debug = _playlist_name(
             summary,
             depth,
+            naming_strategy=str(config["naming_strategy"]),
             parent_name=parent_name,
             used_names=used_names,
         )
@@ -209,9 +463,10 @@ def _append_nodes(
             "name_strategy": name_debug["strategy"],
             "naming": {
                 **name_debug["components"],
+                "algorithm": str(config["naming_strategy"]),
                 "discriminators": name_debug["components"]["differentiators"],
                 "strategy": name_debug["strategy"],
-                "strategy_version": "dj_utility_v1",
+                "strategy_version": str(config["naming_strategy"]),
             },
         }
         used_names.add(_name_key(name))
@@ -246,6 +501,30 @@ def _append_nodes(
             profile_weights=profile_weights,
             used_names=used_names,
         )
+
+
+def _apply_output_scope(
+    drafts: list[GeneratedPlaylistDraft],
+    config: dict[str, Any],
+) -> list[GeneratedPlaylistDraft]:
+    scope = str(config["output_scope"])
+    if scope == PLAYLIST_OUTPUT_SCOPE_TREE:
+        return drafts
+
+    if scope == PLAYLIST_OUTPUT_SCOPE_TOP_LEVEL:
+        scoped = [draft for draft in drafts if draft.parent_key is None]
+    elif scope == PLAYLIST_OUTPUT_SCOPE_LEAF_ONLY:
+        parent_keys = {
+            draft.parent_key for draft in drafts if draft.parent_key is not None
+        }
+        scoped = [draft for draft in drafts if draft.client_key not in parent_keys]
+    else:
+        return drafts
+
+    return [
+        replace(draft, depth=0, parent_key=None, position=position)
+        for position, draft in enumerate(scoped, start=1)
+    ]
 
 
 def _split_indexes(
@@ -470,9 +749,14 @@ def _generation_matrix(
     descriptor_weights: dict[str, float],
     *,
     method: str,
+    tempo_mode: str,
 ) -> list[list[float]]:
     if method == PLAYLIST_GENERATION_METHOD_DJ_HIERARCHICAL:
-        return _dj_profile_matrix(tracks, descriptor_weights)
+        return _dj_profile_matrix(
+            tracks,
+            descriptor_weights,
+            tempo_mode=tempo_mode,
+        )
     return _profile_matrix(tracks, descriptor_weights)
 
 
@@ -561,8 +845,10 @@ def _profile_matrix(
 def _dj_profile_matrix(
     tracks: list[SonicReadyTrack],
     descriptor_weights: dict[str, float],
+    *,
+    tempo_mode: str,
 ) -> list[list[float]]:
-    specs = _dj_feature_specs(descriptor_weights)
+    specs = _dj_feature_specs(descriptor_weights, tempo_mode=tempo_mode)
     raw_matrix = [
         [_dj_feature_value(track.descriptors, spec) for spec in specs]
         for track in tracks
@@ -580,10 +866,24 @@ def _dj_profile_matrix(
     ]
 
 
-def _dj_feature_specs(descriptor_weights: dict[str, float]) -> list[dict[str, Any]]:
+def _dj_feature_specs(
+    descriptor_weights: dict[str, float],
+    *,
+    tempo_mode: str,
+) -> list[dict[str, Any]]:
     specs: list[dict[str, Any]] = []
     for key, weight in descriptor_weights.items():
         if key == "tempo_bpm":
+            if tempo_mode == PLAYLIST_TEMPO_MODE_RAW:
+                specs.append(
+                    {
+                        "group": "tempo",
+                        "key": "tempo_raw_bpm",
+                        "source_key": key,
+                        "weight": float(weight),
+                    }
+                )
+                continue
             specs.append(
                 {
                     "group": "tempo",
@@ -661,10 +961,38 @@ def _order_cluster_indexes(
     all_tracks: list[SonicReadyTrack],
     matrix: list[list[float]],
     *,
+    diversity_mode: str,
+    ordering_strategy: str,
     random_seed: int,
 ) -> list[int]:
     if len(indexes) <= 2:
         return list(indexes)
+
+    if ordering_strategy == PLAYLIST_ORDERING_STRATEGY_SEEDED_SHUFFLE:
+        return sorted(
+            indexes,
+            key=lambda index: (
+                _seeded_tie_break(all_tracks[index].local_track_id, random_seed),
+                all_tracks[index].local_track_id,
+            ),
+        )
+
+    if ordering_strategy == PLAYLIST_ORDERING_STRATEGY_CENTER_OUT:
+        centroid = _centroid([matrix[index] for index in indexes])
+        return [
+            index
+            for _, _, index in sorted(
+                (
+                    (
+                        _distance(matrix[index], centroid),
+                        all_tracks[index].local_track_id,
+                        index,
+                    )
+                    for index in indexes
+                ),
+                key=lambda item: (item[0], item[1]),
+            )
+        ]
 
     start_index = min(
         indexes,
@@ -684,7 +1012,11 @@ def _order_cluster_indexes(
             remaining,
             key=lambda index: (
                 _distance(matrix[previous], matrix[index])
-                + _metadata_repeat_penalty(recent_tracks, all_tracks[index]),
+                + _metadata_repeat_penalty(
+                    recent_tracks,
+                    all_tracks[index],
+                    diversity_mode=diversity_mode,
+                ),
                 _distance(matrix[previous], matrix[index]),
                 _seeded_tie_break(all_tracks[index].local_track_id, random_seed),
                 all_tracks[index].local_track_id,
@@ -708,7 +1040,17 @@ def _distance(left: list[float], right: list[float]) -> float:
 def _metadata_repeat_penalty(
     recent_tracks: list[SonicReadyTrack],
     candidate_track: SonicReadyTrack,
+    *,
+    diversity_mode: str,
 ) -> float:
+    scale = {
+        PLAYLIST_DIVERSITY_MODE_LOOSE: 0.0,
+        PLAYLIST_DIVERSITY_MODE_BALANCED: 1.0,
+        PLAYLIST_DIVERSITY_MODE_STRICT: 2.0,
+    }.get(diversity_mode, 1.0)
+    if scale <= 0:
+        return 0.0
+
     penalty = 0.0
     artist_weights = (0.35, 0.2, 0.1)
     album_weights = (0.2, 0.1, 0.05)
@@ -718,13 +1060,13 @@ def _metadata_repeat_penalty(
             and candidate_track.artist
             and previous_track.artist.casefold() == candidate_track.artist.casefold()
         ):
-            penalty += artist_weights[offset]
+            penalty += artist_weights[offset] * scale
         if (
             previous_track.album
             and candidate_track.album
             and previous_track.album.casefold() == candidate_track.album.casefold()
         ):
-            penalty += album_weights[offset]
+            penalty += album_weights[offset] * scale
     return penalty
 
 
@@ -748,6 +1090,8 @@ def _cluster_summary(
     tracks: list[SonicReadyTrack],
     cluster_matrix: list[list[float]],
     *,
+    diversity_mode: str,
+    ordering_strategy: str,
     profile_weights: dict[str, float],
 ) -> dict[str, Any]:
     deltas = []
@@ -782,8 +1126,9 @@ def _cluster_summary(
         "bpm": _bpm_summary(tracks),
         "common_tags": _common_tags(tracks),
         "descriptor_means": cluster_descriptors,
+        "diversity_mode": diversity_mode,
         "energy": _energy_summary(parent_descriptors, cluster_descriptors),
-        "ordering_strategy": "profile_nearest_neighbor_rolling_v2",
+        "ordering_strategy": ordering_strategy,
         "representative_tracks": _representative_tracks(tracks, cluster_matrix),
         "track_count": len(tracks),
         "top_deltas": top_deltas,
@@ -1282,16 +1627,17 @@ def _playlist_name(
     summary: dict[str, Any],
     depth: int,
     *,
+    naming_strategy: str = PLAYLIST_NAMING_STRATEGY_DJ_UTILITY,
     parent_name: str | None,
     used_names: set[str],
 ) -> tuple[str, dict[str, Any]]:
     components = _name_components(summary)
-    candidates = _name_candidates(components, depth)
+    candidates = _name_candidates_for_strategy(components, depth, naming_strategy)
     for candidate in candidates:
         if _name_key(candidate) not in used_names:
             return candidate, {
                 "components": components,
-                "strategy": "dj_utility_candidate",
+                "strategy": _name_debug_strategy(naming_strategy, "candidate"),
             }
 
     if parent_name:
@@ -1300,7 +1646,10 @@ def _playlist_name(
             if _name_key(contextual_candidate) not in used_names:
                 return contextual_candidate, {
                     "components": components,
-                    "strategy": "dj_utility_contextual_parent",
+                    "strategy": _name_debug_strategy(
+                        naming_strategy,
+                        "contextual_parent",
+                    ),
                 }
 
     fallback = candidates[0]
@@ -1309,7 +1658,7 @@ def _playlist_name(
         suffix += 1
     return f"{fallback} {suffix}", {
         "components": components,
-        "strategy": "dj_utility_numeric_suffix",
+        "strategy": _name_debug_strategy(naming_strategy, "numeric_suffix"),
     }
 
 
@@ -1338,6 +1687,29 @@ def _name_components(summary: dict[str, Any]) -> dict[str, Any]:
         "texture_traits": traits,
         "traits": traits,
     }
+
+
+def _name_debug_strategy(naming_strategy: str, suffix: str) -> str:
+    prefix = (
+        "dj_utility"
+        if naming_strategy == PLAYLIST_NAMING_STRATEGY_DJ_UTILITY
+        else naming_strategy.removesuffix("_v1")
+    )
+    return f"{prefix}_{suffix}"
+
+
+def _name_candidates_for_strategy(
+    components: dict[str, Any],
+    depth: int,
+    naming_strategy: str,
+) -> list[str]:
+    if naming_strategy == PLAYLIST_NAMING_STRATEGY_CRATE_LABEL:
+        return _crate_label_name_candidates(components, depth)
+    if naming_strategy == PLAYLIST_NAMING_STRATEGY_METADATA_TAGLINE:
+        return _metadata_tagline_name_candidates(components, depth)
+    if naming_strategy == PLAYLIST_NAMING_STRATEGY_FUNCTIONAL_SLOT:
+        return _functional_slot_name_candidates(components, depth)
+    return _name_candidates(components, depth)
 
 
 def _name_candidates(components: dict[str, Any], depth: int) -> list[str]:
@@ -1436,6 +1808,147 @@ def _name_candidates(components: dict[str, Any], depth: int) -> list[str]:
         candidates.append(role)
     candidates.append("DJ Utility Split")
     return _unique_clean_names(candidates)
+
+
+def _crate_label_name_candidates(
+    components: dict[str, Any],
+    depth: int,
+) -> list[str]:
+    style, bpm, energy_band, role, trait_labels, differentiator_labels = (
+        _basic_name_parts(components)
+    )
+    trait_phrase = _trait_phrase(trait_labels)
+    distinctive_phrase = _distinctive_phrase(differentiator_labels, trait_labels)
+    relative_phrase = _distinctive_phrase(differentiator_labels, [])
+    bpm_compact = bpm.removesuffix(" BPM") if bpm else None
+    candidates = []
+    if style and bpm_compact:
+        candidates.append(f"{style} {bpm_compact}")
+    if role and relative_phrase:
+        candidates.append(f"{role} {relative_phrase}")
+    if relative_phrase and trait_phrase:
+        candidates.append(f"{relative_phrase} {trait_phrase}")
+    if style and distinctive_phrase:
+        candidates.append(f"{style} {distinctive_phrase}")
+    if relative_phrase:
+        candidates.append(relative_phrase)
+    if role and bpm:
+        candidates.append(f"{role} {bpm}")
+    if energy_band and trait_phrase:
+        candidates.append(f"{energy_band} {trait_phrase}")
+    if role:
+        candidates.append(role)
+    if style:
+        candidates.append(style)
+    if bpm:
+        candidates.append(bpm)
+    candidates.append("Sonic Crate" if depth == 0 else "Crate Split")
+    return _unique_clean_names(candidates)
+
+
+def _metadata_tagline_name_candidates(
+    components: dict[str, Any],
+    depth: int,
+) -> list[str]:
+    style, bpm, energy_band, role, trait_labels, differentiator_labels = (
+        _basic_name_parts(components)
+    )
+    trait_phrase = _trait_phrase(trait_labels)
+    relative_phrase = _distinctive_phrase(differentiator_labels, [])
+    distinctive_phrase = _distinctive_phrase(differentiator_labels, trait_labels)
+    candidates = []
+    if style and bpm:
+        candidates.append(f"{style}: {bpm}")
+    if style and distinctive_phrase:
+        candidates.append(f"{style}: {distinctive_phrase}")
+    if style and energy_band:
+        candidates.append(f"{style}: {energy_band}")
+    if relative_phrase and style:
+        candidates.append(f"{relative_phrase}: {style}")
+    if relative_phrase and bpm:
+        candidates.append(f"{relative_phrase}: {bpm}")
+    if style:
+        candidates.append(style)
+    if role and trait_phrase:
+        candidates.append(f"{role}: {trait_phrase}")
+    if bpm and trait_phrase:
+        candidates.append(f"{bpm}: {trait_phrase}")
+    if bpm and energy_band:
+        candidates.append(f"{bpm}: {energy_band}")
+    candidates.append("Tagged Sonic Crate" if depth == 0 else "Tagged Split")
+    return _unique_clean_names(candidates)
+
+
+def _functional_slot_name_candidates(
+    components: dict[str, Any],
+    depth: int,
+) -> list[str]:
+    style, bpm, energy_band, role, trait_labels, differentiator_labels = (
+        _basic_name_parts(components)
+    )
+    trait_phrase = _trait_phrase(trait_labels)
+    relative_phrase = _distinctive_phrase(differentiator_labels, [])
+    utility_phrase = _child_utility_phrase(
+        bpm=bpm,
+        differentiators=differentiator_labels,
+        energy_band=energy_band,
+        traits=trait_labels,
+    )
+    candidates = []
+    if role and relative_phrase:
+        candidates.append(f"{role} / {relative_phrase}")
+    if role and utility_phrase:
+        candidates.append(f"{role} / {utility_phrase}")
+    if role and bpm:
+        candidates.append(f"{role} / {bpm}")
+    if role and style:
+        candidates.append(f"{role} / {style}")
+    if role:
+        candidates.append(role)
+    if energy_band and relative_phrase:
+        candidates.append(f"{energy_band} / {relative_phrase}")
+    if energy_band and trait_phrase:
+        candidates.append(f"{energy_band} / {trait_phrase}")
+    if relative_phrase:
+        candidates.append(relative_phrase)
+    if bpm and style:
+        candidates.append(f"{bpm} / {style}")
+    if bpm:
+        candidates.append(bpm)
+    candidates.append("Set Slot" if depth == 0 else "Set Slot Split")
+    return _unique_clean_names(candidates)
+
+
+def _basic_name_parts(
+    components: dict[str, Any],
+) -> tuple[str | None, str | None, str | None, str | None, list[str], list[str]]:
+    style_label = components.get("style")
+    style = style_label if isinstance(style_label, str) and style_label else None
+    raw_traits = components.get("traits")
+    traits = raw_traits if isinstance(raw_traits, list) else []
+    trait_labels = [trait for trait in traits if isinstance(trait, str) and trait]
+    raw_differentiators = components.get("differentiators")
+    differentiators = (
+        raw_differentiators if isinstance(raw_differentiators, list) else []
+    )
+    differentiator_labels = [
+        differentiator.get("label")
+        for differentiator in differentiators
+        if isinstance(differentiator, dict)
+        and isinstance(differentiator.get("label"), str)
+    ]
+    bpm_label = components.get("tempo")
+    bpm = bpm_label if isinstance(bpm_label, str) and bpm_label else None
+    energy = _coerce_dict(components.get("energy"))
+    energy_band_value = energy.get("band") if energy else None
+    energy_band = (
+        energy_band_value
+        if isinstance(energy_band_value, str) and energy_band_value
+        else None
+    )
+    role_value = components.get("role")
+    role = role_value if isinstance(role_value, str) and role_value else None
+    return style, bpm, energy_band, role, trait_labels, differentiator_labels
 
 
 def _trait_phrase(traits: list[str]) -> str | None:

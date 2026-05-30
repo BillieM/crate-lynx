@@ -1,11 +1,25 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { createColumnHelper, type RowSelectionState, type SortingState } from "@tanstack/react-table";
-import { Activity, AudioLines, DatabaseZap, ListChecks, Plus, RotateCcw, SlidersHorizontal, Trash2 } from "lucide-react";
+import {
+  Activity,
+  AudioLines,
+  ChevronDown,
+  ChevronRight,
+  DatabaseZap,
+  ListChecks,
+  Minus,
+  Plus,
+  RotateCcw,
+  SlidersHorizontal,
+  Trash2,
+  Undo2,
+} from "lucide-react";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ActionButton } from "../../components/ActionButton";
 import { DataTable } from "../../components/DataTable";
 import { EmptyStateCard } from "../../components/EmptyStateCard";
+import { IconButton } from "../../components/IconButton";
 import { MetricCard } from "../../components/MetricCard";
 import { Pill, type PillTone } from "../../components/Pill";
 import { StatusMessage } from "../../components/StatusMessage";
@@ -16,7 +30,9 @@ import {
   backfillSonicFeatures,
   createPlaylistGenerationRun,
   sonicQueryKeys,
+  type PlaylistGenerationProjection,
   type PlaylistGenerationRun,
+  type PlaylistGenerationConfig,
   type SonicTagFilter,
   useSonicFeatureSummaryQuery,
   useSonicGenerationPreviewQuery,
@@ -30,13 +46,35 @@ const runColumnHelper = createColumnHelper<PlaylistGenerationRun>();
 const sonicBackfillLimit = 500;
 
 type SourceType = "all_local" | "streaming_playlists";
-type ClusteringMethod = "dj_hierarchical_v1" | "kmeans" | "agglomerative";
-type FeatureProfile = "balanced_v1" | "energy_v1" | "texture_v1" | "harmony_v1";
+type ClusteringMethod = PlaylistGenerationConfig["clustering_method"];
+type DiversityMode = PlaylistGenerationConfig["diversity_mode"];
+type FeatureProfile = PlaylistGenerationConfig["feature_profile"];
+type NamingStrategy = PlaylistGenerationConfig["naming_strategy"];
+type OrderingStrategy = PlaylistGenerationConfig["ordering_strategy"];
+type OutputScope = PlaylistGenerationConfig["output_scope"];
+type PresetKey = PlaylistGenerationConfig["preset_key"];
+type TempoMode = PlaylistGenerationConfig["tempo_mode"];
+type NumericConfigKey = "maxChildren" | "maxDepth" | "minPlaylistSize" | "randomSeed" | "targetPlaylistSize";
+type NumericDrafts = Record<NumericConfigKey, string>;
+type NumericValues = Record<NumericConfigKey, number>;
 
 type RunBulkStatus = {
   body: string;
   status: "error" | "success";
   title: string;
+};
+
+type GenerationPreset = {
+  clusteringMethod: ClusteringMethod;
+  description: string;
+  diversityMode: DiversityMode;
+  featureProfile: FeatureProfile;
+  key: PresetKey;
+  label: string;
+  namingStrategy: NamingStrategy;
+  orderingStrategy: OrderingStrategy;
+  outputScope: OutputScope;
+  tempoMode: TempoMode;
 };
 
 const defaultTagFilter: SonicTagFilter = {
@@ -46,6 +84,124 @@ const defaultTagFilter: SonicTagFilter = {
   value: "",
 };
 const previewDebounceMs = 300;
+
+const fallbackNumericValues: NumericValues = {
+  maxChildren: 4,
+  maxDepth: 2,
+  minPlaylistSize: 8,
+  randomSeed: 42,
+  targetPlaylistSize: 25,
+};
+
+const numericFieldSpecs: Record<
+  NumericConfigKey,
+  {
+    impact: string;
+    label: string;
+    max: number;
+    min: number;
+    step: number;
+  }
+> = {
+  maxChildren: {
+    impact: "Higher branches wider at each level; lower keeps fewer sibling crates.",
+    label: "Children",
+    max: 10,
+    min: 2,
+    step: 1,
+  },
+  maxDepth: {
+    impact: "Higher creates nested crates; lower keeps the run flatter.",
+    label: "Depth",
+    max: 5,
+    min: 1,
+    step: 1,
+  },
+  minPlaylistSize: {
+    impact: "Higher prevents tiny splits; lower allows niche crates.",
+    label: "Min size",
+    max: 250,
+    min: 1,
+    step: 1,
+  },
+  randomSeed: {
+    impact: "Changes deterministic tie-breaks without changing the source.",
+    label: "Seed",
+    max: 999999,
+    min: 0,
+    step: 1,
+  },
+  targetPlaylistSize: {
+    impact: "Higher makes fewer, broader playlists; lower makes more focused playlists.",
+    label: "Leaf size",
+    max: 500,
+    min: 2,
+    step: 1,
+  },
+};
+
+const generationPresets: GenerationPreset[] = [
+  {
+    clusteringMethod: "dj_hierarchical_v1",
+    description: "Balanced tree for browsable DJ crates.",
+    diversityMode: "balanced_v1",
+    featureProfile: "balanced_v1",
+    key: "dj_crate_tree_v1",
+    label: "DJ crate tree",
+    namingStrategy: "dj_utility_v1",
+    orderingStrategy: "profile_nearest_neighbor_rolling_v2",
+    outputScope: "tree_v1",
+    tempoMode: "mixable_v1",
+  },
+  {
+    clusteringMethod: "dj_hierarchical_v1",
+    description: "Functional warm-up, build, and peak slots.",
+    diversityMode: "strict_v1",
+    featureProfile: "energy_v1",
+    key: "set_builder_v1",
+    label: "Set builder",
+    namingStrategy: "functional_slot_v1",
+    orderingStrategy: "profile_nearest_neighbor_rolling_v2",
+    outputScope: "tree_v1",
+    tempoMode: "mixable_v1",
+  },
+  {
+    clusteringMethod: "kmeans",
+    description: "Seeded variety crates for rediscovery.",
+    diversityMode: "strict_v1",
+    featureProfile: "balanced_v1",
+    key: "discovery_sampler_v1",
+    label: "Discovery sampler",
+    namingStrategy: "crate_label_v1",
+    orderingStrategy: "seeded_shuffle_v1",
+    outputScope: "leaf_only_v1",
+    tempoMode: "mixable_v1",
+  },
+  {
+    clusteringMethod: "agglomerative",
+    description: "Style/tag-forward collections with descriptive names.",
+    diversityMode: "balanced_v1",
+    featureProfile: "texture_v1",
+    key: "metadata_collections_v1",
+    label: "Metadata collections",
+    namingStrategy: "metadata_tagline_v1",
+    orderingStrategy: "center_out_v1",
+    outputScope: "tree_v1",
+    tempoMode: "raw_v1",
+  },
+  {
+    clusteringMethod: "dj_hierarchical_v1",
+    description: "Small focused leaf crates for export.",
+    diversityMode: "balanced_v1",
+    featureProfile: "balanced_v1",
+    key: "micro_crates_v1",
+    label: "Micro crates",
+    namingStrategy: "crate_label_v1",
+    orderingStrategy: "profile_nearest_neighbor_rolling_v2",
+    outputScope: "leaf_only_v1",
+    tempoMode: "mixable_v1",
+  },
+];
 
 function runStatusTone(status: PlaylistGenerationRun["status"]): PillTone {
   if (status === "completed") {
@@ -79,13 +235,17 @@ export function PlaylistGeneratorView() {
   const [runSorting, setRunSorting] = useState<SortingState>([]);
   const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
   const [bulkDeleteStatus, setBulkDeleteStatus] = useState<RunBulkStatus | null>(null);
+  const [presetKey, setPresetKey] = useState<PresetKey>("dj_crate_tree_v1");
   const [clusteringMethod, setClusteringMethod] = useState<ClusteringMethod>("dj_hierarchical_v1");
   const [featureProfile, setFeatureProfile] = useState<FeatureProfile>("balanced_v1");
-  const [maxDepth, setMaxDepth] = useState(2);
-  const [targetPlaylistSize, setTargetPlaylistSize] = useState(25);
-  const [minPlaylistSize, setMinPlaylistSize] = useState(8);
-  const [maxChildren, setMaxChildren] = useState(4);
-  const [randomSeed, setRandomSeed] = useState(42);
+  const [namingStrategy, setNamingStrategy] = useState<NamingStrategy>("dj_utility_v1");
+  const [orderingStrategy, setOrderingStrategy] = useState<OrderingStrategy>("profile_nearest_neighbor_rolling_v2");
+  const [diversityMode, setDiversityMode] = useState<DiversityMode>("balanced_v1");
+  const [tempoMode, setTempoMode] = useState<TempoMode>("mixable_v1");
+  const [outputScope, setOutputScope] = useState<OutputScope>("tree_v1");
+  const [numericDrafts, setNumericDrafts] = useState<NumericDrafts>(() => numericValuesToDrafts(fallbackNumericValues));
+  const [numericDefaultsAreAdaptive, setNumericDefaultsAreAdaptive] = useState(true);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
   const selectedPlaylistIdList = useMemo(
     () => playlists.filter((playlist) => selectedPlaylistIds.has(playlist.id)).map((playlist) => playlist.id),
     [playlists, selectedPlaylistIds],
@@ -103,48 +263,68 @@ export function PlaylistGeneratorView() {
     }),
     [sanitizedTagFilters, selectedPlaylistIdList, sourceType],
   );
-  const debouncedPreviewSourceFilter = useDebouncedValue(sourceFilter, previewDebounceMs);
-  const generationPayload = useMemo(
+  const previewReadyTrackCount = featureSummaryQuery.data?.ready_tracks ?? fallbackNumericValues.targetPlaylistSize;
+  const activePreset = generationPresets.find((preset) => preset.key === presetKey) ?? generationPresets[0];
+  const adaptiveNumericValues = useMemo(
+    () => adaptiveNumericDefaults(previewReadyTrackCount, presetKey),
+    [presetKey, previewReadyTrackCount],
+  );
+  const numericValues = useMemo(
+    () => normalizeNumericDrafts(numericDrafts, adaptiveNumericValues),
+    [adaptiveNumericValues, numericDrafts],
+  );
+  const generationConfig = useMemo(
     () => ({
-      generation_config: {
-        clustering_method: clusteringMethod,
-        feature_profile: featureProfile,
-        max_children: maxChildren,
-        max_depth: maxDepth,
-        min_playlist_size: minPlaylistSize,
-        random_seed: randomSeed,
-        target_playlist_size: targetPlaylistSize,
-      },
-      source_filter: sourceFilter,
+      clustering_method: clusteringMethod,
+      diversity_mode: diversityMode,
+      feature_profile: featureProfile,
+      max_children: numericValues.maxChildren,
+      max_depth: numericValues.maxDepth,
+      min_playlist_size: numericValues.minPlaylistSize,
+      naming_strategy: namingStrategy,
+      ordering_strategy: orderingStrategy,
+      output_scope: outputScope,
+      preset_key: presetKey,
+      random_seed: numericValues.randomSeed,
+      target_playlist_size: numericValues.targetPlaylistSize,
+      tempo_mode: tempoMode,
     }),
     [
       clusteringMethod,
+      diversityMode,
       featureProfile,
-      maxChildren,
-      maxDepth,
-      minPlaylistSize,
-      randomSeed,
-      sourceFilter,
-      targetPlaylistSize,
+      namingStrategy,
+      numericValues,
+      orderingStrategy,
+      outputScope,
+      presetKey,
+      tempoMode,
     ],
+  );
+  const debouncedPreviewSourceFilter = useDebouncedValue(sourceFilter, previewDebounceMs);
+  const generationPayload = useMemo(
+    () => ({
+      generation_config: generationConfig,
+      source_filter: sourceFilter,
+    }),
+    [generationConfig, sourceFilter],
   );
   const previewPayload = useMemo(
     () => ({
-      generation_config: {
-        clustering_method: "dj_hierarchical_v1" as const,
-        feature_profile: featureProfile,
-        max_children: 4,
-        max_depth: 2,
-        min_playlist_size: 8,
-        random_seed: 42,
-        target_playlist_size: 25,
-      },
+      generation_config: generationConfig,
       source_filter: debouncedPreviewSourceFilter,
     }),
-    [debouncedPreviewSourceFilter, featureProfile],
+    [debouncedPreviewSourceFilter, generationConfig],
   );
   const previewQuery = useSonicGenerationPreviewQuery(previewPayload, !sourceIsInvalid);
   const previewIsSettling = sourceFilter !== debouncedPreviewSourceFilter;
+  useEffect(() => {
+    if (!numericDefaultsAreAdaptive) {
+      return;
+    }
+    const readyCount = previewQuery.data?.ready_track_count ?? featureSummaryQuery.data?.ready_tracks ?? fallbackNumericValues.targetPlaylistSize;
+    setNumericDrafts(numericValuesToDrafts(adaptiveNumericDefaults(readyCount, presetKey)));
+  }, [featureSummaryQuery.data?.ready_tracks, numericDefaultsAreAdaptive, presetKey, previewQuery.data?.ready_track_count]);
   const backfillMutation = useMutation({
     mutationFn: backfillSonicFeatures,
     onSuccess: async () => {
@@ -227,6 +407,67 @@ export function PlaylistGeneratorView() {
     );
   }
 
+  function handlePresetChange(nextPresetKey: PresetKey) {
+    const nextPreset = generationPresets.find((preset) => preset.key === nextPresetKey) ?? generationPresets[0];
+    setPresetKey(nextPreset.key);
+    setClusteringMethod(nextPreset.clusteringMethod);
+    setFeatureProfile(nextPreset.featureProfile);
+    setNamingStrategy(nextPreset.namingStrategy);
+    setOrderingStrategy(nextPreset.orderingStrategy);
+    setDiversityMode(nextPreset.diversityMode);
+    setTempoMode(nextPreset.tempoMode);
+    setOutputScope(nextPreset.outputScope);
+    setNumericDefaultsAreAdaptive(true);
+    setNumericDrafts(
+      numericValuesToDrafts(
+        adaptiveNumericDefaults(
+          previewQuery.data?.ready_track_count ?? featureSummaryQuery.data?.ready_tracks ?? fallbackNumericValues.targetPlaylistSize,
+          nextPreset.key,
+        ),
+      ),
+    );
+  }
+
+  function updateNumericDraft(key: NumericConfigKey, value: string) {
+    setNumericDefaultsAreAdaptive(false);
+    setNumericDrafts((current) => ({ ...current, [key]: value }));
+  }
+
+  function normalizeNumericDraft(key: NumericConfigKey) {
+    setNumericDrafts((current) => ({
+      ...current,
+      [key]: String(normalizeNumericValue(key, current[key], adaptiveNumericValues[key])),
+    }));
+  }
+
+  function stepNumericDraft(key: NumericConfigKey, direction: -1 | 1) {
+    const spec = numericFieldSpecs[key];
+    setNumericDefaultsAreAdaptive(false);
+    setNumericDrafts((current) => {
+      const currentValue = normalizeNumericValue(key, current[key], adaptiveNumericValues[key]);
+      return {
+        ...current,
+        [key]: String(clampNumber(currentValue + spec.step * direction, spec.min, spec.max)),
+      };
+    });
+  }
+
+  function resetNumericDraft(key: NumericConfigKey) {
+    setNumericDrafts((current) => ({ ...current, [key]: String(adaptiveNumericValues[key]) }));
+  }
+
+  function resetAdaptiveDefaults() {
+    setNumericDefaultsAreAdaptive(true);
+    setNumericDrafts(
+      numericValuesToDrafts(
+        adaptiveNumericDefaults(
+          previewQuery.data?.ready_track_count ?? featureSummaryQuery.data?.ready_tracks ?? fallbackNumericValues.targetPlaylistSize,
+          presetKey,
+        ),
+      ),
+    );
+  }
+
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (sourceType === "streaming_playlists" && selectedPlaylistIdList.length === 0) {
@@ -237,6 +478,7 @@ export function PlaylistGeneratorView() {
       return;
     }
 
+    setNumericDrafts(numericValuesToDrafts(numericValues));
     createRunMutation.mutate(generationPayload);
   }
 
@@ -449,8 +691,32 @@ export function PlaylistGeneratorView() {
       </section>
 
       <section className={`${surfaceClasses.compactCard} grid gap-3`} aria-label="Generation parameters">
-        <h3 className={textClasses.label}>Generation</h3>
-        <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-7">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h3 className={textClasses.label}>Generation</h3>
+            <p className={`mt-1 ${textClasses.caption}`}>{activePreset.description}</p>
+          </div>
+          <ActionButton className={controlClasses.actionButtonCompact} onClick={resetAdaptiveDefaults} type="button">
+            <RotateCcw aria-hidden="true" className="h-3.5 w-3.5" strokeWidth={1.9} />
+            Reset defaults
+          </ActionButton>
+        </div>
+
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <label className="grid gap-1.5">
+            <span className={textClasses.label}>Preset</span>
+            <select
+              className={`${controlClasses.controlRadius} min-h-10 border border-ctp-surface1 bg-ctp-surface0 px-3 text-ctp-text outline-none ${textClasses.input}`}
+              onChange={(event) => handlePresetChange(event.target.value as PresetKey)}
+              value={presetKey}
+            >
+              {generationPresets.map((preset) => (
+                <option key={preset.key} value={preset.key}>
+                  {preset.label}
+                </option>
+              ))}
+            </select>
+          </label>
           <label className="grid gap-1.5">
             <span className={textClasses.label}>Profile</span>
             <select
@@ -476,12 +742,135 @@ export function PlaylistGeneratorView() {
               <option value="agglomerative">Agglomerative</option>
             </select>
           </label>
-          <NumericInput label="Depth" max={5} min={1} onChange={setMaxDepth} value={maxDepth} />
-          <NumericInput label="Leaf size" max={500} min={2} onChange={setTargetPlaylistSize} value={targetPlaylistSize} />
-          <NumericInput label="Min size" max={250} min={1} onChange={setMinPlaylistSize} value={minPlaylistSize} />
-          <NumericInput label="Children" max={10} min={2} onChange={setMaxChildren} value={maxChildren} />
-          <NumericInput label="Seed" max={999999} min={0} onChange={setRandomSeed} value={randomSeed} />
+          <label className="grid gap-1.5">
+            <span className={textClasses.label}>Naming</span>
+            <select
+              className={`${controlClasses.controlRadius} min-h-10 border border-ctp-surface1 bg-ctp-surface0 px-3 text-ctp-text outline-none ${textClasses.input}`}
+              onChange={(event) => setNamingStrategy(event.target.value as NamingStrategy)}
+              value={namingStrategy}
+            >
+              <option value="dj_utility_v1">DJ utility</option>
+              <option value="crate_label_v1">Crate label</option>
+              <option value="metadata_tagline_v1">Metadata tagline</option>
+              <option value="functional_slot_v1">Functional slot</option>
+            </select>
+          </label>
         </div>
+
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <NumericInput
+            adaptiveValue={adaptiveNumericValues.maxDepth}
+            fieldKey="maxDepth"
+            onBlur={normalizeNumericDraft}
+            onChange={updateNumericDraft}
+            onReset={resetNumericDraft}
+            onStep={stepNumericDraft}
+            value={numericDrafts.maxDepth}
+          />
+          <NumericInput
+            adaptiveValue={adaptiveNumericValues.targetPlaylistSize}
+            fieldKey="targetPlaylistSize"
+            onBlur={normalizeNumericDraft}
+            onChange={updateNumericDraft}
+            onReset={resetNumericDraft}
+            onStep={stepNumericDraft}
+            value={numericDrafts.targetPlaylistSize}
+          />
+          <NumericInput
+            adaptiveValue={adaptiveNumericValues.minPlaylistSize}
+            fieldKey="minPlaylistSize"
+            onBlur={normalizeNumericDraft}
+            onChange={updateNumericDraft}
+            onReset={resetNumericDraft}
+            onStep={stepNumericDraft}
+            value={numericDrafts.minPlaylistSize}
+          />
+          <NumericInput
+            adaptiveValue={adaptiveNumericValues.maxChildren}
+            fieldKey="maxChildren"
+            onBlur={normalizeNumericDraft}
+            onChange={updateNumericDraft}
+            onReset={resetNumericDraft}
+            onStep={stepNumericDraft}
+            value={numericDrafts.maxChildren}
+          />
+        </div>
+
+        <button
+          className="flex w-fit items-center gap-1.5 text-[12px] font-semibold text-ctp-subtext0 transition-colors hover:text-ctp-text"
+          onClick={() => setAdvancedOpen((current) => !current)}
+          type="button"
+        >
+          {advancedOpen ? (
+            <ChevronDown aria-hidden="true" className="h-3.5 w-3.5" strokeWidth={1.9} />
+          ) : (
+            <ChevronRight aria-hidden="true" className="h-3.5 w-3.5" strokeWidth={1.9} />
+          )}
+          Advanced shape controls
+        </button>
+
+        {advancedOpen ? (
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+            <label className="grid gap-1.5">
+              <span className={textClasses.label}>Ordering</span>
+              <select
+                className={`${controlClasses.controlRadius} min-h-10 border border-ctp-surface1 bg-ctp-surface0 px-3 text-ctp-text outline-none ${textClasses.input}`}
+                onChange={(event) => setOrderingStrategy(event.target.value as OrderingStrategy)}
+                value={orderingStrategy}
+              >
+                <option value="profile_nearest_neighbor_rolling_v2">Balanced flow</option>
+                <option value="center_out_v1">Center out</option>
+                <option value="seeded_shuffle_v1">Seeded shuffle</option>
+              </select>
+            </label>
+            <label className="grid gap-1.5">
+              <span className={textClasses.label}>Diversity</span>
+              <select
+                className={`${controlClasses.controlRadius} min-h-10 border border-ctp-surface1 bg-ctp-surface0 px-3 text-ctp-text outline-none ${textClasses.input}`}
+                onChange={(event) => setDiversityMode(event.target.value as DiversityMode)}
+                value={diversityMode}
+              >
+                <option value="balanced_v1">Balanced</option>
+                <option value="loose_v1">Loose</option>
+                <option value="strict_v1">Strict</option>
+              </select>
+            </label>
+            <label className="grid gap-1.5">
+              <span className={textClasses.label}>Tempo</span>
+              <select
+                className={`${controlClasses.controlRadius} min-h-10 border border-ctp-surface1 bg-ctp-surface0 px-3 text-ctp-text outline-none ${textClasses.input}`}
+                onChange={(event) => setTempoMode(event.target.value as TempoMode)}
+                value={tempoMode}
+              >
+                <option value="mixable_v1">Mixable BPM</option>
+                <option value="raw_v1">Raw BPM</option>
+              </select>
+            </label>
+            <label className="grid gap-1.5">
+              <span className={textClasses.label}>Output</span>
+              <select
+                className={`${controlClasses.controlRadius} min-h-10 border border-ctp-surface1 bg-ctp-surface0 px-3 text-ctp-text outline-none ${textClasses.input}`}
+                onChange={(event) => setOutputScope(event.target.value as OutputScope)}
+                value={outputScope}
+              >
+                <option value="tree_v1">Tree</option>
+                <option value="leaf_only_v1">Leaves only</option>
+                <option value="top_level_v1">Top level</option>
+              </select>
+            </label>
+            <NumericInput
+              adaptiveValue={adaptiveNumericValues.randomSeed}
+              fieldKey="randomSeed"
+              onBlur={normalizeNumericDraft}
+              onChange={updateNumericDraft}
+              onReset={resetNumericDraft}
+              onStep={stepNumericDraft}
+              value={numericDrafts.randomSeed}
+            />
+          </div>
+        ) : null}
+
+        {preview?.projection ? <GenerationProjection projection={preview.projection} /> : null}
       </section>
 
       <section className={`${surfaceClasses.compactCard} grid gap-3`} aria-label="Generated run management">
@@ -612,6 +1001,46 @@ function profileLabel(profile: string) {
   return "Balanced";
 }
 
+function GenerationProjection({ projection }: { projection: PlaylistGenerationProjection }) {
+  const depthSummary = Object.entries(projection.depth_counts)
+    .sort(([left], [right]) => Number(left) - Number(right))
+    .map(([depth, count]) => `D${Number(depth) + 1}: ${count}`)
+    .join(", ");
+  const sizeSummary =
+    projection.size_min === projection.size_max
+      ? projection.size_min.toLocaleString()
+      : `${projection.size_min.toLocaleString()}-${projection.size_max.toLocaleString()}`;
+
+  return (
+    <section className="grid gap-3 rounded-[8px] border border-ctp-surface1 bg-ctp-surface0/45 p-3" aria-label="Generation projection">
+      <div className="grid gap-2 md:grid-cols-4">
+        <PreviewStat label="Projected playlists" value={projection.playlist_count} />
+        <PreviewStat label="Leaf playlists" value={projection.leaf_playlist_count} />
+        <PreviewStat label="Size range" value={sizeSummary} />
+        <PreviewStat label="Depths" value={depthSummary || "Flat"} />
+      </div>
+      {projection.sample_names.length > 0 ? (
+        <div className="flex flex-wrap gap-1.5" aria-label="Sample generated names">
+          {projection.sample_names.map((name) => (
+            <span className={`${controlClasses.countBadge} max-w-full truncate`} key={name}>
+              {name}
+            </span>
+          ))}
+        </div>
+      ) : null}
+      {projection.config_notes.length > 0 ? (
+        <div className="grid gap-1" aria-label="Generation config notes">
+          {projection.config_notes.map((note) => (
+            <p className={textClasses.caption} key={note}>
+              {note}
+            </p>
+          ))}
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
 function useDebouncedValue<T>(value: T, delayMs: number) {
   const [debouncedValue, setDebouncedValue] = useState(value);
 
@@ -624,29 +1053,154 @@ function useDebouncedValue<T>(value: T, delayMs: number) {
 }
 
 function NumericInput({
-  label,
-  max,
-  min,
+  adaptiveValue,
+  fieldKey,
+  onBlur,
   onChange,
+  onReset,
+  onStep,
   value,
 }: {
-  label: string;
-  max: number;
-  min: number;
-  onChange: (value: number) => void;
-  value: number;
+  adaptiveValue: number;
+  fieldKey: NumericConfigKey;
+  onBlur: (key: NumericConfigKey) => void;
+  onChange: (key: NumericConfigKey, value: string) => void;
+  onReset: (key: NumericConfigKey) => void;
+  onStep: (key: NumericConfigKey, direction: -1 | 1) => void;
+  value: string;
 }) {
+  const spec = numericFieldSpecs[fieldKey];
   return (
-    <label className="grid gap-1.5">
-      <span className={textClasses.label}>{label}</span>
-      <input
-        className={`${controlClasses.searchFrame} min-h-10 px-3 text-ctp-text outline-none ${textClasses.input}`}
-        max={max}
-        min={min}
-        onChange={(event) => onChange(Number(event.target.value))}
-        type="number"
-        value={value}
-      />
-    </label>
+    <div className="grid min-w-0 gap-1.5">
+      <div className="flex items-center justify-between gap-2">
+        <label className={textClasses.label} htmlFor={`generation-${fieldKey}`}>
+          {spec.label}
+        </label>
+        <span className={textClasses.caption}>Default {adaptiveValue.toLocaleString()}</span>
+      </div>
+      <div className={`${controlClasses.searchFrame} flex min-h-10 items-center overflow-hidden`}>
+        <IconButton
+          className="h-10 w-9 rounded-none border-0 bg-transparent"
+          label={`Decrease ${spec.label}`}
+          onClick={() => onStep(fieldKey, -1)}
+        >
+          <Minus aria-hidden="true" className="h-3.5 w-3.5" strokeWidth={1.9} />
+        </IconButton>
+        <input
+          className={`min-h-10 min-w-0 flex-1 bg-transparent px-2 text-center text-ctp-text outline-none ${textClasses.input}`}
+          id={`generation-${fieldKey}`}
+          inputMode="numeric"
+          max={spec.max}
+          min={spec.min}
+          onBlur={() => onBlur(fieldKey)}
+          onChange={(event) => onChange(fieldKey, event.target.value)}
+          step={spec.step}
+          type="number"
+          value={value}
+        />
+        <IconButton
+          className="h-10 w-9 rounded-none border-0 bg-transparent"
+          label={`Increase ${spec.label}`}
+          onClick={() => onStep(fieldKey, 1)}
+        >
+          <Plus aria-hidden="true" className="h-3.5 w-3.5" strokeWidth={1.9} />
+        </IconButton>
+        <IconButton
+          className="h-10 w-9 rounded-none border-0 bg-transparent"
+          label={`Reset ${spec.label}`}
+          onClick={() => onReset(fieldKey)}
+        >
+          <Undo2 aria-hidden="true" className="h-3.5 w-3.5" strokeWidth={1.9} />
+        </IconButton>
+      </div>
+      <p className={textClasses.caption}>{spec.impact}</p>
+    </div>
   );
+}
+
+function numericValuesToDrafts(values: NumericValues): NumericDrafts {
+  return {
+    maxChildren: String(values.maxChildren),
+    maxDepth: String(values.maxDepth),
+    minPlaylistSize: String(values.minPlaylistSize),
+    randomSeed: String(values.randomSeed),
+    targetPlaylistSize: String(values.targetPlaylistSize),
+  };
+}
+
+function normalizeNumericDrafts(drafts: NumericDrafts, defaults: NumericValues): NumericValues {
+  return {
+    maxChildren: normalizeNumericValue("maxChildren", drafts.maxChildren, defaults.maxChildren),
+    maxDepth: normalizeNumericValue("maxDepth", drafts.maxDepth, defaults.maxDepth),
+    minPlaylistSize: normalizeNumericValue("minPlaylistSize", drafts.minPlaylistSize, defaults.minPlaylistSize),
+    randomSeed: normalizeNumericValue("randomSeed", drafts.randomSeed, defaults.randomSeed),
+    targetPlaylistSize: normalizeNumericValue("targetPlaylistSize", drafts.targetPlaylistSize, defaults.targetPlaylistSize),
+  };
+}
+
+function normalizeNumericValue(key: NumericConfigKey, value: string, fallback: number) {
+  const spec = numericFieldSpecs[key];
+  if (value.trim() === "") {
+    return clampNumber(fallback, spec.min, spec.max);
+  }
+  const parsedValue = Number(value);
+  if (!Number.isFinite(parsedValue)) {
+    return clampNumber(fallback, spec.min, spec.max);
+  }
+  return clampNumber(Math.round(parsedValue), spec.min, spec.max);
+}
+
+function clampNumber(value: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, value));
+}
+
+function adaptiveNumericDefaults(readyTrackCount: number, presetKey: PresetKey): NumericValues {
+  const ready = Math.max(0, Math.round(readyTrackCount));
+  const target = clampNumber(Math.round(Math.sqrt(Math.max(ready, 1)) * 2.2), 24, 48);
+  const min = clampNumber(Math.round(target * 0.35), 6, 18);
+  const defaults: NumericValues = {
+    maxChildren: ready < 500 ? 4 : 5,
+    maxDepth: ready < 180 ? 2 : 3,
+    minPlaylistSize: min,
+    randomSeed: 42,
+    targetPlaylistSize: target,
+  };
+
+  if (presetKey === "set_builder_v1") {
+    return {
+      ...defaults,
+      maxChildren: 3,
+      maxDepth: 2,
+      minPlaylistSize: clampNumber(Math.round(target * 0.45), 8, 22),
+      targetPlaylistSize: Math.max(target, 32),
+    };
+  }
+  if (presetKey === "discovery_sampler_v1") {
+    return {
+      ...defaults,
+      maxChildren: 5,
+      maxDepth: 2,
+      minPlaylistSize: clampNumber(Math.round(target * 0.3), 6, 14),
+    };
+  }
+  if (presetKey === "metadata_collections_v1") {
+    return {
+      ...defaults,
+      maxChildren: 6,
+      maxDepth: 2,
+      minPlaylistSize: clampNumber(Math.round(target * 0.4), 10, 20),
+      targetPlaylistSize: Math.max(target, 36),
+    };
+  }
+  if (presetKey === "micro_crates_v1") {
+    const microTarget = clampNumber(Math.round(Math.sqrt(Math.max(ready, 1)) * 1.35), 10, 18);
+    return {
+      ...defaults,
+      maxChildren: ready >= 180 ? 6 : 4,
+      maxDepth: ready >= 80 ? 3 : 2,
+      minPlaylistSize: clampNumber(Math.round(microTarget * 0.35), 4, 8),
+      targetPlaylistSize: microTarget,
+    };
+  }
+  return defaults;
 }

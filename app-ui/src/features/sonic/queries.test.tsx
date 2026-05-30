@@ -24,12 +24,18 @@ describe("sonic queries", () => {
       sonicQueryKeys.preview({
         generation_config: {
           clustering_method: "kmeans",
+          diversity_mode: "balanced_v1",
           feature_profile: "balanced_v1",
           max_children: 4,
           max_depth: 2,
           min_playlist_size: 8,
+          naming_strategy: "dj_utility_v1",
+          ordering_strategy: "profile_nearest_neighbor_rolling_v2",
+          output_scope: "tree_v1",
+          preset_key: "dj_crate_tree_v1",
           random_seed: 42,
           target_playlist_size: 25,
+          tempo_mode: "mixable_v1",
         },
         source_filter: {
           source_type: "all_local",
@@ -44,12 +50,18 @@ describe("sonic queries", () => {
       {
         generation_config: {
           clustering_method: "kmeans",
+          diversity_mode: "balanced_v1",
           feature_profile: "balanced_v1",
           max_children: 4,
           max_depth: 2,
           min_playlist_size: 8,
+          naming_strategy: "dj_utility_v1",
+          ordering_strategy: "profile_nearest_neighbor_rolling_v2",
+          output_scope: "tree_v1",
+          preset_key: "dj_crate_tree_v1",
           random_seed: 42,
           target_playlist_size: 25,
+          tempo_mode: "mixable_v1",
         },
         source_filter: {
           source_type: "all_local",
@@ -126,12 +138,18 @@ describe("sonic queries", () => {
       createPlaylistGenerationRun({
         generation_config: {
           clustering_method: "agglomerative",
+          diversity_mode: "strict_v1",
           feature_profile: "balanced_v1",
           max_children: 3,
           max_depth: 2,
           min_playlist_size: 4,
+          naming_strategy: "crate_label_v1",
+          ordering_strategy: "seeded_shuffle_v1",
+          output_scope: "leaf_only_v1",
+          preset_key: "discovery_sampler_v1",
           random_seed: 9,
           target_playlist_size: 12,
+          tempo_mode: "mixable_v1",
         },
         source_filter: {
           source_type: "all_local",
@@ -145,12 +163,18 @@ describe("sonic queries", () => {
       body: JSON.stringify({
         generation_config: {
           clustering_method: "agglomerative",
+          diversity_mode: "strict_v1",
           feature_profile: "balanced_v1",
           max_children: 3,
           max_depth: 2,
           min_playlist_size: 4,
+          naming_strategy: "crate_label_v1",
+          ordering_strategy: "seeded_shuffle_v1",
+          output_scope: "leaf_only_v1",
+          preset_key: "discovery_sampler_v1",
           random_seed: 9,
           target_playlist_size: 12,
+          tempo_mode: "mixable_v1",
         },
         source_filter: {
           source_type: "all_local",
@@ -175,6 +199,17 @@ describe("sonic queries", () => {
         feature_profile: "energy_v1",
         missing_feature_count: 2,
         pending_feature_count: 3,
+        projection: {
+          config_notes: [],
+          depth_counts: { "0": 1, "1": 2 },
+          leaf_playlist_count: 2,
+          mode: "estimated",
+          playlist_count: 3,
+          sample_names: ["Peak 128 BPM"],
+          size_max: 6,
+          size_median: 6,
+          size_min: 6,
+        },
         ready_track_count: 12,
         skipped_track_count: 6,
         source_track_count: 18,
@@ -183,12 +218,18 @@ describe("sonic queries", () => {
     const payload = {
       generation_config: {
         clustering_method: "kmeans" as const,
+        diversity_mode: "balanced_v1" as const,
         feature_profile: "energy_v1" as const,
         max_children: 4,
         max_depth: 2,
         min_playlist_size: 8,
+        naming_strategy: "dj_utility_v1" as const,
+        ordering_strategy: "profile_nearest_neighbor_rolling_v2" as const,
+        output_scope: "tree_v1" as const,
+        preset_key: "dj_crate_tree_v1" as const,
         random_seed: 42,
         target_playlist_size: 25,
+        tempo_mode: "mixable_v1" as const,
       },
       source_filter: {
         source_type: "all_local" as const,
@@ -199,6 +240,7 @@ describe("sonic queries", () => {
 
     await expect(fetchSonicGenerationPreview(payload)).resolves.toMatchObject({
       can_generate: true,
+      projection: { playlist_count: 3 },
       ready_track_count: 12,
     });
 

@@ -181,6 +181,54 @@ function profileLabel(profile: string | null) {
   return profile ?? "Unknown";
 }
 
+function namingStrategyLabel(strategy: string | null) {
+  if (strategy === "crate_label_v1") {
+    return "Crate label";
+  }
+  if (strategy === "metadata_tagline_v1") {
+    return "Metadata tagline";
+  }
+  if (strategy === "functional_slot_v1") {
+    return "Functional slot";
+  }
+  if (strategy === "dj_utility_v1") {
+    return "DJ utility";
+  }
+  return strategy ?? "Unknown";
+}
+
+function outputScopeLabel(scope: string | null) {
+  if (scope === "leaf_only_v1") {
+    return "Leaves only";
+  }
+  if (scope === "top_level_v1") {
+    return "Top level";
+  }
+  if (scope === "tree_v1") {
+    return "Tree";
+  }
+  return scope ?? "Tree";
+}
+
+function presetLabel(preset: string | null) {
+  if (preset === "set_builder_v1") {
+    return "Set builder";
+  }
+  if (preset === "discovery_sampler_v1") {
+    return "Discovery sampler";
+  }
+  if (preset === "metadata_collections_v1") {
+    return "Metadata collections";
+  }
+  if (preset === "micro_crates_v1") {
+    return "Micro crates";
+  }
+  if (preset === "dj_crate_tree_v1") {
+    return "DJ crate tree";
+  }
+  return preset ?? "DJ crate tree";
+}
+
 function sourceTypeLabel(sourceType: string | null) {
   if (sourceType === "streaming_playlists") {
     return "Streaming playlists";
@@ -230,8 +278,11 @@ function RunMetadata({ run }: { run: PlaylistGenerationRun }) {
   const config = run.generation_config;
   const sourceFilter = run.source_filter;
   const metadata = [
+    { label: "Preset", value: presetLabel(stringValue(config, "preset_key")) },
     { label: "Method", value: methodLabel(stringValue(config, "clustering_method")) },
     { label: "Profile", value: profileLabel(stringValue(config, "feature_profile")) },
+    { label: "Naming", value: namingStrategyLabel(stringValue(config, "naming_strategy")) },
+    { label: "Output", value: outputScopeLabel(stringValue(config, "output_scope")) },
     { label: "Leaf size", value: displayConfigValue(config, "target_playlist_size") },
     { label: "Min size", value: displayConfigValue(config, "min_playlist_size") },
     { label: "Depth", value: displayConfigValue(config, "max_depth") },
