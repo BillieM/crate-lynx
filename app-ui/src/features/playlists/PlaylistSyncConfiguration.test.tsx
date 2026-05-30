@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 
-import { maintenanceQueryKeys } from "../maintenance/queries";
+import { soulseekQueryKeys } from "../soulseek/queryKeys";
 import {
   streamingAccountQueryKeys,
   useStreamingAccountsQuery,
@@ -108,7 +108,7 @@ function renderPlaylistSyncConfiguration({ includeSyncRefreshObservers = false }
   queryClient.setQueryData(playlistQueryKeys.list(), {
     playlists: playlistConfigResponse.playlists.filter((playlist) => playlist.sync_mode === "full"),
   });
-  queryClient.setQueryData(maintenanceQueryKeys.missingLocally(), { tracks: [] });
+  queryClient.setQueryData(soulseekQueryKeys.queue(), { items: [] });
 
   const result = render(
     <QueryClientProvider client={queryClient}>
@@ -324,7 +324,7 @@ describe("PlaylistSyncConfiguration", () => {
       );
       expect(countFetches(fetchMock, "/api/streaming/playlists/config")).toBe(configFetchCountBeforeToggle);
       expect(queryClient.getQueryState(playlistQueryKeys.config())?.isInvalidated).not.toBe(true);
-      expect(queryClient.getQueryState(maintenanceQueryKeys.missingLocally())?.isInvalidated).not.toBe(true);
+      expect(queryClient.getQueryState(soulseekQueryKeys.queue())?.isInvalidated).not.toBe(true);
     });
     expect(
       queryClient
@@ -450,7 +450,7 @@ describe("PlaylistSyncConfiguration", () => {
       ).toBe("full");
     });
     await waitFor(() => {
-      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: maintenanceQueryKeys.missingLocally() });
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: soulseekQueryKeys.all });
     });
     invalidateSpy.mockClear();
 
@@ -466,7 +466,7 @@ describe("PlaylistSyncConfiguration", () => {
       ).toBe(false);
     });
     await waitFor(() => {
-      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: maintenanceQueryKeys.missingLocally() });
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: soulseekQueryKeys.all });
     });
   });
 

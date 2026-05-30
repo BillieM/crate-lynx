@@ -139,7 +139,7 @@ describe("streaming relationship queries", () => {
       ["streaming-relationships", "suggestions"],
       ["streaming-relationships", "suggestion-pages"],
       ["playlists"],
-      ["maintenance", "missing-locally"],
+      ["soulseek"],
     ]);
   });
 

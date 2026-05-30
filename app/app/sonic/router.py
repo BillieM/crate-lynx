@@ -11,6 +11,8 @@ from app.sonic.jobs import SonicJobEnqueuer, enqueue_sonic_feature_backfill
 from app.sonic.schemas import (
     CreatePlaylistGenerationRunRequest,
     CreatePlaylistGenerationRunResponse,
+    DeletePlaylistGenerationRunsRequest,
+    DeletePlaylistGenerationRunsResponse,
     GeneratedPlaylistListResponse,
     GeneratedPlaylistResponse,
     GeneratedPlaylistTrackResponse,
@@ -148,6 +150,35 @@ def create_router(
         return CreatePlaylistGenerationRunResponse(
             run=_run_response(run),
             job_id=job_id,
+        )
+
+    @router.post(
+        "/sonic/runs/delete-selected",
+        response_model=DeletePlaylistGenerationRunsResponse,
+    )
+    def delete_selected_generation_runs(
+        payload: DeletePlaylistGenerationRunsRequest,
+        engine: Engine = Depends(get_engine),
+    ) -> DeletePlaylistGenerationRunsResponse:
+        store = _store(engine)
+        deleted_run_ids: list[int] = []
+        missing_run_ids: list[int] = []
+        skipped_active_run_ids: list[int] = []
+
+        for run_id in payload.run_ids:
+            try:
+                store.delete_generation_run(run_id)
+            except PlaylistGenerationRunNotFoundError:
+                missing_run_ids.append(run_id)
+            except PlaylistGenerationRunActiveError:
+                skipped_active_run_ids.append(run_id)
+            else:
+                deleted_run_ids.append(run_id)
+
+        return DeletePlaylistGenerationRunsResponse(
+            deleted_run_ids=deleted_run_ids,
+            missing_run_ids=missing_run_ids,
+            skipped_active_run_ids=skipped_active_run_ids,
         )
 
     @router.get(

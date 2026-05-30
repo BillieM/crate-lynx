@@ -7,11 +7,12 @@ import { DataTable } from "../../components/DataTable";
 import { EmptyStateCard } from "../../components/EmptyStateCard";
 import { StatusMessage, type OperationStatus } from "../../components/StatusMessage";
 import { formatPlaylistTimestamp } from "../../lib/formatters";
+import { invalidateQueryKeys } from "../../lib/queryInvalidation";
 import { useDelayedInvalidate } from "../../lib/useDelayedInvalidate";
 import { controlClasses, layoutClasses, textClasses } from "../../styles/componentClasses";
 import { actionButtonToneClasses } from "../../styles/toneClasses";
-import { invalidateMissingLocallyQueries } from "../maintenance/queries";
 import { PlaylistActionStatus } from "../shell/Topbar";
+import { soulseekQueueInvalidationKeys } from "../soulseek/queryKeys";
 import {
   streamingAccountCollectionJobInvalidationKeys,
   streamingAccountPlaylistSyncJobInvalidationKeys,
@@ -300,7 +301,7 @@ export function PlaylistSyncConfiguration() {
         updateFullPlaylistListCache(current, updatedPlaylist),
       );
       if (didFullPlaylistMembershipChange(context?.previousPlaylist, updatedPlaylist)) {
-        void invalidateMissingLocallyQueries(queryClient);
+        void invalidateQueryKeys(queryClient, soulseekQueueInvalidationKeys());
       }
     },
   });

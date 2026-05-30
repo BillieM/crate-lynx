@@ -1,17 +1,23 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { CheckCircle2, Download, RefreshCw, Search } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { ActionButton } from "../../components/ActionButton";
+import { BulkActionBar } from "../../components/DataTable";
 import { EmptyStateCard } from "../../components/EmptyStateCard";
 import { FilterChipGroup, type FilterChipOption } from "../../components/FilterChipGroup";
 import { Pill, type PillTone } from "../../components/Pill";
 import { StatusMessage } from "../../components/StatusMessage";
 import { formatDuration } from "../../lib/formatters";
+import { settleInChunks } from "../../lib/settleInChunks";
+import { useDelayedInvalidate } from "../../lib/useDelayedInvalidate";
 import { controlClasses, surfaceClasses, textClasses } from "../../styles/componentClasses";
+import { playlistSyncJobInvalidationKeys, syncStreamingPlaylist } from "../playlists/queries";
 import {
   approveSoulseekCandidateDownload,
   invalidateSoulseekJourneyQueries,
   refreshSoulseekAcquisition,
+  searchSelectedSoulseekTracks,
   searchSoulseekTrack,
   type SoulseekCandidate,
   type SoulseekQueueFilter,
@@ -25,6 +31,9 @@ type QueueActionStatus = {
   status: "error" | "success";
   title: string;
 };
+
+const bulkSearchLimit = 25;
+const defaultFilterPriority: SoulseekQueueFilter[] = ["review", "needs_search", "failed", "active", "all"];
 
 const queueFilters: Array<Omit<FilterChipOption<SoulseekQueueFilter>, "count">> = [
   { label: "All", tone: "all", value: "all" },
@@ -97,6 +106,10 @@ function queueFilterForItem(item: SoulseekQueueItem): SoulseekQueueFilter {
 
 function itemMatchesFilter(item: SoulseekQueueItem, filter: SoulseekQueueFilter) {
   return filter === "all" || queueFilterForItem(item) === filter;
+}
+
+function isSearchableQueueItem(item: SoulseekQueueItem) {
+  return queueFilterForItem(item) === "needs_search";
 }
 
 function getStatusLabel(item: SoulseekQueueItem) {
@@ -178,13 +191,34 @@ function scoreTone(score: number): PillTone {
   return "pending";
 }
 
+function selectedItemIds(rowSelection: Record<string, boolean>) {
+  return Object.entries(rowSelection)
+    .filter(([, selected]) => selected)
+    .map(([rowId]) => Number(rowId))
+    .filter((rowId) => Number.isFinite(rowId));
+}
+
 export function SoulseekQueueView() {
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const delayedInvalidate = useDelayedInvalidate();
   const queueQuery = useSoulseekQueueQuery();
-  const [activeFilter, setActiveFilter] = useState<SoulseekQueueFilter>("review");
+  const [activeFilter, setActiveFilter] = useState<SoulseekQueueFilter>("all");
+  const [hasUserSelectedFilter, setHasUserSelectedFilter] = useState(false);
   const [activeItemKey, setActiveItemKey] = useState<string | null>(null);
   const [actionStatus, setActionStatus] = useState<QueueActionStatus | null>(null);
+  const [rowSelection, setRowSelection] = useState<Record<string, boolean>>({});
+  const [isSyncingPlaylists, setIsSyncingPlaylists] = useState(false);
   const allItems = useMemo(() => queueQuery.data?.items ?? [], [queueQuery.data?.items]);
+  const selectedTrackIds = useMemo(() => selectedItemIds(rowSelection), [rowSelection]);
+  const selectedItems = useMemo(
+    () => allItems.filter((item) => selectedTrackIds.includes(item.streaming_track.id)),
+    [allItems, selectedTrackIds],
+  );
+  const selectedPlaylistIds = useMemo(
+    () => Array.from(new Set(selectedItems.flatMap((item) => item.playlist_ids))),
+    [selectedItems],
+  );
   const visibleItems = useMemo(
     () => allItems.filter((item) => itemMatchesFilter(item, activeFilter)),
     [activeFilter, allItems],
@@ -216,6 +250,31 @@ export function SoulseekQueueView() {
     [allItems],
   );
   const filterOptions = queueFilters.map((filter) => ({ ...filter, count: counts[filter.value] }));
+  const preferredFilter = useMemo(
+    () => defaultFilterPriority.find((filter) => counts[filter] > 0) ?? "all",
+    [counts],
+  );
+
+  useEffect(() => {
+    if (hasUserSelectedFilter || activeFilter === preferredFilter) {
+      return;
+    }
+    setActiveFilter(preferredFilter);
+    setActiveItemKey(null);
+  }, [activeFilter, hasUserSelectedFilter, preferredFilter]);
+
+  useEffect(() => {
+    setRowSelection((currentSelection) => {
+      const searchableTrackIds = new Set(allItems.filter(isSearchableQueueItem).map((item) => item.streaming_track.id));
+      const nextSelection: Record<string, boolean> = {};
+      for (const [rowId, selected] of Object.entries(currentSelection)) {
+        if (selected && searchableTrackIds.has(Number(rowId))) {
+          nextSelection[rowId] = true;
+        }
+      }
+      return Object.keys(nextSelection).length === Object.keys(currentSelection).length ? currentSelection : nextSelection;
+    });
+  }, [allItems]);
   const refreshMutation = useMutation({
     mutationFn: refreshSoulseekAcquisition,
     onError: () => {
@@ -252,6 +311,25 @@ export function SoulseekQueueView() {
       await invalidateSoulseekJourneyQueries(queryClient);
     },
   });
+  const bulkSearchMutation = useMutation({
+    mutationFn: searchSelectedSoulseekTracks,
+    onError: () => {
+      setActionStatus({
+        body: "Soulseek search jobs could not be queued.",
+        status: "error",
+        title: "Bulk search failed",
+      });
+    },
+    onSuccess: async (response) => {
+      setRowSelection({});
+      setActionStatus({
+        body: `${response.jobs.length} ${response.jobs.length === 1 ? "track was" : "tracks were"} queued for Soulseek search.`,
+        status: "success",
+        title: "Bulk search queued",
+      });
+      await invalidateSoulseekJourneyQueries(queryClient);
+    },
+  });
   const approveMutation = useMutation({
     mutationFn: approveSoulseekCandidateDownload,
     onError: () => {
@@ -273,6 +351,62 @@ export function SoulseekQueueView() {
   const activeAcquisition = detailItem?.acquisition ?? null;
   const selectedCandidate = detailItem?.selected_candidate ?? null;
 
+  function handleFilterChange(value: SoulseekQueueFilter) {
+    setHasUserSelectedFilter(true);
+    setActiveFilter(value);
+    setActiveItemKey(null);
+  }
+
+  function toggleItemSelection(item: SoulseekQueueItem, checked: boolean) {
+    if (!isSearchableQueueItem(item)) {
+      return;
+    }
+    setRowSelection((currentSelection) => ({
+      ...currentSelection,
+      [String(item.streaming_track.id)]: checked,
+    }));
+  }
+
+  function handleBulkSearch() {
+    if (selectedTrackIds.length === 0 || bulkSearchMutation.isPending) {
+      return;
+    }
+    if (selectedTrackIds.length > bulkSearchLimit) {
+      setActionStatus({
+        body: `Select ${bulkSearchLimit} or fewer rows for Soulseek search.`,
+        status: "error",
+        title: "Selection too large",
+      });
+      return;
+    }
+    bulkSearchMutation.mutate(selectedTrackIds);
+  }
+
+  async function handleSyncAffectedPlaylists() {
+    if (selectedPlaylistIds.length === 0 || isSyncingPlaylists) {
+      return;
+    }
+
+    setIsSyncingPlaylists(true);
+    setActionStatus(null);
+    const results = await settleInChunks(selectedPlaylistIds, 5, syncStreamingPlaylist);
+    const successCount = results.filter((result) => result.status === "fulfilled").length;
+    const failureCount = results.filter((result) => result.status === "rejected").length;
+
+    await invalidateSoulseekJourneyQueries(queryClient);
+    delayedInvalidate(playlistSyncJobInvalidationKeys(selectedPlaylistIds));
+    setRowSelection({});
+    setIsSyncingPlaylists(false);
+    setActionStatus({
+      body:
+        failureCount > 0
+          ? `${successCount} ${successCount === 1 ? "playlist was" : "playlists were"} queued and ${failureCount} ${failureCount === 1 ? "playlist failed" : "playlists failed"}.`
+          : `${successCount} ${successCount === 1 ? "playlist was" : "playlists were"} queued for sync.`,
+      status: failureCount > 0 ? "error" : "success",
+      title: failureCount > 0 ? "Playlist sync partially failed" : "Playlist sync queued",
+    });
+  }
+
   return (
     <section className="flex min-h-0 flex-1 flex-col gap-4">
       <div className="flex flex-wrap items-end justify-between gap-3">
@@ -286,10 +420,7 @@ export function SoulseekQueueView() {
           activeValue={activeFilter}
           ariaLabel="Soulseek queue filters"
           density="compact"
-          onValueChange={(value) => {
-            setActiveFilter(value);
-            setActiveItemKey(null);
-          }}
+          onValueChange={handleFilterChange}
           options={filterOptions}
         />
       </div>
@@ -297,6 +428,27 @@ export function SoulseekQueueView() {
       {actionStatus ? (
         <StatusMessage body={actionStatus.body} status={actionStatus.status} title={actionStatus.title} />
       ) : null}
+
+      <BulkActionBar selectedCount={selectedTrackIds.length} onClearSelection={() => setRowSelection({})}>
+        <ActionButton
+          className={`${controlClasses.actionButtonCompact} inline-flex items-center gap-1.5`}
+          disabled={selectedTrackIds.length === 0 || selectedTrackIds.length > bulkSearchLimit || bulkSearchMutation.isPending}
+          onClick={handleBulkSearch}
+          type="button"
+        >
+          <Search aria-hidden="true" className="h-3.5 w-3.5" strokeWidth={1.9} />
+          {bulkSearchMutation.isPending ? "Searching..." : "Search selected"}
+        </ActionButton>
+        <ActionButton
+          className={`${controlClasses.actionButtonCompact} inline-flex items-center gap-1.5`}
+          disabled={selectedPlaylistIds.length === 0 || isSyncingPlaylists}
+          onClick={handleSyncAffectedPlaylists}
+          type="button"
+        >
+          <RefreshCw aria-hidden="true" className="h-3.5 w-3.5" strokeWidth={1.9} />
+          {isSyncingPlaylists ? "Syncing..." : "Sync affected playlists"}
+        </ActionButton>
+      </BulkActionBar>
 
       {queueQuery.isPending ? (
         <div className="flex min-h-0 flex-1 items-center justify-center">
@@ -316,29 +468,61 @@ export function SoulseekQueueView() {
             <ul className="grid gap-2">
               {visibleItems.map((item) => {
                 const isSelected = selectedItem !== null && queueItemKey(selectedItem) === queueItemKey(item);
+                const canSearch = isSearchableQueueItem(item);
+                const rowId = String(item.streaming_track.id);
+                const isRowSelected = rowSelection[rowId] === true;
+                const rowSearchPending =
+                  searchMutation.isPending && String(searchMutation.variables) === String(item.streaming_track.id);
                 return (
                   <li key={queueItemKey(item)}>
-                    <button
-                      aria-pressed={isSelected}
+                    <div
                       className={`w-full text-left ${surfaceClasses.rowCardCompact} ${
                         isSelected ? "border-ctp-mauve/70 bg-ctp-surface0" : ""
                       }`}
-                      onClick={() => setActiveItemKey(queueItemKey(item))}
-                      type="button"
                     >
-                      <span className="flex min-w-0 items-start justify-between gap-2">
-                        <span className="min-w-0">
-                          <span className={`block truncate ${textClasses.label}`}>{item.streaming_track.title}</span>
-                          <span className={`block truncate ${textClasses.caption}`}>{item.streaming_track.artist}</span>
-                        </span>
-                        <Pill className="shrink-0" tone={getStatusTone(item)}>
-                          {getStatusLabel(item)}
-                        </Pill>
+                      <span className="flex min-w-0 items-start gap-2">
+                        {canSearch ? (
+                          <input
+                            aria-label={`Select ${item.streaming_track.title}`}
+                            checked={isRowSelected}
+                            className="mt-1 h-4 w-4 shrink-0 accent-ctp-mauve"
+                            onChange={(event) => toggleItemSelection(item, event.currentTarget.checked)}
+                            type="checkbox"
+                          />
+                        ) : null}
+                        <button
+                          aria-pressed={isSelected}
+                          className="grid min-w-0 flex-1 gap-2 text-left"
+                          onClick={() => setActiveItemKey(queueItemKey(item))}
+                          type="button"
+                        >
+                          <span className="flex min-w-0 items-start justify-between gap-2">
+                            <span className="min-w-0">
+                              <span className={`block truncate ${textClasses.label}`}>{item.streaming_track.title}</span>
+                              <span className={`block truncate ${textClasses.caption}`}>{item.streaming_track.artist}</span>
+                            </span>
+                            <Pill className="shrink-0" tone={getStatusTone(item)}>
+                              {getStatusLabel(item)}
+                            </Pill>
+                          </span>
+                          <span className={`block min-w-0 truncate ${textClasses.finePrint} text-ctp-overlay1`} title={playlistUsage(item)}>
+                            {playlistUsage(item)}
+                          </span>
+                        </button>
+                        {canSearch ? (
+                          <button
+                            aria-label={`Search Soulseek for ${item.streaming_track.title}`}
+                            className={`${controlClasses.iconButton} mt-5`}
+                            disabled={searchMutation.isPending || bulkSearchMutation.isPending}
+                            onClick={() => searchMutation.mutate(item.streaming_track.id)}
+                            title="Search Soulseek"
+                            type="button"
+                          >
+                            <Search aria-hidden="true" className={rowSearchPending ? "animate-spin" : ""} strokeWidth={1.9} />
+                          </button>
+                        ) : null}
                       </span>
-                      <span className={`block truncate ${textClasses.finePrint} text-ctp-overlay1`} title={playlistUsage(item)}>
-                        {playlistUsage(item)}
-                      </span>
-                    </button>
+                    </div>
                   </li>
                 );
               })}
@@ -376,6 +560,11 @@ export function SoulseekQueueView() {
                     title="Auto-linked"
                   />
                 ) : null}
+
+                <PlaylistUsageChips
+                  item={detailItem}
+                  onOpenPlaylist={(playlistId) => navigate(`/playlists/${playlistId}`)}
+                />
 
                 <div className="flex flex-wrap gap-2">
                   <ActionButton
@@ -470,6 +659,46 @@ export function SoulseekQueueView() {
           </div>
         </div>
       )}
+    </section>
+  );
+}
+
+function PlaylistUsageChips({
+  item,
+  onOpenPlaylist,
+}: {
+  item: SoulseekQueueItem;
+  onOpenPlaylist: (playlistId: number) => void;
+}) {
+  if (item.playlist_ids.length === 0) {
+    return (
+      <section className={`${surfaceClasses.insetPanel} px-3 py-2`}>
+        <p className={textClasses.label}>Affected playlists</p>
+        <p className={`mt-1 ${textClasses.caption}`}>No full-sync playlist usage.</p>
+      </section>
+    );
+  }
+
+  return (
+    <section className={`${surfaceClasses.insetPanel} px-3 py-2`}>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className={textClasses.label}>Affected playlists</p>
+        <span className={`${textClasses.finePrint} text-ctp-subtext0 tabular-nums`}>
+          {item.playlist_count.toLocaleString()}
+        </span>
+      </div>
+      <div className="mt-2 flex flex-wrap gap-1.5">
+        {item.playlist_ids.map((playlistId, index) => (
+          <button
+            className={`${controlClasses.pill} border border-ctp-surface1 bg-ctp-surface0 text-ctp-subtext0 transition-colors hover:border-ctp-overlay0 hover:text-ctp-text`}
+            key={playlistId}
+            onClick={() => onOpenPlaylist(playlistId)}
+            type="button"
+          >
+            {item.playlist_titles[index] ?? `Playlist ${playlistId}`}
+          </button>
+        ))}
+      </div>
     </section>
   );
 }

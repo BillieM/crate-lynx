@@ -4,8 +4,8 @@ import { z } from "zod";
 import { endpoints, fetchJson, postJson } from "../../lib/api";
 import type { components } from "../../lib/api-types";
 import { invalidateQueryKeys } from "../../lib/queryInvalidation";
-import { missingLocallyInvalidationKeys } from "../maintenance/queries";
 import { playlistLinkInvalidationKeys } from "../playlists/queries";
+import { soulseekQueueInvalidationKeys } from "../soulseek/queryKeys";
 
 type ApiSchemas = components["schemas"];
 
@@ -142,7 +142,7 @@ export function streamingRelationshipMutationInvalidationKeys(): QueryKey[] {
   return [
     ...streamingRelationshipSuggestionInvalidationKeys(),
     ...playlistLinkInvalidationKeys(),
-    ...missingLocallyInvalidationKeys(),
+    ...soulseekQueueInvalidationKeys(),
   ];
 }
 

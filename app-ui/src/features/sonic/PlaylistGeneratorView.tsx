@@ -1,28 +1,43 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Activity, AudioLines, DatabaseZap, ListChecks, Plus, RotateCcw, SlidersHorizontal } from "lucide-react";
+import { createColumnHelper, type RowSelectionState, type SortingState } from "@tanstack/react-table";
+import { Activity, AudioLines, DatabaseZap, ListChecks, Plus, RotateCcw, SlidersHorizontal, Trash2 } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ActionButton } from "../../components/ActionButton";
+import { DataTable } from "../../components/DataTable";
 import { EmptyStateCard } from "../../components/EmptyStateCard";
 import { MetricCard } from "../../components/MetricCard";
+import { Pill, type PillTone } from "../../components/Pill";
 import { StatusMessage } from "../../components/StatusMessage";
+import { formatPlaylistTimestamp } from "../../lib/formatters";
 import { controlClasses, layoutClasses, surfaceClasses, textClasses } from "../../styles/componentClasses";
 import { type StreamingPlaylist, useStreamingPlaylistsQuery } from "../playlists/queries";
 import {
   backfillSonicFeatures,
   createPlaylistGenerationRun,
   sonicQueryKeys,
+  type PlaylistGenerationRun,
   type SonicTagFilter,
   useSonicFeatureSummaryQuery,
   useSonicGenerationPreviewQuery,
+  useDeleteSelectedPlaylistGenerationRunsMutation,
+  useSonicRunsQuery,
 } from "./queries";
 
 const emptyStreamingPlaylists: StreamingPlaylist[] = [];
+const emptyGenerationRuns: PlaylistGenerationRun[] = [];
+const runColumnHelper = createColumnHelper<PlaylistGenerationRun>();
 const sonicBackfillLimit = 500;
 
 type SourceType = "all_local" | "streaming_playlists";
 type ClusteringMethod = "dj_hierarchical_v1" | "kmeans" | "agglomerative";
 type FeatureProfile = "balanced_v1" | "energy_v1" | "texture_v1" | "harmony_v1";
+
+type RunBulkStatus = {
+  body: string;
+  status: "error" | "success";
+  title: string;
+};
 
 const defaultTagFilter: SonicTagFilter = {
   key: "",
@@ -32,15 +47,38 @@ const defaultTagFilter: SonicTagFilter = {
 };
 const previewDebounceMs = 300;
 
+function runStatusTone(status: PlaylistGenerationRun["status"]): PillTone {
+  if (status === "completed") {
+    return "success";
+  }
+  if (status === "failed") {
+    return "danger";
+  }
+  if (status === "running" || status === "pending") {
+    return "pending";
+  }
+  return "neutral";
+}
+
+function isRunDeletable(run: PlaylistGenerationRun) {
+  return run.status === "completed" || run.status === "failed";
+}
+
 export function PlaylistGeneratorView() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const featureSummaryQuery = useSonicFeatureSummaryQuery();
   const playlistsQuery = useStreamingPlaylistsQuery();
+  const runsQuery = useSonicRunsQuery();
   const playlists = playlistsQuery.data?.playlists ?? emptyStreamingPlaylists;
+  const generationRuns = runsQuery.data?.runs ?? emptyGenerationRuns;
   const [sourceType, setSourceType] = useState<SourceType>("all_local");
   const [selectedPlaylistIds, setSelectedPlaylistIds] = useState<Set<number>>(new Set());
   const [tagFilters, setTagFilters] = useState<SonicTagFilter[]>([]);
+  const [runRowSelection, setRunRowSelection] = useState<RowSelectionState>({});
+  const [runSorting, setRunSorting] = useState<SortingState>([]);
+  const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
+  const [bulkDeleteStatus, setBulkDeleteStatus] = useState<RunBulkStatus | null>(null);
   const [clusteringMethod, setClusteringMethod] = useState<ClusteringMethod>("dj_hierarchical_v1");
   const [featureProfile, setFeatureProfile] = useState<FeatureProfile>("balanced_v1");
   const [maxDepth, setMaxDepth] = useState(2);
@@ -120,6 +158,58 @@ export function PlaylistGeneratorView() {
       navigate(`/generated-runs/${response.run.id}`);
     },
   });
+  const deleteSelectedRunsMutation = useDeleteSelectedPlaylistGenerationRunsMutation();
+  const selectedRunIds = useMemo(
+    () =>
+      generationRuns
+        .filter((run) => runRowSelection[String(run.id)] && isRunDeletable(run))
+        .map((run) => run.id),
+    [generationRuns, runRowSelection],
+  );
+  const latestCompletedRunId = generationRuns.find((run) => run.status === "completed")?.id ?? null;
+  const runColumns = useMemo(
+    () => [
+      runColumnHelper.accessor("generation_number", {
+        cell: (info) => <span className="font-semibold tabular-nums">Generation {info.getValue()}</span>,
+        header: "Run",
+        meta: {
+          widthClass: "min-w-[9rem]",
+        },
+      }),
+      runColumnHelper.accessor("status", {
+        cell: (info) => <Pill tone={runStatusTone(info.getValue())}>{info.getValue()}</Pill>,
+        header: "Status",
+        meta: {
+          widthClass: "w-28",
+        },
+      }),
+      runColumnHelper.accessor("playlist_count", {
+        cell: (info) => <span className="tabular-nums">{info.getValue().toLocaleString()}</span>,
+        header: "Playlists",
+        meta: {
+          align: "end",
+          widthClass: "w-24",
+        },
+      }),
+      runColumnHelper.accessor("track_count", {
+        cell: (info) => <span className="tabular-nums">{info.getValue().toLocaleString()}</span>,
+        header: "Tracks",
+        meta: {
+          align: "end",
+          widthClass: "w-24",
+        },
+      }),
+      runColumnHelper.accessor("created_at", {
+        cell: (info) => <span className="whitespace-nowrap text-ctp-subtext0">{formatPlaylistTimestamp(info.getValue())}</span>,
+        header: "Created",
+        meta: {
+          hideBelow: "md",
+          widthClass: "min-w-[12rem]",
+        },
+      }),
+    ],
+    [],
+  );
 
   function togglePlaylist(playlistId: number) {
     const nextSelection = new Set(selectedPlaylistIds);
@@ -150,11 +240,63 @@ export function PlaylistGeneratorView() {
     createRunMutation.mutate(generationPayload);
   }
 
-  if (featureSummaryQuery.isPending || playlistsQuery.isPending) {
+  function selectGenerationRuns(predicate: (run: PlaylistGenerationRun) => boolean) {
+    setConfirmBulkDelete(false);
+    setBulkDeleteStatus(null);
+    setRunRowSelection(
+      Object.fromEntries(
+        generationRuns.filter((run) => isRunDeletable(run) && predicate(run)).map((run) => [String(run.id), true]),
+      ),
+    );
+  }
+
+  function handleDeleteSelectedRuns() {
+    if (selectedRunIds.length === 0 || deleteSelectedRunsMutation.isPending) {
+      return;
+    }
+
+    deleteSelectedRunsMutation.mutate(
+      { run_ids: selectedRunIds },
+      {
+        onSuccess: (response) => {
+          setRunRowSelection({});
+          setConfirmBulkDelete(false);
+          setBulkDeleteStatus({
+            body: [
+              `${response.deleted_run_ids.length} ${response.deleted_run_ids.length === 1 ? "run was" : "runs were"} deleted.`,
+              response.skipped_active_run_ids.length > 0
+                ? `${response.skipped_active_run_ids.length} active ${response.skipped_active_run_ids.length === 1 ? "run was" : "runs were"} skipped.`
+                : null,
+              response.missing_run_ids.length > 0
+                ? `${response.missing_run_ids.length} missing ${response.missing_run_ids.length === 1 ? "run was" : "runs were"} skipped.`
+                : null,
+            ]
+              .filter(Boolean)
+              .join(" "),
+            status:
+              response.skipped_active_run_ids.length > 0 || response.missing_run_ids.length > 0 ? "error" : "success",
+            title:
+              response.skipped_active_run_ids.length > 0 || response.missing_run_ids.length > 0
+                ? "Bulk delete partially completed"
+                : "Bulk delete completed",
+          });
+        },
+        onError: () => {
+          setBulkDeleteStatus({
+            body: "Selected generation runs could not be deleted.",
+            status: "error",
+            title: "Bulk delete failed",
+          });
+        },
+      },
+    );
+  }
+
+  if (featureSummaryQuery.isPending || playlistsQuery.isPending || runsQuery.isPending) {
     return <EmptyStateCard body="Loading sonic generation state..." className={layoutClasses.emptyStateNarrow} title="Loading" />;
   }
 
-  if (featureSummaryQuery.isError || playlistsQuery.isError) {
+  if (featureSummaryQuery.isError || playlistsQuery.isError || runsQuery.isError) {
     return <EmptyStateCard body="Sonic generation data is unavailable." className={layoutClasses.emptyStateNarrow} title="Unavailable" tone="error" />;
   }
 
@@ -340,6 +482,107 @@ export function PlaylistGeneratorView() {
           <NumericInput label="Children" max={10} min={2} onChange={setMaxChildren} value={maxChildren} />
           <NumericInput label="Seed" max={999999} min={0} onChange={setRandomSeed} value={randomSeed} />
         </div>
+      </section>
+
+      <section className={`${surfaceClasses.compactCard} grid gap-3`} aria-label="Generated run management">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h3 className={textClasses.label}>Generated runs</h3>
+            <p className={`mt-1 ${textClasses.caption}`}>{generationRuns.length.toLocaleString()} stored runs</p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <ActionButton
+              className={controlClasses.actionButtonCompact}
+              disabled={!generationRuns.some((run) => run.status === "failed")}
+              onClick={() => selectGenerationRuns((run) => run.status === "failed")}
+              type="button"
+            >
+              Select failed
+            </ActionButton>
+            <ActionButton
+              className={controlClasses.actionButtonCompact}
+              disabled={!generationRuns.some((run) => run.status === "completed" && run.id !== latestCompletedRunId)}
+              onClick={() => selectGenerationRuns((run) => run.status === "completed" && run.id !== latestCompletedRunId)}
+              type="button"
+            >
+              Select old completed
+            </ActionButton>
+            <ActionButton
+              className={controlClasses.actionButtonCompact}
+              disabled={!generationRuns.some(isRunDeletable)}
+              onClick={() => selectGenerationRuns(isRunDeletable)}
+              type="button"
+            >
+              Select all deletable
+            </ActionButton>
+          </div>
+        </div>
+
+        {bulkDeleteStatus ? (
+          <StatusMessage body={bulkDeleteStatus.body} status={bulkDeleteStatus.status} title={bulkDeleteStatus.title} />
+        ) : null}
+
+        {confirmBulkDelete ? (
+          <section className={`${surfaceClasses.insetPanel} px-3 py-2`} aria-label="Delete selected generated runs confirmation">
+            <p className={textClasses.label}>Delete {selectedRunIds.length.toLocaleString()} selected runs</p>
+            <p className={`mt-1 ${textClasses.caption}`}>
+              Generated playlists and generated playlist tracks for selected completed or failed runs will be removed.
+            </p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <ActionButton
+                className={`${controlClasses.actionButtonCompact} inline-flex items-center gap-1.5`}
+                disabled={deleteSelectedRunsMutation.isPending}
+                onClick={handleDeleteSelectedRuns}
+                tone="danger"
+                type="button"
+              >
+                <Trash2 aria-hidden="true" className="h-3.5 w-3.5" strokeWidth={1.9} />
+                {deleteSelectedRunsMutation.isPending ? "Deleting..." : "Confirm delete"}
+              </ActionButton>
+              <ActionButton
+                className={controlClasses.actionButtonCompact}
+                disabled={deleteSelectedRunsMutation.isPending}
+                onClick={() => setConfirmBulkDelete(false)}
+                type="button"
+              >
+                Cancel
+              </ActionButton>
+            </div>
+          </section>
+        ) : null}
+
+        {generationRuns.length > 0 ? (
+          <DataTable
+            bulkActionSlot={
+              <ActionButton
+                className={`${controlClasses.actionButtonCompact} inline-flex items-center gap-1.5`}
+                disabled={selectedRunIds.length === 0 || deleteSelectedRunsMutation.isPending}
+                onClick={() => {
+                  setBulkDeleteStatus(null);
+                  setConfirmBulkDelete(true);
+                }}
+                tone="danger"
+                type="button"
+              >
+                <Trash2 aria-hidden="true" className="h-3.5 w-3.5" strokeWidth={1.9} />
+                Delete selected
+              </ActionButton>
+            }
+            columns={runColumns}
+            data={generationRuns}
+            density="tight"
+            onActivate={(run) => navigate(`/generated-runs/${run.id}`)}
+            onRowSelectionChange={setRunRowSelection}
+            onSortingChange={setRunSorting}
+            rowCanSelect={isRunDeletable}
+            rowId={(run) => String(run.id)}
+            rowSelection={runRowSelection}
+            sorting={runSorting}
+            stickyHeader
+          />
+        ) : (
+          <EmptyStateCard body="Generated runs will appear here after playlist generation completes." className="text-left" title="No generated runs" />
+        )}
       </section>
     </form>
   );

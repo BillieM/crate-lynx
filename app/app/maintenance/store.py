@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from sqlalchemy import select
 from sqlalchemy.engine import Engine
@@ -10,27 +10,6 @@ from app.ingestion.failures import failed_ingestion_attempts_table
 from app.ingestion.pipeline import SUPPORTED_AUDIO_EXTENSIONS
 from app.links.store import final_links_table
 from app.local_tracks.store import local_tracks_table
-from app.soulseek.models import MissingTrackSoulseekSummary
-from app.streaming.models import (
-    PLAYLIST_SYNC_MODE_FULL,
-    playlist_membership_table,
-    streaming_playlists_table,
-    streaming_tracks_table,
-)
-
-
-@dataclass(frozen=True, slots=True)
-class MissingLocallyTrackRecord:
-    id: int
-    provider_track_id: str
-    title: str
-    artist: str
-    album: str | None
-    duration_ms: int | None
-    playlist_count: int
-    playlist_ids: list[int]
-    playlist_titles: list[str]
-    soulseek_acquisition: MissingTrackSoulseekSummary | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -50,107 +29,11 @@ class UnidentifiedTrackRecord:
     source_size: int | None
 
 
-@dataclass(slots=True)
-class _MissingLocallyAccumulator:
-    id: int
-    provider_track_id: str
-    title: str
-    artist: str
-    album: str | None
-    duration_ms: int | None
-    soulseek_acquisition: MissingTrackSoulseekSummary | None = None
-    playlist_titles_by_id: dict[int, str] = field(default_factory=dict)
-
-    def to_record(self) -> MissingLocallyTrackRecord:
-        return MissingLocallyTrackRecord(
-            id=self.id,
-            provider_track_id=self.provider_track_id,
-            title=self.title,
-            artist=self.artist,
-            album=self.album,
-            duration_ms=self.duration_ms,
-            playlist_count=len(self.playlist_titles_by_id),
-            playlist_ids=list(self.playlist_titles_by_id.keys()),
-            playlist_titles=list(self.playlist_titles_by_id.values()),
-            soulseek_acquisition=self.soulseek_acquisition,
-        )
-
-
 class MaintenanceStore:
     def __init__(
         self, database_url: str | None = None, *, engine: Engine | None = None
     ) -> None:
         self._engine = engine or create_database_engine(database_url)
-
-    def list_missing_locally(self) -> list[MissingLocallyTrackRecord]:
-        query = (
-            select(
-                streaming_tracks_table.c.id,
-                streaming_tracks_table.c.provider_track_id,
-                streaming_tracks_table.c.title,
-                streaming_tracks_table.c.artist,
-                streaming_tracks_table.c.album,
-                streaming_tracks_table.c.duration_ms,
-                streaming_playlists_table.c.id.label("playlist_id"),
-                streaming_playlists_table.c.title.label("playlist_title"),
-            )
-            .select_from(
-                streaming_tracks_table.join(
-                    playlist_membership_table,
-                    playlist_membership_table.c.streaming_track_id
-                    == streaming_tracks_table.c.id,
-                ).join(
-                    streaming_playlists_table,
-                    streaming_playlists_table.c.id
-                    == playlist_membership_table.c.playlist_id,
-                )
-            )
-            .where(
-                streaming_playlists_table.c.sync_mode == PLAYLIST_SYNC_MODE_FULL,
-            )
-            .order_by(
-                streaming_tracks_table.c.id.asc(),
-                streaming_playlists_table.c.title.asc(),
-                streaming_playlists_table.c.id.asc(),
-            )
-        )
-
-        tracks_by_id: dict[int, _MissingLocallyAccumulator] = {}
-        with self._engine.connect() as connection:
-            from app.relationships.resolver import StreamingRelationshipResolver
-
-            resolver = StreamingRelationshipResolver(connection)
-            for row in connection.execute(query).mappings():
-                if resolver.resolve(int(row["id"])) is not None:
-                    continue
-
-                track = tracks_by_id.setdefault(
-                    row["id"],
-                    _MissingLocallyAccumulator(
-                        id=row["id"],
-                        provider_track_id=row["provider_track_id"],
-                        title=row["title"],
-                        artist=row["artist"],
-                        album=row["album"],
-                        duration_ms=row["duration_ms"],
-                    ),
-                )
-                if row["playlist_id"] is not None:
-                    track.playlist_titles_by_id[row["playlist_id"]] = row[
-                        "playlist_title"
-                    ]
-
-        from app.soulseek.store import SoulseekStore
-
-        soulseek_summaries = SoulseekStore(
-            engine=self._engine
-        ).latest_summaries_for_tracks(tracks_by_id.keys())
-        for track_id, summary in soulseek_summaries.items():
-            track = tracks_by_id.get(track_id)
-            if track is not None:
-                track.soulseek_acquisition = summary
-
-        return [track.to_record() for track in tracks_by_id.values()]
 
     def list_unidentified(self) -> list[UnidentifiedTrackRecord]:
         query = (

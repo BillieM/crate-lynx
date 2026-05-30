@@ -15,13 +15,13 @@ describe("query invalidation", () => {
         ["library", "tracks"],
         ["playlists"],
         ["playlists", "list"],
-        ["maintenance", "missing-locally"],
-        ["maintenance", "missing-locally"],
+        ["soulseek"],
+        ["soulseek", "queue"],
       ]),
     ).toEqual([
       ["library"],
       ["playlists"],
-      ["maintenance", "missing-locally"],
+      ["soulseek"],
     ]);
   });
 

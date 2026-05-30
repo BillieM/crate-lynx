@@ -161,6 +161,28 @@ class PlaylistGenerationRunListResponse(BaseModel):
     runs: list[PlaylistGenerationRunResponse]
 
 
+class DeletePlaylistGenerationRunsRequest(BaseModel):
+    run_ids: list[int] = Field(min_length=1, max_length=100)
+
+    @model_validator(mode="after")
+    def normalize_run_ids(self) -> "DeletePlaylistGenerationRunsRequest":
+        seen_ids = set()
+        self.run_ids = [
+            run_id
+            for run_id in self.run_ids
+            if run_id > 0 and not (run_id in seen_ids or seen_ids.add(run_id))
+        ]
+        if not self.run_ids:
+            raise ValueError("At least one positive run id is required")
+        return self
+
+
+class DeletePlaylistGenerationRunsResponse(BaseModel):
+    deleted_run_ids: list[int]
+    missing_run_ids: list[int]
+    skipped_active_run_ids: list[int]
+
+
 class CreatePlaylistGenerationRunResponse(BaseModel):
     run: PlaylistGenerationRunResponse
     job_id: str

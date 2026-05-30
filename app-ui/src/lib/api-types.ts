@@ -311,23 +311,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/maintenance/missing-locally": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** List Missing Locally */
-        get: operations["list_missing_locally_api_maintenance_missing_locally_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/maintenance/unidentified": {
         parameters: {
             query?: never;
@@ -859,6 +842,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/sonic/runs/delete-selected": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Delete Selected Generation Runs */
+        post: operations["delete_selected_generation_runs_api_sonic_runs_delete_selected_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/sonic/runs/{run_id}": {
         parameters: {
             query?: never;
@@ -1268,6 +1268,20 @@ export interface components {
             relationship_type: "equivalent" | "related";
             /** Winning Final Link Id */
             winning_final_link_id?: number | null;
+        };
+        /** DeletePlaylistGenerationRunsRequest */
+        DeletePlaylistGenerationRunsRequest: {
+            /** Run Ids */
+            run_ids: number[];
+        };
+        /** DeletePlaylistGenerationRunsResponse */
+        DeletePlaylistGenerationRunsResponse: {
+            /** Deleted Run Ids */
+            deleted_run_ids: number[];
+            /** Missing Run Ids */
+            missing_run_ids: number[];
+            /** Skipped Active Run Ids */
+            skipped_active_run_ids: number[];
         };
         /** GeneralSettingsResponse */
         GeneralSettingsResponse: {
@@ -1704,33 +1718,6 @@ export interface components {
             key: string;
             /** Value */
             value: string | null;
-        };
-        /** MissingLocallyResponse */
-        MissingLocallyResponse: {
-            /** Tracks */
-            tracks: components["schemas"]["MissingLocallyTrackResponse"][];
-        };
-        /** MissingLocallyTrackResponse */
-        MissingLocallyTrackResponse: {
-            /** Id */
-            id: number;
-            /** Provider Track Id */
-            provider_track_id: string;
-            /** Title */
-            title: string;
-            /** Artist */
-            artist: string;
-            /** Album */
-            album: string | null;
-            /** Duration Ms */
-            duration_ms: number | null;
-            /** Playlist Count */
-            playlist_count: number;
-            /** Playlist Ids */
-            playlist_ids: number[];
-            /** Playlist Titles */
-            playlist_titles: string[];
-            soulseek_acquisition?: components["schemas"]["SoulseekAcquisitionSummaryResponse"] | null;
         };
         /** PlaylistDetail */
         PlaylistDetail: {
@@ -3355,26 +3342,6 @@ export interface operations {
             };
         };
     };
-    list_missing_locally_api_maintenance_missing_locally_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["MissingLocallyResponse"];
-                };
-            };
-        };
-    };
     list_unidentified_api_maintenance_unidentified_get: {
         parameters: {
             query?: never;
@@ -4424,6 +4391,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SonicGenerationPreviewResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_selected_generation_runs_api_sonic_runs_delete_selected_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DeletePlaylistGenerationRunsRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeletePlaylistGenerationRunsResponse"];
                 };
             };
             /** @description Validation Error */

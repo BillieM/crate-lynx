@@ -3,9 +3,9 @@ import { type QueryKey, useMutation, useQuery, useQueryClient } from "@tanstack/
 import { deleteJson, endpoints, fetchJson, patchJson, postJson } from "../../lib/api";
 import { invalidateQueryKeys } from "../../lib/queryInvalidation";
 import { libraryLinkMutationInvalidationKeys } from "../library/queries";
-import { missingLocallyInvalidationKeys } from "../maintenance/queries";
 import { playlistLinkInvalidationKeys } from "../playlists/queries";
 import { streamingRelationshipMutationInvalidationKeys } from "../relationships/queries";
+import { soulseekQueueInvalidationKeys } from "../soulseek/queryKeys";
 
 export type TrackDetailTarget =
   | { id: number | string; type: "local" }
@@ -200,7 +200,7 @@ export function trackMutationInvalidationKeys(): QueryKey[] {
     ...playlistLinkInvalidationKeys(),
     ...libraryLinkMutationInvalidationKeys(),
     ...streamingRelationshipMutationInvalidationKeys(),
-    ...missingLocallyInvalidationKeys(),
+    ...soulseekQueueInvalidationKeys(),
   ];
 }
 

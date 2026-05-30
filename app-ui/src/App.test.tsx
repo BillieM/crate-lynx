@@ -4,7 +4,7 @@ import { MemoryRouter } from "react-router-dom";
 import App from "./App";
 import type { LibraryTracksResponse } from "./features/library/queries";
 import type { LocalDedupeQueueResponse } from "./features/localDedupe/queries";
-import type { MissingLocallyResponse, UnidentifiedResponse } from "./features/maintenance/queries";
+import type { UnidentifiedResponse } from "./features/maintenance/queries";
 import type {
   LinkProposalsResponse,
   M3uExportPreviewResponse,
@@ -318,21 +318,6 @@ const localDedupeQueueResponse: LocalDedupeQueueResponse = {
   groups: [],
   total_count: 0,
 };
-const missingLocallyResponse: MissingLocallyResponse = {
-  tracks: [
-    {
-      album: "Immunity",
-      artist: "Jon Hopkins",
-      duration_ms: 270000,
-      id: 5001,
-      playlist_count: 2,
-      playlist_ids: [11, 12],
-      playlist_titles: ["Late Night Drive", "Focus Queue"],
-      provider_track_id: "ytm:VLPL_missing_018",
-      title: "Open Eye Signal",
-    },
-  ],
-};
 const soulseekQueueResponse: SoulseekQueueResponse = {
   filter: "all",
   items: [
@@ -567,6 +552,7 @@ type MockPlaylistFetchOptions = {
   sonicRunDetailHandler?: (runId: string) => Promise<Response> | Response;
   sonicRunsHandler?: () => Promise<Response> | Response;
   deleteSonicRunHandler?: (runId: string) => Promise<Response> | Response;
+  deleteSelectedSonicRunsHandler?: (init?: RequestInit) => Promise<Response> | Response;
   soulseekQueueHandler?: () => Promise<Response> | Response;
   localDedupeQueueHandler?: () => Promise<Response> | Response;
 };
@@ -624,6 +610,7 @@ function mockPlaylistFetch({
   sonicRunDetailHandler,
   sonicRunsHandler,
   deleteSonicRunHandler,
+  deleteSelectedSonicRunsHandler,
   soulseekQueueHandler,
   localDedupeQueueHandler,
 }: MockPlaylistFetchOptions = {}) {
@@ -645,7 +632,6 @@ function mockPlaylistFetch({
     .get(/^\/api\/proposals(?:\?|$)/, ({ url }) => linkProposalsHandler?.(url) ?? jsonResponse(linkProposalsResponse))
     .get("/api/library/tracks", () => jsonResponse(libraryTracksResponse))
     .get("/api/local-dedupe/queue", () => localDedupeQueueHandler?.() ?? jsonResponse(localDedupeQueueResponse))
-    .get("/api/maintenance/missing-locally", () => jsonResponse(missingLocallyResponse))
     .get("/api/maintenance/unidentified", () => jsonResponse(unidentifiedResponse))
     .get("/api/soulseek/queue", () => soulseekQueueHandler?.() ?? jsonResponse(soulseekQueueResponse))
     .get(/^\/api\/soulseek\/acquisitions\/([^/]+)$/, () => jsonResponse(soulseekQueueResponse.items[0]))
@@ -666,6 +652,14 @@ function mockPlaylistFetch({
     )
     .delete(/^\/api\/sonic\/runs\/(\d+)$/, ({ match }) =>
       deleteSonicRunHandler?.(match![1]) ?? emptyResponse({ status: 204 }),
+    )
+    .post("/api/sonic/runs/delete-selected", ({ init }) =>
+      deleteSelectedSonicRunsHandler?.(init) ??
+      jsonResponse({
+        deleted_run_ids: [501],
+        missing_run_ids: [],
+        skipped_active_run_ids: [],
+      }),
     )
     .get("/api/sonic/generated-playlists/7001/tracks", () =>
       jsonResponse({
@@ -900,7 +894,6 @@ describe("App", () => {
       "soulseek-queue",
       "streaming-relationships",
       "unidentified",
-      "missing",
       "playlists",
       "playlist-export",
       "settings-general",
@@ -932,7 +925,7 @@ describe("App", () => {
       expect(screen.getByRole("button", { name: "Soulseek queue 1" })).toBeInTheDocument();
       expect(screen.getByRole("button", { name: "Streaming relationships 27933" })).toBeInTheDocument();
       expect(screen.getByRole("button", { name: "Unidentified 1" })).toBeInTheDocument();
-      expect(screen.getByRole("button", { name: "Missing locally 1" })).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: /Missing locally/ })).not.toBeInTheDocument();
       expect(screen.getByRole("button", { name: "All tracks 321" })).toBeInTheDocument();
     });
   });
@@ -1151,6 +1144,66 @@ describe("App", () => {
     expect(await screen.findByRole("button", { name: "Backfill" })).toBeEnabled();
   });
 
+  it("bulk deletes selected completed and failed generated runs after confirmation", async () => {
+    const completedRun = sonicRunsResponse.runs[0];
+    const failedRun = {
+      ...completedRun,
+      completed_at: null,
+      created_at: "2026-05-23T11:55:00Z",
+      generation_number: 18,
+      id: 500,
+      status: "failed" as const,
+    };
+    const oldCompletedRun = {
+      ...completedRun,
+      created_at: "2026-05-22T11:55:00Z",
+      generation_number: 17,
+      id: 499,
+    };
+    const pendingRun = {
+      ...completedRun,
+      completed_at: null,
+      created_at: "2026-05-25T11:55:00Z",
+      generation_number: 20,
+      id: 502,
+      status: "pending" as const,
+    };
+    const fetchMock = mockPlaylistFetch({
+      deleteSelectedSonicRunsHandler: () =>
+        jsonResponse({
+          deleted_run_ids: [501, 500, 499],
+          missing_run_ids: [],
+          skipped_active_run_ids: [],
+        }),
+      sonicRunsHandler: () =>
+        jsonResponse({
+          runs: [pendingRun, completedRun, failedRun, oldCompletedRun],
+        }),
+    });
+
+    renderApp(["/playlist-generator"]);
+
+    const management = await screen.findByRole("region", { name: "Generated run management" });
+    expect(within(management).getByText("Generation 20")).toBeInTheDocument();
+    fireEvent.click(within(management).getByRole("button", { name: "Select all deletable" }));
+    expect(await within(management).findByText("3 rows selected")).toBeInTheDocument();
+    fireEvent.click(within(management).getByRole("button", { name: "Delete selected" }));
+    const confirmation = await within(management).findByRole("region", {
+      name: "Delete selected generated runs confirmation",
+    });
+    expect(within(confirmation).getByText("Delete 3 selected runs")).toBeInTheDocument();
+    fireEvent.click(within(confirmation).getByRole("button", { name: "Confirm delete" }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith("/api/sonic/runs/delete-selected", {
+        body: JSON.stringify({ run_ids: [501, 500, 499] }),
+        headers: { "Content-Type": "application/json" },
+        method: "POST",
+      });
+    });
+    expect(await screen.findByText("Bulk delete completed")).toBeInTheDocument();
+  });
+
   it("keeps source readiness stable when generation-only controls change", async () => {
     let previewRequestCount = 0;
     mockPlaylistFetch({
@@ -1270,17 +1323,16 @@ describe("App", () => {
     expect(document.getElementById("playlists")).toHaveAttribute("data-view-active", "false");
   });
 
-  it("opens the missing locally maintenance routed view from the URL", async () => {
+  it("redirects the removed missing locally route to Soulseek queue", async () => {
     mockPlaylistFetch();
 
     renderApp(["/missing"]);
 
-    expect(screen.getByRole("heading", { level: 1, name: "Missing locally" })).toBeInTheDocument();
-    expect(screen.getByLabelText("Missing locally summary")).toBeInTheDocument();
-    expect(screen.getByRole("region", { name: "Missing local tracks" })).toBeInTheDocument();
-    expect(await screen.findByText("Open Eye Signal")).toBeInTheDocument();
-    expect(screen.queryByText("ytm:VLPL_missing_018")).not.toBeInTheDocument();
-    expect(document.getElementById("missing")).toHaveAttribute("data-view-active", "true");
+    expect(await screen.findByRole("heading", { level: 1, name: "Soulseek Queue" })).toBeInTheDocument();
+    const queueRegion = await screen.findByRole("region", { name: "Soulseek queue items" });
+    expect(queueRegion).toBeInTheDocument();
+    expect(within(queueRegion).getByText("Open Eye Signal")).toBeInTheDocument();
+    expect(document.getElementById("soulseek-queue")).toHaveAttribute("data-view-active", "true");
     expect(document.getElementById("playlists")).toHaveAttribute("data-view-active", "false");
   });
 
@@ -1621,7 +1673,7 @@ describe("App", () => {
 
     const playlistListFetchesBeforeToggle = countFetches(fetchMock, "/api/streaming/playlists");
     const configFetchesBeforeToggle = countFetches(fetchMock, "/api/streaming/playlists/config");
-    const missingLocallyFetchesBeforeToggle = countFetches(fetchMock, "/api/maintenance/missing-locally");
+    const soulseekQueueFetchesBeforeToggle = countFetches(fetchMock, "/api/soulseek/queue");
 
     fireEvent.click(
       within(await screen.findByRole("group", { name: "Sync mode for Late Night Drive" })).getByRole("button", {
@@ -1666,9 +1718,7 @@ describe("App", () => {
       );
       expect(countFetches(fetchMock, "/api/streaming/playlists")).toBe(playlistListFetchesBeforeToggle);
       expect(countFetches(fetchMock, "/api/streaming/playlists/config")).toBe(configFetchesBeforeToggle);
-      expect(countFetches(fetchMock, "/api/maintenance/missing-locally")).toBeGreaterThan(
-        missingLocallyFetchesBeforeToggle,
-      );
+      expect(countFetches(fetchMock, "/api/soulseek/queue")).toBeGreaterThan(soulseekQueueFetchesBeforeToggle);
     });
   });
 

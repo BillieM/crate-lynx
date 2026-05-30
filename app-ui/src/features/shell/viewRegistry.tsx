@@ -1,7 +1,6 @@
 import type { ReactNode } from "react";
 import { LocalDedupeView } from "../localDedupe/LocalDedupeView";
 import { LocalLibraryView } from "../library/LocalLibraryView";
-import { MissingLocallyView } from "../maintenance/MissingLocallyView";
 import { UnidentifiedView } from "../maintenance/UnidentifiedView";
 import { PlaylistSyncConfiguration } from "../playlists/PlaylistSyncConfiguration";
 import { PlaylistM3uExportView } from "../playlists/PlaylistM3uExportView";
@@ -69,14 +68,6 @@ const staticViewEntries = [
     icon: "spark",
     path: "/unidentified",
     render: () => <UnidentifiedView />,
-  },
-  {
-    id: "missing",
-    title: "Missing locally",
-    actionLabels: [],
-    icon: "spark",
-    path: "/missing",
-    render: () => <MissingLocallyView />,
   },
   {
     id: "library",
@@ -190,6 +181,10 @@ export function getViewIdFromPath(pathname: string) {
     return null;
   }
 
+  if (normalizedPathname === "/missing") {
+    return soulseekQueueViewId;
+  }
+
   if (normalizedPathname === "/settings/sync") {
     return settingsSyncYoutubeMusicViewId;
   }
@@ -228,13 +223,11 @@ export function buildGeneratedRunNavItems(runs: PlaylistGenerationRun[]): NavIte
 }
 
 export function buildMaintenanceNavItems({
-  missingCount,
   proposalCount,
   relationshipCount,
   soulseekCount,
   unidentifiedCount,
 }: {
-  missingCount?: number;
   proposalCount?: number;
   relationshipCount?: number;
   soulseekCount?: number;
@@ -245,7 +238,6 @@ export function buildMaintenanceNavItems({
     { id: soulseekQueueViewId, label: "Soulseek queue", badge: soulseekCount, tone: "accent" },
     { id: streamingRelationshipsViewId, label: "Streaming relationships", badge: relationshipCount, tone: "pending" },
     { id: "unidentified", label: "Unidentified", badge: unidentifiedCount, tone: "alert" },
-    { id: "missing", label: "Missing locally", badge: missingCount, tone: "accent" },
   ];
 }
 

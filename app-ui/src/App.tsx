@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useLibraryTracksQuery } from "./features/library/queries";
-import { useMissingLocallyTracksQuery, useUnidentifiedTracksQuery } from "./features/maintenance/queries";
+import { useUnidentifiedTracksQuery } from "./features/maintenance/queries";
 import { type StreamingPlaylist, useLinkProposalsQuery, useStreamingPlaylistsQuery } from "./features/playlists/queries";
 import { useStreamingRelationshipSuggestionsQuery } from "./features/relationships/queries";
 import { Sidebar } from "./features/shell/Sidebar";
@@ -24,6 +24,7 @@ import {
   settingsAuthenticationViewId,
   settingsGeneralViewId,
   settingsSyncYoutubeMusicViewId,
+  soulseekQueueViewId,
   staticViewRoutes,
 } from "./features/shell/viewRegistry";
 import { type PlaylistGenerationRun, useSonicRunsQuery } from "./features/sonic/queries";
@@ -40,7 +41,6 @@ function App() {
   const [playlistSyncState, setPlaylistSyncState] = useState<PlaylistSyncViewState>();
   const libraryTracksQuery = useLibraryTracksQuery();
   const linkProposalsQuery = useLinkProposalsQuery();
-  const missingLocallyQuery = useMissingLocallyTracksQuery();
   const playlistsQuery = useStreamingPlaylistsQuery();
   const relationshipSuggestionsQuery = useStreamingRelationshipSuggestionsQuery();
   const sonicRunsQuery = useSonicRunsQuery();
@@ -58,7 +58,6 @@ function App() {
   const maintenanceItems = useMemo(
     () =>
       buildMaintenanceNavItems({
-        missingCount: missingLocallyQuery.data?.tracks.length,
         proposalCount: linkProposalsQuery.data?.total_count,
         relationshipCount: relationshipSuggestionsQuery.data?.total_count,
         soulseekCount: soulseekQueueQuery.data?.items.filter((item) => item.acquisition?.status !== "linked").length,
@@ -67,7 +66,6 @@ function App() {
     [
       activeUnidentifiedCount,
       linkProposalsQuery.data?.total_count,
-      missingLocallyQuery.data?.tracks.length,
       relationshipSuggestionsQuery.data?.total_count,
       soulseekQueueQuery.data?.items,
     ],
@@ -100,6 +98,10 @@ function App() {
 
     if (normalizedPathname === "/playlists") {
       navigate(staticViewRoutes[settingsSyncYoutubeMusicViewId], { replace: true });
+    }
+
+    if (normalizedPathname === "/missing") {
+      navigate(staticViewRoutes[soulseekQueueViewId], { replace: true });
     }
   }, [location.pathname, navigate]);
 

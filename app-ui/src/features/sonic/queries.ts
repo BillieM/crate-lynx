@@ -17,6 +17,8 @@ export type CreatePlaylistGenerationRunResponse = ApiSchemas["CreatePlaylistGene
 export type SonicGenerationPreview = ApiSchemas["SonicGenerationPreviewResponse"];
 export type PlaylistGenerationRun = ApiSchemas["PlaylistGenerationRunResponse"];
 export type PlaylistGenerationRunListResponse = ApiSchemas["PlaylistGenerationRunListResponse"];
+export type DeletePlaylistGenerationRunsRequest = ApiSchemas["DeletePlaylistGenerationRunsRequest"];
+export type DeletePlaylistGenerationRunsResponse = ApiSchemas["DeletePlaylistGenerationRunsResponse"];
 export type GeneratedPlaylist = ApiSchemas["GeneratedPlaylistResponse"];
 export type GeneratedPlaylistListResponse = ApiSchemas["GeneratedPlaylistListResponse"];
 export type PlaylistGenerationRunDetailResponse = ApiSchemas["PlaylistGenerationRunDetailResponse"];
@@ -82,6 +84,12 @@ const generatedPlaylistSchema: z.ZodType<GeneratedPlaylist> = z.object({
 
 const sonicRunsResponseSchema: z.ZodType<PlaylistGenerationRunListResponse> = z.object({
   runs: z.array(playlistGenerationRunSchema),
+});
+
+const deletePlaylistGenerationRunsResponseSchema: z.ZodType<DeletePlaylistGenerationRunsResponse> = z.object({
+  deleted_run_ids: z.array(z.number()),
+  missing_run_ids: z.array(z.number()),
+  skipped_active_run_ids: z.array(z.number()),
 });
 
 const generatedPlaylistsResponseSchema: z.ZodType<GeneratedPlaylistListResponse> = z.object({
@@ -165,6 +173,16 @@ export async function deletePlaylistGenerationRun(runId: number | string): Promi
   });
 }
 
+export async function deleteSelectedPlaylistGenerationRuns(
+  payload: DeletePlaylistGenerationRunsRequest,
+): Promise<DeletePlaylistGenerationRunsResponse> {
+  return postJson(endpoints.api("/sonic/runs/delete-selected"), {
+    body: payload,
+    errorMessage: "Playlist generation run bulk delete request failed",
+    schema: deletePlaylistGenerationRunsResponseSchema,
+  });
+}
+
 export async function fetchGeneratedPlaylists(): Promise<GeneratedPlaylistListResponse> {
   return fetchJson(endpoints.api("/sonic/generated-playlists"), generatedPlaylistsResponseSchema);
 }
@@ -220,6 +238,23 @@ export function useDeletePlaylistGenerationRunMutation() {
     mutationFn: deletePlaylistGenerationRun,
     onSuccess: async (_data, runId) => {
       queryClient.removeQueries({ queryKey: sonicQueryKeys.run(runId) });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: sonicQueryKeys.runs() }),
+        queryClient.invalidateQueries({ queryKey: sonicQueryKeys.generatedPlaylists() }),
+      ]);
+    },
+  });
+}
+
+export function useDeleteSelectedPlaylistGenerationRunsMutation() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: deleteSelectedPlaylistGenerationRuns,
+    onSuccess: async (response) => {
+      for (const runId of response.deleted_run_ids) {
+        queryClient.removeQueries({ queryKey: sonicQueryKeys.run(runId) });
+      }
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: sonicQueryKeys.runs() }),
         queryClient.invalidateQueries({ queryKey: sonicQueryKeys.generatedPlaylists() }),

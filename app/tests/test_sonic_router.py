@@ -29,7 +29,11 @@ from app.sonic.models import (
     sonic_track_features_table,
 )
 from app.sonic.router import create_router
-from app.sonic.schemas import CreatePlaylistGenerationRunRequest, SonicBackfillRequest
+from app.sonic.schemas import (
+    CreatePlaylistGenerationRunRequest,
+    DeletePlaylistGenerationRunsRequest,
+    SonicBackfillRequest,
+)
 from tests.factories import TestDataFactory
 
 
@@ -327,6 +331,55 @@ def test_delete_generation_run_endpoint_blocks_active_run(
 
     assert exc_info.value.status_code == 409
     assert exc_info.value.detail == "Active generation runs cannot be deleted"
+
+
+def test_delete_selected_generation_runs_reports_partial_outcomes(
+    tmp_path: Path,
+) -> None:
+    engine = _create_engine(tmp_path / "sonic-delete-selected-runs.db")
+    factory = TestDataFactory(engine)
+    deletable_run_id = factory.playlist_generation_run(
+        playlist_count=1,
+        status=PLAYLIST_GENERATION_STATUS_COMPLETED,
+        track_count=1,
+    )
+    active_run_id = factory.playlist_generation_run(
+        status=PLAYLIST_GENERATION_STATUS_PENDING,
+    )
+    track_id = factory.local_track(file_path="A/First.mp3")
+    playlist_id = factory.generated_playlist(
+        run_id=deletable_run_id,
+        track_count=1,
+    )
+    factory.generated_playlist_track(
+        generated_playlist_id=playlist_id,
+        local_track_id=track_id,
+    )
+
+    router = create_router(require_redis_url=lambda: "redis://example/0")
+    response = _call_endpoint(
+        _route(router, "POST", "/sonic/runs/delete-selected").endpoint,
+        DeletePlaylistGenerationRunsRequest(
+            run_ids=[deletable_run_id, active_run_id, 404, deletable_run_id],
+        ),
+        engine=engine,
+    )
+
+    assert response.model_dump() == {
+        "deleted_run_ids": [deletable_run_id],
+        "missing_run_ids": [404],
+        "skipped_active_run_ids": [active_run_id],
+    }
+    with engine.connect() as connection:
+        remaining_run_ids = [
+            row.id
+            for row in connection.execute(
+                select(playlist_generation_runs_table.c.id)
+            ).all()
+        ]
+        assert remaining_run_ids == [active_run_id]
+        assert connection.execute(select(generated_playlists_table)).all() == []
+        assert connection.execute(select(generated_playlist_tracks_table)).all() == []
 
 
 def test_create_generation_run_marks_run_failed_when_enqueue_fails(

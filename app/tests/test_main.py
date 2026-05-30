@@ -30,7 +30,6 @@ from app.matching.pipeline import (
 from app.matching.jobs import run_unresolved_local_tracks_rematch_backfill
 from app.relationships.models import (
     STREAMING_RELATIONSHIP_TYPE_EQUIVALENT,
-    STREAMING_RELATIONSHIP_TYPE_RELATED,
     metadata as relationships_metadata,
     streaming_relationships_table,
 )
@@ -134,7 +133,7 @@ def test_links_routes_are_mounted_under_api_prefix() -> None:
     assert "/api/playlists/{playlist_id}/m3u" in route_paths
     assert "/api/library/tracks" in route_paths
     assert "/api/local-tracks/{local_track_id}" in route_paths
-    assert "/api/maintenance/missing-locally" in route_paths
+    assert "/api/maintenance/missing-locally" not in route_paths
     assert "/api/maintenance/unidentified" in route_paths
     assert "/api/maintenance/unidentified/{attempt_id}/retry" in route_paths
     assert "/api/maintenance/unidentified/{attempt_id}/ignore" in route_paths
@@ -170,6 +169,7 @@ def test_links_routes_are_mounted_under_api_prefix() -> None:
     assert "/api/soulseek/candidates/{candidate_id}/enqueue" in route_paths
     assert "/api/soulseek/acquisitions/{acquisition_id}/refresh" in route_paths
     assert "/api/soulseek/slskd/download-complete" in route_paths
+    assert "/api/sonic/runs/delete-selected" in route_paths
     assert "/healthz" in route_paths
     assert "/health" not in route_paths
     assert "/ingest/status" not in route_paths
@@ -1641,205 +1641,6 @@ def test_library_tracks_endpoint_paginates_by_local_track_id(
     assert end_page.tracks == []
     assert end_page.next_cursor is None
     assert end_page.stats.total == 3
-
-
-def test_missing_locally_endpoint_aggregates_playlist_usage_and_excludes_links(
-    monkeypatch,
-    tmp_path: Path,
-) -> None:
-    database_url = f"sqlite:///{tmp_path / 'missing-locally.db'}"
-    engine = create_engine(database_url)
-    metadata.create_all(engine)
-    local_tracks_metadata.create_all(engine)
-    links_metadata.create_all(engine)
-    relationships_metadata.create_all(engine)
-    soulseek_metadata.create_all(engine)
-    monkeypatch.setenv("DATABASE_URL", database_url)
-
-    with engine.begin() as connection:
-        connection.execute(
-            insert(streaming_playlists_table),
-            [
-                {
-                    "id": 1,
-                    "account_id": 1,
-                    "provider_playlist_id": "PL1",
-                    "title": "Morning Mix",
-                    "sync_mode": PLAYLIST_SYNC_MODE_FULL,
-                },
-                {
-                    "id": 2,
-                    "account_id": 1,
-                    "provider_playlist_id": "PL2",
-                    "title": "Road Trip",
-                    "sync_mode": PLAYLIST_SYNC_MODE_OFF,
-                },
-                {
-                    "id": 3,
-                    "account_id": 1,
-                    "provider_playlist_id": "PL3",
-                    "title": "Match Candidates",
-                    "sync_mode": PLAYLIST_SYNC_MODE_MATCH_ONLY,
-                },
-            ],
-        )
-        connection.execute(
-            insert(streaming_tracks_table),
-            [
-                {
-                    "id": 10,
-                    "provider_track_id": "ytm-10",
-                    "title": "Single Playlist Song",
-                    "artist": "Artist A",
-                    "album": "Album A",
-                    "duration_ms": 181000,
-                },
-                {
-                    "id": 11,
-                    "provider_track_id": "ytm-11",
-                    "title": "Multi Playlist Song",
-                    "artist": "Artist B",
-                    "album": None,
-                    "duration_ms": None,
-                },
-                {
-                    "id": 12,
-                    "provider_track_id": "ytm-12",
-                    "title": "Off Playlist Song",
-                    "artist": "Artist C",
-                    "album": "Album C",
-                    "duration_ms": 200000,
-                },
-                {
-                    "id": 13,
-                    "provider_track_id": "ytm-13",
-                    "title": "Linked Song",
-                    "artist": "Artist D",
-                    "album": "Album D",
-                    "duration_ms": 220000,
-                },
-                {
-                    "id": 14,
-                    "provider_track_id": "ytm-14",
-                    "title": "Match Only Playlist Song",
-                    "artist": "Artist E",
-                    "album": "Album E",
-                    "duration_ms": 240000,
-                },
-                {
-                    "id": 15,
-                    "provider_track_id": "ytm-15",
-                    "title": "Equivalent Linked Song",
-                    "artist": "Artist F",
-                    "album": "Album F",
-                    "duration_ms": 260000,
-                },
-                {
-                    "id": 16,
-                    "provider_track_id": "ytm-16",
-                    "title": "Related Only Song",
-                    "artist": "Artist G",
-                    "album": "Album G",
-                    "duration_ms": 280000,
-                },
-            ],
-        )
-        connection.execute(
-            insert(playlist_membership_table),
-            [
-                {"playlist_id": 1, "streaming_track_id": 10, "position": 1},
-                {"playlist_id": 1, "streaming_track_id": 11, "position": 2},
-                {"playlist_id": 2, "streaming_track_id": 11, "position": 1},
-                {"playlist_id": 2, "streaming_track_id": 12, "position": 2},
-                {"playlist_id": 1, "streaming_track_id": 13, "position": 3},
-                {"playlist_id": 3, "streaming_track_id": 11, "position": 1},
-                {"playlist_id": 3, "streaming_track_id": 14, "position": 2},
-                {"playlist_id": 1, "streaming_track_id": 15, "position": 4},
-                {"playlist_id": 1, "streaming_track_id": 16, "position": 5},
-            ],
-        )
-        connection.execute(
-            insert(local_tracks_table).values(
-                id=5,
-                file_path="Artist/linked.mp3",
-                library_root_rel_path="Artist/linked.mp3",
-                fingerprint="fp-linked",
-                beets_id=5,
-            )
-        )
-        connection.execute(
-            insert(final_links_table).values(
-                id=3,
-                local_track_id=5,
-                streaming_track_id=13,
-            )
-        )
-        connection.execute(
-            insert(streaming_relationships_table),
-            [
-                {
-                    "lower_track_id": 13,
-                    "higher_track_id": 15,
-                    "relationship_type": STREAMING_RELATIONSHIP_TYPE_EQUIVALENT,
-                },
-                {
-                    "lower_track_id": 13,
-                    "higher_track_id": 16,
-                    "relationship_type": STREAMING_RELATIONSHIP_TYPE_RELATED,
-                },
-            ],
-        )
-
-    app = create_app()
-    route = next(
-        route
-        for route in app.routes
-        if getattr(route, "path", None) == "/api/maintenance/missing-locally"
-        and "GET" in getattr(route, "methods", set())
-    )
-
-    response = _call_endpoint(route.endpoint)
-
-    assert response.model_dump(mode="json") == {
-        "tracks": [
-            {
-                "id": 10,
-                "provider_track_id": "ytm-10",
-                "title": "Single Playlist Song",
-                "artist": "Artist A",
-                "album": "Album A",
-                "duration_ms": 181000,
-                "playlist_count": 1,
-                "playlist_ids": [1],
-                "playlist_titles": ["Morning Mix"],
-                "soulseek_acquisition": None,
-            },
-            {
-                "id": 11,
-                "provider_track_id": "ytm-11",
-                "title": "Multi Playlist Song",
-                "artist": "Artist B",
-                "album": None,
-                "duration_ms": None,
-                "playlist_count": 1,
-                "playlist_ids": [1],
-                "playlist_titles": ["Morning Mix"],
-                "soulseek_acquisition": None,
-            },
-            {
-                "id": 16,
-                "provider_track_id": "ytm-16",
-                "title": "Related Only Song",
-                "artist": "Artist G",
-                "album": "Album G",
-                "duration_ms": 280000,
-                "playlist_count": 1,
-                "playlist_ids": [1],
-                "playlist_titles": ["Morning Mix"],
-                "soulseek_acquisition": None,
-            },
-        ]
-    }
 
 
 def test_unidentified_endpoint_lists_durable_failed_ingestion_attempts(

@@ -3,7 +3,6 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import type { ReactElement } from "react";
 import { MemoryRouter } from "react-router-dom";
 import { jsonResponse } from "../../test/mockApi";
-import { maintenanceQueryKeys } from "../maintenance/queries";
 import { playlistQueryKeys } from "../playlists/queries";
 import {
   buildSettingsNavItems,
@@ -12,6 +11,7 @@ import {
   settingsAuthenticationViewId,
   staticViewRoutes,
 } from "../shell/viewRegistry";
+import { soulseekQueryKeys } from "../soulseek/queryKeys";
 import {
   streamingAccountQueryKeys,
   type StreamingAccount,
@@ -207,7 +207,7 @@ describe("AuthenticationSettingsView", () => {
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: streamingAccountQueryKeys.list() });
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: playlistQueryKeys.config() });
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: playlistQueryKeys.list() });
-    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: maintenanceQueryKeys.missingLocally() });
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: soulseekQueryKeys.all });
   });
 
   it("shows partial success when metadata refresh cannot be queued after account creation", async () => {

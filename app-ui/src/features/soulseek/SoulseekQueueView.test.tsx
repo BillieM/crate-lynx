@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { PropsWithChildren, ReactElement } from "react";
+import { MemoryRouter } from "react-router-dom";
 
 import { SoulseekQueueView } from "./SoulseekQueueView";
 import type { SoulseekQueueResponse } from "./queries";
@@ -88,7 +89,11 @@ function renderWithQueryClient(ui: ReactElement) {
   });
 
   function Wrapper({ children }: PropsWithChildren) {
-    return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
+    return (
+      <MemoryRouter>
+        <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+      </MemoryRouter>
+    );
   }
 
   return render(ui, { wrapper: Wrapper });
@@ -216,6 +221,128 @@ describe("SoulseekQueueView", () => {
     expect(alternateButton).toHaveTextContent("Approval locked");
   });
 
+  it("defaults to needs-search rows and queues row and bulk Soulseek searches", async () => {
+    const firstMissingItem = {
+      ...queueResponse.items[0],
+      acquisition: null,
+      candidates: [],
+      playlist_ids: [11],
+      playlist_titles: ["Late Night Drive"],
+      selected_candidate: null,
+      streaming_track: {
+        ...queueResponse.items[0].streaming_track,
+        id: 5003,
+        title: "Needs Search Track",
+      },
+    };
+    const secondMissingItem = {
+      ...firstMissingItem,
+      playlist_ids: [12],
+      playlist_titles: ["Focus Queue"],
+      streaming_track: {
+        ...firstMissingItem.streaming_track,
+        id: 5004,
+        title: "Second Missing Track",
+      },
+    };
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async (url, init) => {
+      if (url === "/api/soulseek/queue") {
+        return {
+          ok: true,
+          json: async () => ({ filter: "all", items: [firstMissingItem, secondMissingItem], total_count: 2 }),
+        } as Response;
+      }
+      if (url === "/api/soulseek/missing-tracks/5003/search" && init?.method === "POST") {
+        return {
+          ok: true,
+          json: async () => ({
+            acquisition: { ...queueResponse.items[0].acquisition, id: "acq-3", status: "searching" },
+            job_id: "search-job-3",
+          }),
+        } as Response;
+      }
+      if (url === "/api/soulseek/missing-tracks/search-selected" && init?.method === "POST") {
+        return {
+          ok: true,
+          json: async () => ({
+            jobs: [
+              { acquisition: { ...queueResponse.items[0].acquisition, id: "acq-3" }, job_id: "search-job-3", streaming_track_id: 5003 },
+              { acquisition: { ...queueResponse.items[0].acquisition, id: "acq-4" }, job_id: "search-job-4", streaming_track_id: 5004 },
+            ],
+          }),
+        } as Response;
+      }
+      throw new Error(`Unexpected request: ${String(url)}`);
+    });
+
+    renderWithQueryClient(<SoulseekQueueView />);
+
+    const filters = await screen.findByRole("group", { name: "Soulseek queue filters" });
+    await waitFor(() => {
+      expect(within(filters).getByRole("button", { name: /Needs search/ })).toHaveAttribute("aria-pressed", "true");
+    });
+    fireEvent.click(await screen.findByRole("button", { name: "Search Soulseek for Needs Search Track" }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith("/api/soulseek/missing-tracks/5003/search", { method: "POST" });
+    });
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Needs Search Track" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Second Missing Track" }));
+    fireEvent.click(screen.getByRole("button", { name: "Search selected" }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith("/api/soulseek/missing-tracks/search-selected", {
+        body: JSON.stringify({ streaming_track_ids: [5003, 5004] }),
+        headers: { "Content-Type": "application/json" },
+        method: "POST",
+      });
+    });
+    expect(await screen.findByText("Bulk search queued")).toBeInTheDocument();
+  });
+
+  it("syncs affected playlists for selected needs-search rows", async () => {
+    const missingItem = {
+      ...queueResponse.items[0],
+      acquisition: null,
+      candidates: [],
+      playlist_ids: [11, 12],
+      playlist_titles: ["Late Night Drive", "Focus Queue"],
+      selected_candidate: null,
+      streaming_track: {
+        ...queueResponse.items[0].streaming_track,
+        id: 5003,
+        title: "Needs Search Track",
+      },
+    };
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async (url, init) => {
+      if (url === "/api/soulseek/queue") {
+        return {
+          ok: true,
+          json: async () => ({ filter: "all", items: [missingItem], total_count: 1 }),
+        } as Response;
+      }
+      if (typeof url === "string" && /^\/api\/streaming\/playlists\/\d+\/sync$/.test(url) && init?.method === "POST") {
+        return {
+          ok: true,
+          json: async () => ({ job_id: "sync-job", playlist_id: Number(url.match(/\d+/)?.[0] ?? 0) }),
+        } as Response;
+      }
+      throw new Error(`Unexpected request: ${String(url)}`);
+    });
+
+    renderWithQueryClient(<SoulseekQueueView />);
+
+    fireEvent.click(await screen.findByRole("checkbox", { name: "Select Needs Search Track" }));
+    fireEvent.click(screen.getByRole("button", { name: "Sync affected playlists" }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith("/api/streaming/playlists/11/sync", { method: "POST" });
+      expect(fetchMock).toHaveBeenCalledWith("/api/streaming/playlists/12/sync", { method: "POST" });
+    });
+    expect(await screen.findByText("Playlist sync queued")).toBeInTheDocument();
+  });
+
   it("reviews candidates and approves a Soulseek download", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async (url, init) => {
       if (url === "/api/soulseek/queue") {
@@ -244,13 +371,6 @@ describe("SoulseekQueueView", () => {
           }),
         } as Response;
       }
-      if (url === "/api/maintenance/missing-locally" || url === "/api/proposals") {
-        return {
-          ok: true,
-          json: async () => (url === "/api/proposals" ? { limit: 50, next_cursor: null, proposals: [], returned_count: 0, total_count: 0 } : { tracks: [] }),
-        } as Response;
-      }
-
       throw new Error(`Unexpected request: ${String(url)}`);
     });
 

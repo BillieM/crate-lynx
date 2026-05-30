@@ -4,7 +4,7 @@ import { z } from "zod";
 import { deleteJson, endpoints, fetchBlob, fetchJson, patchJson, postBlob, postJson } from "../../lib/api";
 import type { components } from "../../lib/api-types";
 import { invalidateQueryKeys } from "../../lib/queryInvalidation";
-import { missingLocallyInvalidationKeys } from "../maintenance/queries";
+import { soulseekQueueInvalidationKeys } from "../soulseek/queryKeys";
 
 type ApiSchemas = components["schemas"];
 
@@ -270,7 +270,7 @@ export function playlistConfigurationInvalidationKeys(): QueryKey[] {
 }
 
 export function playlistConfigurationMutationInvalidationKeys(): QueryKey[] {
-  return [...playlistConfigurationInvalidationKeys(), ...missingLocallyInvalidationKeys()];
+  return [...playlistConfigurationInvalidationKeys(), ...soulseekQueueInvalidationKeys()];
 }
 
 export function playlistContentInvalidationKeys(playlistIds: readonly (number | string)[]): QueryKey[] {
@@ -284,14 +284,14 @@ export function playlistContentInvalidationKeys(playlistIds: readonly (number | 
 }
 
 export function playlistCollectionJobInvalidationKeys(): QueryKey[] {
-  return [...playlistConfigurationInvalidationKeys(), ...missingLocallyInvalidationKeys()];
+  return [...playlistConfigurationInvalidationKeys(), ...soulseekQueueInvalidationKeys()];
 }
 
 export function playlistSyncJobInvalidationKeys(playlistIds: readonly (number | string)[]): QueryKey[] {
   return [
     ...playlistContentInvalidationKeys(playlistIds),
     playlistQueryKeys.config(),
-    ...missingLocallyInvalidationKeys(),
+    ...soulseekQueueInvalidationKeys(),
   ];
 }
 

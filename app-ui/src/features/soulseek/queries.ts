@@ -2,8 +2,8 @@ import { type QueryClient, type QueryKey, useQuery } from "@tanstack/react-query
 
 import { endpoints, fetchJson, postJson } from "../../lib/api";
 import { invalidateQueryKeys } from "../../lib/queryInvalidation";
-import { missingLocallyInvalidationKeys } from "../maintenance/queries";
 import { playlistLinkInvalidationKeys } from "../playlists/queries";
+import { soulseekQueryKeys, soulseekQueueInvalidationKeys } from "./queryKeys";
 
 export type SoulseekQueueFilter = "all" | "needs_search" | "review" | "active" | "failed" | "linked";
 
@@ -92,6 +92,14 @@ export type SoulseekSearchResponse = {
   job_id: string;
 };
 
+export type SoulseekBulkSearchResponse = {
+  jobs: Array<{
+    acquisition: SoulseekAcquisitionSummary;
+    job_id: string;
+    streaming_track_id: number;
+  }>;
+};
+
 export type SoulseekEnqueueResponse = {
   acquisition: SoulseekAcquisitionSummary;
   job_id: string | null;
@@ -102,14 +110,8 @@ export type SoulseekRefreshResponse = {
   job_id: string;
 };
 
-export const soulseekQueryKeys = {
-  all: ["soulseek"] as const,
-  acquisition: (acquisitionId: number | string | null) => ["soulseek", "acquisition", acquisitionId] as const,
-  queue: () => ["soulseek", "queue"] as const,
-};
-
 export function soulseekInvalidationKeys(): QueryKey[] {
-  return [soulseekQueryKeys.all, ...missingLocallyInvalidationKeys(), ...playlistLinkInvalidationKeys()];
+  return [...soulseekQueueInvalidationKeys(), ...playlistLinkInvalidationKeys()];
 }
 
 export async function invalidateSoulseekJourneyQueries(queryClient: QueryClient): Promise<void> {
@@ -129,6 +131,13 @@ export async function searchSoulseekTrack(streamingTrackId: number | string): Pr
     endpoints.api(`/soulseek/missing-tracks/${encodeURIComponent(String(streamingTrackId))}/search`),
     { errorMessage: "Soulseek search request failed" },
   );
+}
+
+export async function searchSelectedSoulseekTracks(streamingTrackIds: number[]): Promise<SoulseekBulkSearchResponse> {
+  return postJson<SoulseekBulkSearchResponse>(endpoints.api("/soulseek/missing-tracks/search-selected"), {
+    body: { streaming_track_ids: streamingTrackIds },
+    errorMessage: "Soulseek bulk search request failed",
+  });
 }
 
 export async function approveSoulseekCandidateDownload(candidateId: number | string): Promise<SoulseekEnqueueResponse> {
