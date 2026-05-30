@@ -1006,7 +1006,7 @@ describe("App", () => {
     const metadataRegion = screen.getByRole("region", { name: "Generation metadata" });
     expect(within(metadataRegion).getByRole("list")).toBeInTheDocument();
     const leafSizeBubble = within(metadataRegion).getByRole("listitem", { name: "Leaf size: 25" });
-    expect(leafSizeBubble).toHaveClass("rounded-full", "px-1.5", "py-0.5", "text-[10px]", "ring-1");
+    expect(leafSizeBubble).toHaveClass("rounded-full", "px-2", "py-0.5", "text-[11px]", "ring-1");
     expect(within(metadataRegion).getByRole("listitem", { name: "Method: K-means" })).toBeInTheDocument();
     expect(within(metadataRegion).getByRole("listitem", { name: "Source: All local tracks" })).toBeInTheDocument();
     const playlistTree = await screen.findByRole("tree", { name: "Generated playlists" });

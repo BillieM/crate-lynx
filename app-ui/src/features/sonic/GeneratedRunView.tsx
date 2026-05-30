@@ -298,7 +298,7 @@ function RunMetadata({ run }: { run: PlaylistGenerationRun }) {
         {metadata.map((item) => (
           <li
             aria-label={`${item.label}: ${item.value}`}
-            className="inline-flex max-w-full items-center gap-1 rounded-full bg-ctp-surface0/55 px-1.5 py-0.5 text-[10px] font-semibold leading-4 text-ctp-subtext0 ring-1 ring-inset ring-ctp-surface1/80"
+            className={`${controlClasses.pill} inline-flex max-w-full items-center gap-1.5 bg-ctp-surface0/55 text-ctp-subtext0 ring-1 ring-inset ring-ctp-surface1/80`}
             key={item.label}
           >
             <span className="shrink-0 text-ctp-overlay1">{item.label}:</span>
