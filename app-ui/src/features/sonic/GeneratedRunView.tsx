@@ -294,14 +294,18 @@ function RunMetadata({ run }: { run: PlaylistGenerationRun }) {
 
   return (
     <section className="mt-3 grid gap-2 border-t border-ctp-surface1 pt-3" aria-label="Generation metadata">
-      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+      <ul className="flex flex-wrap items-center gap-1.5">
         {metadata.map((item) => (
-          <div className="min-w-0 rounded-[8px] border border-ctp-surface1 bg-ctp-surface0/45 px-3 py-2" key={item.label}>
-            <p className={textClasses.caption}>{item.label}</p>
-            <p className="mt-0.5 truncate text-[13px] font-semibold text-ctp-text">{item.value}</p>
-          </div>
+          <li
+            aria-label={`${item.label}: ${item.value}`}
+            className="inline-flex max-w-full items-center gap-1 rounded-full bg-ctp-surface0/55 px-1.5 py-0.5 text-[10px] font-semibold leading-4 text-ctp-subtext0 ring-1 ring-inset ring-ctp-surface1/80"
+            key={item.label}
+          >
+            <span className="shrink-0 text-ctp-overlay1">{item.label}:</span>
+            <span className="min-w-0 truncate text-ctp-text">{item.value}</span>
+          </li>
         ))}
-      </div>
+      </ul>
     </section>
   );
 }

@@ -1004,10 +1004,11 @@ describe("App", () => {
     expect(await screen.findByRole("heading", { level: 2, name: "Generation 19" })).toBeInTheDocument();
     expect(screen.getByText("Run ID 501 · 2 playlists · 58 tracks")).toBeInTheDocument();
     const metadataRegion = screen.getByRole("region", { name: "Generation metadata" });
-    expect(within(metadataRegion).getByText("Leaf size")).toBeInTheDocument();
-    expect(within(metadataRegion).getByText("25")).toBeInTheDocument();
-    expect(within(metadataRegion).getByText("K-means")).toBeInTheDocument();
-    expect(within(metadataRegion).getByText("All local tracks")).toBeInTheDocument();
+    expect(within(metadataRegion).getByRole("list")).toBeInTheDocument();
+    const leafSizeBubble = within(metadataRegion).getByRole("listitem", { name: "Leaf size: 25" });
+    expect(leafSizeBubble).toHaveClass("rounded-full", "px-1.5", "py-0.5", "text-[10px]", "ring-1");
+    expect(within(metadataRegion).getByRole("listitem", { name: "Method: K-means" })).toBeInTheDocument();
+    expect(within(metadataRegion).getByRole("listitem", { name: "Source: All local tracks" })).toBeInTheDocument();
     const playlistTree = await screen.findByRole("tree", { name: "Generated playlists" });
     const rootPlaylist = within(playlistTree).getByRole("treeitem", { name: "Fast Bright, 24 tracks" });
     const childPlaylist = within(playlistTree).getByRole("treeitem", { name: "Warm Dense, 12 tracks" });
