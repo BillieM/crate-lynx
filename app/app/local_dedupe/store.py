@@ -16,6 +16,7 @@ from sqlalchemy import delete, func, insert, select, update
 from sqlalchemy.engine import Engine
 
 from app.core.db import create_database_engine
+from app.core.isrc import normalize_isrc_code
 from app.ingestion.beets_mirror import beets_item_attributes_table, beets_items_table
 from app.ingestion.failures import failed_ingestion_attempts_table
 from app.links.store import final_links_table
@@ -310,7 +311,7 @@ class LocalDedupeStore:
                 final_link_id=_int_or_none(row["final_link_id"]),
                 fingerprint=_str_or_none(row["fingerprint"]),
                 format=_str_or_none(row["format"]),
-                isrc=_normalize_isrc(row["isrc"]),
+                isrc=normalize_isrc_code(row["isrc"]),
                 library_root_rel_path=str(row["library_root_rel_path"]),
                 link_status=_link_status(row),
                 samplerate=_int_or_none(row["samplerate"]),
@@ -730,13 +731,6 @@ def _normalize_text(value: str | None) -> str | None:
         return None
     normalized = unicodedata.normalize("NFKD", value).encode("ascii", "ignore").decode()
     normalized = re.sub(r"[^a-z0-9]+", " ", normalized.lower()).strip()
-    return normalized or None
-
-
-def _normalize_isrc(value: object) -> str | None:
-    if not isinstance(value, str):
-        return None
-    normalized = re.sub(r"[^A-Za-z0-9]", "", value).upper()
     return normalized or None
 
 

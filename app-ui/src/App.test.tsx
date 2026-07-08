@@ -23,6 +23,7 @@ import type {
 } from "./features/sonic/queries";
 import type { SoulseekQueueResponse } from "./features/soulseek/queries";
 import { getProgressColor } from "./features/shell/progress";
+import type { ShellSummaryResponse } from "./features/shell/queries";
 import { blobResponse, createMockApi, emptyResponse, failUnexpectedFetch, jsonResponse } from "./test/mockApi";
 
 const playlistDetailResponse: PlaylistDetailResponse = {
@@ -480,6 +481,17 @@ const sonicRunsResponse: PlaylistGenerationRunListResponse = {
     },
   ],
 };
+const shellSummaryResponse: ShellSummaryResponse = {
+  counts: {
+    library_track_total: libraryTracksResponse.stats.total,
+    link_proposal_count: linkProposalsResponse.total_count,
+    relationship_suggestion_count: streamingRelationshipSuggestionsResponse.total_count,
+    soulseek_unlinked_count: soulseekQueueResponse.items.filter((item) => item.acquisition?.status !== "linked").length,
+    unidentified_active_count: unidentifiedResponse.tracks.filter((track) => track.ignored_at === null).length,
+  },
+  generated_runs: sonicRunsResponse.runs,
+  playlists: streamingPlaylistsResponse.playlists,
+};
 const generatedPlaylistsResponse: GeneratedPlaylistListResponse = {
   playlists: [
     {
@@ -564,6 +576,7 @@ type MockPlaylistFetchOptions = {
   rejectProposalHandler?: (proposalId: string) => Promise<Response> | Response;
   relationshipSuggestionsHandler?: (url: string) => Promise<Response> | Response;
   selectedSyncHandler?: () => Promise<Response> | Response;
+  shellSummaryHandler?: () => Promise<Response> | Response;
   sonicFeatureSummaryHandler?: () => Promise<Response> | Response;
   sonicGenerationPreviewHandler?: (init?: RequestInit) => Promise<Response> | Response;
   sonicRunDetailHandler?: (runId: string) => Promise<Response> | Response;
@@ -622,6 +635,7 @@ function mockPlaylistFetch({
   rejectProposalHandler,
   relationshipSuggestionsHandler,
   selectedSyncHandler,
+  shellSummaryHandler,
   sonicFeatureSummaryHandler,
   sonicGenerationPreviewHandler,
   sonicRunDetailHandler,
@@ -641,6 +655,7 @@ function mockPlaylistFetch({
   ]);
 
   return createMockApi()
+    .get("/api/shell/summary", () => shellSummaryHandler?.() ?? jsonResponse(shellSummaryResponse))
     .get("/api/streaming/playlists", () => jsonResponse(streamingPlaylistsResponse))
     .get("/api/streaming/playlists/config", () => jsonResponse(streamingPlaylistConfigResponse))
     .get(/^\/api\/streaming\/relationships\/suggestions(?:\?|$)/, ({ url }) =>
@@ -928,10 +943,13 @@ describe("App", () => {
 
   it("renders Library and Maintenance sidebar badges from backend query data", async () => {
     mockPlaylistFetch({
-      relationshipSuggestionsHandler: () =>
+      shellSummaryHandler: () =>
         jsonResponse({
-          ...streamingRelationshipSuggestionsResponse,
-          total_count: 27933,
+          ...shellSummaryResponse,
+          counts: {
+            ...shellSummaryResponse.counts,
+            relationship_suggestion_count: 27933,
+          },
         }),
     });
 
@@ -1034,6 +1052,50 @@ describe("App", () => {
     });
     expect(document.getElementById("generated-run-501")).toHaveAttribute("data-view-active", "true");
     expect(document.getElementById("playlists")).toHaveAttribute("data-view-active", "false");
+  });
+
+  it("shows an expired state for a deleted generated run route", async () => {
+    const fetchMock = mockPlaylistFetch({
+      shellSummaryHandler: () =>
+        jsonResponse({
+          ...shellSummaryResponse,
+          generated_runs: [],
+        }),
+    });
+
+    renderApp(["/generated-runs/999"]);
+
+    expect(await screen.findByRole("heading", { level: 1, name: "Generated run unavailable" })).toBeInTheDocument();
+    expect(screen.getByText("This generated run may have been deleted or expired.")).toBeInTheDocument();
+    expect(document.getElementById("route-fallback")).toHaveAttribute("data-view-active", "true");
+    expect(countFetches(fetchMock, "/api/sonic/runs/999")).toBe(0);
+  });
+
+  it("shows an unavailable state for a stale playlist route", async () => {
+    const fetchMock = mockPlaylistFetch({
+      shellSummaryHandler: () =>
+        jsonResponse({
+          ...shellSummaryResponse,
+          playlists: [],
+        }),
+    });
+
+    renderApp(["/playlists/999"]);
+
+    expect(await screen.findByRole("heading", { level: 1, name: "Playlist unavailable" })).toBeInTheDocument();
+    expect(screen.getByText("This playlist is no longer available or is not selected for full sync.")).toBeInTheDocument();
+    expect(document.getElementById("route-fallback")).toHaveAttribute("data-view-active", "true");
+    expect(countFetches(fetchMock, "/api/playlists/999")).toBe(0);
+  });
+
+  it("shows a not-found state for unknown routes", async () => {
+    mockPlaylistFetch();
+
+    renderApp(["/does-not-exist"]);
+
+    expect(await screen.findByRole("heading", { level: 1, name: "Page not found" })).toBeInTheDocument();
+    expect(screen.getByText("This route is not available.")).toBeInTheDocument();
+    expect(document.getElementById("route-fallback")).toHaveAttribute("data-view-active", "true");
   });
 
   it("deletes a completed generated run after confirmation", async () => {
@@ -1300,8 +1362,8 @@ describe("App", () => {
 
     renderApp(["/relationships"]);
 
-    expect(screen.getByRole("heading", { level: 1, name: "Streaming relationships" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { level: 2, name: "Relationship queue" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { level: 1, name: "Streaming relationships" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { level: 2, name: "Relationship queue" })).toBeInTheDocument();
     expect(await screen.findByRole("listitem", { name: "Suggestion 91: Night Runner to Night Runner" })).toBeInTheDocument();
     expect(screen.getByRole("listitem", { name: "Suggestion 92: Loose Cable to Loose Cable Live" })).toBeInTheDocument();
     expect(document.getElementById("streaming-relationships")).toHaveAttribute("data-view-active", "true");
@@ -1317,7 +1379,7 @@ describe("App", () => {
     fireEvent.click(screen.getByRole("button", { name: /All tracks/i }));
 
     expect(screen.getByRole("heading", { level: 1, name: "All tracks" })).toBeInTheDocument();
-    expect(screen.getByRole("region", { name: "Local library tracks" })).toBeInTheDocument();
+    expect(await screen.findByRole("region", { name: "Local library tracks" })).toBeInTheDocument();
     const filters = await screen.findByRole("region", { name: "Library filters" });
     expect(within(filters).getByRole("group", { name: "Library link status filters" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Open app settings" })).toBeInTheDocument();
@@ -1338,9 +1400,9 @@ describe("App", () => {
 
     renderApp(["/library"]);
 
-    expect(screen.getByRole("heading", { level: 1, name: "All tracks" })).toBeInTheDocument();
-    expect(screen.getByRole("region", { name: "Library filters" })).toBeInTheDocument();
-    expect(screen.getByRole("region", { name: "Local library tracks" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { level: 1, name: "All tracks" })).toBeInTheDocument();
+    expect(await screen.findByRole("region", { name: "Library filters" })).toBeInTheDocument();
+    expect(await screen.findByRole("region", { name: "Local library tracks" })).toBeInTheDocument();
     expect(document.getElementById("library")).toHaveAttribute("data-view-active", "true");
     expect(document.getElementById("playlists")).toHaveAttribute("data-view-active", "false");
   });
@@ -1350,8 +1412,8 @@ describe("App", () => {
 
     renderApp(["/unidentified"]);
 
-    expect(screen.getByRole("heading", { level: 1, name: "Unidentified" })).toBeInTheDocument();
-    expect(screen.getByRole("region", { name: "Unidentified tracks" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { level: 1, name: "Unidentified" })).toBeInTheDocument();
+    expect(await screen.findByRole("region", { name: "Unidentified tracks" })).toBeInTheDocument();
     expect(await screen.findByText("unknown-import-9a4f.mp3")).toBeInTheDocument();
     expect(screen.getByText("Beets could not identify metadata")).toBeInTheDocument();
     expect(document.getElementById("unidentified")).toHaveAttribute("data-view-active", "true");
@@ -1425,7 +1487,7 @@ describe("App", () => {
     expect(await screen.findByText("Night Runner.mp3")).toBeInTheDocument();
     expect(screen.getByText("Pending Signal.mp3")).toBeInTheDocument();
     expect(screen.getByText("Loose Cable.mp3")).toBeInTheDocument();
-    expect(fetchMock).toHaveBeenCalledWith("/api/proposals");
+    expect(fetchMock).toHaveBeenCalledWith("/api/proposals?limit=50");
     expect(fetchMock).not.toHaveBeenCalledWith("/api/proposals?band=high");
     expect(screen.queryByRole("group", { name: "Confidence band filters" })).not.toBeInTheDocument();
   });
@@ -1521,7 +1583,7 @@ describe("App", () => {
 
     expect(await screen.findByRole("heading", { level: 2, name: "Proposal queue" })).toBeInTheDocument();
     expect(screen.queryByRole("group", { name: "Confidence band filters" })).not.toBeInTheDocument();
-    expect(fetchMock).toHaveBeenCalledWith("/api/proposals");
+    expect(fetchMock).toHaveBeenCalledWith("/api/proposals?limit=50");
   });
 
   it("opens General settings from the topbar and renders ingest folders", async () => {
@@ -1706,6 +1768,7 @@ describe("App", () => {
     expect(await screen.findByRole("heading", { level: 1, name: "Late Night Drive" })).toBeInTheDocument();
     await openYoutubeMusicSettings();
 
+    const shellSummaryFetchesBeforeToggle = countFetches(fetchMock, "/api/shell/summary");
     const playlistListFetchesBeforeToggle = countFetches(fetchMock, "/api/streaming/playlists");
     const configFetchesBeforeToggle = countFetches(fetchMock, "/api/streaming/playlists/config");
     const soulseekQueueFetchesBeforeToggle = countFetches(fetchMock, "/api/soulseek/queue");
@@ -1751,9 +1814,10 @@ describe("App", () => {
         "aria-pressed",
         "true",
       );
+      expect(countFetches(fetchMock, "/api/shell/summary")).toBeGreaterThan(shellSummaryFetchesBeforeToggle);
       expect(countFetches(fetchMock, "/api/streaming/playlists")).toBe(playlistListFetchesBeforeToggle);
       expect(countFetches(fetchMock, "/api/streaming/playlists/config")).toBe(configFetchesBeforeToggle);
-      expect(countFetches(fetchMock, "/api/soulseek/queue")).toBeGreaterThan(soulseekQueueFetchesBeforeToggle);
+      expect(countFetches(fetchMock, "/api/soulseek/queue")).toBe(soulseekQueueFetchesBeforeToggle);
     });
   });
 
@@ -1766,6 +1830,9 @@ describe("App", () => {
     await openYoutubeMusicSettings();
     vi.useFakeTimers();
 
+    const shellSummaryFetchesBeforeRefresh = fetchMock.mock.calls.filter(
+      ([input]) => String(input) === "/api/shell/summary",
+    ).length;
     const playlistListFetchesBeforeRefresh = fetchMock.mock.calls.filter(
       ([input]) => String(input) === "/api/streaming/playlists",
     ).length;
@@ -1790,7 +1857,10 @@ describe("App", () => {
     await advanceTimers(3000);
     await flushAsyncWork();
 
-    expect(fetchMock.mock.calls.filter(([input]) => String(input) === "/api/streaming/playlists").length).toBeGreaterThan(
+    expect(fetchMock.mock.calls.filter(([input]) => String(input) === "/api/shell/summary").length).toBeGreaterThan(
+      shellSummaryFetchesBeforeRefresh,
+    );
+    expect(fetchMock.mock.calls.filter(([input]) => String(input) === "/api/streaming/playlists").length).toBe(
       playlistListFetchesBeforeRefresh,
     );
     expect(fetchMock.mock.calls.filter(([input]) => String(input) === "/api/streaming/playlists/config").length).toBeGreaterThan(
@@ -2058,23 +2128,27 @@ describe("App", () => {
     await flushAsyncWork();
 
     expect(screen.getByText("Playlist sync queued.")).toBeInTheDocument();
+    const shellSummaryFetchesAfterQueued = countFetches(fetchMock, "/api/shell/summary");
     const playlistListFetchesAfterQueued = countFetches(fetchMock, "/api/streaming/playlists");
     const playlistDetailFetchesAfterQueued = countFetches(fetchMock, "/api/playlists/9");
     const playlistTrackFetchesAfterQueued = countFetches(fetchMock, "/api/playlists/9/tracks");
 
     await advanceTimers(3000);
 
-    expect(countFetches(fetchMock, "/api/streaming/playlists")).toBeGreaterThan(playlistListFetchesAfterQueued);
+    expect(countFetches(fetchMock, "/api/shell/summary")).toBeGreaterThan(shellSummaryFetchesAfterQueued);
+    expect(countFetches(fetchMock, "/api/streaming/playlists")).toBe(playlistListFetchesAfterQueued);
     expect(countFetches(fetchMock, "/api/playlists/9")).toBeGreaterThan(playlistDetailFetchesAfterQueued);
     expect(countFetches(fetchMock, "/api/playlists/9/tracks")).toBeGreaterThan(playlistTrackFetchesAfterQueued);
 
+    const shellSummaryFetchesAfterFirstDelay = countFetches(fetchMock, "/api/shell/summary");
     const playlistListFetchesAfterFirstDelay = countFetches(fetchMock, "/api/streaming/playlists");
     const playlistDetailFetchesAfterFirstDelay = countFetches(fetchMock, "/api/playlists/9");
     const playlistTrackFetchesAfterFirstDelay = countFetches(fetchMock, "/api/playlists/9/tracks");
 
     await advanceTimers(7000);
 
-    expect(countFetches(fetchMock, "/api/streaming/playlists")).toBeGreaterThan(playlistListFetchesAfterFirstDelay);
+    expect(countFetches(fetchMock, "/api/shell/summary")).toBeGreaterThan(shellSummaryFetchesAfterFirstDelay);
+    expect(countFetches(fetchMock, "/api/streaming/playlists")).toBe(playlistListFetchesAfterFirstDelay);
     expect(countFetches(fetchMock, "/api/playlists/9")).toBeGreaterThan(playlistDetailFetchesAfterFirstDelay);
     expect(countFetches(fetchMock, "/api/playlists/9/tracks")).toBeGreaterThan(playlistTrackFetchesAfterFirstDelay);
   });
@@ -2417,7 +2491,7 @@ describe("App", () => {
     expect(await screen.findByRole("heading", { level: 1, name: "Late Night Drive" })).toBeInTheDocument();
 
     await expect(fetch("/api/playlists")).rejects.toThrow("Unexpected fetch request: GET /api/playlists");
-    expect(fetchMock).toHaveBeenCalledWith("/api/streaming/playlists");
+    expect(fetchMock).toHaveBeenCalledWith("/api/shell/summary");
   });
 
   it("maps progress percentages onto the Catppuccin theme gradient", () => {

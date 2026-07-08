@@ -26,6 +26,7 @@ import { StatusMessage } from "../../components/StatusMessage";
 import { formatPlaylistTimestamp } from "../../lib/formatters";
 import { controlClasses, layoutClasses, surfaceClasses, textClasses } from "../../styles/componentClasses";
 import { type StreamingPlaylist, useStreamingPlaylistsQuery } from "../playlists/queries";
+import { shellSummaryInvalidationKeys } from "../shell/queries";
 import {
   backfillSonicFeatures,
   createPlaylistGenerationRun,
@@ -334,7 +335,10 @@ export function PlaylistGeneratorView() {
   const createRunMutation = useMutation({
     mutationFn: createPlaylistGenerationRun,
     onSuccess: async (response) => {
-      await queryClient.invalidateQueries({ queryKey: sonicQueryKeys.runs() });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: sonicQueryKeys.runs() }),
+        ...shellSummaryInvalidationKeys().map((queryKey) => queryClient.invalidateQueries({ queryKey })),
+      ]);
       navigate(`/generated-runs/${response.run.id}`);
     },
   });

@@ -1,4 +1,7 @@
 .git
+.agents
+.claude
+.codex
 .venv
 .pytest_cache
 .ruff_cache

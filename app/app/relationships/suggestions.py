@@ -13,6 +13,7 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.engine import Engine
 
 from app.core.db import create_database_engine
+from app.core.isrc import normalize_valid_isrc_code
 from app.matching.tags import normalize_match_text, score_track_tags, title_identity
 from app.relationships.models import (
     STREAMING_RELATIONSHIP_CONFIDENCE_HIGH,
@@ -44,7 +45,6 @@ MAX_PENDING_RELATIONSHIP_SUGGESTIONS = 1000
 EQUIVALENT_DURATION_TOLERANCE_MS = 10_000
 ALBUM_CONFLICT_SIMILARITY_MAX = 0.98
 NEAR_TITLE_SIMILARITY_MIN = 0.90
-ISRC_RE = re.compile(r"^[A-Z]{2}[A-Z0-9]{3}\d{7}$")
 VERSION_TERM_RE = re.compile(
     r"\b(?:acoustic|alt|alternate|club|demo|edit|extended|instrumental|"
     r"karaoke|live|mix|mono|original|radio|remaster(?:ed)?|remix|session|"
@@ -218,7 +218,7 @@ def _active_streaming_tracks(connection) -> tuple[_StreamingTrackCandidate, ...]
                 artist=artist,
                 album=normalize_match_text(row["album"]),
                 duration_ms=duration_ms if isinstance(duration_ms, int) else None,
-                isrc=_normalize_isrc(row["isrc"]),
+                isrc=normalize_valid_isrc_code(row["isrc"]),
             )
         )
 
@@ -583,17 +583,6 @@ def _suggestion_pair(
     suggestion: GeneratedStreamingRelationshipSuggestion,
 ) -> tuple[int, int]:
     return (suggestion.lower_track_id, suggestion.higher_track_id)
-
-
-def _normalize_isrc(value: object) -> str | None:
-    if not isinstance(value, str):
-        return None
-
-    normalized = re.sub(r"[\s-]+", "", value.strip().upper())
-    if not normalized or ISRC_RE.fullmatch(normalized) is None:
-        return None
-
-    return normalized
 
 
 def _fuzzy_title_key(title: str) -> str:

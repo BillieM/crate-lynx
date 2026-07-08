@@ -5,6 +5,7 @@ import { endpoints, fetchJson, postJson } from "../../lib/api";
 import type { components } from "../../lib/api-types";
 import { invalidateQueryKeys } from "../../lib/queryInvalidation";
 import { playlistLinkInvalidationKeys } from "../playlists/queries";
+import { shellSummaryInvalidationKeys } from "../shell/queries";
 import { soulseekQueueInvalidationKeys } from "../soulseek/queryKeys";
 
 type ApiSchemas = components["schemas"];
@@ -135,6 +136,7 @@ export function streamingRelationshipSuggestionInvalidationKeys(): QueryKey[] {
   return [
     streamingRelationshipQueryKeys.suggestions(),
     streamingRelationshipQueryKeys.suggestionPages(),
+    ...shellSummaryInvalidationKeys(),
   ];
 }
 

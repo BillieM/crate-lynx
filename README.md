@@ -23,49 +23,35 @@ The `app` container runs the FastAPI server (`uvicorn`) plus dedicated RQ worker
 cp .env.example .env
 # Generate TOKEN_ENCRYPTION_KEY and add it to .env:
 python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())'
+docker network inspect music >/dev/null 2>&1 || docker network create music
 docker compose up --build
 ```
 
 For local backend development, use Python 3.12.13. A repo-level `.python-version` file is included for tools such as `pyenv`.
 
-The UI is served at `http://localhost:18100` (Nginx). The API is available at `http://localhost:18101` and proxied through the UI at `http://localhost:18100/api`.
+The UI is served at `http://localhost:18100` (Nginx). The API is available at `http://localhost:18101` and proxied through the UI at `http://localhost:18100/api`. The Compose file also joins an external Docker network named `music` for optional slskd integration; create it once before first startup if it does not already exist.
 
 ---
 
 ## Deployment
 
-Production runs on a remote Docker host via the `gluesoup-0-docker-1` SSH context. If the context is missing locally, create it with:
+This is a personal/LAN-oriented app, not a hardened multi-user hosted service. Deploy it on a trusted machine or private Docker host, put it behind your own reverse proxy if needed, and avoid exposing the API, Postgres, or Redis directly to the public internet.
 
-```bash
-docker context create gluesoup-0-docker-1 --docker host=ssh://gluesoup-0-docker-1
-```
-
-Switch to it with:
-
-```bash
-docker context use gluesoup-0-docker-1
-```
-
-Deploy with Docker Compose through the active context. On machines with the Docker CLI Compose plugin:
+Deploy with Docker Compose from a checkout that has a populated `.env` file:
 
 ```bash
 docker compose up --build -d
 ```
 
-If `docker compose version` is not available locally, use the standalone Compose command:
+Published ports bind to `127.0.0.1` by default. If you deliberately want LAN access without a reverse proxy, set the relevant `*_BIND_HOST` values in `.env` to a trusted interface such as `0.0.0.0`, then make sure host firewall rules match that choice.
 
-```bash
-docker-compose up --build -d
-```
-
-Services are exposed on the same ports as local development (`18100`–`18103`). To verify the deploy, check that all containers are healthy:
+To verify the deploy, check that all containers are healthy:
 
 ```bash
 docker compose ps
-# or: docker-compose ps
 ```
 
-The public UI is routed through Traefik at `https://cratelynx.billiem.uk`. The Crate Lynx Compose stack creates a fixed-name Docker network, `cratelynx`, and attaches only `app-ui` to it. Traefik should join that network as an external network:
+The Compose stack creates a fixed-name Docker network, `cratelynx`, and attaches only `app-ui` to it for optional Traefik routing. Set `CRATELYNX_HOST` in `.env` to the hostname your reverse proxy should serve. Traefik should join that network as an external network:
 
 ```yaml
 services:
@@ -87,6 +73,8 @@ Backend services (`app`, `db`, and `redis`) stay on the internal Compose network
 | Variable | Purpose |
 |---|---|
 | `TOKEN_ENCRYPTION_KEY` | Fernet key for encrypting streaming auth tokens. Generate one with `python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())'` |
+| `CRATELYNX_HOST` | Optional hostname used by the Traefik labels. Defaults to `cratelynx.local` |
+| `UI_BIND_HOST` / `APP_BIND_HOST` / `DB_BIND_HOST` / `REDIS_BIND_HOST` | Host interface for published Compose ports. Defaults to `127.0.0.1`; use wider binds only on a trusted LAN |
 | `LIBRARY_ROOT` | Container path where processed music is stored. Defaults to `/nas/media/music` |
 | `LOCAL_DEDUPE_QUARANTINE_ROOT` | Container path where deduplicated local files are moved. Defaults to `/nas/cratelynx/dedupe-quarantine` |
 | `BEETS_LIBRARY` | Container path for the Beets SQLite database. Defaults to `/data/beets/library.db` |
@@ -105,12 +93,12 @@ Backend services (`app`, `db`, and `redis`) stay on the internal Compose network
 | `SLSKD_DOWNLOADS_CONTAINER_ROOT` | slskd container download root reported in webhook payloads. Defaults to `/data/soulseek/downloads` |
 | `SLSKD_DOWNLOADS_APP_ROOT` | CrateLynx app container path for the same downloads. Defaults to `/nas/soulseek/downloads` |
 
-Production Compose attaches the backend app container to the external `music` Docker network so `SLSKD_BASE_URL=http://slskd:5030` can reach the existing slskd container.
+Compose attaches the backend app container to the external `music` Docker network so `SLSKD_BASE_URL=http://slskd:5030` can reach an existing slskd container when you run one on that network.
 Configure slskd to send `DownloadFileComplete` webhooks to `http://crate-lynx-app-1:8000/api/soulseek/slskd/download-complete` on the shared Docker network with header `X-CrateLynx-Webhook-Token: <SLSKD_WEBHOOK_TOKEN>`.
 
 ## Storage and mounts
 
-Docker Compose reads host paths from `.env`, with production-friendly defaults:
+Docker Compose reads host paths from `.env`, with Linux host-path defaults that are meant to be edited for your machine:
 
 | Env var | Default host path | Container path | Purpose |
 |---|---|---|
@@ -121,7 +109,7 @@ Create those host directories before starting the stack, or override the host pa
 
 `/nas/media/music` is output only. Do not add it as an ingest folder, because completed imports are moved there and watching it would re-ingest files that Beets has already processed.
 
-For same-filesystem moves and MP3 hardlinks, keep ingest inputs, staging, and the final music library under `NAS_DATA_HOST_PATH`. The production layout is:
+For same-filesystem moves and MP3 hardlinks, keep ingest inputs, staging, and the final music library under `NAS_DATA_HOST_PATH`. One workable layout is:
 
 | Host path | Container path | Purpose |
 |---|---|---|
@@ -204,4 +192,6 @@ One M3U file per streaming playlist, generated from `playlist_membership` joined
 
 ## Security
 
-Streaming auth tokens are encrypted at the application layer using Fernet before being written to the database. The encryption key never touches the database.
+Crate Lynx assumes a trusted operator and a private network. It does not currently provide end-user authentication, authorization, rate limiting, or a public-hosting threat model.
+
+Streaming auth tokens are encrypted at the application layer using Fernet before being written to the database. The encryption key never touches the database, but anyone with the running app environment or `.env` file can decrypt stored tokens. Keep `.env` out of git, use strong local values for `TOKEN_ENCRYPTION_KEY`, `POSTGRES_PASSWORD`, `SLSKD_API_KEY`, and `SLSKD_WEBHOOK_TOKEN`, and rotate them if they are ever exposed.

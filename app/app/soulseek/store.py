@@ -321,6 +321,23 @@ class SoulseekStore:
 
         return sorted(items, key=_queue_sort_key)
 
+    def count_unlinked_queue_items(self) -> int:
+        with self._engine.connect() as connection:
+            latest_acquisitions = _latest_acquisitions(connection)
+            unlinked_acquisition_count = sum(
+                1
+                for acquisition in latest_acquisitions.values()
+                if acquisition.status != SOULSEEK_STATUS_LINKED
+            )
+            missing_unsearched_count = len(
+                _missing_unsearched_tracks(
+                    connection,
+                    excluded_streaming_track_ids=latest_acquisitions.keys(),
+                )
+            )
+
+        return unlinked_acquisition_count + missing_unsearched_count
+
     def get_queue_item_for_acquisition(
         self,
         acquisition_id: str,

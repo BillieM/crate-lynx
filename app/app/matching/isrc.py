@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.engine import Engine
 
 from app.core.db import create_database_engine
+from app.core.isrc import normalize_isrc_code
 from app.core.tables import beets_items_view
 from app.local_tracks.store import local_tracks_table
 from app.matching.candidates import active_playlist_streaming_track_filter
@@ -55,33 +56,31 @@ class IsrcMatcher:
         if row is None:
             return None
 
-        return _normalize_isrc(row["isrc"])
+        return normalize_isrc_code(row["isrc"])
 
     def _lookup_streaming_track_id(self, isrc: str) -> int | None:
         with self._engine.connect() as connection:
-            row = (
+            rows = (
                 connection.execute(
-                    select(streaming_tracks_table.c.id)
+                    select(
+                        streaming_tracks_table.c.id,
+                        streaming_tracks_table.c.isrc,
+                    )
                     .where(
-                        func.upper(streaming_tracks_table.c.isrc) == isrc,
+                        streaming_tracks_table.c.isrc.is_not(None),
                         active_playlist_streaming_track_filter(),
                     )
                     .order_by(streaming_tracks_table.c.id.asc())
                 )
                 .mappings()
-                .first()
+                .all()
             )
 
-        if row is None:
-            return None
+        for row in rows:
+            if normalize_isrc_code(row["isrc"]) != isrc:
+                continue
 
-        streaming_track_id = row["id"]
-        return streaming_track_id if isinstance(streaming_track_id, int) else None
+            streaming_track_id = row["id"]
+            return streaming_track_id if isinstance(streaming_track_id, int) else None
 
-
-def _normalize_isrc(value: object) -> str | None:
-    if not isinstance(value, str):
         return None
-
-    normalized = value.strip().upper()
-    return normalized or None

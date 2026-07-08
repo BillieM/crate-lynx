@@ -3,6 +3,7 @@ import { type QueryClient, type QueryKey, useInfiniteQuery } from "@tanstack/rea
 import { endpoints, fetchJson } from "../../lib/api";
 import { invalidateQueryKeys } from "../../lib/queryInvalidation";
 import { playlistLinkInvalidationKeys } from "../playlists/queries";
+import { shellSummaryInvalidationKeys } from "../shell/queries";
 
 export type LibraryLinkStatus = "linked" | "pending" | "unlinked";
 export type LibraryFileStatus = "available" | "missing" | "beets_failed";
@@ -41,7 +42,7 @@ export const libraryQueryKeys = {
 };
 
 export function libraryInvalidationKeys(): QueryKey[] {
-  return [libraryQueryKeys.all, libraryQueryKeys.tracks()];
+  return [libraryQueryKeys.all, libraryQueryKeys.tracks(), ...shellSummaryInvalidationKeys()];
 }
 
 export function libraryLinkMutationInvalidationKeys(): QueryKey[] {

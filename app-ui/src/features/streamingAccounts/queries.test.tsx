@@ -3,6 +3,7 @@ import { act, renderHook, waitFor } from "@testing-library/react";
 import type { PropsWithChildren } from "react";
 
 import { playlistQueryKeys } from "../playlists/queries";
+import { shellQueryKeys } from "../shell/queries";
 import {
   createStreamingAccount,
   fetchStreamingAccounts,
@@ -217,6 +218,7 @@ describe("streaming account queries", () => {
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: streamingAccountQueryKeys.list() });
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: playlistQueryKeys.list() });
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: playlistQueryKeys.config() });
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: shellQueryKeys.summary() });
   });
 
   it("invalidates account and playlist query keys after refreshing auth", async () => {
@@ -242,5 +244,6 @@ describe("streaming account queries", () => {
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: streamingAccountQueryKeys.list() });
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: playlistQueryKeys.list() });
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: playlistQueryKeys.config() });
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: shellQueryKeys.summary() });
   });
 });

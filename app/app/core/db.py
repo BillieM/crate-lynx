@@ -10,18 +10,18 @@ Connection-context rule:
 
 from __future__ import annotations
 
-import os
-
 from fastapi import HTTPException, Request
 import sqlalchemy
 from sqlalchemy.engine import Engine
+
+from app.core.config import load_runtime_config
 
 
 DATABASE_UNAVAILABLE_DETAIL = "DATABASE_URL must be configured for database access"
 
 
 def require_database_url() -> str:
-    database_url = os.environ.get("DATABASE_URL")
+    database_url = load_runtime_config().database_url
     if not database_url:
         raise HTTPException(status_code=503, detail=DATABASE_UNAVAILABLE_DETAIL)
     return database_url

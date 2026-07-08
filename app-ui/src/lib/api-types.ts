@@ -1132,6 +1132,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/shell/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Shell Summary */
+        get: operations["get_shell_summary_api_shell_summary_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -2011,6 +2028,27 @@ export interface components {
         ResolveLocalDedupeGroupRequest: {
             /** Keeper Local Track Id */
             keeper_local_track_id: number;
+        };
+        /** ShellCountsResponse */
+        ShellCountsResponse: {
+            /** Library Track Total */
+            library_track_total: number;
+            /** Link Proposal Count */
+            link_proposal_count: number;
+            /** Relationship Suggestion Count */
+            relationship_suggestion_count: number;
+            /** Soulseek Unlinked Count */
+            soulseek_unlinked_count: number;
+            /** Unidentified Active Count */
+            unidentified_active_count: number;
+        };
+        /** ShellSummaryResponse */
+        ShellSummaryResponse: {
+            counts: components["schemas"]["ShellCountsResponse"];
+            /** Generated Runs */
+            generated_runs: components["schemas"]["PlaylistGenerationRunResponse"][];
+            /** Playlists */
+            playlists: components["schemas"]["StreamingPlaylistResponse"][];
         };
         /** SlskdDownloadCompleteWebhook */
         SlskdDownloadCompleteWebhook: {
@@ -4991,6 +5029,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_shell_summary_api_shell_summary_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ShellSummaryResponse"];
                 };
             };
         };

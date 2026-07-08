@@ -6,10 +6,10 @@ services:
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-crate_lynx}
       POSTGRES_USER: ${POSTGRES_USER:-crate_lynx}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-crate_lynx}
-      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-crate_lynx}:${POSTGRES_PASSWORD:-crate_lynx}@127.0.0.1:5432/${POSTGRES_DB:-crate_lynx}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-crate_lynx}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@127.0.0.1:5432/${POSTGRES_DB:-crate_lynx}
     ports:
-      - "18102:5432"
+      - "${DB_BIND_HOST:-127.0.0.1}:18102:5432"
     volumes:
       - ${APP_DATA_HOST_PATH:-/docker/appdata/cratelynx}/postgres:/var/lib/postgresql/data
     healthcheck:
@@ -25,7 +25,7 @@ services:
     image: redis:7-alpine
     command: ["redis-server", "/usr/local/etc/redis/redis.conf"]
     ports:
-      - "18103:6379"
+      - "${REDIS_BIND_HOST:-127.0.0.1}:18103:6379"
     volumes:
       - ./redis/redis.conf:/usr/local/etc/redis/redis.conf:ro
       - ${APP_DATA_HOST_PATH:-/docker/appdata/cratelynx}/redis:/data
@@ -45,7 +45,7 @@ services:
       redis:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-crate_lynx}:${POSTGRES_PASSWORD:-crate_lynx}@db:5432/${POSTGRES_DB:-crate_lynx}
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-crate_lynx}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@db:5432/${POSTGRES_DB:-crate_lynx}
       REDIS_URL: redis://redis:6379/0
       TOKEN_ENCRYPTION_KEY: ${TOKEN_ENCRYPTION_KEY:?set TOKEN_ENCRYPTION_KEY in .env with a Fernet key}
       LIBRARY_ROOT: ${LIBRARY_ROOT:-/nas/media/music}
@@ -63,7 +63,7 @@ services:
       SLSKD_DOWNLOADS_CONTAINER_ROOT: ${SLSKD_DOWNLOADS_CONTAINER_ROOT:-/data/soulseek/downloads}
       SLSKD_DOWNLOADS_APP_ROOT: ${SLSKD_DOWNLOADS_APP_ROOT:-/nas/soulseek/downloads}
     ports:
-      - "18101:8000"
+      - "${APP_BIND_HOST:-127.0.0.1}:18101:8000"
     volumes:
       # Keep /nas paths in sync with DEFAULT_INGEST_FOLDER_PATHS in app/app/settings/models.py.
       - ${NAS_DATA_HOST_PATH:-/mnt/nas_data}:/nas
@@ -90,7 +90,7 @@ services:
         condition: service_healthy
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.cratelynx.rule=Host(`cratelynx.billiem.uk`)"
+      - "traefik.http.routers.cratelynx.rule=Host(`${CRATELYNX_HOST:-cratelynx.local}`)"
       - "traefik.http.routers.cratelynx.entrypoints=websecure"
       - "traefik.http.services.cratelynx.loadbalancer.server.port=80"
       - "traefik.http.routers.cratelynx.tls.certresolver=myresolver"
@@ -99,7 +99,7 @@ services:
       - default
       - cratelynx
     ports:
-      - "18100:80"
+      - "${UI_BIND_HOST:-127.0.0.1}:18100:80"
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1/healthz"]
       interval: 10s

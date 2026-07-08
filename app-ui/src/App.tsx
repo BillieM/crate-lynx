@@ -1,12 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { useLibraryTracksQuery } from "./features/library/queries";
-import { useUnidentifiedTracksQuery } from "./features/maintenance/queries";
-import { type StreamingPlaylist, useLinkProposalsQuery, useStreamingPlaylistsQuery } from "./features/playlists/queries";
-import { useStreamingRelationshipSuggestionsQuery } from "./features/relationships/queries";
+import type { StreamingPlaylist } from "./features/playlists/queries";
 import { Sidebar } from "./features/shell/Sidebar";
 import { Topbar } from "./features/shell/Topbar";
 import { ViewShell } from "./features/shell/ViewShell";
+import { useShellSummaryQuery } from "./features/shell/queries";
 import type { PlaylistSyncViewState } from "./features/shell/types";
 import {
   type AppViewEntry,
@@ -14,21 +12,23 @@ import {
   buildLibraryNavItems,
   buildMaintenanceNavItems,
   buildPlaylistNavItems,
+  buildRouteFallbackViewEntry,
   buildSettingsNavItems,
+  buildShellLoadingViewEntry,
   buildToolNavItems,
   buildViewEntries,
   getPlaylistViewId,
   getViewIdFromPath,
   getViewPath,
-  playlistCollectionViewId,
+  routeFallbackViewId,
   settingsAuthenticationViewId,
   settingsGeneralViewId,
   settingsSyncYoutubeMusicViewId,
+  shellLoadingViewId,
   soulseekQueueViewId,
   staticViewRoutes,
 } from "./features/shell/viewRegistry";
-import { type PlaylistGenerationRun, useSonicRunsQuery } from "./features/sonic/queries";
-import { useSoulseekQueueQuery } from "./features/soulseek/queries";
+import type { PlaylistGenerationRun } from "./features/sonic/queries";
 
 const emptyStreamingPlaylists: StreamingPlaylist[] = [];
 const emptySonicRuns: PlaylistGenerationRun[] = [];
@@ -36,58 +36,71 @@ const emptySonicRuns: PlaylistGenerationRun[] = [];
 function App() {
   const location = useLocation();
   const navigate = useNavigate();
-  const [activeViewId, setActiveViewId] = useState(playlistCollectionViewId);
+  const [activeViewId, setActiveViewId] = useState(shellLoadingViewId);
   const [hasUserSelectedView, setHasUserSelectedView] = useState(false);
   const [playlistSyncState, setPlaylistSyncState] = useState<PlaylistSyncViewState>();
-  const libraryTracksQuery = useLibraryTracksQuery();
-  const linkProposalsQuery = useLinkProposalsQuery();
-  const playlistsQuery = useStreamingPlaylistsQuery();
-  const relationshipSuggestionsQuery = useStreamingRelationshipSuggestionsQuery();
-  const sonicRunsQuery = useSonicRunsQuery();
-  const soulseekQueueQuery = useSoulseekQueueQuery();
-  const unidentifiedQuery = useUnidentifiedTracksQuery();
-  const streamingPlaylists = playlistsQuery.data?.playlists ?? emptyStreamingPlaylists;
-  const sonicRuns = sonicRunsQuery.data?.runs ?? emptySonicRuns;
-  const activeUnidentifiedCount = unidentifiedQuery.data?.tracks.filter((track) => track.ignored_at === null).length;
+  const shellSummaryQuery = useShellSummaryQuery();
+  const streamingPlaylists = shellSummaryQuery.data?.playlists ?? emptyStreamingPlaylists;
+  const sonicRuns = shellSummaryQuery.data?.generated_runs ?? emptySonicRuns;
+  const shellCounts = shellSummaryQuery.data?.counts;
   const defaultPlaylistViewId = streamingPlaylists[0] ? getPlaylistViewId(streamingPlaylists[0].id) : settingsSyncYoutubeMusicViewId;
-  const libraryStats = libraryTracksQuery.data?.pages[0]?.stats;
   const libraryItems = useMemo(
-    () => buildLibraryNavItems(libraryStats?.total),
-    [libraryStats?.total],
+    () => buildLibraryNavItems(shellCounts?.library_track_total),
+    [shellCounts?.library_track_total],
   );
   const maintenanceItems = useMemo(
     () =>
       buildMaintenanceNavItems({
-        proposalCount: linkProposalsQuery.data?.total_count,
-        relationshipCount: relationshipSuggestionsQuery.data?.total_count,
-        soulseekCount: soulseekQueueQuery.data?.items.filter((item) => item.acquisition?.status !== "linked").length,
-        unidentifiedCount: activeUnidentifiedCount,
+        proposalCount: shellCounts?.link_proposal_count,
+        relationshipCount: shellCounts?.relationship_suggestion_count,
+        soulseekCount: shellCounts?.soulseek_unlinked_count,
+        unidentifiedCount: shellCounts?.unidentified_active_count,
       }),
     [
-      activeUnidentifiedCount,
-      linkProposalsQuery.data?.total_count,
-      relationshipSuggestionsQuery.data?.total_count,
-      soulseekQueueQuery.data?.items,
+      shellCounts?.link_proposal_count,
+      shellCounts?.relationship_suggestion_count,
+      shellCounts?.soulseek_unlinked_count,
+      shellCounts?.unidentified_active_count,
     ],
   );
   const playlistItems = useMemo(() => buildPlaylistNavItems(streamingPlaylists), [streamingPlaylists]);
   const generatedRunItems = useMemo(() => buildGeneratedRunNavItems(sonicRuns), [sonicRuns]);
   const settingsItems = useMemo(() => buildSettingsNavItems(), []);
   const toolItems = useMemo(() => buildToolNavItems(), []);
-  const viewConfigs = useMemo(() => buildViewEntries(streamingPlaylists, sonicRuns), [sonicRuns, streamingPlaylists]);
+  const baseViewConfigs = useMemo(() => buildViewEntries(streamingPlaylists, sonicRuns), [sonicRuns, streamingPlaylists]);
+  const baseViewConfigById = useMemo(
+    () => Object.fromEntries(baseViewConfigs.map((view) => [view.id, view])) as Record<string, AppViewEntry>,
+    [baseViewConfigs],
+  );
+  const routedViewId = useMemo(() => getViewIdFromPath(location.pathname), [location.pathname]);
+  const routedViewIsMissing =
+    routedViewId !== null &&
+    routedViewId !== routeFallbackViewId &&
+    baseViewConfigById[routedViewId] === undefined &&
+    !shellSummaryQuery.isPending;
+  const shouldShowRouteFallback = routedViewId === routeFallbackViewId || routedViewIsMissing;
+  const routeFallbackView = useMemo(() => buildRouteFallbackViewEntry(location.pathname), [location.pathname]);
+  const shellLoadingView = useMemo(() => buildShellLoadingViewEntry(), []);
+  const viewConfigs = useMemo(
+    () => [
+      shellLoadingView,
+      ...baseViewConfigs,
+      ...(shouldShowRouteFallback ? [routeFallbackView] : []),
+    ],
+    [baseViewConfigs, routeFallbackView, shellLoadingView, shouldShowRouteFallback],
+  );
   const viewConfigById = useMemo(
     () => Object.fromEntries(viewConfigs.map((view) => [view.id, view])) as Record<string, AppViewEntry>,
     [viewConfigs],
   );
-  const activeView = viewConfigById[activeViewId] ?? viewConfigById.proposals;
+  const activeView = viewConfigById[activeViewId] ?? viewConfigById[routeFallbackViewId] ?? viewConfigById.proposals;
   const viewShellIds = useMemo(() => viewConfigs.map((view) => view.id), [viewConfigs]);
-  const playlistEmptyMessage = playlistsQuery.isPending
+  const playlistEmptyMessage = shellSummaryQuery.isPending
     ? "Loading playlists..."
-    : playlistsQuery.isError
+    : shellSummaryQuery.isError
       ? "Playlists unavailable."
       : "No full-sync playlists. Configure YouTube Music sync to choose playlists.";
-  const playlistEmptyActionLabel = !playlistsQuery.isPending && !playlistsQuery.isError ? "Sync settings" : undefined;
-  const routedViewId = useMemo(() => getViewIdFromPath(location.pathname), [location.pathname]);
+  const playlistEmptyActionLabel = !shellSummaryQuery.isPending && !shellSummaryQuery.isError ? "Sync settings" : undefined;
 
   useEffect(() => {
     const normalizedPathname = location.pathname.replace(/\/$/, "") || "/";
@@ -106,16 +119,24 @@ function App() {
   }, [location.pathname, navigate]);
 
   useEffect(() => {
-    if (!routedViewId || viewConfigById[routedViewId] === undefined) {
+    if (!routedViewId) {
       return;
     }
 
-    setHasUserSelectedView(true);
-    setActiveViewId(routedViewId);
-  }, [routedViewId, viewConfigById]);
+    if (baseViewConfigById[routedViewId] !== undefined) {
+      setHasUserSelectedView(true);
+      setActiveViewId(routedViewId);
+      return;
+    }
+
+    if (routedViewId === routeFallbackViewId || !shellSummaryQuery.isPending) {
+      setHasUserSelectedView(true);
+      setActiveViewId(routeFallbackViewId);
+    }
+  }, [baseViewConfigById, routedViewId, shellSummaryQuery.isPending]);
 
   useEffect(() => {
-    if (playlistsQuery.isPending) {
+    if (shellSummaryQuery.isPending) {
       return;
     }
 
@@ -123,10 +144,17 @@ function App() {
       return;
     }
 
-    if (!hasUserSelectedView || viewConfigById[activeViewId] === undefined) {
+    if (!hasUserSelectedView || activeViewId === shellLoadingViewId || viewConfigById[activeViewId] === undefined) {
       setActiveViewId(defaultPlaylistViewId);
     }
-  }, [activeViewId, defaultPlaylistViewId, hasUserSelectedView, playlistsQuery.isPending, routedViewId, viewConfigById]);
+  }, [
+    activeViewId,
+    defaultPlaylistViewId,
+    hasUserSelectedView,
+    routedViewId,
+    shellSummaryQuery.isPending,
+    viewConfigById,
+  ]);
 
   function handleViewSelect(viewId: string) {
     setHasUserSelectedView(true);

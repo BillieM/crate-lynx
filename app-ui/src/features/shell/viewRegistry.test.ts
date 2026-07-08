@@ -5,6 +5,7 @@ import {
   buildToolNavItems,
   getViewIdFromPath,
   localDedupeViewId,
+  routeFallbackViewId,
   soulseekQueueViewId,
 } from "./viewRegistry";
 
@@ -29,5 +30,10 @@ describe("viewRegistry", () => {
         unidentifiedCount: 6,
       }).map((item) => item.label),
     ).toEqual(["Link proposals", "Soulseek queue", "Streaming relationships", "Unidentified"]);
+  });
+
+  it("returns the fallback view for unknown routes", () => {
+    expect(getViewIdFromPath("/not-a-real-route")).toBe(routeFallbackViewId);
+    expect(getViewIdFromPath("/generated-runs/not-a-number")).toBe(routeFallbackViewId);
   });
 });

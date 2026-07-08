@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import { deleteJson, endpoints, fetchJson, postJson } from "../../lib/api";
 import type { components } from "../../lib/api-types";
+import { shellSummaryInvalidationKeys } from "../shell/queries";
 
 type ApiSchemas = components["schemas"];
 
@@ -255,6 +256,7 @@ export function useDeletePlaylistGenerationRunMutation() {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: sonicQueryKeys.runs() }),
         queryClient.invalidateQueries({ queryKey: sonicQueryKeys.generatedPlaylists() }),
+        ...shellSummaryInvalidationKeys().map((queryKey) => queryClient.invalidateQueries({ queryKey })),
       ]);
     },
   });
@@ -272,6 +274,7 @@ export function useDeleteSelectedPlaylistGenerationRunsMutation() {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: sonicQueryKeys.runs() }),
         queryClient.invalidateQueries({ queryKey: sonicQueryKeys.generatedPlaylists() }),
+        ...shellSummaryInvalidationKeys().map((queryKey) => queryClient.invalidateQueries({ queryKey })),
       ]);
     },
   });

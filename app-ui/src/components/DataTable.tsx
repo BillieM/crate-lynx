@@ -109,6 +109,18 @@ function getRowSelectionState(rowIds: string[], rowSelection: RowSelectionState)
   return selectedCount === rowIds.length ? "all" : "some";
 }
 
+function getColumnAriaSort(sortDirection: false | "asc" | "desc"): "ascending" | "descending" | "none" {
+  if (sortDirection === "asc") {
+    return "ascending";
+  }
+
+  if (sortDirection === "desc") {
+    return "descending";
+  }
+
+  return "none";
+}
+
 export function BulkActionBar({ children, onClearSelection, selectedCount }: BulkActionBarProps) {
   if (selectedCount === 0) {
     return null;
@@ -378,6 +390,7 @@ export function DataTable<TRow>({
                   return (
                     <th
                       key={header.id}
+                      aria-sort={header.column.getCanSort() ? getColumnAriaSort(sortDirection) : undefined}
                       className={`${tableDensity.cell} ${alignClass} ${hideClass} ${widthClass} ${textClasses.microEyebrow} text-ctp-subtext0`}
                       scope="col"
                     >

@@ -18,9 +18,8 @@ source .venv/bin/activate
 pip install -r app/requirements.txt -r requirements-dev.txt
 ```
 
-At the end of every completed task, deploy to production using the `gluesoup-0-docker` Docker context. Follow `.codex/commands/deploy.md`.
-
-After a completed task is verified and deployed, commit the relevant changes unless the user explicitly asks not to commit.
+Deployment is owner-specific and intentionally not described in tracked repo files.
+Do not deploy, push, or commit unless the current user request explicitly asks for it.
 
 ## Linting & tests
 

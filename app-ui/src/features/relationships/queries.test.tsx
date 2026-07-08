@@ -134,11 +134,14 @@ describe("streaming relationship queries", () => {
     expect(streamingRelationshipSuggestionInvalidationKeys()).toEqual([
       ["streaming-relationships", "suggestions"],
       ["streaming-relationships", "suggestion-pages"],
+      ["shell", "summary"],
     ]);
     expect(streamingRelationshipMutationInvalidationKeys()).toEqual([
       ["streaming-relationships", "suggestions"],
       ["streaming-relationships", "suggestion-pages"],
+      ["shell", "summary"],
       ["playlists"],
+      ["shell", "summary"],
       ["soulseek"],
     ]);
   });

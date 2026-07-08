@@ -40,7 +40,7 @@
   - Regenerate OpenAPI/types.
   - Run backend validation: `ruff check .`, `ruff format --check .`, and `pytest`.
   - Run frontend validation: `npm run lint`, `npm test`, and `npm run build`.
-  - Commit, deploy with the `gluesoup-0-docker` Docker context, and verify service health.
+  - Run relevant validation and verify service health in the target environment.
 
 ## Streaming Track Relationships
 

@@ -1,5 +1,4 @@
 import logging
-import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -9,6 +8,7 @@ from sqlalchemy import text
 from sqlalchemy.engine import Engine
 from sqlalchemy.exc import SQLAlchemyError
 
+from app.core.config import RuntimeConfig, load_runtime_config
 from app.core.db import create_database_engine
 from app.core.paths import resolve_staging_path
 from app.ingestion import IngestionJobEnqueuer, IngestionWatcher
@@ -24,6 +24,7 @@ from app.relationships.router import create_router as create_relationships_route
 from app.rescue.router import create_router as create_rescue_router
 from app.settings.router import create_router as create_settings_router
 from app.settings.store import GeneralSettingsStore
+from app.shell.router import create_router as create_shell_router
 from app.sonic.router import create_router as create_sonic_router
 from app.soulseek.router import create_router as create_soulseek_router
 from app.streaming import crypto
@@ -41,13 +42,17 @@ class HealthzResponse(BaseModel):
 def create_app() -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        database_url = os.environ.get("DATABASE_URL")
-        redis_url = os.environ.get("REDIS_URL")
-        if database_url or os.environ.get("TOKEN_ENCRYPTION_KEY"):
+        config = load_runtime_config()
+        for warning in config.warnings:
+            logger.warning(warning)
+
+        database_url = config.database_url
+        redis_url = config.redis_url
+        if database_url or config.token_encryption_key:
             crypto.validate_token_encryption_key()
         database_engine = create_database_engine(database_url) if database_url else None
         app.state.database_engine = database_engine
-        ingest_roots = _resolve_ingest_roots(database_engine)
+        ingest_roots = _resolve_ingest_roots(database_engine, config)
         ingestion_enqueuer = IngestionJobEnqueuer(redis_url) if redis_url else None
         failed_attempt_store = (
             FailedIngestionAttemptStore(engine=database_engine)
@@ -81,7 +86,7 @@ def create_app() -> FastAPI:
             root=ingest_roots,
             on_new_file=enqueue_new_file,
             recursive=True,
-            stability_workers=_resolve_int_env("INGESTION_STABILITY_WORKERS", 4),
+            stability_workers=config.ingestion_stability_workers,
         )
         app.state.ingestion_watcher = watcher
         watcher.start()
@@ -101,7 +106,7 @@ def create_app() -> FastAPI:
     def healthz() -> HealthzResponse:
         database_engine = getattr(app.state, "database_engine", None)
         if database_engine is None:
-            if os.environ.get("DATABASE_URL"):
+            if load_runtime_config().database_url:
                 raise HTTPException(
                     status_code=503,
                     detail={"ok": False, "database": "unavailable"},
@@ -121,7 +126,7 @@ def create_app() -> FastAPI:
         return HealthzResponse(ok=True, database="ok")
 
     def require_redis_url() -> str:
-        redis_url = os.environ.get("REDIS_URL")
+        redis_url = load_runtime_config().redis_url
         if not redis_url:
             raise HTTPException(
                 status_code=503,
@@ -200,6 +205,7 @@ def create_app() -> FastAPI:
         ),
         prefix="/api",
     )
+    app.include_router(create_shell_router(), prefix="/api")
 
     return app
 
@@ -208,9 +214,13 @@ def get_ingestion_staging_root() -> Path:
     return resolve_staging_path("INGESTION_STAGING_ROOT", "ingestion-staging")
 
 
-def _resolve_ingest_roots(database_engine: Engine | None) -> list[Path]:
+def _resolve_ingest_roots(
+    database_engine: Engine | None,
+    config: RuntimeConfig | None = None,
+) -> list[Path]:
+    resolved_config = config or load_runtime_config()
     if database_engine is None:
-        return [Path(os.environ.get("INGESTION_ROOT", "/nas/cratelynx/music-in"))]
+        return [resolved_config.ingestion_root]
 
     folders = GeneralSettingsStore(engine=database_engine).seed_default_ingest_folders()
     return [Path(folder.path) for folder in folders]
@@ -226,20 +236,6 @@ def _remove_active_ingest_root(app: FastAPI, path: str) -> None:
     watcher = getattr(app.state, "ingestion_watcher", None)
     if watcher is not None:
         watcher.remove_root(path)
-
-
-def _resolve_int_env(name: str, default: int) -> int:
-    raw_value = os.environ.get(name)
-    if raw_value is None:
-        return default
-
-    try:
-        value = int(raw_value)
-    except ValueError:
-        logger.warning("Invalid integer for %s=%r; using %s", name, raw_value, default)
-        return default
-
-    return max(1, value)
 
 
 app = create_app()

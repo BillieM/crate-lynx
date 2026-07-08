@@ -4,6 +4,7 @@ import { z } from "zod";
 import { deleteJson, endpoints, fetchBlob, fetchJson, patchJson, postBlob, postJson } from "../../lib/api";
 import type { components } from "../../lib/api-types";
 import { invalidateQueryKeys } from "../../lib/queryInvalidation";
+import { shellSummaryInvalidationKeys } from "../shell/queries";
 import { soulseekQueueInvalidationKeys } from "../soulseek/queryKeys";
 
 type ApiSchemas = components["schemas"];
@@ -266,7 +267,7 @@ export const playlistQueryKeys = {
 };
 
 export function playlistConfigurationInvalidationKeys(): QueryKey[] {
-  return [playlistQueryKeys.list(), playlistQueryKeys.config()];
+  return [playlistQueryKeys.list(), playlistQueryKeys.config(), ...shellSummaryInvalidationKeys()];
 }
 
 export function playlistConfigurationMutationInvalidationKeys(): QueryKey[] {
@@ -276,6 +277,7 @@ export function playlistConfigurationMutationInvalidationKeys(): QueryKey[] {
 export function playlistContentInvalidationKeys(playlistIds: readonly (number | string)[]): QueryKey[] {
   return [
     playlistQueryKeys.list(),
+    ...shellSummaryInvalidationKeys(),
     ...playlistIds.flatMap((playlistId) => [
       playlistQueryKeys.detail(playlistId),
       playlistQueryKeys.tracks(playlistId),
@@ -296,7 +298,7 @@ export function playlistSyncJobInvalidationKeys(playlistIds: readonly (number | 
 }
 
 export function playlistLinkInvalidationKeys(): QueryKey[] {
-  return [playlistQueryKeys.all];
+  return [playlistQueryKeys.all, ...shellSummaryInvalidationKeys()];
 }
 
 export async function invalidatePlaylistConfigurationQueries(queryClient: QueryClient): Promise<void> {

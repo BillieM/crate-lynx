@@ -12,6 +12,7 @@ import { useDelayedInvalidate } from "../../lib/useDelayedInvalidate";
 import { controlClasses, layoutClasses, textClasses } from "../../styles/componentClasses";
 import { actionButtonToneClasses } from "../../styles/toneClasses";
 import { PlaylistActionStatus } from "../shell/Topbar";
+import { shellSummaryInvalidationKeys } from "../shell/queries";
 import { soulseekQueueInvalidationKeys } from "../soulseek/queryKeys";
 import {
   streamingAccountCollectionJobInvalidationKeys,
@@ -301,7 +302,10 @@ export function PlaylistSyncConfiguration() {
         updateFullPlaylistListCache(current, updatedPlaylist),
       );
       if (didFullPlaylistMembershipChange(context?.previousPlaylist, updatedPlaylist)) {
-        void invalidateQueryKeys(queryClient, soulseekQueueInvalidationKeys());
+        void invalidateQueryKeys(queryClient, [
+          ...shellSummaryInvalidationKeys(),
+          ...soulseekQueueInvalidationKeys(),
+        ]);
       }
     },
   });

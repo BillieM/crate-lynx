@@ -2,7 +2,7 @@
 # Walk through getting YouTube Music browser headers and saving them to the app.
 set -euo pipefail
 
-HOST="${HOST:-http://192.168.0.203:18101}"
+HOST="${HOST:-http://localhost:18101}"
 
 echo "To get your browser headers:"
 echo "  1. Open https://music.youtube.com in your browser and log in"

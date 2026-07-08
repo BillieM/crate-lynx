@@ -1,26 +1,43 @@
-import type { ReactNode } from "react";
-import { LocalDedupeView } from "../localDedupe/LocalDedupeView";
-import { LocalLibraryView } from "../library/LocalLibraryView";
-import { UnidentifiedView } from "../maintenance/UnidentifiedView";
-import { PlaylistSyncConfiguration } from "../playlists/PlaylistSyncConfiguration";
-import { PlaylistM3uExportView } from "../playlists/PlaylistM3uExportView";
-import { PlaylistView } from "../playlists/PlaylistView";
+import { lazy, type ReactNode } from "react";
 import type { StreamingPlaylist } from "../playlists/queries";
-import { LinkProposalsView } from "../proposals/LinkProposalsView";
-import { StreamingRelationshipsView } from "../relationships/StreamingRelationshipsView";
-import { AuthenticationSettingsView } from "../settings/AuthenticationSettingsView";
-import { GeneralSettingsView } from "../settings/GeneralSettingsView";
-import { GeneratedRunView } from "../sonic/GeneratedRunView";
-import { PlaylistGeneratorView } from "../sonic/PlaylistGeneratorView";
 import type { PlaylistGenerationRun } from "../sonic/queries";
-import { SoulseekQueueView } from "../soulseek/SoulseekQueueView";
+import { RouteFallbackView } from "./RouteFallbackView";
+import { routeFallbackKindFromPath, routeFallbackTitle } from "./routeFallback";
 import type { NavItem, PlaylistSyncViewState, ViewConfig } from "./types";
+
+const LocalDedupeView = lazy(() => import("../localDedupe/LocalDedupeView").then((module) => ({ default: module.LocalDedupeView })));
+const LocalLibraryView = lazy(() => import("../library/LocalLibraryView").then((module) => ({ default: module.LocalLibraryView })));
+const UnidentifiedView = lazy(() => import("../maintenance/UnidentifiedView").then((module) => ({ default: module.UnidentifiedView })));
+const PlaylistSyncConfiguration = lazy(() =>
+  import("../playlists/PlaylistSyncConfiguration").then((module) => ({ default: module.PlaylistSyncConfiguration })),
+);
+const PlaylistM3uExportView = lazy(() =>
+  import("../playlists/PlaylistM3uExportView").then((module) => ({ default: module.PlaylistM3uExportView })),
+);
+const PlaylistView = lazy(() => import("../playlists/PlaylistView").then((module) => ({ default: module.PlaylistView })));
+const LinkProposalsView = lazy(() => import("../proposals/LinkProposalsView").then((module) => ({ default: module.LinkProposalsView })));
+const StreamingRelationshipsView = lazy(() =>
+  import("../relationships/StreamingRelationshipsView").then((module) => ({ default: module.StreamingRelationshipsView })),
+);
+const AuthenticationSettingsView = lazy(() =>
+  import("../settings/AuthenticationSettingsView").then((module) => ({ default: module.AuthenticationSettingsView })),
+);
+const GeneralSettingsView = lazy(() =>
+  import("../settings/GeneralSettingsView").then((module) => ({ default: module.GeneralSettingsView })),
+);
+const GeneratedRunView = lazy(() => import("../sonic/GeneratedRunView").then((module) => ({ default: module.GeneratedRunView })));
+const PlaylistGeneratorView = lazy(() =>
+  import("../sonic/PlaylistGeneratorView").then((module) => ({ default: module.PlaylistGeneratorView })),
+);
+const SoulseekQueueView = lazy(() => import("../soulseek/SoulseekQueueView").then((module) => ({ default: module.SoulseekQueueView })));
 
 export const playlistCollectionViewId = "playlists";
 export const localDedupeViewId = "local-dedupe";
 export const playlistExportViewId = "playlist-export";
 export const playlistGeneratorViewId = "playlist-generator";
+export const routeFallbackViewId = "route-fallback";
 export const soulseekQueueViewId = "soulseek-queue";
+export const shellLoadingViewId = "shell-loading";
 export const streamingRelationshipsViewId = "streaming-relationships";
 export const settingsAuthenticationViewId = "settings-authentication";
 export const settingsGeneralViewId = "settings-general";
@@ -189,7 +206,7 @@ export function getViewIdFromPath(pathname: string) {
     return settingsSyncYoutubeMusicViewId;
   }
 
-  return Object.entries(staticViewRoutes).find(([, path]) => path === normalizedPathname)?.[0] ?? null;
+  return Object.entries(staticViewRoutes).find(([, path]) => path === normalizedPathname)?.[0] ?? routeFallbackViewId;
 }
 
 function getPlaylistTone(playlist: StreamingPlaylist): NavItem["tone"] {
@@ -279,6 +296,28 @@ function buildGeneratedRunViewEntries(runs: PlaylistGenerationRun[]): AppViewEnt
     path: getViewPath(getGeneratedRunViewId(run.id)),
     render: () => <GeneratedRunView runId={run.id} />,
   }));
+}
+
+export function buildRouteFallbackViewEntry(pathname: string): AppViewEntry {
+  const kind = routeFallbackKindFromPath(pathname);
+
+  return {
+    id: routeFallbackViewId,
+    title: routeFallbackTitle(kind),
+    actionLabels: [],
+    icon: "tool",
+    render: () => <RouteFallbackView kind={kind} />,
+  };
+}
+
+export function buildShellLoadingViewEntry(): AppViewEntry {
+  return {
+    id: shellLoadingViewId,
+    title: "Loading",
+    actionLabels: [],
+    icon: "tool",
+    render: () => <RouteFallbackView kind="loading" />,
+  };
 }
 
 export function buildViewEntries(playlists: StreamingPlaylist[], runs: PlaylistGenerationRun[] = []): AppViewEntry[] {

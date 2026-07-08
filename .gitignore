@@ -1,10 +1,17 @@
 # Environment
 .env
+.env.*
 *.env
+!.env.example
 
 # Local scripts config (contains secrets)
 scripts/*.conf
 !scripts/*.conf.example
+
+# Local assistant state and machine-specific automation
+.agents/
+.claude/
+.codex/
 
 # Python
 __pycache__/

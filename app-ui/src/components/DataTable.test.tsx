@@ -183,11 +183,19 @@ describe("DataTable", () => {
   it("supports sorting and keeps responsive column metadata on cells", () => {
     render(<TestDataTable />);
 
+    expect(screen.getByRole("columnheader", { name: /Title/ })).toHaveAttribute("aria-sort", "none");
+
     fireEvent.click(screen.getByRole("button", { name: /Title/ }));
 
     const rows = screen.getAllByRole("row");
     expect(within(rows[1]).getByText("Digital Love")).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: /Title/ })).toHaveAttribute("aria-sort", "ascending");
     expect(screen.getByRole("columnheader", { name: /Album/ })).toHaveClass("hidden", "md:table-cell", "w-48");
+
+    fireEvent.click(screen.getByRole("button", { name: /Title/ }));
+
+    expect(screen.getByRole("columnheader", { name: /Title/ })).toHaveAttribute("aria-sort", "descending");
+    expect(screen.getByRole("columnheader", { name: /Actions/ })).not.toHaveAttribute("aria-sort");
   });
 
   it("supports keyboard selection, row activation, and arrow focus movement", () => {

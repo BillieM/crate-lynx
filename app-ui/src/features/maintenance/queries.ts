@@ -8,6 +8,7 @@ import {
   type RematchLocalTrackResponse,
   type RescuedLocalTrack,
 } from "../localTracks/queries";
+import { shellSummaryInvalidationKeys } from "../shell/queries";
 
 export type UnidentifiedTrack = {
   attempt_count: number;
@@ -60,7 +61,7 @@ export const maintenanceQueryKeys = {
 };
 
 export function unidentifiedInvalidationKeys(): QueryKey[] {
-  return [maintenanceQueryKeys.unidentified()];
+  return [maintenanceQueryKeys.unidentified(), ...shellSummaryInvalidationKeys()];
 }
 
 export async function invalidateUnidentifiedQueries(queryClient: QueryClient): Promise<void> {
