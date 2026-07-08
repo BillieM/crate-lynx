@@ -4,6 +4,7 @@
 set -euo pipefail
 
 CONTAINER="${CONTAINER:-crate-lynx-app-1}"
+INGESTION_CONTAINER_DIR="${INGESTION_CONTAINER_DIR:-/nas/cratelynx/music-in}"
 
 if [[ -z "${1:-}" ]]; then
   echo "Usage: $0 /path/to/track.flac"
@@ -13,5 +14,5 @@ fi
 SRC="$1"
 FILENAME=$(basename "$SRC")
 
-docker cp "$SRC" "$CONTAINER:/ingestion/$FILENAME"
-echo "Copied $FILENAME → $CONTAINER:/ingestion/$FILENAME"
+docker cp "$SRC" "$CONTAINER:$INGESTION_CONTAINER_DIR/$FILENAME"
+echo "Copied $FILENAME to $CONTAINER:$INGESTION_CONTAINER_DIR/$FILENAME"

@@ -1,6 +1,37 @@
 # crate-lynx
 
-A local-first music asset manager that uses streaming services as a curation layer. Mirror your YouTube Music playlists using high-quality local files, with a manual approval system for linking local tracks to their streaming counterparts.
+A personal music-library control room for people who want streaming playlists to
+drive a local file collection.
+
+Crate Lynx mirrors YouTube Music playlist metadata, imports and fingerprints
+local audio, proposes matches between streaming tracks and local files, and
+exports playlist-shaped M3U files backed by the local library. It is built for a
+single trusted operator on a private machine or LAN, not as a hosted multi-user
+service.
+
+## Screenshots
+
+The screenshots below use synthetic demo data.
+
+![Link proposal review queue](docs/screenshots/link-proposals.jpg)
+
+![Synced playlist detail view](docs/screenshots/playlist-detail.jpg)
+
+## What it does
+
+- Syncs YouTube Music playlist metadata into a local Postgres database.
+- Watches ingest folders, transcodes/imports audio with FFmpeg and Beets, and
+  keeps processed files under a stable library root.
+- Generates link proposals using ISRC and fuzzy artist/title/album matching.
+- Keeps final link approval manual, with reject/re-match workflows for cleanup.
+- Resolves equivalent streaming-track relationships so duplicate streaming
+  entries can share one local file.
+- Searches and queues missing tracks through an optional slskd/Soulseek
+  integration.
+- Generates M3U/M3U8 and Rekordbox XML exports from linked streaming playlists
+  and generated local playlists.
+- Builds sonic playlist trees from local audio features for crate-digging and
+  library exploration.
 
 ---
 
@@ -195,3 +226,9 @@ One M3U file per streaming playlist, generated from `playlist_membership` joined
 Crate Lynx assumes a trusted operator and a private network. It does not currently provide end-user authentication, authorization, rate limiting, or a public-hosting threat model.
 
 Streaming auth tokens are encrypted at the application layer using Fernet before being written to the database. The encryption key never touches the database, but anyone with the running app environment or `.env` file can decrypt stored tokens. Keep `.env` out of git, use strong local values for `TOKEN_ENCRYPTION_KEY`, `POSTGRES_PASSWORD`, `SLSKD_API_KEY`, and `SLSKD_WEBHOOK_TOKEN`, and rotate them if they are ever exposed.
+
+See [SECURITY.md](SECURITY.md) for the repository security policy.
+
+## License
+
+Crate Lynx is released under the [MIT License](LICENSE).
