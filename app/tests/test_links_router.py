@@ -1,14 +1,22 @@
 import asyncio
+from concurrent.futures import ThreadPoolExecutor
 import inspect
 from datetime import UTC, datetime
 from pathlib import Path
+from threading import Barrier
 from types import SimpleNamespace
 
-from sqlalchemy import create_engine, insert, select
+from sqlalchemy import create_engine, func, insert, select
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from app.ingestion.beets_mirror import metadata as beets_metadata
 from app.links.router import create_router
-from app.links.store import final_links_table, metadata as links_metadata
+from app.links.store import (
+    FinalLinkConflictError,
+    FinalLinkMutationService,
+    final_links_table,
+    metadata as links_metadata,
+)
 from app.local_tracks.store import local_tracks_table, metadata as local_tracks_metadata
 from app.matching.models import ConfidenceBand
 from app.matching.pipeline import (
@@ -30,6 +38,7 @@ from app.streaming.models import (
     streaming_playlists_table,
     streaming_tracks_table,
 )
+from tests.factories import TestDataFactory
 
 
 def _call_endpoint(endpoint, *args, **kwargs):
@@ -39,22 +48,56 @@ def _call_endpoint(endpoint, *args, **kwargs):
     return result
 
 
-def _capture_m3u_enqueues(monkeypatch) -> dict[str, list[object]]:
-    seen: dict[str, list[object]] = {"redis_urls": [], "playlist_ids": []}
+def test_equivalent_target_race_allows_only_one_local_link(
+    migrated_database,
+    test_data,
+) -> None:
+    _, engine = migrated_database
+    first_local_id = test_data.local_track(file_path="first.flac")
+    second_local_id = test_data.local_track(file_path="second.flac")
+    first_streaming_id = test_data.streaming_track(provider_track_id="race-first")
+    second_streaming_id = test_data.streaming_track(provider_track_id="race-second")
+    with engine.begin() as connection:
+        connection.execute(
+            insert(streaming_relationships_table).values(
+                lower_track_id=min(first_streaming_id, second_streaming_id),
+                higher_track_id=max(first_streaming_id, second_streaming_id),
+                relationship_type=STREAMING_RELATIONSHIP_TYPE_EQUIVALENT,
+            )
+        )
 
-    class FakeM3uRegenerationJobEnqueuer:
-        def __init__(self, redis_url: str) -> None:
-            seen["redis_urls"].append(redis_url)
+    start = Barrier(2)
 
-        def enqueue_playlists(self, playlist_ids) -> list[str]:
-            seen["playlist_ids"].append(tuple(playlist_ids))
-            return ["m3u-job-123"]
+    def create_link(local_track_id: int, streaming_track_id: int):
+        with engine.begin() as connection:
+            start.wait()
+            return FinalLinkMutationService(connection).create(
+                local_track_id=local_track_id,
+                streaming_track_id=streaming_track_id,
+                match_method="manual",
+            )
 
-    monkeypatch.setattr(
-        "app.links.router.M3uRegenerationJobEnqueuer",
-        FakeM3uRegenerationJobEnqueuer,
-    )
-    return seen
+    outcomes: list[object] = []
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        futures = (
+            executor.submit(create_link, first_local_id, first_streaming_id),
+            executor.submit(create_link, second_local_id, second_streaming_id),
+        )
+        for future in futures:
+            try:
+                outcomes.append(future.result(timeout=10))
+            except FinalLinkConflictError as exc:
+                outcomes.append(exc)
+
+    assert sum(not isinstance(outcome, Exception) for outcome in outcomes) == 1
+    assert sum(isinstance(outcome, FinalLinkConflictError) for outcome in outcomes) == 1
+    with engine.connect() as connection:
+        assert (
+            connection.execute(
+                select(func.count()).select_from(final_links_table)
+            ).scalar_one()
+            == 1
+        )
 
 
 def test_list_proposals_returns_joined_pending_records(
@@ -321,6 +364,82 @@ def test_list_proposals_uses_score_cursor_pagination(
     assert second_page.next_cursor is None
 
 
+def test_get_exact_proposal_distinguishes_pending_resolved_stale_and_missing(
+    tmp_path: Path,
+) -> None:
+    engine = create_engine(f"sqlite:///{tmp_path / 'proposal-detail.db'}")
+    for metadata in (
+        beets_metadata,
+        local_tracks_metadata,
+        streaming_metadata,
+        suggested_links_metadata,
+        links_metadata,
+        relationships_metadata,
+    ):
+        metadata.create_all(engine)
+    factory = TestDataFactory(engine)
+
+    pending_local_id = factory.local_track(file_path="pending.mp3")
+    resolved_local_id = factory.local_track(file_path="resolved.mp3")
+    stale_local_id = factory.local_track(file_path="stale.mp3")
+    pending_streaming_id = factory.streaming_track(provider_track_id="pending")
+    resolved_streaming_id = factory.streaming_track(provider_track_id="resolved")
+    stale_streaming_id = factory.streaming_track(provider_track_id="stale")
+    replacement_streaming_id = factory.streaming_track(provider_track_id="replacement")
+    pending_id = factory.suggested_link(
+        local_track_id=pending_local_id,
+        streaming_track_id=pending_streaming_id,
+    )
+    resolved_id = factory.suggested_link(
+        local_track_id=resolved_local_id,
+        status=SUGGESTED_LINK_STATUS_REJECTED,
+        streaming_track_id=resolved_streaming_id,
+    )
+    stale_id = factory.suggested_link(
+        local_track_id=stale_local_id,
+        streaming_track_id=stale_streaming_id,
+    )
+    factory.final_link(
+        local_track_id=stale_local_id,
+        streaming_track_id=replacement_streaming_id,
+    )
+
+    endpoint = next(
+        route
+        for route in create_router().routes
+        if getattr(route, "path", None) == "/proposals/{proposal_id}"
+        and "GET" in getattr(route, "methods", set())
+    ).endpoint
+
+    pending = _call_endpoint(endpoint, pending_id, engine=engine)
+    resolved = _call_endpoint(endpoint, resolved_id, engine=engine)
+    stale = _call_endpoint(endpoint, stale_id, engine=engine)
+
+    assert (pending.id, pending.state, pending.status) == (
+        pending_id,
+        "pending",
+        SUGGESTED_LINK_STATUS_PENDING,
+    )
+    assert (resolved.id, resolved.state, resolved.status) == (
+        resolved_id,
+        "resolved",
+        SUGGESTED_LINK_STATUS_REJECTED,
+    )
+    assert (stale.id, stale.state, stale.status) == (
+        stale_id,
+        "stale",
+        SUGGESTED_LINK_STATUS_PENDING,
+    )
+
+    try:
+        _call_endpoint(endpoint, 999_999, engine=engine)
+    except StarletteHTTPException as exc:
+        assert exc.status_code == 404
+        assert exc.detail == "Proposal not found"
+    else:
+        raise AssertionError("Expected missing proposal detail to return 404")
+
+
 def test_approve_proposal_writes_final_link_and_clears_pending_siblings(
     tmp_path: Path,
 ) -> None:
@@ -490,13 +609,20 @@ def test_approve_proposal_writes_final_link_and_clears_pending_siblings(
             "status": SUGGESTED_LINK_STATUS_PENDING,
         },
     ]
+    try:
+        _call_endpoint(route.endpoint, 13)
+    except StarletteHTTPException as exc:
+        assert exc.status_code == 409
+        assert exc.detail == "Proposal is no longer pending"
+    else:
+        raise AssertionError("approved proposal was accepted a second time")
 
 
-def test_approve_proposal_enqueues_playlist_m3u_regeneration(
+def test_approve_proposal_does_not_require_export_worker(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
-    database_url = f"sqlite:///{tmp_path / 'approve-proposal-regenerates-m3u.db'}"
+    database_url = f"sqlite:///{tmp_path / 'approve-proposal-no-export-worker.db'}"
     engine = create_engine(database_url)
     local_tracks_metadata.create_all(engine)
     streaming_metadata.create_all(engine)
@@ -504,7 +630,6 @@ def test_approve_proposal_enqueues_playlist_m3u_regeneration(
     links_metadata.create_all(engine)
     relationships_metadata.create_all(engine)
     monkeypatch.setenv("DATABASE_URL", database_url)
-    seen = _capture_m3u_enqueues(monkeypatch)
 
     with engine.begin() as connection:
         connection.execute(
@@ -567,11 +692,6 @@ def test_approve_proposal_enqueues_playlist_m3u_regeneration(
     )
 
     _call_endpoint(route.endpoint, 13)
-
-    assert seen == {
-        "redis_urls": ["redis://redis:6379/9"],
-        "playlist_ids": [(7,)],
-    }
 
 
 def test_approve_proposal_returns_404_when_missing(tmp_path: Path) -> None:
@@ -854,13 +974,20 @@ def test_reject_proposal_marks_suggestion_rejected(tmp_path: Path) -> None:
 
     assert suggestion["status"] == SUGGESTED_LINK_STATUS_REJECTED
     assert suggestion["rejected_at"] is not None
+    try:
+        _call_endpoint(route.endpoint, 13)
+    except StarletteHTTPException as exc:
+        assert exc.status_code == 409
+        assert exc.detail == "Proposal is no longer pending"
+    else:
+        raise AssertionError("rejected proposal was transitioned a second time")
 
 
-def test_reject_proposal_enqueues_playlist_m3u_regeneration(
+def test_reject_proposal_does_not_require_export_worker(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
-    database_url = f"sqlite:///{tmp_path / 'reject-proposal-regenerates-m3u.db'}"
+    database_url = f"sqlite:///{tmp_path / 'reject-proposal-no-export-worker.db'}"
     engine = create_engine(database_url)
     local_tracks_metadata.create_all(engine)
     streaming_metadata.create_all(engine)
@@ -868,11 +995,6 @@ def test_reject_proposal_enqueues_playlist_m3u_regeneration(
     links_metadata.create_all(engine)
     relationships_metadata.create_all(engine)
     monkeypatch.setenv("DATABASE_URL", database_url)
-    seen = _capture_m3u_enqueues(monkeypatch)
-
-    output_path = tmp_path / "m3u" / "Road-Trip-Mix.m3u"
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text("stale", encoding="utf-8")
 
     with engine.begin() as connection:
         connection.execute(
@@ -936,12 +1058,6 @@ def test_reject_proposal_enqueues_playlist_m3u_regeneration(
 
     _call_endpoint(route.endpoint, 13)
 
-    assert output_path.read_text(encoding="utf-8") == "stale"
-    assert seen == {
-        "redis_urls": ["redis://redis:6379/9"],
-        "playlist_ids": [(7,)],
-    }
-
 
 def test_reject_proposal_returns_404_when_missing(tmp_path: Path) -> None:
     database_url = f"sqlite:///{tmp_path / 'reject-proposal-missing.db'}"
@@ -981,7 +1097,6 @@ def test_create_manual_final_link_replaces_existing_link_and_clears_pending(
     links_metadata.create_all(engine)
     relationships_metadata.create_all(engine)
     monkeypatch.setenv("DATABASE_URL", database_url)
-    seen = _capture_m3u_enqueues(monkeypatch)
 
     with engine.begin() as connection:
         connection.execute(
@@ -1116,10 +1231,6 @@ def test_create_manual_final_link_replaces_existing_link_and_clears_pending(
             "status": SUGGESTED_LINK_STATUS_APPROVED,
         }
     ]
-    assert seen == {
-        "redis_urls": ["redis://redis:6379/9"],
-        "playlist_ids": [(7, 8)],
-    }
 
 
 def test_create_manual_final_link_reports_and_detaches_equivalent_conflicts(
@@ -1304,11 +1415,11 @@ def test_break_final_link_removes_final_link_and_writes_rejected_suggestion(
     assert suggestion["rejected_at"] is not None
 
 
-def test_break_final_link_enqueues_playlist_m3u_regeneration(
+def test_break_final_link_does_not_require_export_worker(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
-    database_url = f"sqlite:///{tmp_path / 'break-final-link-regenerates-m3u.db'}"
+    database_url = f"sqlite:///{tmp_path / 'break-final-link-no-export-worker.db'}"
     engine = create_engine(database_url)
     local_tracks_metadata.create_all(engine)
     streaming_metadata.create_all(engine)
@@ -1316,11 +1427,6 @@ def test_break_final_link_enqueues_playlist_m3u_regeneration(
     links_metadata.create_all(engine)
     relationships_metadata.create_all(engine)
     monkeypatch.setenv("DATABASE_URL", database_url)
-    seen = _capture_m3u_enqueues(monkeypatch)
-
-    output_path = tmp_path / "m3u" / "Road-Trip-Mix.m3u"
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text("stale", encoding="utf-8")
 
     with engine.begin() as connection:
         connection.execute(
@@ -1380,12 +1486,6 @@ def test_break_final_link_enqueues_playlist_m3u_regeneration(
     )
 
     _call_endpoint(route.endpoint, 7)
-
-    assert output_path.read_text(encoding="utf-8") == "stale"
-    assert seen == {
-        "redis_urls": ["redis://redis:6379/9"],
-        "playlist_ids": [(7,)],
-    }
 
 
 def test_break_final_link_returns_404_when_missing(tmp_path: Path) -> None:

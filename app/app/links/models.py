@@ -1,3 +1,5 @@
+from typing import Literal
+
 from pydantic import BaseModel
 
 from app.matching.models import ConfidenceBand
@@ -28,6 +30,10 @@ class ProposalListResponse(BaseModel):
     returned_count: int
     limit: int
     next_cursor: str | None
+
+
+class ProposalDetailResponse(ProposalResponse):
+    state: Literal["pending", "resolved", "stale"]
 
 
 class ApproveProposalRequest(BaseModel):

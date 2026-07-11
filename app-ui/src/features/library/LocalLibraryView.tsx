@@ -1,5 +1,11 @@
-import { createColumnHelper, type ColumnFiltersState, type RowSelectionState, type SortingState } from "@tanstack/react-table";
-import { FileAudio, RotateCcw, SlidersHorizontal, Unlink } from "lucide-react";
+import {
+  createColumnHelper,
+  type ColumnFiltersState,
+  type RowSelectionState,
+  type SortingState,
+  type Updater,
+} from "@tanstack/react-table";
+import { FileAudio, RotateCcw, Search, SlidersHorizontal, Unlink } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
@@ -88,7 +94,9 @@ function LibraryFilterBar({
   onLinkStatusFilterChange,
   onRematchUnresolved,
   onResetFilters,
+  onSearchQueryChange,
   rematchUnresolvedBusy = false,
+  searchQuery,
   stats,
 }: {
   disabled?: boolean;
@@ -96,10 +104,12 @@ function LibraryFilterBar({
   onLinkStatusFilterChange: (value: LibraryLinkStatusFilter) => void;
   onRematchUnresolved: () => void;
   onResetFilters: () => void;
+  onSearchQueryChange: (value: string) => void;
   rematchUnresolvedBusy?: boolean;
+  searchQuery: string;
   stats: LibraryStats;
 }) {
-  const hasActiveFilters = linkStatusFilter !== "all";
+  const hasActiveFilters = linkStatusFilter !== "all" || searchQuery.length > 0;
   const linkStatusFilters = buildLinkStatusFilters(stats);
   const unresolvedCount = stats.pending + stats.unlinked;
 
@@ -114,6 +124,26 @@ function LibraryFilterBar({
           <h2 className={textClasses.label}>Library filters</h2>
         </div>
         <div className="flex flex-wrap items-end gap-3">
+          <label className="grid min-w-56 gap-1.5">
+            <span className={textClasses.microEyebrow}>Search library</span>
+            <span className="relative">
+              <Search
+                aria-hidden="true"
+                className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-ctp-subtext0"
+                strokeWidth={1.8}
+              />
+              <input
+                aria-label="Search local library"
+                className="min-h-9 w-full rounded-[8px] border border-ctp-surface1 bg-ctp-base px-3 pl-8 text-[13px] text-ctp-text outline-none transition focus:border-ctp-blue focus:ring-2 focus:ring-ctp-blue/25"
+                disabled={disabled}
+                maxLength={200}
+                placeholder="Title, artist, album, or path"
+                type="search"
+                value={searchQuery}
+                onChange={(event) => onSearchQueryChange(event.target.value)}
+              />
+            </span>
+          </label>
           <div className="grid gap-1.5">
             <span className={textClasses.microEyebrow}>Link status</span>
             <FilterChipGroup
@@ -160,14 +190,38 @@ export function LocalLibraryView({ isPending = false, state, tracksResponse }: L
   const queryClient = useQueryClient();
   const delayedInvalidate = useDelayedInvalidate();
   const [searchParams, setSearchParams] = useSearchParams();
-  const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
+  const searchQuery = searchParams.get("library_q") ?? "";
+  const requestedLinkStatus = searchParams.get("library_status");
+  const activeLinkStatusFilter: LibraryLinkStatusFilter =
+    requestedLinkStatus === "linked" || requestedLinkStatus === "pending" || requestedLinkStatus === "unlinked"
+      ? requestedLinkStatus
+      : "all";
+  const requestedSort = searchParams.get("library_sort");
+  const sortField =
+    requestedSort === "title" ||
+    requestedSort === "artist" ||
+    requestedSort === "album" ||
+    requestedSort === "duration_ms" ||
+    requestedSort === "link_status"
+      ? requestedSort
+      : "id";
+  const sortDirection = searchParams.get("library_direction") === "desc" ? "desc" : "asc";
+  const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>(
+    activeLinkStatusFilter === "all" ? [] : [{ id: "link_status", value: activeLinkStatusFilter }],
+  );
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
-  const [sorting, setSorting] = useState<SortingState>([]);
+  const [sorting, setSorting] = useState<SortingState>(sortField === "id" ? [] : [{ id: sortField, desc: sortDirection === "desc" }]);
   const [bulkStatus, setBulkStatus] = useState<BulkLibraryStatus | null>(null);
   const [isBulkRematching, setIsBulkRematching] = useState(false);
   const [isBulkUnlinking, setIsBulkUnlinking] = useState(false);
   const rematchUnresolvedMutation = useRematchUnresolvedLocalTracksMutation();
-  const libraryTracksQuery = useLibraryTracksQuery({ enabled: tracksResponse === undefined });
+  const libraryTracksQuery = useLibraryTracksQuery({
+    direction: sortDirection,
+    enabled: tracksResponse === undefined,
+    linkStatus: activeLinkStatusFilter === "all" ? null : activeLinkStatusFilter,
+    query: searchQuery,
+    sort: sortField,
+  });
   const queryTracks = useMemo(
     () => libraryTracksQuery.data?.pages.flatMap((page) => page.tracks) ?? emptyLibraryTracks,
     [libraryTracksQuery.data?.pages],
@@ -182,11 +236,9 @@ export function LocalLibraryView({ isPending = false, state, tracksResponse }: L
           ? "error"
           : "ready");
   const stats = tracksResponse?.stats ?? libraryTracksQuery.data?.pages[0]?.stats ?? defaultLibraryStats;
+  const filteredTotal = tracksResponse?.filtered_total ?? libraryTracksQuery.data?.pages[0]?.filtered_total ?? 0;
   const tracks = tracksResponse?.tracks ?? queryTracks;
-  const activeLinkStatusFilter =
-    (columnFilters.find((filter) => filter.id === "link_status")?.value as LibraryLinkStatusFilter | undefined) ?? "all";
-  const hasMatchingTracks =
-    activeLinkStatusFilter === "all" ? tracks.length > 0 : tracks.some((track) => track.link_status === activeLinkStatusFilter);
+  const hasMatchingTracks = tracks.length > 0;
   const selectedTracks = useMemo(() => tracks.filter((track) => rowSelection[String(track.id)]), [rowSelection, tracks]);
   const selectedRematchableTracks = useMemo(
     () => selectedTracks.filter((track) => track.link_status !== "linked"),
@@ -267,12 +319,53 @@ export function LocalLibraryView({ isPending = false, state, tracksResponse }: L
 
   const resetFilters = () => {
     setColumnFilters([]);
+    setSorting([]);
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.delete("library_q");
+    nextParams.delete("library_status");
+    nextParams.delete("library_sort");
+    nextParams.delete("library_direction");
+    setSearchParams(nextParams, { replace: true });
     setBulkStatus(null);
   };
 
   function handleLinkStatusFilterChange(value: LibraryLinkStatusFilter) {
     setColumnFilters(value === "all" ? [] : [{ id: "link_status", value }]);
+    const nextParams = new URLSearchParams(searchParams);
+    if (value === "all") {
+      nextParams.delete("library_status");
+    } else {
+      nextParams.set("library_status", value);
+    }
+    setSearchParams(nextParams, { replace: true });
     setBulkStatus(null);
+  }
+
+  function handleSearchQueryChange(value: string) {
+    const nextParams = new URLSearchParams(searchParams);
+    if (value) {
+      nextParams.set("library_q", value);
+    } else {
+      nextParams.delete("library_q");
+    }
+    setSearchParams(nextParams, { replace: true });
+    setRowSelection({});
+  }
+
+  function handleSortingChange(updater: Updater<SortingState>) {
+    const nextSorting = typeof updater === "function" ? updater(sorting) : updater;
+    setSorting(nextSorting);
+    const nextParams = new URLSearchParams(searchParams);
+    const firstSort = nextSorting[0];
+    if (!firstSort) {
+      nextParams.delete("library_sort");
+      nextParams.delete("library_direction");
+    } else {
+      nextParams.set("library_sort", firstSort.id);
+      nextParams.set("library_direction", firstSort.desc ? "desc" : "asc");
+    }
+    setSearchParams(nextParams, { replace: true });
+    setRowSelection({});
   }
 
   async function invalidateLibraryTables() {
@@ -385,7 +478,9 @@ export function LocalLibraryView({ isPending = false, state, tracksResponse }: L
           onLinkStatusFilterChange={handleLinkStatusFilterChange}
           onRematchUnresolved={handleRematchUnresolved}
           onResetFilters={resetFilters}
+          onSearchQueryChange={handleSearchQueryChange}
           rematchUnresolvedBusy={rematchUnresolvedMutation.isPending}
+          searchQuery={searchQuery}
           stats={stats}
         />
 
@@ -437,8 +532,8 @@ export function LocalLibraryView({ isPending = false, state, tracksResponse }: L
                     <h2 className={textClasses.label}>Local library track list</h2>
                     <p className={`${textClasses.caption} tabular-nums`}>
                       {activeLinkStatusFilter === "all" && stats.total > totalRowCount
-                        ? `Showing ${totalRowCount} of ${stats.total} rows`
-                        : `Showing ${filteredRowCount} of ${totalRowCount} rows`}
+                        ? `Showing ${totalRowCount} of ${filteredTotal} matching rows (${stats.total} total)`
+                        : `Showing ${filteredRowCount} of ${filteredTotal} matching rows`}
                     </p>
                   </div>
                 )}
@@ -449,7 +544,7 @@ export function LocalLibraryView({ isPending = false, state, tracksResponse }: L
                 onActivate={openTrackDetail}
                 onColumnFiltersChange={setColumnFilters}
                 onRowSelectionChange={setRowSelection}
-                onSortingChange={setSorting}
+                onSortingChange={handleSortingChange}
               />
               {tracksResponse === undefined && libraryTracksQuery.hasNextPage ? (
                 <div className="flex justify-center">
@@ -467,9 +562,13 @@ export function LocalLibraryView({ isPending = false, state, tracksResponse }: L
             </div>
           ) : (
             <EmptyStateCard
-              body="No tracks match the selected link-status filter."
+              body={
+                stats.total === 0
+                  ? "Import or sync local music to begin reviewing the library."
+                  : "No tracks match the current search and link-status filters. Reset the filters to see the full library."
+              }
               className="text-left"
-              title="No matching library tracks"
+              title={stats.total === 0 ? "Library is empty" : "No matching library tracks"}
             />
           )}
         </div>

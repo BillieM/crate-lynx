@@ -23,6 +23,9 @@ const columns = [
   columnHelper.accessor("title", {
     cell: (info) => info.getValue(),
     header: "Title",
+    meta: {
+      sticky: "left",
+    },
   }),
   columnHelper.accessor("album", {
     cell: (info) => info.getValue(),
@@ -40,6 +43,9 @@ const columns = [
     cell: () => <button type="button">Inspect</button>,
     header: "Actions",
     id: "actions",
+    meta: {
+      sticky: "right",
+    },
   }),
 ];
 
@@ -196,6 +202,8 @@ describe("DataTable", () => {
 
     expect(screen.getByRole("columnheader", { name: /Title/ })).toHaveAttribute("aria-sort", "descending");
     expect(screen.getByRole("columnheader", { name: /Actions/ })).not.toHaveAttribute("aria-sort");
+    expect(screen.getByRole("columnheader", { name: /Title/ })).toHaveClass("sticky", "left-10");
+    expect(screen.getByRole("columnheader", { name: /Actions/ })).toHaveClass("sticky", "right-0");
   });
 
   it("supports keyboard selection, row activation, and arrow focus movement", () => {
@@ -204,6 +212,10 @@ describe("DataTable", () => {
 
     const firstBodyRow = screen.getAllByRole("row")[1];
     const secondBodyRow = screen.getAllByRole("row")[2];
+    const thirdBodyRow = screen.getAllByRole("row")[3];
+
+    expect(firstBodyRow).toHaveAttribute("tabindex", "0");
+    expect(secondBodyRow).toHaveAttribute("tabindex", "-1");
 
     firstBodyRow.focus();
     fireEvent.keyDown(firstBodyRow, { key: " " });
@@ -211,9 +223,17 @@ describe("DataTable", () => {
 
     fireEvent.keyDown(firstBodyRow, { key: "ArrowDown" });
     expect(secondBodyRow).toHaveFocus();
+    expect(secondBodyRow).toHaveAttribute("tabindex", "0");
+    expect(firstBodyRow).toHaveAttribute("tabindex", "-1");
 
-    fireEvent.keyDown(secondBodyRow, { key: "Enter" });
-    expect(onActivate).toHaveBeenCalledWith(tracks[1]);
+    fireEvent.keyDown(secondBodyRow, { key: "End" });
+    expect(thirdBodyRow).toHaveFocus();
+
+    fireEvent.keyDown(thirdBodyRow, { key: "Home" });
+    expect(firstBodyRow).toHaveFocus();
+
+    fireEvent.keyDown(firstBodyRow, { key: "Enter" });
+    expect(onActivate).toHaveBeenCalledWith(tracks[0]);
   });
 
   it("uses shift-click to select a visible row range", () => {

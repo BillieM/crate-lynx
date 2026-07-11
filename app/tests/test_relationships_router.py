@@ -51,24 +51,6 @@ def _route(router, method: str, path: str):
     )
 
 
-def _capture_m3u_enqueues(monkeypatch) -> dict[str, list[object]]:
-    seen: dict[str, list[object]] = {"redis_urls": [], "playlist_ids": []}
-
-    class FakeM3uRegenerationJobEnqueuer:
-        def __init__(self, redis_url: str) -> None:
-            seen["redis_urls"].append(redis_url)
-
-        def enqueue_playlists(self, playlist_ids) -> list[str]:
-            seen["playlist_ids"].append(tuple(playlist_ids))
-            return ["m3u-job-123"]
-
-    monkeypatch.setattr(
-        "app.relationships.router.M3uRegenerationJobEnqueuer",
-        FakeM3uRegenerationJobEnqueuer,
-    )
-    return seen
-
-
 def test_list_relationship_suggestions_returns_metadata_links_and_conflicts(
     tmp_path: Path,
 ) -> None:
@@ -946,13 +928,12 @@ def test_accept_equivalent_conflict_detaches_losing_links_without_rejection(
     assert rejected_suggestion_count == 0
 
 
-def test_accept_equivalent_suggestion_enqueues_m3u_regeneration(
+def test_accept_equivalent_suggestion_does_not_require_export_worker(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
-    database_url = f"sqlite:///{tmp_path / 'relationship-m3u.db'}"
+    database_url = f"sqlite:///{tmp_path / 'relationship-no-export-worker.db'}"
     engine = _create_relationship_router_engine(database_url)
-    seen = _capture_m3u_enqueues(monkeypatch)
     test_data = factories.TestDataFactory(engine)
     account_id = test_data.streaming_account()
     first_track_id, second_track_id = _streaming_pair(test_data)
@@ -992,11 +973,6 @@ def test_accept_equivalent_suggestion_enqueues_m3u_regeneration(
         suggestion_id,
     )
 
-    assert seen == {
-        "redis_urls": ["redis://redis:6379/9"],
-        "playlist_ids": [(first_playlist_id, second_playlist_id)],
-    }
-
 
 def test_streaming_relationship_create_update_delete_endpoints(
     monkeypatch,
@@ -1004,7 +980,6 @@ def test_streaming_relationship_create_update_delete_endpoints(
 ) -> None:
     database_url = f"sqlite:///{tmp_path / 'relationship-manual-crud.db'}"
     engine = _create_relationship_router_engine(database_url)
-    seen = _capture_m3u_enqueues(monkeypatch)
     test_data = factories.TestDataFactory(engine)
     account_id = test_data.streaming_account()
     first_track_id, second_track_id = _streaming_pair(test_data)
@@ -1043,7 +1018,6 @@ def test_streaming_relationship_create_update_delete_endpoints(
     assert create_response.status == "created"
     assert create_response.relationship_type == "related"
     assert create_response.detached_final_link_ids == []
-    assert seen == {"redis_urls": [], "playlist_ids": []}
 
     update_response = _call_endpoint(
         _route(router, "PATCH", "/streaming/relationships/{relationship_id}").endpoint,
@@ -1069,13 +1043,6 @@ def test_streaming_relationship_create_update_delete_endpoints(
     assert delete_response.status == "deleted"
     assert delete_response.relationship_type == "equivalent"
     assert delete_response.accepted_at is None
-    assert seen == {
-        "redis_urls": ["redis://redis:6379/9", "redis://redis:6379/9"],
-        "playlist_ids": [
-            (first_playlist_id, second_playlist_id),
-            (first_playlist_id, second_playlist_id),
-        ],
-    }
     with engine.connect() as connection:
         relationships = connection.execute(select(streaming_relationships_table)).all()
 

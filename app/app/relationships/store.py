@@ -10,12 +10,9 @@ from sqlalchemy.engine import Connection, Engine
 from app.core.cursors import ScoreIdCursor
 from app.core.db import create_database_engine
 from app.ingestion.beets_mirror import beets_items_table
+from app.links.store import detach_final_links as detach_final_link_records
 from app.links.store import final_links_table
 from app.local_tracks.store import local_tracks_table
-from app.m3u.jobs import (
-    affected_full_sync_playlist_ids_for_equivalence,
-    affected_full_sync_playlist_ids_for_streaming_tracks,
-)
 from app.relationships.models import (
     STREAMING_RELATIONSHIP_SUGGESTION_STATUS_ACCEPTED,
     STREAMING_RELATIONSHIP_SUGGESTION_STATUS_PENDING,
@@ -133,7 +130,6 @@ class AcceptStreamingRelationshipSuggestionResult:
     relationship_type: str
     accepted_at: datetime
     detached_final_link_ids: tuple[int, ...]
-    affected_playlist_ids: tuple[int, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -148,7 +144,6 @@ class StreamingRelationshipMutationResult:
     relationship_type: str
     accepted_at: datetime | None
     detached_final_link_ids: tuple[int, ...]
-    affected_playlist_ids: tuple[int, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -187,7 +182,8 @@ class StreamingRelationshipSuggestionStore:
             streaming_relationship_suggestions_table.c.higher_track_id,
         ).where(
             streaming_relationship_suggestions_table.c.status
-            == STREAMING_RELATIONSHIP_SUGGESTION_STATUS_PENDING
+            == STREAMING_RELATIONSHIP_SUGGESTION_STATUS_PENDING,
+            _no_existing_relationship_clause(),
         )
         if relationship_type is not None:
             query = query.where(
@@ -205,6 +201,7 @@ class StreamingRelationshipSuggestionStore:
                     resolver=resolver,
                     lower_track_id=int(row["lower_track_id"]),
                     higher_track_id=int(row["higher_track_id"]),
+                    direct_relationships_filtered=True,
                 )
             )
 
@@ -259,7 +256,8 @@ class StreamingRelationshipSuggestionStore:
             )
             .where(
                 streaming_relationship_suggestions_table.c.status
-                == STREAMING_RELATIONSHIP_SUGGESTION_STATUS_PENDING
+                == STREAMING_RELATIONSHIP_SUGGESTION_STATUS_PENDING,
+                _no_existing_relationship_clause(),
             )
             .order_by(
                 streaming_relationship_suggestions_table.c.score.desc(),
@@ -295,6 +293,7 @@ class StreamingRelationshipSuggestionStore:
                     resolver=resolver,
                     lower_track_id=lower_track_id,
                     higher_track_id=higher_track_id,
+                    direct_relationships_filtered=True,
                 ):
                     continue
 
@@ -354,13 +353,16 @@ class StreamingRelationshipSuggestionStore:
                 raise StaleStreamingRelationshipSuggestionError
 
             detached_final_link_ids: tuple[int, ...] = ()
-            affected_playlist_ids: tuple[int, ...] = ()
             if accepted_relationship_type == STREAMING_RELATIONSHIP_TYPE_EQUIVALENT:
-                affected_playlist_ids = affected_full_sync_playlist_ids_for_equivalence(
+                resolver = _lock_equivalence_mutation_tracks(
                     connection,
-                    lower_track_id,
-                    higher_track_id,
+                    lower_track_id=lower_track_id,
+                    higher_track_id=higher_track_id,
                 )
+                if higher_track_id in resolver.equivalent_group_track_ids(
+                    lower_track_id
+                ):
+                    raise StaleStreamingRelationshipSuggestionError
                 conflict = resolver.detect_equivalent_acceptance_conflict(
                     lower_track_id,
                     higher_track_id,
@@ -397,7 +399,6 @@ class StreamingRelationshipSuggestionStore:
             relationship_type=accepted_relationship_type,
             accepted_at=accepted_at,
             detached_final_link_ids=detached_final_link_ids,
-            affected_playlist_ids=affected_playlist_ids,
         )
 
     def reject(
@@ -471,14 +472,12 @@ class StreamingRelationshipStore:
             ):
                 raise StreamingRelationshipAlreadyExistsError
 
-            detached_final_link_ids, affected_playlist_ids = (
-                _prepare_relationship_type_change(
-                    connection,
-                    lower_track_id=pair.lower_track_id,
-                    higher_track_id=pair.higher_track_id,
-                    relationship_type=relationship_type,
-                    winning_final_link_id=winning_final_link_id,
-                )
+            detached_final_link_ids = _prepare_relationship_type_change(
+                connection,
+                lower_track_id=pair.lower_track_id,
+                higher_track_id=pair.higher_track_id,
+                relationship_type=relationship_type,
+                winning_final_link_id=winning_final_link_id,
             )
             relationship_id = _create_relationship(
                 connection,
@@ -494,7 +493,6 @@ class StreamingRelationshipStore:
             relationship_type=relationship_type,
             accepted_at=accepted_at,
             detached_final_link_ids=detached_final_link_ids,
-            affected_playlist_ids=affected_playlist_ids,
         )
 
     def update(
@@ -515,25 +513,20 @@ class StreamingRelationshipStore:
             lower_track_id = int(relationship["lower_track_id"])
             higher_track_id = int(relationship["higher_track_id"])
             detached_final_link_ids: tuple[int, ...] = ()
-            affected_playlist_ids: tuple[int, ...] = ()
             if current_type != relationship_type:
                 if current_type == STREAMING_RELATIONSHIP_TYPE_EQUIVALENT:
-                    affected_playlist_ids = (
-                        affected_full_sync_playlist_ids_for_equivalence(
-                            connection,
-                            lower_track_id,
-                            higher_track_id,
-                        )
+                    _lock_equivalence_mutation_tracks(
+                        connection,
+                        lower_track_id=lower_track_id,
+                        higher_track_id=higher_track_id,
                     )
                 else:
-                    detached_final_link_ids, affected_playlist_ids = (
-                        _prepare_relationship_type_change(
-                            connection,
-                            lower_track_id=lower_track_id,
-                            higher_track_id=higher_track_id,
-                            relationship_type=relationship_type,
-                            winning_final_link_id=winning_final_link_id,
-                        )
+                    detached_final_link_ids = _prepare_relationship_type_change(
+                        connection,
+                        lower_track_id=lower_track_id,
+                        higher_track_id=higher_track_id,
+                        relationship_type=relationship_type,
+                        winning_final_link_id=winning_final_link_id,
                     )
                 connection.execute(
                     update(streaming_relationships_table)
@@ -547,7 +540,6 @@ class StreamingRelationshipStore:
             relationship_type=relationship_type,
             accepted_at=relationship["accepted_at"],
             detached_final_link_ids=detached_final_link_ids,
-            affected_playlist_ids=affected_playlist_ids,
         )
 
     def delete(self, relationship_id: int) -> StreamingRelationshipMutationResult:
@@ -559,15 +551,12 @@ class StreamingRelationshipStore:
             relationship_type = str(relationship["relationship_type"])
             lower_track_id = int(relationship["lower_track_id"])
             higher_track_id = int(relationship["higher_track_id"])
-            affected_playlist_ids = (
-                affected_full_sync_playlist_ids_for_equivalence(
+            if relationship_type == STREAMING_RELATIONSHIP_TYPE_EQUIVALENT:
+                _lock_equivalence_mutation_tracks(
                     connection,
-                    lower_track_id,
-                    higher_track_id,
+                    lower_track_id=lower_track_id,
+                    higher_track_id=higher_track_id,
                 )
-                if relationship_type == STREAMING_RELATIONSHIP_TYPE_EQUIVALENT
-                else ()
-            )
             connection.execute(
                 delete(streaming_relationships_table).where(
                     streaming_relationships_table.c.id == relationship_id
@@ -579,7 +568,6 @@ class StreamingRelationshipStore:
             relationship_type=relationship_type,
             accepted_at=None,
             detached_final_link_ids=(),
-            affected_playlist_ids=affected_playlist_ids,
         )
 
 
@@ -820,29 +808,24 @@ def _prepare_relationship_type_change(
     higher_track_id: int,
     relationship_type: str,
     winning_final_link_id: int | None,
-) -> tuple[tuple[int, ...], tuple[int, ...]]:
+) -> tuple[int, ...]:
     if relationship_type != STREAMING_RELATIONSHIP_TYPE_EQUIVALENT:
-        return (), ()
+        return ()
 
-    resolver = StreamingRelationshipResolver(connection)
-    affected_playlist_ids = affected_full_sync_playlist_ids_for_streaming_tracks(
+    resolver = _lock_equivalence_mutation_tracks(
         connection,
-        (
-            *resolver.equivalent_group_track_ids(lower_track_id),
-            *resolver.equivalent_group_track_ids(higher_track_id),
-        ),
+        lower_track_id=lower_track_id,
+        higher_track_id=higher_track_id,
     )
     conflict = resolver.detect_equivalent_acceptance_conflict(
         lower_track_id,
         higher_track_id,
     )
     if conflict is None:
-        return (), affected_playlist_ids
+        return ()
     if winning_final_link_id is None:
         raise StreamingRelationshipAcceptanceConflictError(conflict)
-    return _detached_final_link_ids(
-        conflict, winning_final_link_id
-    ), affected_playlist_ids
+    return _detached_final_link_ids(conflict, winning_final_link_id)
 
 
 def _detach_final_links(
@@ -852,9 +835,7 @@ def _detach_final_links(
     if not final_link_ids:
         return
 
-    connection.execute(
-        delete(final_links_table).where(final_links_table.c.id.in_(final_link_ids))
-    )
+    detach_final_link_records(connection, final_link_ids)
 
 
 def _is_stale_pending_suggestion(
@@ -863,8 +844,9 @@ def _is_stale_pending_suggestion(
     resolver: StreamingRelationshipResolver,
     lower_track_id: int,
     higher_track_id: int,
+    direct_relationships_filtered: bool = False,
 ) -> bool:
-    if _has_existing_relationship(
+    if not direct_relationships_filtered and _has_existing_relationship(
         connection,
         lower_track_id=lower_track_id,
         higher_track_id=higher_track_id,
@@ -872,6 +854,22 @@ def _is_stale_pending_suggestion(
         return True
 
     return higher_track_id in resolver.equivalent_group_track_ids(lower_track_id)
+
+
+def _no_existing_relationship_clause():
+    existing_relationship = streaming_relationships_table.alias(
+        "existing_suggestion_relationship"
+    )
+    return (
+        ~select(existing_relationship.c.id)
+        .where(
+            existing_relationship.c.lower_track_id
+            == streaming_relationship_suggestions_table.c.lower_track_id,
+            existing_relationship.c.higher_track_id
+            == streaming_relationship_suggestions_table.c.higher_track_id,
+        )
+        .exists()
+    )
 
 
 def _has_existing_relationship(
@@ -908,6 +906,30 @@ def _detached_final_link_ids(
             link.id for link in conflict.final_links if link.id != winning_final_link_id
         )
     )
+
+
+def _lock_equivalence_mutation_tracks(
+    connection: Connection,
+    *,
+    lower_track_id: int,
+    higher_track_id: int,
+) -> StreamingRelationshipResolver:
+    resolver = StreamingRelationshipResolver(connection)
+    locked_track_ids = tuple(
+        sorted(
+            {
+                *resolver.equivalent_group_track_ids(lower_track_id),
+                *resolver.equivalent_group_track_ids(higher_track_id),
+            }
+        )
+    )
+    connection.execute(
+        select(streaming_tracks_table.c.id)
+        .where(streaming_tracks_table.c.id.in_(locked_track_ids))
+        .order_by(streaming_tracks_table.c.id.asc())
+        .with_for_update()
+    ).all()
+    return StreamingRelationshipResolver(connection)
 
 
 def _create_relationship(

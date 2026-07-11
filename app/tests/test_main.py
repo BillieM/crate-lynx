@@ -507,8 +507,8 @@ def test_streaming_accounts_endpoint_lists_persisted_accounts(
     assert account.auth_state == "connected"
     assert account.auth_error is None
     assert account.auth_error_at is None
-    assert account.created_at
-    assert account.updated_at
+    assert account.created_at.endswith("+00:00")
+    assert account.updated_at.endswith("+00:00")
 
 
 def test_streaming_playlists_endpoint_lists_synced_playlists(
@@ -1549,6 +1549,9 @@ def test_library_tracks_endpoint_returns_linked_pending_unlinked_and_no_match_ro
                 "file_status": "available",
             },
         ],
+        "filtered_total": 4,
+        "returned_count": 4,
+        "limit": 100,
         "next_cursor": None,
     }
 
@@ -1582,6 +1585,9 @@ def test_library_tracks_endpoint_returns_empty_page(
             "unlinked": 0,
         },
         "tracks": [],
+        "filtered_total": 0,
+        "returned_count": 0,
+        "limit": 100,
         "next_cursor": None,
     }
 
@@ -1630,17 +1636,85 @@ def test_library_tracks_endpoint_paginates_by_local_track_id(
 
     first_page = _call_endpoint(route.endpoint, None, 2)
     second_page = _call_endpoint(route.endpoint, first_page.next_cursor, 2)
-    end_page = _call_endpoint(route.endpoint, 7, 2)
-
     assert [track.id for track in first_page.tracks] == [5, 6]
-    assert first_page.next_cursor == 6
+    assert isinstance(first_page.next_cursor, str)
     assert first_page.stats.total == 3
+    assert first_page.filtered_total == 3
+    assert first_page.returned_count == 2
     assert [track.id for track in second_page.tracks] == [7]
     assert second_page.next_cursor is None
     assert second_page.stats.total == 3
-    assert end_page.tracks == []
-    assert end_page.next_cursor is None
-    assert end_page.stats.total == 3
+    assert second_page.filtered_total == 3
+    assert second_page.returned_count == 1
+
+
+def test_library_tracks_endpoint_filters_searches_and_sorts_server_side(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite:///{tmp_path / 'library-server-query.db'}"
+    engine = create_engine(database_url)
+    metadata.create_all(engine)
+    local_tracks_metadata.create_all(engine)
+    links_metadata.create_all(engine)
+    suggested_links_metadata.create_all(engine)
+    monkeypatch.setenv("DATABASE_URL", database_url)
+
+    with engine.begin() as connection:
+        connection.execute(
+            insert(local_tracks_table),
+            [
+                {
+                    "id": 5,
+                    "file_path": "Artist/zebra.mp3",
+                    "library_root_rel_path": "Artist/zebra.mp3",
+                },
+                {
+                    "id": 6,
+                    "file_path": "Artist/alpha.mp3",
+                    "library_root_rel_path": "Artist/alpha.mp3",
+                },
+                {
+                    "id": 7,
+                    "file_path": "Other/beta.mp3",
+                    "library_root_rel_path": "Other/beta.mp3",
+                },
+            ],
+        )
+
+    app = create_app()
+    route = next(
+        route
+        for route in app.routes
+        if getattr(route, "path", None) == "/api/library/tracks"
+        and "GET" in getattr(route, "methods", set())
+    )
+    first_page = _call_endpoint(
+        route.endpoint,
+        None,
+        1,
+        "artist/",
+        "unlinked",
+        "title",
+        "desc",
+    )
+    second_page = _call_endpoint(
+        route.endpoint,
+        first_page.next_cursor,
+        1,
+        "artist/",
+        "unlinked",
+        "title",
+        "desc",
+    )
+
+    assert [track.id for track in first_page.tracks] == [5]
+    assert [track.id for track in second_page.tracks] == [6]
+    assert first_page.stats.total == 3
+    assert first_page.filtered_total == 2
+    assert first_page.returned_count == 1
+    assert second_page.filtered_total == 2
+    assert second_page.next_cursor is None
 
 
 def test_unidentified_endpoint_lists_durable_failed_ingestion_attempts(
@@ -2722,7 +2796,7 @@ def test_local_track_detail_endpoint_returns_combined_track_context(
     assert response.final_link is not None
     assert response.final_link.id == final_link_id
     assert response.final_link.streaming_track_id == streaming_track_id
-    assert response.final_link.approved_at == datetime(2026, 5, 2, 8, 30)
+    assert response.final_link.approved_at == datetime(2026, 5, 2, 8, 30, tzinfo=UTC)
     assert [suggestion.id for suggestion in response.pending_suggestions] == [
         high_score_suggestion_id,
         low_score_suggestion_id,
@@ -2735,6 +2809,14 @@ def test_local_track_detail_endpoint_returns_combined_track_context(
     )
     assert response.failed_ingestion_attempts[0].failure_reason == (
         "beets import failed"
+    )
+    assert response.failed_ingestion_attempts[0].failed_at == datetime(
+        2026,
+        5,
+        3,
+        9,
+        15,
+        tzinfo=UTC,
     )
 
 

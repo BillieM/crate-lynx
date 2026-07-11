@@ -371,6 +371,7 @@ def _acquisition_response(acquisition) -> SoulseekAcquisitionSummaryResponse:
         refresh_job_id=acquisition.refresh_job_id,
         local_track_id=acquisition.local_track_id,
         final_link_id=acquisition.final_link_id,
+        proposal_id=acquisition.proposal_id,
         error_detail=acquisition.error_detail,
         link_error_detail=acquisition.link_error_detail,
     )

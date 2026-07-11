@@ -8,9 +8,11 @@
     "dev": "vite",
     "build": "tsc --noEmit -p tsconfig.app.json && tsc --noEmit -p tsconfig.node.json && vite build",
     "codegen": "../scripts/generate-types.sh",
-    "codegen:check": "npm run codegen && git -C .. diff --exit-code -- app-ui/src/lib/api-types.ts",
+    "codegen:check": "node ./scripts/check-generated-types.mjs",
     "lint": "npm run codegen:check && eslint .",
-    "test": "node --require ./scripts/fix-localhost.cjs ./node_modules/vitest/vitest.mjs run",
+    "test": "node --require ./scripts/fix-localhost.cjs ./node_modules/vitest/vitest.mjs run --exclude 'e2e/**'",
+    "test:browser": "npm run build && playwright test",
+    "test:browser:ci": "playwright test",
     "preview": "vite preview"
   },
   "dependencies": {
@@ -23,8 +25,10 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.12.1",
     "@catppuccin/tailwindcss": "^1.0.0",
     "@eslint/js": "^9.12.0",
+    "@playwright/test": "^1.61.1",
     "@tailwindcss/vite": "^4.2.4",
     "@testing-library/dom": "^10.4.1",
     "@testing-library/jest-dom": "^6.6.3",

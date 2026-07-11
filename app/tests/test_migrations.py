@@ -298,6 +298,194 @@ def test_schema_integrity_migration_deduplicates_provider_rows(
     }
 
 
+def test_link_integrity_migration_preflights_equivalence_conflicts(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite:///{tmp_path / 'link-integrity-preflight.db'}"
+    monkeypatch.setenv("DATABASE_URL", database_url)
+    alembic_config = _alembic_config()
+    command.upgrade(alembic_config, "7f4a9c2d8b31")
+
+    engine = create_engine(database_url)
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                """
+                INSERT INTO local_tracks
+                    (id, file_path, library_root_rel_path)
+                VALUES
+                    (1, 'one.flac', 'one.flac'),
+                    (2, 'two.flac', 'two.flac')
+                """
+            )
+        )
+        connection.execute(
+            text(
+                """
+                INSERT INTO streaming_tracks
+                    (id, provider_track_id, title, artist, isrc)
+                VALUES
+                    (10, 'track-10', 'One', 'Artist', 'GB-AAA-12-34567'),
+                    (11, 'track-11', 'Two', 'Artist', 'N/A')
+                """
+            )
+        )
+        connection.execute(
+            text(
+                """
+                INSERT INTO streaming_relationships
+                    (lower_track_id, higher_track_id, relationship_type)
+                VALUES (10, 11, 'equivalent')
+                """
+            )
+        )
+        connection.execute(
+            text(
+                """
+                INSERT INTO final_links (local_track_id, streaming_track_id)
+                VALUES (1, 10), (2, 11)
+                """
+            )
+        )
+
+    try:
+        command.upgrade(alembic_config, "head")
+    except RuntimeError as exc:
+        assert "No rows were changed" in str(exc)
+        assert "final_link=" in str(exc)
+    else:
+        raise AssertionError("equivalence-group conflict passed migration preflight")
+
+    with engine.connect() as connection:
+        columns = {
+            row["name"]
+            for row in connection.execute(text("PRAGMA table_info(streaming_tracks)"))
+            .mappings()
+            .all()
+        }
+    assert "canonical_isrc" not in columns
+
+
+def test_link_integrity_migration_backfills_isrc_and_preserves_history(
+    migrated_database: tuple[str, Engine],
+) -> None:
+    _, engine = migrated_database
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                """
+                INSERT INTO local_tracks
+                    (id, file_path, library_root_rel_path)
+                VALUES
+                    (101, 'one.flac', 'one.flac'),
+                    (102, 'two.flac', 'two.flac')
+                """
+            )
+        )
+        connection.execute(
+            text(
+                """
+                INSERT INTO streaming_tracks
+                    (id, provider_track_id, title, artist, isrc, canonical_isrc)
+                VALUES
+                    (201, 'track-201', 'One', 'Artist', 'GB-AAA-12-34567',
+                     'GBAAA1234567'),
+                    (202, 'track-202', 'Two', 'Artist', 'N/A', NULL)
+                """
+            )
+        )
+        final_link_id = connection.execute(
+            text(
+                """
+                INSERT INTO final_links (local_track_id, streaming_track_id)
+                VALUES (101, 201) RETURNING id
+                """
+            )
+        ).scalar_one()
+        connection.execute(
+            text(
+                """
+                INSERT INTO soulseek_acquisitions
+                    (id, streaming_track_id, status, final_link_id)
+                VALUES ('history-acquisition', 201, 'linked', :final_link_id)
+                """
+            ),
+            {"final_link_id": final_link_id},
+        )
+        relationship_id = connection.execute(
+            text(
+                """
+                INSERT INTO streaming_relationships
+                    (lower_track_id, higher_track_id, relationship_type)
+                VALUES (201, 202, 'related') RETURNING id
+                """
+            )
+        ).scalar_one()
+        connection.execute(
+            text(
+                """
+                INSERT INTO streaming_relationship_suggestions
+                    (
+                        lower_track_id, higher_track_id, relationship_type,
+                        match_method, score, confidence, status,
+                        accepted_relationship_id, accepted_at
+                    )
+                VALUES
+                    (
+                        201, 202, 'related', 'tags', 0.9, 'high', 'accepted',
+                        :relationship_id, CURRENT_TIMESTAMP
+                    )
+                """
+            ),
+            {"relationship_id": relationship_id},
+        )
+
+    with engine.begin() as connection:
+        try:
+            with connection.begin_nested():
+                connection.execute(
+                    text(
+                        """
+                        INSERT INTO final_links (local_track_id, streaming_track_id)
+                        VALUES (102, 201)
+                        """
+                    )
+                )
+        except IntegrityError:
+            pass
+        else:
+            raise AssertionError("duplicate exact streaming target was accepted")
+
+    with engine.begin() as connection:
+        connection.execute(
+            text("DELETE FROM final_links WHERE id = :id"),
+            {"id": final_link_id},
+        )
+        connection.execute(
+            text("DELETE FROM streaming_relationships WHERE id = :id"),
+            {"id": relationship_id},
+        )
+
+    with engine.connect() as connection:
+        acquisition_final_link_id = connection.execute(
+            text(
+                "SELECT final_link_id FROM soulseek_acquisitions "
+                "WHERE id = 'history-acquisition'"
+            )
+        ).scalar_one()
+        accepted_relationship_id = connection.execute(
+            text(
+                "SELECT accepted_relationship_id "
+                "FROM streaming_relationship_suggestions "
+                "WHERE lower_track_id = 201 AND higher_track_id = 202"
+            )
+        ).scalar_one()
+
+    assert acquisition_final_link_id is None
+    assert accepted_relationship_id is None
+
+
 def test_streaming_relationship_migration_enforces_normalized_pairs(
     monkeypatch,
     tmp_path: Path,

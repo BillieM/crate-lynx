@@ -149,6 +149,7 @@ class SoulseekAcquisitionRecord:
     slskd_completed_event_id: str | None
     local_track_id: int | None
     final_link_id: int | None
+    proposal_id: int | None
     job_id: str | None
     enqueue_job_id: str | None
     refresh_job_id: str | None
@@ -200,6 +201,7 @@ class MissingTrackSoulseekSummary:
     refresh_job_id: str | None
     local_track_id: int | None
     final_link_id: int | None
+    proposal_id: int | None
     error_detail: str | None
     link_error_detail: str | None
 

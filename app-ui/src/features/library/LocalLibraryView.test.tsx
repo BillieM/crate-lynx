@@ -7,7 +7,10 @@ import { LocalLibraryView } from "./LocalLibraryView";
 import type { LibraryTracksResponse } from "./queries";
 
 const libraryTracksResponse: LibraryTracksResponse = {
+  filtered_total: 5,
+  limit: 100,
   next_cursor: null,
+  returned_count: 5,
   stats: {
     linked: 2,
     pending: 2,
@@ -199,18 +202,24 @@ function mockPaginatedLibraryFetch() {
       return {
         ok: true,
         json: async () => ({
-          next_cursor: 1001,
+          filtered_total: 5,
+          limit: 1,
+          next_cursor: "page-two",
+          returned_count: 1,
           stats: libraryTracksResponse.stats,
           tracks: [libraryTracksResponse.tracks[0]],
         }),
       } as Response;
     }
 
-    if (url === "/api/library/tracks?cursor=1001") {
+    if (url === "/api/library/tracks?cursor=page-two") {
       return {
         ok: true,
         json: async () => ({
+          filtered_total: 5,
+          limit: 100,
           next_cursor: null,
+          returned_count: 4,
           stats: libraryTracksResponse.stats,
           tracks: libraryTracksResponse.tracks.slice(1),
         }),
@@ -239,18 +248,24 @@ function mockPaginatedLibraryFetchWithUnresolvedRematch() {
       return {
         ok: true,
         json: async () => ({
-          next_cursor: 1001,
+          filtered_total: 5,
+          limit: 1,
+          next_cursor: "page-two",
+          returned_count: 1,
           stats: libraryTracksResponse.stats,
           tracks: [libraryTracksResponse.tracks[0]],
         }),
       } as Response;
     }
 
-    if (url === "/api/library/tracks?cursor=1001") {
+    if (url === "/api/library/tracks?cursor=page-two") {
       return {
         ok: true,
         json: async () => ({
+          filtered_total: 5,
+          limit: 100,
           next_cursor: null,
+          returned_count: 4,
           stats: libraryTracksResponse.stats,
           tracks: libraryTracksResponse.tracks.slice(1),
         }),
@@ -336,7 +351,7 @@ describe("LocalLibraryView", () => {
     const trackList = await screen.findByRole("region", { name: "Local library tracks" });
 
     expect(await within(trackList).findByRole("heading", { name: "Local library track list" })).toBeInTheDocument();
-    expect(within(trackList).getByText("Showing 5 of 5 rows")).toBeInTheDocument();
+    expect(within(trackList).getByText("Showing 5 of 5 matching rows")).toBeInTheDocument();
     expect(within(trackList).getAllByRole("status", { name: "Linked track" })).toHaveLength(2);
     expect(within(trackList).getByText("Night Shift")).toBeInTheDocument();
     expect(within(trackList).getByText("The Midnight")).toBeInTheDocument();
@@ -354,17 +369,17 @@ describe("LocalLibraryView", () => {
 
     const trackList = await screen.findByRole("region", { name: "Local library tracks" });
 
-    expect(await within(trackList).findByText("Showing 1 of 5 rows")).toBeInTheDocument();
+    expect(await within(trackList).findByText("Showing 1 of 5 matching rows (5 total)")).toBeInTheDocument();
     expect(within(trackList).getByText("Night Shift")).toBeInTheDocument();
     expect(within(trackList).queryByText("A Real Hero")).not.toBeInTheDocument();
 
     fireEvent.click(within(trackList).getByRole("button", { name: "Load more" }));
 
     expect(await within(trackList).findByText("A Real Hero")).toBeInTheDocument();
-    expect(within(trackList).getByText("Showing 5 of 5 rows")).toBeInTheDocument();
+    expect(within(trackList).getByText("Showing 5 of 5 matching rows")).toBeInTheDocument();
     expect(within(trackList).queryByRole("button", { name: "Load more" })).not.toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledWith("/api/library/tracks");
-    expect(fetchMock).toHaveBeenCalledWith("/api/library/tracks?cursor=1001");
+    expect(fetchMock).toHaveBeenCalledWith("/api/library/tracks?cursor=page-two");
   });
 
   it("queues all unresolved local tracks without loading every page", async () => {
@@ -373,14 +388,14 @@ describe("LocalLibraryView", () => {
     renderWithQueryClient(<LocalLibraryView />);
 
     const filters = await screen.findByRole("region", { name: "Library filters" });
-    expect(await screen.findByText("Showing 1 of 5 rows")).toBeInTheDocument();
+    expect(await screen.findByText("Showing 1 of 5 matching rows (5 total)")).toBeInTheDocument();
 
     fireEvent.click(within(filters).getByRole("button", { name: "Re-match all unresolved" }));
 
     expect(await screen.findByText("Unresolved re-match queued")).toBeInTheDocument();
     expect(screen.getByText("Pending and unlinked local tracks were queued for re-matching.")).toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledWith("/api/local-tracks/rematch-unresolved", { method: "POST" });
-    expect(fetchMock).not.toHaveBeenCalledWith("/api/library/tracks?cursor=1001");
+    expect(fetchMock).not.toHaveBeenCalledWith("/api/library/tracks?cursor=page-two");
 
     const singleRematchCalls = fetchMock.mock.calls.filter(([input, init]) => {
       const url = String(input);
@@ -391,7 +406,10 @@ describe("LocalLibraryView", () => {
 
   it("disables all-unresolved re-match when there are no unresolved tracks", async () => {
     mockLibraryFetch({
+      filtered_total: 2,
+      limit: 100,
       next_cursor: null,
+      returned_count: 2,
       stats: {
         linked: 2,
         pending: 0,
@@ -412,7 +430,7 @@ describe("LocalLibraryView", () => {
 
     renderWithQueryClient(<LocalLibraryView />);
 
-    await screen.findByText("Showing 5 of 5 rows");
+    await screen.findByText("Showing 5 of 5 matching rows");
 
     expect(screen.queryByRole("button", { name: "Details" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Re-match" })).not.toBeInTheDocument();
@@ -441,7 +459,7 @@ describe("LocalLibraryView", () => {
     });
 
     const trackList = screen.getByRole("region", { name: "Local library tracks" });
-    expect(within(trackList).getByText("Showing 2 of 5 rows")).toBeInTheDocument();
+    expect(within(trackList).getByText("Showing 2 of 5 matching rows")).toBeInTheDocument();
     expect(within(trackList).getByText("A Real Hero")).toBeInTheDocument();
     expect(within(trackList).getByText("Open Eye Signal")).toBeInTheDocument();
     expect(within(trackList).queryByText("Night Shift")).not.toBeInTheDocument();
@@ -624,7 +642,10 @@ describe("LocalLibraryView", () => {
 
   it("renders the library loading, error, and empty states", async () => {
     mockLibraryFetch({
+      filtered_total: 0,
+      limit: 100,
       next_cursor: null,
+      returned_count: 0,
       stats: {
         linked: 0,
         pending: 0,
@@ -644,9 +665,24 @@ describe("LocalLibraryView", () => {
     expect(screen.getByRole("alert")).toHaveTextContent("Library unavailable");
     expect(screen.getByRole("region", { name: "Library filters" })).toBeInTheDocument();
 
-    rerender(<LocalLibraryView tracksResponse={{ next_cursor: null, stats: libraryTracksResponse.stats, tracks: [] }} />);
+    rerender(
+      <LocalLibraryView
+        tracksResponse={{
+          filtered_total: 0,
+          limit: 100,
+          next_cursor: null,
+          returned_count: 0,
+          stats: libraryTracksResponse.stats,
+          tracks: [],
+        }}
+      />,
+    );
 
     expect(await screen.findByRole("heading", { name: "No matching library tracks" })).toBeInTheDocument();
-    expect(screen.getByText("No tracks match the selected link-status filter.")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "No tracks match the current search and link-status filters. Reset the filters to see the full library.",
+      ),
+    ).toBeInTheDocument();
   });
 });

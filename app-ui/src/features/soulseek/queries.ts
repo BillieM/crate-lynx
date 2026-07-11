@@ -17,6 +17,7 @@ export type SoulseekAcquisitionSummary = {
   job_id: string | null;
   link_error_detail: string | null;
   local_track_id: number | null;
+  proposal_id: number | null;
   refresh_job_id: string | null;
   selected_candidate_id: string | null;
   slskd_batch_id: string | null;
@@ -87,6 +88,12 @@ export type SoulseekQueueResponse = {
   total_count: number;
 };
 
+export type SoulseekStatusResponse = {
+  configured: boolean;
+  detail: string | null;
+  ok: boolean;
+};
+
 export type SoulseekSearchResponse = {
   acquisition: SoulseekAcquisitionSummary;
   job_id: string;
@@ -120,6 +127,10 @@ export async function invalidateSoulseekJourneyQueries(queryClient: QueryClient)
 
 export async function fetchSoulseekQueue(): Promise<SoulseekQueueResponse> {
   return fetchJson<SoulseekQueueResponse>(endpoints.api("/soulseek/queue"));
+}
+
+export async function fetchSoulseekStatus(): Promise<SoulseekStatusResponse> {
+  return fetchJson<SoulseekStatusResponse>(endpoints.api("/soulseek/status"));
 }
 
 export async function fetchSoulseekAcquisition(acquisitionId: number | string): Promise<SoulseekQueueItem> {
@@ -159,6 +170,15 @@ export function useSoulseekQueueQuery() {
     queryKey: soulseekQueryKeys.queue(),
     queryFn: fetchSoulseekQueue,
     refetchInterval: 8000,
+  });
+}
+
+export function useSoulseekStatusQuery({ enabled = true }: { enabled?: boolean } = {}) {
+  return useQuery({
+    enabled,
+    queryFn: fetchSoulseekStatus,
+    queryKey: soulseekQueryKeys.status(),
+    retry: false,
   });
 }
 

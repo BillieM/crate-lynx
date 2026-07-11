@@ -1,37 +1,30 @@
-import { lazy, type ReactNode } from "react";
+import { createElement, lazy, type ComponentType, type LazyExoticComponent, type ReactNode } from "react";
 import type { StreamingPlaylist } from "../playlists/queries";
 import type { PlaylistGenerationRun } from "../sonic/queries";
 import { RouteFallbackView } from "./RouteFallbackView";
 import { routeFallbackKindFromPath, routeFallbackTitle } from "./routeFallback";
 import type { NavItem, PlaylistSyncViewState, ViewConfig } from "./types";
 
-const LocalDedupeView = lazy(() => import("../localDedupe/LocalDedupeView").then((module) => ({ default: module.LocalDedupeView })));
-const LocalLibraryView = lazy(() => import("../library/LocalLibraryView").then((module) => ({ default: module.LocalLibraryView })));
-const UnidentifiedView = lazy(() => import("../maintenance/UnidentifiedView").then((module) => ({ default: module.UnidentifiedView })));
-const PlaylistSyncConfiguration = lazy(() =>
-  import("../playlists/PlaylistSyncConfiguration").then((module) => ({ default: module.PlaylistSyncConfiguration })),
-);
-const PlaylistM3uExportView = lazy(() =>
-  import("../playlists/PlaylistM3uExportView").then((module) => ({ default: module.PlaylistM3uExportView })),
-);
-const PlaylistView = lazy(() => import("../playlists/PlaylistView").then((module) => ({ default: module.PlaylistView })));
-const LinkProposalsView = lazy(() => import("../proposals/LinkProposalsView").then((module) => ({ default: module.LinkProposalsView })));
-const StreamingRelationshipsView = lazy(() =>
-  import("../relationships/StreamingRelationshipsView").then((module) => ({ default: module.StreamingRelationshipsView })),
-);
-const AuthenticationSettingsView = lazy(() =>
-  import("../settings/AuthenticationSettingsView").then((module) => ({ default: module.AuthenticationSettingsView })),
-);
-const GeneralSettingsView = lazy(() =>
-  import("../settings/GeneralSettingsView").then((module) => ({ default: module.GeneralSettingsView })),
-);
-const GeneratedRunView = lazy(() => import("../sonic/GeneratedRunView").then((module) => ({ default: module.GeneratedRunView })));
-const PlaylistGeneratorView = lazy(() =>
-  import("../sonic/PlaylistGeneratorView").then((module) => ({ default: module.PlaylistGeneratorView })),
-);
-const SoulseekQueueView = lazy(() => import("../soulseek/SoulseekQueueView").then((module) => ({ default: module.SoulseekQueueView })));
+const loadLocalDedupeView = () => import("../localDedupe/LocalDedupeView").then((module) => ({ default: module.LocalDedupeView }));
+const loadLocalLibraryView = () => import("../library/LocalLibraryView").then((module) => ({ default: module.LocalLibraryView }));
+const loadUnidentifiedView = () => import("../maintenance/UnidentifiedView").then((module) => ({ default: module.UnidentifiedView }));
+const loadPlaylistSyncConfiguration = () =>
+  import("../playlists/PlaylistSyncConfiguration").then((module) => ({ default: module.PlaylistSyncConfiguration }));
+const loadPlaylistM3uExportView = () =>
+  import("../playlists/PlaylistM3uExportView").then((module) => ({ default: module.PlaylistM3uExportView }));
+const loadPlaylistView = () => import("../playlists/PlaylistView").then((module) => ({ default: module.PlaylistView }));
+const loadLinkProposalsView = () => import("../proposals/LinkProposalsView").then((module) => ({ default: module.LinkProposalsView }));
+const loadStreamingRelationshipsView = () =>
+  import("../relationships/StreamingRelationshipsView").then((module) => ({ default: module.StreamingRelationshipsView }));
+const loadAuthenticationSettingsView = () =>
+  import("../settings/AuthenticationSettingsView").then((module) => ({ default: module.AuthenticationSettingsView }));
+const loadGeneralSettingsView = () =>
+  import("../settings/GeneralSettingsView").then((module) => ({ default: module.GeneralSettingsView }));
+const loadGeneratedRunView = () => import("../sonic/GeneratedRunView").then((module) => ({ default: module.GeneratedRunView }));
+const loadPlaylistGeneratorView = () =>
+  import("../sonic/PlaylistGeneratorView").then((module) => ({ default: module.PlaylistGeneratorView }));
+const loadSoulseekQueueView = () => import("../soulseek/SoulseekQueueView").then((module) => ({ default: module.SoulseekQueueView }));
 
-export const playlistCollectionViewId = "playlists";
 export const localDedupeViewId = "local-dedupe";
 export const playlistExportViewId = "playlist-export";
 export const playlistGeneratorViewId = "playlist-generator";
@@ -46,12 +39,53 @@ export const settingsSyncYoutubeMusicViewId = "settings-sync-youtube-music";
 type AppViewContext = {
   isActive: boolean;
   playlistSyncState?: PlaylistSyncViewState;
+  retryKey: number;
 };
 
 export type AppViewEntry = ViewConfig & {
   path?: string;
   render: (context: AppViewContext) => ReactNode;
 };
+
+type LazyViewLoader<TProps extends object> = () => Promise<{ default: ComponentType<TProps> }>;
+const retryableLazyViewCache = new WeakMap<
+  LazyViewLoader<object>,
+  Map<number, LazyExoticComponent<ComponentType<object>>>
+>();
+
+function getRetryableLazyView<TProps extends object>(loader: LazyViewLoader<TProps>, retryKey: number) {
+  const cacheKey = loader as LazyViewLoader<object>;
+  const loaderCache = retryableLazyViewCache.get(cacheKey) ?? new Map();
+  const cachedView = loaderCache.get(retryKey);
+  if (cachedView) {
+    return cachedView as LazyExoticComponent<ComponentType<TProps>>;
+  }
+
+  const View = lazy(loader);
+  loaderCache.set(retryKey, View as LazyExoticComponent<ComponentType<object>>);
+  retryableLazyViewCache.set(cacheKey, loaderCache);
+  return View;
+}
+
+// This internal component must live beside the route loaders so retries share
+// the module-level lazy cache.
+// eslint-disable-next-line react-refresh/only-export-components
+function RetryableLazyView<TProps extends object>({
+  loader,
+  props,
+  retryKey,
+}: {
+  loader: LazyViewLoader<TProps>;
+  props: TProps;
+  retryKey: number;
+}) {
+  // React.lazy caches a rejected import. Cache by retry key outside React so
+  // initial suspension does not recreate the lazy component on every render.
+  const View = getRetryableLazyView(loader, retryKey);
+
+  const ResolvedView = View as unknown as ComponentType<Record<string, unknown>>;
+  return createElement(ResolvedView, props as Record<string, unknown>);
+}
 
 const staticViewEntries = [
   {
@@ -60,7 +94,7 @@ const staticViewEntries = [
     actionLabels: [],
     icon: "spark",
     path: "/proposals",
-    render: () => <LinkProposalsView />,
+    render: ({ retryKey }) => <RetryableLazyView loader={loadLinkProposalsView} props={{}} retryKey={retryKey} />,
   },
   {
     id: soulseekQueueViewId,
@@ -68,7 +102,7 @@ const staticViewEntries = [
     actionLabels: [],
     icon: "tool",
     path: "/soulseek",
-    render: () => <SoulseekQueueView />,
+    render: ({ retryKey }) => <RetryableLazyView loader={loadSoulseekQueueView} props={{}} retryKey={retryKey} />,
   },
   {
     id: streamingRelationshipsViewId,
@@ -76,7 +110,7 @@ const staticViewEntries = [
     actionLabels: [],
     icon: "spark",
     path: "/relationships",
-    render: () => <StreamingRelationshipsView />,
+    render: ({ retryKey }) => <RetryableLazyView loader={loadStreamingRelationshipsView} props={{}} retryKey={retryKey} />,
   },
   {
     id: "unidentified",
@@ -84,7 +118,7 @@ const staticViewEntries = [
     actionLabels: [],
     icon: "spark",
     path: "/unidentified",
-    render: () => <UnidentifiedView />,
+    render: ({ retryKey }) => <RetryableLazyView loader={loadUnidentifiedView} props={{}} retryKey={retryKey} />,
   },
   {
     id: "library",
@@ -92,7 +126,7 @@ const staticViewEntries = [
     actionLabels: [],
     icon: "library",
     path: "/library",
-    render: () => <LocalLibraryView />,
+    render: ({ retryKey }) => <RetryableLazyView loader={loadLocalLibraryView} props={{}} retryKey={retryKey} />,
   },
   {
     id: localDedupeViewId,
@@ -100,14 +134,7 @@ const staticViewEntries = [
     actionLabels: [],
     icon: "tool",
     path: "/tools/dedupe",
-    render: () => <LocalDedupeView />,
-  },
-  {
-    id: playlistCollectionViewId,
-    title: "YouTube Music",
-    actionLabels: [],
-    icon: "playlist",
-    render: () => <PlaylistSyncConfiguration />,
+    render: ({ retryKey }) => <RetryableLazyView loader={loadLocalDedupeView} props={{}} retryKey={retryKey} />,
   },
   {
     id: playlistExportViewId,
@@ -115,7 +142,7 @@ const staticViewEntries = [
     actionLabels: [],
     icon: "playlist",
     path: "/playlists/export",
-    render: () => <PlaylistM3uExportView />,
+    render: ({ retryKey }) => <RetryableLazyView loader={loadPlaylistM3uExportView} props={{}} retryKey={retryKey} />,
   },
   {
     id: playlistGeneratorViewId,
@@ -123,7 +150,7 @@ const staticViewEntries = [
     actionLabels: [],
     icon: "tool",
     path: "/playlist-generator",
-    render: () => <PlaylistGeneratorView />,
+    render: ({ retryKey }) => <RetryableLazyView loader={loadPlaylistGeneratorView} props={{}} retryKey={retryKey} />,
   },
   {
     id: settingsGeneralViewId,
@@ -131,7 +158,7 @@ const staticViewEntries = [
     actionLabels: [],
     icon: "settings",
     path: "/settings",
-    render: () => <GeneralSettingsView />,
+    render: ({ retryKey }) => <RetryableLazyView loader={loadGeneralSettingsView} props={{}} retryKey={retryKey} />,
   },
   {
     id: settingsAuthenticationViewId,
@@ -139,7 +166,7 @@ const staticViewEntries = [
     actionLabels: [],
     icon: "settings",
     path: "/settings/authentication",
-    render: () => <AuthenticationSettingsView />,
+    render: ({ retryKey }) => <RetryableLazyView loader={loadAuthenticationSettingsView} props={{}} retryKey={retryKey} />,
   },
   {
     id: settingsSyncYoutubeMusicViewId,
@@ -147,7 +174,7 @@ const staticViewEntries = [
     actionLabels: [],
     icon: "settings",
     path: "/settings/sync/youtube-music",
-    render: () => <PlaylistSyncConfiguration />,
+    render: ({ retryKey }) => <RetryableLazyView loader={loadPlaylistSyncConfiguration} props={{}} retryKey={retryKey} />,
   },
 ] satisfies AppViewEntry[];
 
@@ -161,6 +188,11 @@ export function getPlaylistViewId(playlistId: number) {
 
 export function getGeneratedRunViewId(runId: number) {
   return `generated-run-${runId}`;
+}
+
+export function getGeneratedRunIdFromViewId(viewId: string | null): number | null {
+  const match = /^generated-run-(?<runId>\d+)$/.exec(viewId ?? "");
+  return match?.groups?.runId ? Number(match.groups.runId) : null;
 }
 
 export function getViewPath(viewId: string) {
@@ -180,6 +212,10 @@ export function getViewIdFromPath(pathname: string) {
 
   if (normalizedPathname === "/playlists/export") {
     return playlistExportViewId;
+  }
+
+  if (/^\/proposals\/\d+$/.test(normalizedPathname)) {
+    return "proposals";
   }
 
   const playlistRouteMatch = /^\/playlists\/(?<playlistId>\d+)\/?$/.exec(pathname);
@@ -277,25 +313,35 @@ function buildPlaylistViewEntries(playlists: StreamingPlaylist[]): AppViewEntry[
     playlistResourceId: playlist.id,
     actionLabels: ["Sync", "Export M3U"],
     icon: "playlist",
-    render: ({ isActive, playlistSyncState }) => (
-      <PlaylistView
-        isActive={isActive}
-        playlistResourceId={playlist.id}
-        syncState={playlistSyncState?.playlistId === playlist.id ? playlistSyncState : undefined}
+    render: ({ isActive, playlistSyncState, retryKey }) => (
+      <RetryableLazyView
+        loader={loadPlaylistView}
+        props={{
+          isActive,
+          playlistResourceId: playlist.id,
+          syncState: playlistSyncState?.playlistId === playlist.id ? playlistSyncState : undefined,
+        }}
+        retryKey={retryKey}
       />
     ),
   }));
 }
 
-function buildGeneratedRunViewEntries(runs: PlaylistGenerationRun[]): AppViewEntry[] {
-  return runs.map((run) => ({
-    id: getGeneratedRunViewId(run.id),
-    title: `Generation ${run.generation_number}`,
+export function buildGeneratedRunViewEntry(runId: number, run?: PlaylistGenerationRun): AppViewEntry {
+  return {
+    id: getGeneratedRunViewId(runId),
+    title: run ? `Generation ${run.generation_number}` : `Generated run ${runId}`,
     actionLabels: [],
     icon: "tool",
-    path: getViewPath(getGeneratedRunViewId(run.id)),
-    render: () => <GeneratedRunView runId={run.id} />,
-  }));
+    path: getViewPath(getGeneratedRunViewId(runId)),
+    render: ({ retryKey }) => (
+      <RetryableLazyView loader={loadGeneratedRunView} props={{ runId }} retryKey={retryKey} />
+    ),
+  };
+}
+
+function buildGeneratedRunViewEntries(runs: PlaylistGenerationRun[]): AppViewEntry[] {
+  return runs.map((run) => buildGeneratedRunViewEntry(run.id, run));
 }
 
 export function buildRouteFallbackViewEntry(pathname: string): AppViewEntry {

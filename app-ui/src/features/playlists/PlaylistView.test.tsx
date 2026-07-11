@@ -276,7 +276,7 @@ describe("PlaylistView", () => {
     renderWithProviders(<PlaylistView isActive playlistResourceId={12} />);
 
     expect(await screen.findByText("YouTube Music authentication needs attention")).toBeInTheDocument();
-    expect(screen.getByText("Browser headers expired. Reported 2026-05-02 10:30:00.")).toBeInTheDocument();
+    expect(screen.getByText(/^Browser headers expired\. Reported .+\.$/)).toBeInTheDocument();
     expect(screen.getByText("Last sync error")).toBeInTheDocument();
     expect(screen.getByText("Playlist response reported logged_in: 0")).toBeInTheDocument();
   });

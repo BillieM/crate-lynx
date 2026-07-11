@@ -32,7 +32,10 @@ describe("library queries", () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({
       ok: true,
       json: async () => ({
+        filtered_total: 3,
+        limit: 100,
         next_cursor: null,
+        returned_count: 1,
         stats: {
           total: 3,
           linked: 1,
@@ -57,7 +60,10 @@ describe("library queries", () => {
     } as Response);
 
     await expect(fetchLibraryTracks()).resolves.toEqual({
+      filtered_total: 3,
+      limit: 100,
       next_cursor: null,
+      returned_count: 1,
       stats: {
         total: 3,
         linked: 1,
@@ -86,7 +92,10 @@ describe("library queries", () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({
       ok: true,
       json: async () => ({
+        filtered_total: 0,
+        limit: 250,
         next_cursor: null,
+        returned_count: 0,
         stats: {
           total: 0,
           linked: 0,
@@ -97,9 +106,9 @@ describe("library queries", () => {
       }),
     } as Response);
 
-    await fetchLibraryTracks({ cursor: 1001, limit: 250 });
+    await fetchLibraryTracks({ cursor: "opaque-cursor", limit: 250 });
 
-    expect(fetchMock).toHaveBeenCalledWith("/api/library/tracks?cursor=1001&limit=250");
+    expect(fetchMock).toHaveBeenCalledWith("/api/library/tracks?cursor=opaque-cursor&limit=250");
   });
 
   it("throws a status-coded error when the library request fails", async () => {
@@ -115,7 +124,10 @@ describe("library queries", () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue({
       ok: true,
       json: async () => ({
+        filtered_total: 1,
+        limit: 100,
         next_cursor: null,
+        returned_count: 1,
         stats: {
           total: 1,
           linked: 0,

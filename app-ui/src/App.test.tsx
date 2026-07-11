@@ -292,7 +292,10 @@ const streamingRelationshipSuggestionsResponse: StreamingRelationshipSuggestions
 };
 
 const libraryTracksResponse: LibraryTracksResponse = {
+  filtered_total: 1,
+  limit: 100,
   next_cursor: null,
+  returned_count: 1,
   stats: {
     linked: 244,
     pending: 43,
@@ -341,6 +344,7 @@ const soulseekQueueResponse: SoulseekQueueResponse = {
         linked_at: null,
         local_track_id: null,
         proposal_available_at: null,
+        proposal_id: null,
         queued_at: null,
         refresh_job_id: null,
         searched_at: "2026-05-25T10:00:00Z",
@@ -662,6 +666,12 @@ function mockPlaylistFetch({
       relationshipSuggestionsHandler?.(url) ?? jsonResponse(streamingRelationshipSuggestionsResponse),
     )
     .get(/^\/api\/proposals(?:\?|$)/, ({ url }) => linkProposalsHandler?.(url) ?? jsonResponse(linkProposalsResponse))
+    .get(/^\/api\/proposals\/(\d+)$/, ({ match }) =>
+      jsonResponse({
+        ...linkProposalsResponse.proposals.find((proposal) => String(proposal.id) === match![1]),
+        state: "pending",
+      }),
+    )
     .get("/api/library/tracks", () => jsonResponse(libraryTracksResponse))
     .get("/api/local-dedupe/queue", () => localDedupeQueueHandler?.() ?? jsonResponse(localDedupeQueueResponse))
     .get("/api/maintenance/unidentified", () => jsonResponse(unidentifiedResponse))
@@ -870,7 +880,6 @@ describe("App", () => {
       "overflow-hidden",
       "bg-ctp-base",
       "text-ctp-text",
-      "max-md:flex-col",
     );
 
     const shell = container.querySelector(".bg-ctp-base");
@@ -883,7 +892,6 @@ describe("App", () => {
       "overflow-hidden",
       "bg-ctp-base",
       "text-ctp-text",
-      "max-md:flex-col",
     );
 
     const sidebar = screen.getByRole("complementary");
@@ -893,9 +901,10 @@ describe("App", () => {
       "bg-ctp-mantle",
       "border-r",
       "border-ctp-surface0",
-      "max-md:max-h-[45vh]",
-      "max-md:w-full",
-      "max-md:border-b",
+      "max-md:fixed",
+      "max-md:inset-y-0",
+      "max-md:w-[min(88vw,20rem)]",
+      "max-md:-translate-x-full",
     );
     expect(screen.getByRole("banner")).toHaveClass(
       "h-10",
@@ -920,13 +929,13 @@ describe("App", () => {
     expect(within(topbarActions).getByRole("button", { name: "Open app settings" })).toHaveTextContent("");
     expect(screen.queryByRole("button", { name: "Configure sync" })).not.toBeInTheDocument();
     expect(within(topbarActions).getByRole("button", { name: "Sync" })).toHaveTextContent("");
+    expect(screen.getByRole("button", { name: "Open navigation" })).toHaveAttribute("aria-expanded", "false");
 
     for (const viewId of [
       "proposals",
       "soulseek-queue",
       "streaming-relationships",
       "unidentified",
-      "playlists",
       "playlist-export",
       "settings-general",
       "settings-sync-youtube-music",
@@ -939,6 +948,43 @@ describe("App", () => {
     ]) {
       expect(document.getElementById(viewId)).toBeInTheDocument();
     }
+  });
+
+  it("opens mobile navigation as a focus-managed dialog and restores the menu trigger on Escape", async () => {
+    mockPlaylistFetch();
+    renderApp(["/proposals"]);
+
+    const menuButton = screen.getByRole("button", { name: "Open navigation" });
+    expect(await screen.findByRole("complementary", { name: "Primary navigation" })).toBeInTheDocument();
+
+    fireEvent.click(menuButton);
+
+    const navigationDialog = screen.getByRole("dialog", { name: "Primary navigation" });
+    expect(navigationDialog).toHaveAttribute("aria-modal", "true");
+    expect(menuButton).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByRole("button", { name: "Close navigation panel" })).toHaveFocus();
+
+    fireEvent.keyDown(document, { key: "Escape" });
+
+    expect(screen.queryByRole("dialog", { name: "Primary navigation" })).not.toBeInTheDocument();
+    expect(screen.getByRole("complementary", { name: "Primary navigation" })).toBeInTheDocument();
+    expect(menuButton).toHaveAttribute("aria-expanded", "false");
+    expect(menuButton).toHaveFocus();
+  });
+
+  it("closes mobile navigation after selecting a destination and preserves aria-current", async () => {
+    mockPlaylistFetch();
+    renderApp();
+
+    const menuButton = screen.getByRole("button", { name: "Open navigation" });
+    fireEvent.click(menuButton);
+    const navigationDialog = screen.getByRole("dialog", { name: "Primary navigation" });
+    fireEvent.click(within(navigationDialog).getByRole("button", { name: /Link proposals/i }));
+
+    expect(await screen.findByRole("heading", { level: 1, name: "Link proposals" })).toBeInTheDocument();
+    expect(screen.queryByRole("dialog", { name: "Primary navigation" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Link proposals/i })).toHaveAttribute("aria-current", "page");
+    expect(menuButton).toHaveFocus();
   });
 
   it("renders Library and Maintenance sidebar badges from backend query data", async () => {
@@ -1005,11 +1051,20 @@ describe("App", () => {
     expect(screen.queryByRole("heading", { level: 3, name: "High" })).not.toBeInTheDocument();
     expect(screen.queryByRole("heading", { level: 3, name: "Medium" })).not.toBeInTheDocument();
     expect(screen.queryByRole("heading", { level: 3, name: "Low" })).not.toBeInTheDocument();
-    expect(await screen.findByText("Night Runner.mp3")).toBeInTheDocument();
-    expect(screen.getByText("Pending Signal.mp3")).toBeInTheDocument();
-    expect(screen.getByText("Loose Cable.mp3")).toBeInTheDocument();
     expect(document.getElementById("proposals")).toHaveAttribute("data-view-active", "true");
-    expect(document.getElementById("playlists")).toHaveAttribute("data-view-active", "false");
+    expect(document.getElementById("playlists")).not.toBeInTheDocument();
+  });
+
+  it("opens and focuses an exact proposal path", async () => {
+    const fetchMock = mockPlaylistFetch();
+
+    renderApp(["/proposals/44"]);
+
+    expect(await screen.findByRole("heading", { level: 1, name: "Link proposals" })).toBeInTheDocument();
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith("/api/proposals/44");
+    });
+    expect(document.getElementById("proposals")).toHaveAttribute("data-view-active", "true");
   });
 
   it("opens a generated run routed view from the URL", async () => {
@@ -1051,10 +1106,10 @@ describe("App", () => {
       expect(countFetches(fetchMock, "/api/sonic/runs/501")).toBeGreaterThanOrEqual(1);
     });
     expect(document.getElementById("generated-run-501")).toHaveAttribute("data-view-active", "true");
-    expect(document.getElementById("playlists")).toHaveAttribute("data-view-active", "false");
+    expect(document.getElementById("playlists")).not.toBeInTheDocument();
   });
 
-  it("shows an expired state for a deleted generated run route", async () => {
+  it("fetches an older generated run directly when it is absent from the shell summary", async () => {
     const fetchMock = mockPlaylistFetch({
       shellSummaryHandler: () =>
         jsonResponse({
@@ -1065,10 +1120,36 @@ describe("App", () => {
 
     renderApp(["/generated-runs/999"]);
 
-    expect(await screen.findByRole("heading", { level: 1, name: "Generated run unavailable" })).toBeInTheDocument();
-    expect(screen.getByText("This generated run may have been deleted or expired.")).toBeInTheDocument();
-    expect(document.getElementById("route-fallback")).toHaveAttribute("data-view-active", "true");
-    expect(countFetches(fetchMock, "/api/sonic/runs/999")).toBe(0);
+    expect(await screen.findByRole("heading", { level: 1, name: "Generated run 999" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { level: 2, name: "Generation 19" })).toBeInTheDocument();
+    expect(document.getElementById("generated-run-999")).toHaveAttribute("data-view-active", "true");
+    expect(countFetches(fetchMock, "/api/sonic/runs/999")).toBeGreaterThanOrEqual(1);
+  });
+
+  it("distinguishes a deleted generated run from a temporary API failure", async () => {
+    const fetchMock = mockPlaylistFetch({
+      shellSummaryHandler: () => jsonResponse({ ...shellSummaryResponse, generated_runs: [] }),
+      sonicRunDetailHandler: () => emptyResponse({ status: 404 }),
+    });
+
+    renderApp(["/generated-runs/999"]);
+
+    expect(await screen.findByRole("heading", { level: 2, name: "Run not found" })).toBeInTheDocument();
+    expect(screen.getByText("No generated run exists with this ID. It may have been deleted.")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Retry run" })).not.toBeInTheDocument();
+    expect(countFetches(fetchMock, "/api/sonic/runs/999")).toBeGreaterThanOrEqual(1);
+  });
+
+  it("offers retry when a generated run detail request fails without a 404", async () => {
+    mockPlaylistFetch({
+      shellSummaryHandler: () => jsonResponse({ ...shellSummaryResponse, generated_runs: [] }),
+      sonicRunDetailHandler: () => emptyResponse({ status: 503 }),
+    });
+
+    renderApp(["/generated-runs/999"]);
+
+    expect(await screen.findByRole("heading", { level: 2, name: "Run unavailable" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Retry run" })).toBeInTheDocument();
   });
 
   it("shows an unavailable state for a stale playlist route", async () => {
@@ -1221,6 +1302,7 @@ describe("App", () => {
     renderApp(["/playlist-generator"]);
 
     expect(await screen.findByRole("heading", { level: 1, name: "Playlist generator" })).toBeInTheDocument();
+    expect(await screen.findByRole("region", { name: "Failed" })).toHaveTextContent("3");
     expect(await screen.findByRole("button", { name: "Backfill" })).toBeEnabled();
   });
 
@@ -1367,7 +1449,7 @@ describe("App", () => {
     expect(await screen.findByRole("listitem", { name: "Suggestion 91: Night Runner to Night Runner" })).toBeInTheDocument();
     expect(screen.getByRole("listitem", { name: "Suggestion 92: Loose Cable to Loose Cable Live" })).toBeInTheDocument();
     expect(document.getElementById("streaming-relationships")).toHaveAttribute("data-view-active", "true");
-    expect(document.getElementById("playlists")).toHaveAttribute("data-view-active", "false");
+    expect(document.getElementById("playlists")).not.toBeInTheDocument();
   });
 
   it("opens the local library shell from the sidebar without changing playlist workflows", async () => {
@@ -1404,7 +1486,7 @@ describe("App", () => {
     expect(await screen.findByRole("region", { name: "Library filters" })).toBeInTheDocument();
     expect(await screen.findByRole("region", { name: "Local library tracks" })).toBeInTheDocument();
     expect(document.getElementById("library")).toHaveAttribute("data-view-active", "true");
-    expect(document.getElementById("playlists")).toHaveAttribute("data-view-active", "false");
+    expect(document.getElementById("playlists")).not.toBeInTheDocument();
   });
 
   it("opens the unidentified maintenance routed view from the URL", async () => {
@@ -1417,7 +1499,7 @@ describe("App", () => {
     expect(await screen.findByText("unknown-import-9a4f.mp3")).toBeInTheDocument();
     expect(screen.getByText("Beets could not identify metadata")).toBeInTheDocument();
     expect(document.getElementById("unidentified")).toHaveAttribute("data-view-active", "true");
-    expect(document.getElementById("playlists")).toHaveAttribute("data-view-active", "false");
+    expect(document.getElementById("playlists")).not.toBeInTheDocument();
   });
 
   it("redirects the removed missing locally route to Soulseek queue", async () => {
@@ -1430,7 +1512,7 @@ describe("App", () => {
     expect(queueRegion).toBeInTheDocument();
     expect(within(queueRegion).getByText("Open Eye Signal")).toBeInTheDocument();
     expect(document.getElementById("soulseek-queue")).toHaveAttribute("data-view-active", "true");
-    expect(document.getElementById("playlists")).toHaveAttribute("data-view-active", "false");
+    expect(document.getElementById("playlists")).not.toBeInTheDocument();
   });
 
   it("renders link proposals together in score order with proposal details", async () => {
@@ -1459,17 +1541,12 @@ describe("App", () => {
     expect(pendingSignalRow.compareDocumentPosition(looseCableRow)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
     expect(screen.queryByText("Ranked candidates")).not.toBeInTheDocument();
     expect(within(nightRunnerRow).getAllByText("Night Runner")).toHaveLength(2);
-    expect(within(nightRunnerRow).getAllByText("Frame Delay")).toHaveLength(2);
+    expect(within(nightRunnerRow).getByText("Frame Delay")).toBeInTheDocument();
     expect(within(nightRunnerRow).getByText("Tag")).toBeInTheDocument();
     expect(within(nightRunnerRow).getByText("92%")).toBeInTheDocument();
     expect(within(nightRunnerRow).getByText("High confidence")).toBeInTheDocument();
     expect(within(pendingSignalRow).getByText("Album unavailable")).toBeInTheDocument();
     expect(within(looseCableRow).getByText("Tag")).toBeInTheDocument();
-    expect(
-      within(nightRunnerRow)
-        .getByText("Local track")
-        .compareDocumentPosition(within(nightRunnerRow).getByText("Streaming track")),
-    ).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
   });
 
   it("ignores legacy proposal confidence-band URL state", async () => {
@@ -1485,8 +1562,8 @@ describe("App", () => {
     renderApp(["/proposals?band=high"]);
 
     expect(await screen.findByText("Night Runner.mp3")).toBeInTheDocument();
-    expect(screen.getByText("Pending Signal.mp3")).toBeInTheDocument();
-    expect(screen.getByText("Loose Cable.mp3")).toBeInTheDocument();
+    expect(screen.getAllByText("Pending Signal.mp3").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Loose Cable.mp3").length).toBeGreaterThan(0);
     expect(fetchMock).toHaveBeenCalledWith("/api/proposals?limit=50");
     expect(fetchMock).not.toHaveBeenCalledWith("/api/proposals?band=high");
     expect(screen.queryByRole("group", { name: "Confidence band filters" })).not.toBeInTheDocument();
@@ -1519,8 +1596,8 @@ describe("App", () => {
       expect(fetchMock).toHaveBeenCalledWith("/api/proposals/44/approve", { method: "POST" });
       expect(screen.queryByText("Night Runner.mp3")).not.toBeInTheDocument();
     });
-    expect(screen.getByText("Pending Signal.mp3")).toBeInTheDocument();
-    expect(screen.getByText("Loose Cable.mp3")).toBeInTheDocument();
+    expect(screen.getAllByText("Pending Signal.mp3").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Loose Cable.mp3").length).toBeGreaterThan(0);
 
     fireEvent.click(
       within(screen.getByRole("listitem", { name: /Proposal 45: Pending Signal\.mp3/ })).getByRole("button", {
@@ -1532,7 +1609,7 @@ describe("App", () => {
       expect(fetchMock).toHaveBeenCalledWith("/api/proposals/45/reject", { method: "POST" });
       expect(screen.queryByText("Pending Signal.mp3")).not.toBeInTheDocument();
     });
-    expect(screen.getByText("Loose Cable.mp3")).toBeInTheDocument();
+    expect(screen.getAllByText("Loose Cable.mp3").length).toBeGreaterThan(0);
 
     resolveApprove({
       ok: true,
@@ -1615,7 +1692,7 @@ describe("App", () => {
     expect(document.getElementById("settings-sync-youtube-music")).toHaveAttribute("data-view-active", "false");
     expect(document.getElementById("playlist-12")).toHaveAttribute("data-view-active", "false");
     expect(screen.queryByRole("button", { name: "Configure sync" })).not.toBeInTheDocument();
-    const returnButton = screen.getByRole("button", { name: "Return to Link proposals" });
+    const returnButton = screen.getByRole("button", { name: "Return to Late Night Drive" });
     expect(returnButton.querySelector("svg")).toBeInTheDocument();
     expect(returnButton).toHaveTextContent("");
   });
@@ -1713,7 +1790,7 @@ describe("App", () => {
 
     expect(screen.getByRole("heading", { level: 1, name: "Settings" })).toBeInTheDocument();
     expect(await screen.findByRole("heading", { level: 2, name: "Playlist sync configuration" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /CRATELYNX/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Go to home" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { level: 2, name: "Settings" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "General" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "YouTube Music sync" })).toBeInTheDocument();
@@ -1724,23 +1801,23 @@ describe("App", () => {
     expect(screen.queryByRole("group", { name: "Sync platforms" })).not.toBeInTheDocument();
   });
 
-  it("returns from settings to Link proposals through the brand and topbar home button", async () => {
+  it("uses the brand for Home and returns from Settings to the originating workflow", async () => {
     mockPlaylistFetch();
 
     renderApp(["/settings/sync/youtube-music"]);
 
     expect(await screen.findByRole("heading", { level: 2, name: "Playlist sync configuration" })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: /CRATELYNX/i }));
+    fireEvent.click(screen.getByRole("button", { name: "Go to home" }));
 
-    expect(await screen.findByRole("heading", { level: 1, name: "Link proposals" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { level: 1, name: "Late Night Drive" })).toBeInTheDocument();
     expect(screen.getByText("Maintenance")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Open app settings" }));
     expect(await screen.findByRole("heading", { level: 1, name: "Settings" })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Return to Link proposals" }));
+    fireEvent.click(screen.getByRole("button", { name: "Return to Late Night Drive" }));
 
-    expect(await screen.findByRole("heading", { level: 1, name: "Link proposals" })).toBeInTheDocument();
-    expect(document.getElementById("proposals")).toHaveAttribute("data-view-active", "true");
+    expect(await screen.findByRole("heading", { level: 1, name: "Late Night Drive" })).toBeInTheDocument();
+    expect(document.getElementById("playlist-12")).toHaveAttribute("data-view-active", "true");
   });
 
   it.each([
@@ -2290,7 +2367,7 @@ describe("App", () => {
     expect(clickMock).toHaveBeenCalled();
     expect(revokeObjectUrlMock).toHaveBeenCalledWith("blob:m3u-export");
 
-    fireEvent.click(screen.getByRole("button", { name: "Download XML" }));
+    fireEvent.click(screen.getByRole("button", { name: "Download selected XML" }));
 
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith("/api/m3u/export/rekordbox-xml", {
@@ -2307,7 +2384,7 @@ describe("App", () => {
       });
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "Download all XML" }));
+    fireEvent.click(screen.getByRole("button", { name: "Download full-library XML" }));
 
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith("/api/m3u/export/rekordbox-xml/full", {

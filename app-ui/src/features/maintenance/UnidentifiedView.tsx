@@ -18,18 +18,22 @@ import { EmptyStateCard } from "../../components/EmptyStateCard";
 import { FilterChipGroup, type FilterChipOption } from "../../components/FilterChipGroup";
 import { MetricCard } from "../../components/MetricCard";
 import { StatusMessage } from "../../components/StatusMessage";
+import { formatTimestamp } from "../../lib/formatters";
 import { textClasses } from "../../styles/componentClasses";
 import { LocalTrackDetailDrawer } from "../localTracks/LocalTrackDetailDrawer";
 import {
   getMaintenanceRequestStatus,
   ignoreUnidentifiedTrack,
+  invalidateMetadataRescueQueries,
   invalidateUnidentifiedQueries,
+  MetadataRescueRequestError,
   rematchLocalTrack,
   rescueLocalTrackMetadata,
   restoreUnidentifiedTrack,
   retryUnidentifiedTrack,
   type UnidentifiedResponse,
   type UnidentifiedTrack,
+  type RescuedLocalTrack,
   useUnidentifiedTracksQuery,
 } from "./queries";
 
@@ -44,13 +48,11 @@ type RowActionStatus = {
   tone: "error" | "neutral";
 };
 
-function formatTimestamp(timestamp: string | null) {
-  if (!timestamp) {
-    return "Not available";
-  }
-
-  return timestamp.replace("T", " ").replace("Z", "").slice(0, 16);
-}
+type MetadataRescueOutcome = {
+  filename: string;
+  result: RescuedLocalTrack;
+  tone: "error" | "neutral";
+};
 
 function formatSourceSize(sourceSize: number | null) {
   if (sourceSize === null) {
@@ -60,13 +62,30 @@ function formatSourceSize(sourceSize: number | null) {
   return `${sourceSize.toLocaleString()} B`;
 }
 
+function rescueStageLabel(stageName: string) {
+  const labels: Record<string, string> = {
+    beets_catalogue: "Beets catalogue",
+    failed_attempt: "Failed attempt",
+    file_tags: "File tags",
+    metadata_fetch: "Streaming metadata",
+    postgres_mirror: "Database mirror",
+  };
+  return labels[stageName] ?? stageName.replace(/_/g, " ");
+}
+
+function rescueStageStatusLabel(status: string) {
+  return status === "not_applicable" ? "Not applicable" : `${status.charAt(0).toUpperCase()}${status.slice(1)}`;
+}
+
 function UnidentifiedRowActions({
   actionsDisabled = false,
   onOpenLocalTrack,
+  onRescueOutcome,
   track,
 }: {
   actionsDisabled?: boolean;
   onOpenLocalTrack: (localTrackId: number) => void;
+  onRescueOutcome: (outcome: MetadataRescueOutcome | null) => void;
   track: UnidentifiedTrack;
 }) {
   const queryClient = useQueryClient();
@@ -112,11 +131,25 @@ function UnidentifiedRowActions({
     },
   });
   const rescueMutation = useMutation({
-    mutationFn: rescueLocalTrackMetadata,
-    onError: () => setStatusMessage({ message: "Rescue failed", tone: "error" }),
-    onSuccess: async () => {
+    mutationFn: ({ failedAttemptId, localTrackId }: { failedAttemptId: number; localTrackId: number }) =>
+      rescueLocalTrackMetadata(localTrackId, failedAttemptId),
+    onError: async (error, variables) => {
+      const partialResult = error instanceof MetadataRescueRequestError ? error.result : null;
+      onRescueOutcome(
+        partialResult === null ? null : { filename: track.filename, result: partialResult, tone: "error" },
+      );
+      setStatusMessage({
+        message: partialResult?.rescue.partial_failure ? "Rescue partially complete" : "Rescue failed",
+        tone: "error",
+      });
+      if (partialResult !== null) {
+        await invalidateMetadataRescueQueries(queryClient, variables.localTrackId);
+      }
+    },
+    onSuccess: async (response, variables) => {
+      onRescueOutcome({ filename: track.filename, result: response, tone: "neutral" });
       setStatusMessage({ message: "Rescue complete", tone: "neutral" });
-      await invalidateUnidentifiedQueries(queryClient);
+      await invalidateMetadataRescueQueries(queryClient, variables.localTrackId);
     },
   });
   const actionPending =
@@ -224,7 +257,8 @@ function UnidentifiedRowActions({
           onClick={() => {
             if (track.local_track_id !== null) {
               setStatusMessage(null);
-              rescueMutation.mutate(track.local_track_id);
+              onRescueOutcome(null);
+              rescueMutation.mutate({ failedAttemptId: track.id, localTrackId: track.local_track_id });
             }
           }}
         >
@@ -245,6 +279,38 @@ function UnidentifiedRowActions({
   );
 }
 
+function MetadataRescueOutcomeCard({ filename, result, tone }: MetadataRescueOutcome) {
+  return (
+    <div
+      aria-label={`Metadata rescue result for ${filename}`}
+      className={`grid gap-1 rounded-md p-3 text-left ring-1 ring-inset ${
+        tone === "error" ? "bg-ctp-red/10 ring-ctp-red/30" : "bg-ctp-green/10 ring-ctp-green/30"
+      }`}
+      role={tone === "error" ? "alert" : "status"}
+    >
+      <p className={textClasses.label}>{result.rescue.completed ? "Metadata rescue complete" : "Metadata rescue incomplete"}</p>
+      {result.metadata ? (
+        <p className={textClasses.caption}>
+          <span className="font-semibold text-ctp-text">{result.metadata.title}</span>
+          {` — ${result.metadata.artist}`}
+          {result.metadata.album ? ` · ${result.metadata.album}` : ""}
+          {result.metadata.year ? ` (${result.metadata.year})` : ""}
+        </p>
+      ) : (
+        <p className={textClasses.caption}>No refreshed metadata was available.</p>
+      )}
+      <ul className="grid gap-0.5">
+        {result.rescue.stages.map((stage) => (
+          <li className={textClasses.caption} key={stage.name}>
+            <span className="font-semibold text-ctp-subtext1">{rescueStageLabel(stage.name)}:</span>{" "}
+            {rescueStageStatusLabel(stage.status)} — {stage.detail}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 type UnidentifiedViewProps = {
   isPending?: boolean;
   state?: MaintenanceViewState;
@@ -256,13 +322,14 @@ export function UnidentifiedView({ isPending = false, state, tracksResponse }: U
   const [activeTab, setActiveTab] = useState<UnidentifiedTab>("active");
   const [sorting, setSorting] = useState<SortingState>([]);
   const [openLocalTrackId, setOpenLocalTrackId] = useState<number | null>(null);
+  const [rescueOutcome, setRescueOutcome] = useState<MetadataRescueOutcome | null>(null);
   const resolvedState =
     state ??
     (tracksResponse
       ? "ready"
       : unidentifiedQuery.isPending
         ? "loading"
-        : unidentifiedQuery.isError
+        : unidentifiedQuery.isError && unidentifiedQuery.data === undefined
           ? "error"
           : "ready");
   const tracks = tracksResponse?.tracks ?? unidentifiedQuery.data?.tracks ?? emptyUnidentifiedTracks;
@@ -376,6 +443,7 @@ export function UnidentifiedView({ isPending = false, state, tracksResponse }: U
           <UnidentifiedRowActions
             actionsDisabled={actionsDisabled}
             onOpenLocalTrack={setOpenLocalTrackId}
+            onRescueOutcome={setRescueOutcome}
             track={info.row.original}
           />
         ),
@@ -383,6 +451,7 @@ export function UnidentifiedView({ isPending = false, state, tracksResponse }: U
         header: "Actions",
         meta: {
           align: "end",
+          sticky: "right",
           widthClass: "w-64",
         },
       }),
@@ -402,6 +471,17 @@ export function UnidentifiedView({ isPending = false, state, tracksResponse }: U
           status="pending"
           title="Unidentified review in progress"
         />
+      ) : null}
+      {rescueOutcome ? <MetadataRescueOutcomeCard {...rescueOutcome} /> : null}
+      {tracksResponse === undefined && unidentifiedQuery.isError && unidentifiedQuery.data !== undefined ? (
+        <div className="grid justify-items-start gap-2">
+          <StatusMessage
+            body="The latest refresh failed. The failed-source rows below are the last successfully loaded results."
+            status="error"
+            title="Showing stale unidentified results"
+          />
+          <ActionButton onClick={() => void unidentifiedQuery.refetch()}>Retry unidentified queue</ActionButton>
+        </div>
       ) : null}
 
       <div className="grid gap-3 sm:grid-cols-3" aria-label="Unidentified summary">
@@ -434,13 +514,18 @@ export function UnidentifiedView({ isPending = false, state, tracksResponse }: U
             title="Loading unidentified tracks"
           />
         ) : resolvedState === "error" ? (
-          <EmptyStateCard
-            body="The unidentified import queue could not be loaded."
-            className="text-left"
-            role="alert"
-            title="Unidentified queue unavailable"
-            tone="error"
-          />
+          <div className="grid justify-items-start gap-3">
+            <EmptyStateCard
+              body="The unidentified import queue could not be loaded."
+              className="text-left"
+              role="alert"
+              title="Unidentified queue unavailable"
+              tone="error"
+            />
+            {tracksResponse === undefined ? (
+              <ActionButton onClick={() => void unidentifiedQuery.refetch()}>Retry unidentified queue</ActionButton>
+            ) : null}
+          </div>
         ) : tracks.length > 0 ? (
           <div className="grid gap-2.5">
             <div className="flex flex-wrap items-center justify-between gap-3 px-1">

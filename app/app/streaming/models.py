@@ -89,12 +89,14 @@ streaming_tracks_table = Table(
     Column("album", String, nullable=True),
     Column("year", Integer, nullable=True),
     Column("isrc", String, nullable=True),
+    Column("canonical_isrc", String, nullable=True),
     Column("duration_ms", Integer, nullable=True),
     UniqueConstraint(
         "provider_track_id",
         name="uq_streaming_tracks_provider_track_id",
     ),
     Index("ix_streaming_tracks_isrc", "isrc"),
+    Index("ix_streaming_tracks_canonical_isrc", "canonical_isrc"),
     Index(
         "ix_streaming_tracks_title_trgm",
         "title",

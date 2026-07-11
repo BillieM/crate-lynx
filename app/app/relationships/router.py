@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-import logging
-import os
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -10,7 +8,6 @@ from sqlalchemy.engine import Engine
 
 from app.core.cursors import decode_score_id_cursor, encode_score_id_cursor
 from app.core.db import create_database_engine, get_engine
-from app.m3u.jobs import M3uRegenerationJobEnqueuer
 from app.relationships.schemas import (
     AcceptStreamingRelationshipSuggestionRequest,
     AcceptStreamingRelationshipSuggestionResponse,
@@ -43,9 +40,6 @@ from app.relationships.store import (
 )
 
 
-logger = logging.getLogger(__name__)
-
-
 def create_router(
     *,
     require_redis_url: Callable[[], str] | None = None,
@@ -59,34 +53,6 @@ def create_router(
         return create_database_engine(
             require_database_url() if require_database_url is not None else None
         )
-
-    def _m3u_redis_url(playlist_ids: tuple[int, ...]) -> str | None:
-        if not playlist_ids:
-            return None
-
-        redis_url = (
-            require_redis_url()
-            if require_redis_url is not None
-            else os.environ.get("REDIS_URL")
-        )
-        if not redis_url:
-            logger.warning(
-                "REDIS_URL is not configured; skipping M3U regeneration for "
-                "relationship playlist_ids=%s",
-                playlist_ids,
-            )
-            return None
-
-        return redis_url
-
-    def _enqueue_m3u_regeneration(
-        playlist_ids: tuple[int, ...],
-        redis_url: str | None,
-    ) -> None:
-        if not playlist_ids or redis_url is None:
-            return
-
-        M3uRegenerationJobEnqueuer(redis_url).enqueue_playlists(playlist_ids)
 
     @router.get(
         "/streaming/relationships/suggestions",
@@ -185,9 +151,6 @@ def create_router(
                 detail="winning_final_link_id must reference a conflicting final link",
             ) from exc
 
-        redis_url = _m3u_redis_url(result.affected_playlist_ids)
-        _enqueue_m3u_regeneration(result.affected_playlist_ids, redis_url)
-
         return AcceptStreamingRelationshipSuggestionResponse(
             suggestion_id=result.suggestion_id,
             relationship_id=result.relationship_id,
@@ -260,9 +223,6 @@ def create_router(
                 detail="winning_final_link_id must reference a conflicting final link",
             ) from exc
 
-        redis_url = _m3u_redis_url(result.affected_playlist_ids)
-        _enqueue_m3u_regeneration(result.affected_playlist_ids, redis_url)
-
         return _relationship_mutation_response(result, status="created")
 
     @router.patch(
@@ -294,9 +254,6 @@ def create_router(
                 detail="winning_final_link_id must reference a conflicting final link",
             ) from exc
 
-        redis_url = _m3u_redis_url(result.affected_playlist_ids)
-        _enqueue_m3u_regeneration(result.affected_playlist_ids, redis_url)
-
         return _relationship_mutation_response(result, status="updated")
 
     @router.delete(
@@ -315,9 +272,6 @@ def create_router(
                 status_code=404,
                 detail="Streaming relationship not found",
             ) from exc
-
-        redis_url = _m3u_redis_url(result.affected_playlist_ids)
-        _enqueue_m3u_regeneration(result.affected_playlist_ids, redis_url)
 
         return _relationship_mutation_response(result, status="deleted")
 

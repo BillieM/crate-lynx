@@ -104,8 +104,8 @@ def _patch_search_job(
     *,
     client_class,
     database_url: str,
-    poll_interval: str = "0",
-    poll_timeout: str = "0",
+    poll_interval: str = "0.05",
+    poll_timeout: str = "0.1",
 ) -> None:
     monkeypatch.setenv("DATABASE_URL", database_url)
     monkeypatch.setenv("REDIS_URL", "redis://redis/0")
@@ -499,7 +499,7 @@ def test_store_lifecycle_marks_ingested_and_derives_proposal_summary(tmp_path) -
     assert updated is not None
     assert updated.status == SOULSEEK_STATUS_INGESTED
     with engine.begin() as connection:
-        connection.execute(
+        proposal_id = connection.execute(
             insert(suggested_links_table).values(
                 local_track_id=local_track_id,
                 match_method="tags",
@@ -507,11 +507,12 @@ def test_store_lifecycle_marks_ingested_and_derives_proposal_summary(tmp_path) -
                 status=SUGGESTED_LINK_STATUS_PENDING,
                 streaming_track_id=streaming_track_id,
             )
-        )
+        ).inserted_primary_key[0]
 
     summaries = store.latest_summaries_for_tracks([streaming_track_id])
 
     assert summaries[streaming_track_id].status == SOULSEEK_STATUS_PROPOSAL_AVAILABLE
+    assert summaries[streaming_track_id].proposal_id == proposal_id
 
 
 def test_store_auto_links_ingested_soulseek_download(tmp_path) -> None:
@@ -1017,6 +1018,59 @@ def test_queue_route_lists_review_candidates(tmp_path) -> None:
     assert response.items[0].candidates[0].filename == (
         "Jon Hopkins - Open Eye Signal.flac"
     )
+
+
+def test_queue_route_classifies_proposal_available_as_review_with_handoff_id(
+    tmp_path,
+) -> None:
+    engine = _create_engine(tmp_path / "soulseek-proposal-review.db")
+    factory = TestDataFactory(engine)
+    streaming_track_id = factory.streaming_track(title="Open Eye Signal")
+    local_track_id = factory.local_track(file_path="Open Eye Signal.flac")
+    store = SoulseekStore(engine=engine)
+    acquisition = store.create_or_reset_search_acquisition(streaming_track_id)
+    store.mark_ingested_from_source_path(
+        local_track_id=local_track_id,
+        source_path=(
+            f"/nas/soulseek/downloads/cratelynx/"
+            f"{streaming_track_id}-{acquisition.id}/Track.flac"
+        ),
+    )
+    with engine.begin() as connection:
+        proposal_id = connection.execute(
+            insert(suggested_links_table).values(
+                local_track_id=local_track_id,
+                match_method="tags",
+                score=0.88,
+                status=SUGGESTED_LINK_STATUS_PENDING,
+                streaming_track_id=streaming_track_id,
+            )
+        ).inserted_primary_key[0]
+    available = store.mark_proposal_available_if_present(acquisition.id)
+
+    router = create_router()
+    response = _call_endpoint(
+        _route(router, "GET", "/soulseek/queue").endpoint,
+        filter="review",
+        engine=engine,
+    )
+    detail = _call_endpoint(
+        _route(
+            router,
+            "GET",
+            "/soulseek/acquisitions/{acquisition_id}",
+        ).endpoint,
+        acquisition.id,
+        engine=engine,
+    )
+
+    assert available is not None
+    assert available.status == SOULSEEK_STATUS_PROPOSAL_AVAILABLE
+    assert available.proposal_id == proposal_id
+    assert response.total_count == 1
+    assert response.items[0].acquisition.status == SOULSEEK_STATUS_PROPOSAL_AVAILABLE
+    assert response.items[0].acquisition.proposal_id == proposal_id
+    assert detail.acquisition.proposal_id == proposal_id
 
 
 def test_download_complete_webhook_rejects_missing_or_bad_token(

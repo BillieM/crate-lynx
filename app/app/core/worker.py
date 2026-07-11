@@ -8,7 +8,7 @@ from redis import Redis
 from rq import Queue, Worker
 
 
-DEFAULT_QUEUE_NAMES = ("ingestion", "matching", "streaming", "m3u", "sonic", "soulseek")
+DEFAULT_QUEUE_NAMES = ("ingestion", "matching", "streaming", "sonic", "soulseek")
 DEFAULT_REDIS_URL = "redis://localhost:6379/0"
 
 

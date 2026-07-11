@@ -49,7 +49,7 @@ describe("useDelayedInvalidate", () => {
     expect(invalidateSpy).toHaveBeenCalledTimes(4);
   });
 
-  it("clears pending invalidation timers on unmount", async () => {
+  it("keeps pending job refreshes alive when the originating view unmounts", async () => {
     vi.useFakeTimers();
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
@@ -64,6 +64,8 @@ describe("useDelayedInvalidate", () => {
 
     await advanceTimers(10000);
 
-    expect(invalidateSpy).not.toHaveBeenCalled();
+    expect(invalidateSpy).toHaveBeenCalledTimes(2);
+    expect(invalidateSpy).toHaveBeenNthCalledWith(1, { queryKey: playlistQueryKeys.config() });
+    expect(invalidateSpy).toHaveBeenNthCalledWith(2, { queryKey: playlistQueryKeys.config() });
   });
 });

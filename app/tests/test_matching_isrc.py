@@ -125,6 +125,23 @@ def test_isrc_matcher_returns_none_when_streaming_track_is_missing(
     assert result is None
 
 
+@pytest.mark.parametrize("invalid_isrc", ["N/A", "unknown", "ISRC-track-3"])
+def test_isrc_matcher_rejects_invalid_codes(
+    invalid_isrc: str,
+) -> None:
+    engine = _create_matching_engine()
+    test_data = factories.TestDataFactory(engine)
+    local_track_id = test_data.local_track(beets_id=11)
+    test_data.beets_item(beets_id=11, isrc=invalid_isrc)
+    streaming_track_id = test_data.streaming_track(
+        provider_track_id="yt-invalid-isrc",
+        isrc=invalid_isrc,
+    )
+    _add_playlist_membership(test_data, streaming_track_id)
+
+    assert IsrcMatcher(engine=engine).match(local_track_id) is None
+
+
 @pytest.mark.parametrize(
     ("sync_modes", "expected_match"),
     [

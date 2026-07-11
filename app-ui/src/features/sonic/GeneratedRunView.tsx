@@ -1,6 +1,6 @@
 import { createColumnHelper, type SortingState } from "@tanstack/react-table";
 import { FileDown, ListTree, Music2, Trash2 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { type KeyboardEvent, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ActionButton } from "../../components/ActionButton";
 import { DataTable } from "../../components/DataTable";
@@ -8,6 +8,7 @@ import { EmptyStateCard } from "../../components/EmptyStateCard";
 import { Pill } from "../../components/Pill";
 import { StatusMessage } from "../../components/StatusMessage";
 import { formatDuration } from "../../lib/formatters";
+import { ApiRequestError } from "../../lib/api";
 import { controlClasses, layoutClasses, surfaceClasses, textClasses } from "../../styles/componentClasses";
 import type { PillTone } from "../../styles/toneClasses";
 import {
@@ -26,6 +27,8 @@ type GeneratedPlaylistTreeRow = GeneratedPlaylist & {
   ancestorLastFlags: boolean[];
   childCount: number;
   isLastSibling: boolean;
+  siblingCount: number;
+  siblingPosition: number;
   treeDepth: number;
 };
 
@@ -70,6 +73,8 @@ function buildPlaylistRows(playlists: GeneratedPlaylist[]): GeneratedPlaylistTre
         ancestorLastFlags,
         childCount: childrenByParent.get(playlist.id)?.length ?? 0,
         isLastSibling,
+        siblingCount: children.length,
+        siblingPosition: index + 1,
         treeDepth: ancestorLastFlags.length,
       });
       append(playlist.id, [...ancestorLastFlags, isLastSibling]);
@@ -431,7 +436,30 @@ export function GeneratedRunView({ runId }: { runId: number }) {
   }
 
   if (runQuery.isError || !runQuery.data) {
-    return <EmptyStateCard body="Generated run is unavailable." className={layoutClasses.emptyStateNarrow} title="Run unavailable" tone="error" />;
+    const runWasNotFound = runQuery.error instanceof ApiRequestError && runQuery.error.status === 404;
+
+    return (
+      <div className="grid gap-3">
+        <EmptyStateCard
+          body={
+            runWasNotFound
+              ? "No generated run exists with this ID. It may have been deleted."
+              : "The generated run could not be loaded. The run may still exist; retry when the API is available."
+          }
+          className={layoutClasses.emptyStateNarrow}
+          role="alert"
+          title={runWasNotFound ? "Run not found" : "Run unavailable"}
+          tone="error"
+        />
+        {!runWasNotFound ? (
+          <div>
+            <ActionButton onClick={() => void runQuery.refetch()} type="button">
+              Retry run
+            </ActionButton>
+          </div>
+        ) : null}
+      </div>
+    );
   }
 
   const selectedPlaylist = playlists.find((playlist) => playlist.id === selectedPlaylistId) ?? null;
@@ -441,6 +469,57 @@ export function GeneratedRunView({ runId }: { runId: number }) {
   const showProgress = isRunInProgress(run.status);
   const progressLabel = getProgressLabel(run.status);
   const canDeleteRun = run.status === "completed" || run.status === "failed";
+  const runCountSummary =
+    run.status === "failed"
+      ? `${run.playlist_count.toLocaleString()} playlists generated · ${run.track_count.toLocaleString()} tracks included before failure`
+      : isRunInProgress(run.status)
+        ? `${run.playlist_count.toLocaleString()} playlists generated so far · ${run.track_count.toLocaleString()} tracks included so far`
+        : `${run.playlist_count.toLocaleString()} playlists · ${run.track_count.toLocaleString()} tracks`;
+
+  function focusPlaylistTreeRow(event: KeyboardEvent<HTMLButtonElement>, index: number) {
+    const treeItems = Array.from(
+      event.currentTarget.closest('[role="tree"]')?.querySelectorAll<HTMLButtonElement>('[role="treeitem"]') ?? [],
+    );
+    const nextItem = treeItems[index];
+    const nextPlaylist = playlistRows[index];
+    if (!nextItem || !nextPlaylist) {
+      return;
+    }
+
+    setSelectedPlaylistId(nextPlaylist.id);
+    nextItem.focus();
+  }
+
+  function handlePlaylistTreeKeyDown(
+    event: KeyboardEvent<HTMLButtonElement>,
+    playlist: GeneratedPlaylistTreeRow,
+    rowIndex: number,
+  ) {
+    let nextIndex: number | null = null;
+
+    if (event.key === "ArrowDown") {
+      nextIndex = rowIndex + 1;
+    } else if (event.key === "ArrowUp") {
+      nextIndex = rowIndex - 1;
+    } else if (event.key === "Home") {
+      nextIndex = 0;
+    } else if (event.key === "End") {
+      nextIndex = playlistRows.length - 1;
+    } else if (event.key === "ArrowRight" && playlist.childCount > 0) {
+      nextIndex = rowIndex + 1;
+    } else if (event.key === "ArrowLeft" && playlist.parent_playlist_id !== null) {
+      nextIndex = playlistRows.findIndex((candidate) => candidate.id === playlist.parent_playlist_id);
+    } else if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      setSelectedPlaylistId(playlist.id);
+      return;
+    }
+
+    if (nextIndex !== null) {
+      event.preventDefault();
+      focusPlaylistTreeRow(event, nextIndex);
+    }
+  }
 
   function handleDeleteRun() {
     if (!canDeleteRun || deleteRunMutation.isPending) {
@@ -462,8 +541,7 @@ export function GeneratedRunView({ runId }: { runId: number }) {
               <Pill tone={runStatusTone(run.status)}>{run.status}</Pill>
             </div>
             <p className={`mt-1 ${textClasses.bodyMuted}`}>
-              Run ID {run.id.toLocaleString()} · {run.playlist_count.toLocaleString()} playlists ·{" "}
-              {run.track_count.toLocaleString()} tracks
+              Run ID {run.id.toLocaleString()} · {runCountSummary}
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -524,7 +602,7 @@ export function GeneratedRunView({ runId }: { runId: number }) {
       ) : null}
 
       {run.error_detail ? (
-        <section className={`${surfaceClasses.compactCard} border-ctp-red/40`}>
+        <section className={`${surfaceClasses.compactCard} border-ctp-red/40`} role="alert">
           <p className={textClasses.label}>Error</p>
           <p className={`mt-1 ${textClasses.bodyRelaxed}`}>{run.error_detail}</p>
         </section>
@@ -539,13 +617,16 @@ export function GeneratedRunView({ runId }: { runId: number }) {
           <div className="mt-3 min-h-0 flex-1 overflow-y-auto pr-1">
             {playlistRows.length > 0 ? (
               <div aria-label="Generated playlists" className="grid gap-1" role="tree">
-                {playlistRows.map((playlist) => {
+                {playlistRows.map((playlist, rowIndex) => {
                   const isSelected = playlist.id === selectedPlaylistId;
                   return (
                     <button
                       aria-label={`${playlist.name}, ${playlist.track_count.toLocaleString()} tracks`}
+                      aria-expanded={playlist.childCount > 0 ? true : undefined}
                       aria-level={playlist.treeDepth + 1}
+                      aria-posinset={playlist.siblingPosition}
                       aria-selected={isSelected}
+                      aria-setsize={playlist.siblingCount}
                       className={`flex min-h-9 w-full min-w-0 items-center gap-2 rounded-[8px] border px-2 py-1.5 text-left transition-colors ${
                         isSelected
                           ? "border-ctp-green/45 bg-ctp-green/10 text-ctp-text"
@@ -553,7 +634,10 @@ export function GeneratedRunView({ runId }: { runId: number }) {
                       }`}
                       key={playlist.id}
                       onClick={() => setSelectedPlaylistId(playlist.id)}
+                      onFocus={() => setSelectedPlaylistId(playlist.id)}
+                      onKeyDown={(event) => handlePlaylistTreeKeyDown(event, playlist, rowIndex)}
                       role="treeitem"
+                      tabIndex={isSelected ? 0 : -1}
                       type="button"
                     >
                       <PlaylistTreeGuides
@@ -584,7 +668,13 @@ export function GeneratedRunView({ runId }: { runId: number }) {
                 })}
               </div>
             ) : (
-              <p className={textClasses.bodyMuted}>No generated playlists stored for this run yet.</p>
+              <p className={textClasses.bodyMuted} role="status">
+                {run.status === "failed"
+                  ? "Generation failed before any playlists were stored."
+                  : run.status === "completed"
+                    ? "This completed run did not store any playlists."
+                    : "No generated playlists have been stored yet. This view will refresh while generation continues."}
+              </p>
             )}
           </div>
         </section>
@@ -617,7 +707,12 @@ export function GeneratedRunView({ runId }: { runId: number }) {
           ) : null}
           <div className="mt-3 min-h-0 flex-1 overflow-y-auto pr-1">
             {tracksQuery.isPending && selectedPlaylistId !== null ? (
-              <p className={textClasses.bodyMuted}>Loading tracks...</p>
+              <p className={textClasses.bodyMuted} role="status">Loading tracks...</p>
+            ) : tracksQuery.isError && selectedPlaylistId !== null ? (
+              <div className="grid justify-items-start gap-2">
+                <p className="text-[13px] text-ctp-red" role="alert">Tracks could not be loaded for this playlist.</p>
+                <ActionButton onClick={() => void tracksQuery.refetch()} type="button">Retry tracks</ActionButton>
+              </div>
             ) : tracks.length > 0 ? (
               <DataTable
                 columns={trackColumns}

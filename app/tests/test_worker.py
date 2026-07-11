@@ -15,7 +15,6 @@ def test_resolve_queue_names_uses_default_when_unset(monkeypatch) -> None:
         "ingestion",
         "matching",
         "streaming",
-        "m3u",
         "sonic",
         "soulseek",
     )
@@ -87,7 +86,7 @@ def test_entrypoint_splits_ingestion_from_background_workers() -> None:
     assert 'INGESTION_WORKER_COUNT="${INGESTION_WORKER_COUNT:-1}"' in script
     assert "RQ_QUEUE_NAMES=ingestion python -m app.core.worker &" in script
     assert (
-        'RQ_QUEUE_NAMES="${RQ_BACKGROUND_QUEUE_NAMES:-matching,streaming,m3u,soulseek}" '
+        'RQ_QUEUE_NAMES="${RQ_BACKGROUND_QUEUE_NAMES:-matching,streaming,soulseek}" '
         "python -m app.core.worker &"
     ) in script
     assert 'SONIC_WORKER_COUNT="${SONIC_WORKER_COUNT:-2}"' in script

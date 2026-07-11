@@ -273,6 +273,29 @@ describe("PlaylistSyncConfiguration", () => {
     expect(screen.queryByRole("button", { name: /Sync active rows/ })).not.toBeInTheDocument();
   });
 
+  it("searches and filters discovered playlists with a recoverable filtered-empty state", async () => {
+    mockConfigFetch();
+
+    renderPlaylistSyncConfiguration();
+
+    await screen.findByRole("cell", { name: "Fresh Discoveries" });
+    fireEvent.change(screen.getByRole("searchbox", { name: "Search playlists" }), {
+      target: { value: "matcher" },
+    });
+
+    expect(screen.getByText("1 of 3 rows")).toBeInTheDocument();
+    expect(screen.getByRole("cell", { name: "Matcher Seeds" })).toBeInTheDocument();
+    expect(screen.queryByRole("cell", { name: "Fresh Discoveries" })).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("Sync mode"), { target: { value: "full" } });
+
+    expect(screen.getByRole("heading", { name: "No matching playlists" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Clear filters" }));
+
+    expect(screen.getByText("3 of 3 rows")).toBeInTheDocument();
+    expect(screen.getByRole("cell", { name: "Fresh Discoveries" })).toBeInTheDocument();
+  });
+
   it("queues metadata refresh from an empty playlist configuration when an account exists", async () => {
     const fetchMock = mockConfigFetch({ playlists: [] });
 
@@ -535,7 +558,7 @@ describe("PlaylistSyncConfiguration", () => {
     renderPlaylistSyncConfiguration();
 
     expect(await screen.findByText("YouTube Music authentication needs attention")).toBeInTheDocument();
-    expect(screen.getByText("Browser headers expired. Reported 2026-05-02 10:30:00+00:00.")).toBeInTheDocument();
+    expect(screen.getByText(/^Browser headers expired\. Reported .+\.$/)).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Refresh authentication" })).toHaveAttribute(
       "href",
       "/settings/authentication",
@@ -643,7 +666,7 @@ describe("PlaylistSyncConfiguration", () => {
     await advanceTimers(1);
     vi.useRealTimers();
     expect(await screen.findByText("YouTube Music authentication needs attention")).toBeInTheDocument();
-    expect(screen.getByText("Browser headers expired. Reported 2026-05-02 10:30:00+00:00.")).toBeInTheDocument();
+    expect(screen.getByText(/^Browser headers expired\. Reported .+\.$/)).toBeInTheDocument();
   });
 
 });

@@ -1,4 +1,4 @@
-import { type QueryClient, type QueryKey, useInfiniteQuery } from "@tanstack/react-query";
+import { keepPreviousData, type QueryClient, type QueryKey, useInfiniteQuery } from "@tanstack/react-query";
 
 import { endpoints, fetchJson } from "../../lib/api";
 import { invalidateQueryKeys } from "../../lib/queryInvalidation";
@@ -31,18 +31,33 @@ export type LibraryTrack = {
 };
 
 export type LibraryTracksResponse = {
-  next_cursor: number | null;
+  filtered_total: number;
+  limit: number;
+  next_cursor: string | null;
+  returned_count: number;
   stats: LibraryStats;
   tracks: LibraryTrack[];
 };
 
+export type LibrarySortField = "album" | "artist" | "duration_ms" | "id" | "link_status" | "title";
+export type LibrarySortDirection = "asc" | "desc";
+
+export type LibraryQueryOptions = {
+  direction?: LibrarySortDirection;
+  linkStatus?: LibraryLinkStatus | null;
+  limit?: number;
+  query?: string;
+  sort?: LibrarySortField;
+};
+
 export const libraryQueryKeys = {
   all: ["library"] as const,
-  tracks: () => ["library", "tracks"] as const,
+  tracks: (options?: LibraryQueryOptions) =>
+    options === undefined ? (["library", "tracks"] as const) : (["library", "tracks", options] as const),
 };
 
 export function libraryInvalidationKeys(): QueryKey[] {
-  return [libraryQueryKeys.all, libraryQueryKeys.tracks(), ...shellSummaryInvalidationKeys()];
+  return [libraryQueryKeys.all, ["library", "tracks"], ...shellSummaryInvalidationKeys()];
 }
 
 export function libraryLinkMutationInvalidationKeys(): QueryKey[] {
@@ -58,15 +73,11 @@ export async function invalidateLibraryLinkMutationQueries(queryClient: QueryCli
 }
 
 type FetchLibraryTracksOptions = {
-  cursor?: number | null;
-  limit?: number;
-};
-
-type UseLibraryTracksQueryOptions = {
+  cursor?: string | null;
   enabled?: boolean;
-};
+} & LibraryQueryOptions;
 
-function libraryTracksUrl({ cursor, limit }: FetchLibraryTracksOptions = {}) {
+function libraryTracksUrl({ cursor, direction, linkStatus, limit, query: searchQuery, sort }: FetchLibraryTracksOptions = {}) {
   const params = new URLSearchParams();
 
   if (cursor !== null && cursor !== undefined) {
@@ -75,6 +86,22 @@ function libraryTracksUrl({ cursor, limit }: FetchLibraryTracksOptions = {}) {
 
   if (limit !== undefined) {
     params.set("limit", String(limit));
+  }
+
+  if (searchQuery?.trim()) {
+    params.set("q", searchQuery.trim());
+  }
+
+  if (linkStatus) {
+    params.set("link_status", linkStatus);
+  }
+
+  if (sort && sort !== "id") {
+    params.set("sort", sort);
+  }
+
+  if (direction && direction !== "asc") {
+    params.set("direction", direction);
   }
 
   const query = params.toString();
@@ -86,12 +113,13 @@ export async function fetchLibraryTracks(options: FetchLibraryTracksOptions = {}
   return fetchJson<LibraryTracksResponse>(libraryTracksUrl(options));
 }
 
-export function useLibraryTracksQuery({ enabled = true }: UseLibraryTracksQueryOptions = {}) {
+export function useLibraryTracksQuery({ enabled = true, ...options }: FetchLibraryTracksOptions = {}) {
   return useInfiniteQuery({
-    queryKey: libraryQueryKeys.tracks(),
-    queryFn: ({ pageParam }) => fetchLibraryTracks({ cursor: pageParam }),
-    initialPageParam: null as number | null,
+    queryKey: libraryQueryKeys.tracks(options),
+    queryFn: ({ pageParam }) => fetchLibraryTracks({ ...options, cursor: pageParam }),
+    initialPageParam: null as string | null,
     getNextPageParam: (lastPage) => lastPage.next_cursor ?? undefined,
     enabled,
+    placeholderData: keepPreviousData,
   });
 }

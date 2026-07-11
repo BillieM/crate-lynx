@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from collections.abc import Callable
+from dataclasses import asdict
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -11,7 +12,12 @@ from sqlalchemy.engine import Engine
 from app.core.db import create_database_engine, get_engine
 from app.links.store import final_links_table
 from app.local_tracks.store import local_tracks_table
-from app.rescue.metadata import MetadataRescueError, rescue_metadata
+from app.rescue.metadata import (
+    MetadataRescueConflictError,
+    MetadataRescueError,
+    MetadataRescueResult,
+    rescue_metadata,
+)
 
 
 def create_router(
@@ -30,6 +36,7 @@ def create_router(
     @router.post("/local-tracks/{local_track_id}/rescue")
     def rescue_local_track_metadata(
         local_track_id: int,
+        failed_attempt_id: int | None = None,
         engine: Engine = Depends(get_engine),
     ) -> dict[str, object]:
         engine = _engine(engine)
@@ -65,14 +72,55 @@ def create_router(
             )
 
         try:
-            rescue_metadata(
-                local_track_id,
-                engine=engine,
-                library_root=Path(os.environ.get("LIBRARY_ROOT", "/nas/media/music")),
-            )
+            rescue_kwargs: dict[str, object] = {
+                "engine": engine,
+                "library_root": Path(
+                    os.environ.get("LIBRARY_ROOT", "/nas/media/music")
+                ),
+            }
+            if failed_attempt_id is not None:
+                rescue_kwargs["failed_attempt_id"] = failed_attempt_id
+            result = rescue_metadata(local_track_id, **rescue_kwargs)
+        except MetadataRescueConflictError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
         except MetadataRescueError as exc:
             raise HTTPException(status_code=500, detail=str(exc)) from exc
 
-        return dict(local_track)
+        # Preserve compatibility with injected legacy rescue callbacks while callers
+        # transition to the stage-aware result contract.
+        if result is None:
+            return dict(local_track)
+
+        payload = _serialize_result(local_track, result)
+        if not result.completed:
+            raise HTTPException(
+                status_code=500,
+                detail={
+                    "message": (
+                        "Metadata rescue completed only partially"
+                        if result.partial_failure
+                        else "Metadata rescue failed before making changes"
+                    ),
+                    "result": payload,
+                },
+            )
+        return payload
 
     return router
+
+
+def _serialize_result(
+    local_track,
+    result: MetadataRescueResult,
+) -> dict[str, object]:
+    metadata = asdict(result.metadata) if result.metadata is not None else None
+    return {
+        **dict(local_track),
+        "metadata": metadata,
+        "rescue": {
+            "completed": result.completed,
+            "partial_failure": result.partial_failure,
+            "failed_attempt_id": result.failed_attempt_id,
+            "stages": [asdict(stage) for stage in result.stages],
+        },
+    }

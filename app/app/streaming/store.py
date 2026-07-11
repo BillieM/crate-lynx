@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import (
+    case,
     delete,
     func,
     insert,
@@ -20,6 +21,7 @@ from sqlalchemy.engine import Engine
 from ytmusicapi.exceptions import YTMusicError
 
 from app.core.db import create_database_engine
+from app.core.isrc import normalize_valid_isrc_code
 from app.core.tables import streaming_relationships_view, suggested_links_view
 from app.local_tracks.store import local_tracks_table
 from app.streaming.adapters.youtube_music import (
@@ -332,10 +334,46 @@ class StreamingAccountStore:
         playlists: list[YouTubeMusicPlaylist],
         metadata_synced_at: datetime | None = None,
     ) -> list[StreamingPlaylistRecord]:
+        return self._persist_playlists(
+            account_id=account_id,
+            playlists=playlists,
+            metadata_synced_at=metadata_synced_at,
+            reconcile_missing=False,
+        )
+
+    def reconcile_playlists(
+        self,
+        *,
+        account_id: int,
+        playlists: list[YouTubeMusicPlaylist],
+        metadata_synced_at: datetime | None = None,
+    ) -> list[StreamingPlaylistRecord]:
+        """Persist a complete provider listing and remove playlists absent from it."""
+        return self._persist_playlists(
+            account_id=account_id,
+            playlists=playlists,
+            metadata_synced_at=metadata_synced_at,
+            reconcile_missing=True,
+        )
+
+    def _persist_playlists(
+        self,
+        *,
+        account_id: int,
+        playlists: list[YouTubeMusicPlaylist],
+        metadata_synced_at: datetime | None,
+        reconcile_missing: bool,
+    ) -> list[StreamingPlaylistRecord]:
         playlist_rows: list[StreamingPlaylistRecord] = []
         sync_timestamp = metadata_synced_at or datetime.now(UTC)
 
         with self._engine.begin() as connection:
+            if reconcile_missing:
+                connection.execute(
+                    select(streaming_accounts_table.c.id)
+                    .where(streaming_accounts_table.c.id == account_id)
+                    .with_for_update()
+                ).scalar_one_or_none()
             for playlist in playlists:
                 statement = _conflict_insert(
                     streaming_playlists_table,
@@ -385,6 +423,37 @@ class StreamingAccountStore:
                 )
 
                 playlist_rows.append(_streaming_playlist_record(row))
+
+            if reconcile_missing:
+                provider_playlist_ids = {
+                    playlist.provider_playlist_id for playlist in playlists
+                }
+                missing_query = select(streaming_playlists_table.c.id).where(
+                    streaming_playlists_table.c.account_id == account_id
+                )
+                if provider_playlist_ids:
+                    missing_query = missing_query.where(
+                        streaming_playlists_table.c.provider_playlist_id.not_in(
+                            provider_playlist_ids
+                        )
+                    )
+                missing_playlist_ids = tuple(
+                    int(playlist_id)
+                    for playlist_id in connection.execute(missing_query).scalars()
+                )
+                if missing_playlist_ids:
+                    connection.execute(
+                        delete(playlist_membership_table).where(
+                            playlist_membership_table.c.playlist_id.in_(
+                                missing_playlist_ids
+                            )
+                        )
+                    )
+                    connection.execute(
+                        delete(streaming_playlists_table).where(
+                            streaming_playlists_table.c.id.in_(missing_playlist_ids)
+                        )
+                    )
 
         return playlist_rows
 
@@ -740,6 +809,7 @@ class StreamingAccountStore:
                     album=track.album,
                     year=track.year,
                     isrc=track.isrc,
+                    canonical_isrc=normalize_valid_isrc_code(track.isrc),
                     duration_ms=track.duration_ms,
                 )
 
@@ -757,6 +827,13 @@ class StreamingAccountStore:
                                 "isrc": func.coalesce(
                                     statement.excluded.isrc,
                                     streaming_tracks_table.c.isrc,
+                                ),
+                                "canonical_isrc": case(
+                                    (
+                                        statement.excluded.isrc.is_(None),
+                                        streaming_tracks_table.c.canonical_isrc,
+                                    ),
+                                    else_=statement.excluded.canonical_isrc,
                                 ),
                                 "duration_ms": statement.excluded.duration_ms,
                             },

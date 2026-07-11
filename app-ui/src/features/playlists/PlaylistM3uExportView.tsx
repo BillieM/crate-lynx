@@ -5,6 +5,7 @@ import { useSearchParams } from "react-router-dom";
 import { ActionButton } from "../../components/ActionButton";
 import { EmptyStateCard } from "../../components/EmptyStateCard";
 import { StatusMessage } from "../../components/StatusMessage";
+import { setSessionDraftCodec, useSessionDraftState } from "../../lib/useSessionDraftState";
 import { controlClasses, layoutClasses, surfaceClasses, textClasses } from "../../styles/componentClasses";
 import { type PlaylistGenerationRun, useSonicRunsQuery } from "../sonic/queries";
 import {
@@ -27,6 +28,9 @@ import {
 const emptyPlaylists: StreamingPlaylist[] = [];
 const emptyProfiles: M3uExportProfile[] = [];
 const emptyGeneratedRuns: PlaylistGenerationRun[] = [];
+const numberSetSessionDraftCodec = setSessionDraftCodec<number>();
+const exportFormatSetSessionDraftCodec = setSessionDraftCodec<M3uExportFormat>();
+const exportDraftKey = (field: string) => `crate-lynx:playlist-export:v1:${field}`;
 const exportFormatOptions = [
   { label: ".m3u", value: "m3u" },
   { label: ".m3u8", value: "m3u8" },
@@ -577,16 +581,32 @@ export function PlaylistM3uExportView() {
   const playlists = playlistsQuery.data?.playlists ?? emptyPlaylists;
   const generatedRuns = generatedRunsQuery.data?.runs ?? emptyGeneratedRuns;
   const profiles = profilesQuery.data?.profiles ?? emptyProfiles;
-  const [selectedProfileId, setSelectedProfileId] = useState<number | null>(null);
-  const [libraryPath, setLibraryPath] = useState("");
-  const [profileName, setProfileName] = useState("Default export");
-  const [searchQuery, setSearchQuery] = useState("");
-  const [pathFormat, setPathFormat] = useState<M3uExportPathFormat>("file_url");
-  const [selectedFormats, setSelectedFormats] = useState<Set<M3uExportFormat>>(
-    new Set(exportFormatOptions.map((option) => option.value)),
+  const [selectedProfileId, setSelectedProfileId] = useSessionDraftState<number | null>(
+    exportDraftKey("profile-id"),
+    null,
   );
-  const [selectedPlaylistIds, setSelectedPlaylistIds] = useState<Set<number>>(new Set());
-  const [selectedGeneratedRunIds, setSelectedGeneratedRunIds] = useState<Set<number>>(new Set());
+  const [libraryPath, setLibraryPath] = useSessionDraftState(exportDraftKey("library-path"), "");
+  const [profileName, setProfileName] = useSessionDraftState(exportDraftKey("profile-name"), "Default export");
+  const [searchQuery, setSearchQuery] = useSessionDraftState(exportDraftKey("search"), "");
+  const [pathFormat, setPathFormat] = useSessionDraftState<M3uExportPathFormat>(
+    exportDraftKey("path-format"),
+    "file_url",
+  );
+  const [selectedFormats, setSelectedFormats] = useSessionDraftState<Set<M3uExportFormat>>(
+    exportDraftKey("formats"),
+    () => new Set(exportFormatOptions.map((option) => option.value)),
+    exportFormatSetSessionDraftCodec,
+  );
+  const [selectedPlaylistIds, setSelectedPlaylistIds, hasStoredPlaylistSelection] = useSessionDraftState<Set<number>>(
+    exportDraftKey("playlist-ids"),
+    () => new Set(),
+    numberSetSessionDraftCodec,
+  );
+  const [selectedGeneratedRunIds, setSelectedGeneratedRunIds, hasStoredGeneratedRunSelection] = useSessionDraftState<Set<number>>(
+    exportDraftKey("generated-run-ids"),
+    () => new Set(),
+    numberSetSessionDraftCodec,
+  );
   const [hasSeededSelection, setHasSeededSelection] = useState(false);
   const [lastPreviewKey, setLastPreviewKey] = useState<string | null>(null);
   const selectedFormatList = useMemo(
@@ -678,7 +698,7 @@ export function PlaylistM3uExportView() {
     const defaultProfile = profiles.find((profile) => profile.is_default) ?? profiles[0];
     setSelectedProfileId(defaultProfile.id);
     setLibraryPath(defaultProfile.library_path);
-  }, [profiles, selectedProfileId]);
+  }, [profiles, selectedProfileId, setLibraryPath, setSelectedProfileId]);
 
   useEffect(() => {
     if (hasSeededSelection || playlistsQuery.isPending || generatedRunsQuery.isPending) {
@@ -695,20 +715,25 @@ export function PlaylistM3uExportView() {
     } else if (Number.isFinite(requestedGeneratedRunId) && requestedGeneratedRunId > 0) {
       setSelectedPlaylistIds(new Set());
       setSelectedGeneratedRunIds(new Set());
-    } else {
-      setSelectedPlaylistIds(
-        new Set(requestedPlaylist ? [requestedPlaylist.id] : playlists.map((playlist) => playlist.id)),
-      );
+    } else if (requestedPlaylist) {
+      setSelectedPlaylistIds(new Set([requestedPlaylist.id]));
+      setSelectedGeneratedRunIds(new Set());
+    } else if (!hasStoredPlaylistSelection && !hasStoredGeneratedRunSelection) {
+      setSelectedPlaylistIds(new Set(playlists.map((playlist) => playlist.id)));
       setSelectedGeneratedRunIds(new Set());
     }
     setHasSeededSelection(true);
   }, [
     exportableGeneratedRuns,
     generatedRunsQuery.isPending,
+    hasStoredGeneratedRunSelection,
+    hasStoredPlaylistSelection,
     hasSeededSelection,
     playlists,
     playlistsQuery.isPending,
     searchParams,
+    setSelectedGeneratedRunIds,
+    setSelectedPlaylistIds,
   ]);
 
   function handleProfileChange(profileId: number | null) {
@@ -797,6 +822,9 @@ export function PlaylistM3uExportView() {
           <p className={`mt-1 ${textClasses.bodyMuted}`}>
             {selectedExportTargetCount} {selectedExportTargetCount === 1 ? "export target" : "export targets"} selected.
           </p>
+          <p className={`mt-1 max-w-2xl ${textClasses.bodyMuted}`}>
+            Selected exports contain only the chosen playlists and generated runs. Full-library XML ignores this selection and includes every linked local track.
+          </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <ActionButton disabled={exportRequest === null || previewMutation.isPending} type="submit">
@@ -809,7 +837,7 @@ export function PlaylistM3uExportView() {
           </ActionButton>
           <ActionButton disabled={!isPreviewCurrent || rekordboxXmlMutation.isPending} onClick={handleRekordboxXmlExport} type="button">
             <FileDown aria-hidden="true" className="h-3.5 w-3.5" strokeWidth={1.9} />
-            {rekordboxXmlMutation.isPending ? "Exporting..." : "Download XML"}
+            {rekordboxXmlMutation.isPending ? "Exporting..." : "Download selected XML"}
           </ActionButton>
           <ActionButton
             disabled={fullRekordboxXmlRequest === null || fullRekordboxXmlMutation.isPending}
@@ -817,7 +845,7 @@ export function PlaylistM3uExportView() {
             type="button"
           >
             <FileDown aria-hidden="true" className="h-3.5 w-3.5" strokeWidth={1.9} />
-            {fullRekordboxXmlMutation.isPending ? "Exporting..." : "Download all XML"}
+            {fullRekordboxXmlMutation.isPending ? "Exporting..." : "Download full-library XML"}
           </ActionButton>
         </div>
       </div>
@@ -839,10 +867,10 @@ export function PlaylistM3uExportView() {
       ) : null}
       {exportMutation.isSuccess ? <StatusMessage body="The ZIP download has started." status="success" title="Export ready" /> : null}
       {rekordboxXmlMutation.isSuccess ? (
-        <StatusMessage body="The rekordbox.xml download has started." status="success" title="XML export ready" />
+        <StatusMessage body="The selected-target rekordbox.xml download has started." status="success" title="Selected XML export ready" />
       ) : null}
       {fullRekordboxXmlMutation.isSuccess ? (
-        <StatusMessage body="The full rekordbox.xml download has started." status="success" title="Full XML export ready" />
+        <StatusMessage body="The full-library rekordbox.xml download has started." status="success" title="Full-library XML export ready" />
       ) : null}
 
       <ExportProfileSelector

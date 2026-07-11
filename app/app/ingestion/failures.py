@@ -160,6 +160,20 @@ class FailedIngestionAttemptStore:
 
         return result.rowcount or 0
 
+    def clear(self, attempt_id: int, *, local_track_id: int | None = None) -> int:
+        statement = delete(failed_ingestion_attempts_table).where(
+            failed_ingestion_attempts_table.c.id == attempt_id
+        )
+        if local_track_id is not None:
+            statement = statement.where(
+                failed_ingestion_attempts_table.c.local_track_id == local_track_id
+            )
+
+        with self._engine.begin() as connection:
+            result = connection.execute(statement)
+
+        return result.rowcount or 0
+
     def mark_ignored(
         self,
         attempt_id: int,

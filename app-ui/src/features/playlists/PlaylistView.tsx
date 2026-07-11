@@ -7,7 +7,7 @@ import { ActionButton } from "../../components/ActionButton";
 import { DataTable } from "../../components/DataTable";
 import { EmptyStateCard } from "../../components/EmptyStateCard";
 import { StatusMessage } from "../../components/StatusMessage";
-import { formatDuration } from "../../lib/formatters";
+import { formatDuration, formatPlaylistTimestamp } from "../../lib/formatters";
 import { settleInChunks } from "../../lib/settleInChunks";
 import { textClasses } from "../../styles/componentClasses";
 import { TrackDetailDrawer } from "../tracks/TrackDetailDrawer";
@@ -40,14 +40,6 @@ function getAlbumLabel(album: string | null) {
   }
 
   return album;
-}
-
-function formatAuthErrorTimestamp(timestamp: string | null) {
-  if (!timestamp) {
-    return "Unknown";
-  }
-
-  return timestamp.replace("T", " ").replace(/(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?$/, "");
 }
 
 export function PlaylistView({
@@ -89,7 +81,7 @@ export function PlaylistView({
     activeAccount && (activeAccount.auth_state === "error" || activeAccount.auth_error !== null)
       ? {
           body: activeAccount.auth_error_at
-            ? `${activeAccount.auth_error ?? "Authentication needs attention."} Reported ${formatAuthErrorTimestamp(activeAccount.auth_error_at)}.`
+            ? `${activeAccount.auth_error ?? "Authentication needs attention."} Reported ${formatPlaylistTimestamp(activeAccount.auth_error_at)}.`
             : (activeAccount.auth_error ?? "Authentication needs attention before sync can run."),
           title: "YouTube Music authentication needs attention",
         }
@@ -173,6 +165,7 @@ export function PlaylistView({
         header: "Actions",
         meta: {
           align: "end",
+          sticky: "right",
           widthClass: "w-28",
         },
       }),
@@ -224,6 +217,7 @@ export function PlaylistView({
       <EmptyStateCard
         body="Loading playlist overview..."
         className="text-left"
+        role="status"
         title="Loading playlist overview"
       />
     );
@@ -231,17 +225,28 @@ export function PlaylistView({
 
   if (playlistDetailQuery.isError || playlistTracksQuery.isError) {
     return (
-      <EmptyStateCard
-        body="Playlist overview is unavailable right now."
-        className="text-left"
-        title="Playlist unavailable"
-        tone="error"
-      />
+      <div className="grid justify-items-start gap-3">
+        <EmptyStateCard
+          body="Playlist overview is unavailable right now."
+          className="text-left"
+          role="alert"
+          title="Playlist unavailable"
+          tone="error"
+        />
+        <ActionButton
+          onClick={() => {
+            void playlistDetailQuery.refetch();
+            void playlistTracksQuery.refetch();
+          }}
+        >
+          Retry playlist
+        </ActionButton>
+      </div>
     );
   }
 
   if (!playlistDetailQuery.data) {
-    return null;
+    return <EmptyStateCard body="No playlist detail was returned." className="text-left" title="Playlist missing" />;
   }
 
   return (
@@ -271,7 +276,18 @@ export function PlaylistView({
         <FilterChips activeFilter={activeFilter} counts={filterCounts} onFilterChange={handleFilterChange} />
       </div>
       <div aria-label="Playlist tracks" className="min-h-0 flex-1 overflow-y-auto pb-1 pr-1" role="region">
-        {tracks.length > 0 ? (
+        {tracks.length === 0 ? (
+          <EmptyStateCard
+            body="This playlist has no imported tracks yet. Refresh metadata or run sync, then retry."
+            className="text-left"
+            title="No playlist tracks"
+          />
+        ) : filterCounts[activeFilter] === 0 ? (
+          <div className="grid justify-items-start gap-3">
+            <EmptyStateCard body="No tracks match the selected status." className="text-left" title="No matching tracks" />
+            <ActionButton onClick={() => handleFilterChange("all")}>Show all tracks</ActionButton>
+          </div>
+        ) : (
           <DataTable
             bulkActionSlot={
               <ActionButton
@@ -288,7 +304,7 @@ export function PlaylistView({
             columns={columns}
             data={tracks}
             headerSlot={({ filteredRowCount, totalRowCount }) => (
-              <p className={`${textClasses.status} text-ctp-subtext0`}>
+              <p aria-live="polite" className={`${textClasses.status} text-ctp-subtext0`}>
                 Showing {filteredRowCount} of {totalRowCount} tracks
               </p>
             )}
@@ -301,8 +317,6 @@ export function PlaylistView({
             onRowSelectionChange={setRowSelection}
             onSortingChange={setSorting}
           />
-        ) : (
-          <EmptyStateCard body="No tracks match this filter." title="No matching tracks" />
         )}
       </div>
       <TrackDetailDrawer open={false} syncUrl onClose={() => undefined} />

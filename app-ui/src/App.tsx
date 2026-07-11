@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
+import { JobRefreshProvider } from "./lib/JobRefreshProvider";
 import type { StreamingPlaylist } from "./features/playlists/queries";
 import { Sidebar } from "./features/shell/Sidebar";
 import { Topbar } from "./features/shell/Topbar";
@@ -8,6 +9,7 @@ import { useShellSummaryQuery } from "./features/shell/queries";
 import type { PlaylistSyncViewState } from "./features/shell/types";
 import {
   type AppViewEntry,
+  buildGeneratedRunViewEntry,
   buildGeneratedRunNavItems,
   buildLibraryNavItems,
   buildMaintenanceNavItems,
@@ -17,6 +19,7 @@ import {
   buildShellLoadingViewEntry,
   buildToolNavItems,
   buildViewEntries,
+  getGeneratedRunIdFromViewId,
   getPlaylistViewId,
   getViewIdFromPath,
   getViewPath,
@@ -39,6 +42,11 @@ function App() {
   const [activeViewId, setActiveViewId] = useState(shellLoadingViewId);
   const [hasUserSelectedView, setHasUserSelectedView] = useState(false);
   const [playlistSyncState, setPlaylistSyncState] = useState<PlaylistSyncViewState>();
+  const [isNavigationOpen, setIsNavigationOpen] = useState(false);
+  const [settingsReturnLabel, setSettingsReturnLabel] = useState("Home");
+  const navigationTriggerRef = useRef<HTMLButtonElement>(null);
+  const navigationWasOpenRef = useRef(false);
+  const settingsReturnPathRef = useRef<string | null>(null);
   const shellSummaryQuery = useShellSummaryQuery();
   const streamingPlaylists = shellSummaryQuery.data?.playlists ?? emptyStreamingPlaylists;
   const sonicRuns = shellSummaryQuery.data?.generated_runs ?? emptySonicRuns;
@@ -67,12 +75,22 @@ function App() {
   const generatedRunItems = useMemo(() => buildGeneratedRunNavItems(sonicRuns), [sonicRuns]);
   const settingsItems = useMemo(() => buildSettingsNavItems(), []);
   const toolItems = useMemo(() => buildToolNavItems(), []);
-  const baseViewConfigs = useMemo(() => buildViewEntries(streamingPlaylists, sonicRuns), [sonicRuns, streamingPlaylists]);
+  const routedViewId = useMemo(() => getViewIdFromPath(location.pathname), [location.pathname]);
+  const routedGeneratedRunId = getGeneratedRunIdFromViewId(routedViewId);
+  const baseViewConfigs = useMemo(() => {
+    const entries = buildViewEntries(streamingPlaylists, sonicRuns);
+    if (
+      routedGeneratedRunId !== null &&
+      !entries.some((entry) => entry.id === getViewIdFromPath(`/generated-runs/${routedGeneratedRunId}`))
+    ) {
+      entries.push(buildGeneratedRunViewEntry(routedGeneratedRunId));
+    }
+    return entries;
+  }, [routedGeneratedRunId, sonicRuns, streamingPlaylists]);
   const baseViewConfigById = useMemo(
     () => Object.fromEntries(baseViewConfigs.map((view) => [view.id, view])) as Record<string, AppViewEntry>,
     [baseViewConfigs],
   );
-  const routedViewId = useMemo(() => getViewIdFromPath(location.pathname), [location.pathname]);
   const routedViewIsMissing =
     routedViewId !== null &&
     routedViewId !== routeFallbackViewId &&
@@ -101,6 +119,19 @@ function App() {
       ? "Playlists unavailable."
       : "No full-sync playlists. Configure YouTube Music sync to choose playlists.";
   const playlistEmptyActionLabel = !shellSummaryQuery.isPending && !shellSummaryQuery.isError ? "Sync settings" : undefined;
+
+  const closeNavigation = useCallback(() => setIsNavigationOpen(false), []);
+
+  useEffect(() => {
+    if (navigationWasOpenRef.current && !isNavigationOpen) {
+      navigationTriggerRef.current?.focus();
+    }
+    navigationWasOpenRef.current = isNavigationOpen;
+  }, [isNavigationOpen]);
+
+  useEffect(() => {
+    closeNavigation();
+  }, [closeNavigation, location.pathname, location.search]);
 
   useEffect(() => {
     const normalizedPathname = location.pathname.replace(/\/$/, "") || "/";
@@ -157,9 +188,35 @@ function App() {
   ]);
 
   function handleViewSelect(viewId: string) {
+    closeNavigation();
     setHasUserSelectedView(true);
     setActiveViewId(viewId);
     navigate(getViewPath(viewId));
+  }
+
+  function handleNavigateHome() {
+    settingsReturnPathRef.current = null;
+    setSettingsReturnLabel("Home");
+    handleViewSelect(defaultPlaylistViewId);
+  }
+
+  function handleOpenAppSettings() {
+    settingsReturnPathRef.current = `${location.pathname}${location.search}`;
+    setSettingsReturnLabel(activeView.title);
+    handleViewSelect(settingsGeneralViewId);
+  }
+
+  function handleReturnFromSettings() {
+    const returnPath = settingsReturnPathRef.current;
+    settingsReturnPathRef.current = null;
+    setSettingsReturnLabel("Home");
+
+    if (returnPath) {
+      navigate(returnPath);
+      return;
+    }
+
+    handleNavigateHome();
   }
 
   const isSettingsView =
@@ -168,15 +225,18 @@ function App() {
     activeViewId === settingsSyncYoutubeMusicViewId;
 
   return (
-    <div className="flex h-full min-h-0 w-full flex-1 flex-row overflow-hidden bg-ctp-base text-ctp-text max-md:flex-col">
+    <JobRefreshProvider>
+      <div className="flex h-full min-h-0 w-full flex-1 flex-row overflow-hidden bg-ctp-base text-ctp-text">
       <Sidebar
         activeItemId={activeViewId}
         generatedRunItems={generatedRunItems}
+        isOpen={isNavigationOpen}
         isSettingsMode={isSettingsView}
         libraryItems={libraryItems}
         maintenanceItems={maintenanceItems}
         onConfigureSync={() => handleViewSelect(settingsSyncYoutubeMusicViewId)}
-        onHome={() => handleViewSelect("proposals")}
+        onClose={closeNavigation}
+        onHome={handleNavigateHome}
         onSelect={handleViewSelect}
         playlistEmptyActionLabel={playlistEmptyActionLabel}
         playlistEmptyMessage={playlistEmptyMessage}
@@ -187,10 +247,14 @@ function App() {
 
       <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-ctp-base">
         <Topbar
+          isNavigationOpen={isNavigationOpen}
           isSettingsView={isSettingsView}
-          onNavigateHome={() => handleViewSelect("proposals")}
-          onOpenAppSettings={() => handleViewSelect(settingsGeneralViewId)}
+          navigationTriggerRef={navigationTriggerRef}
+          onOpenNavigation={() => setIsNavigationOpen(true)}
+          onReturnFromSettings={handleReturnFromSettings}
+          onOpenAppSettings={handleOpenAppSettings}
           onPlaylistSyncStateChange={setPlaylistSyncState}
+          settingsReturnLabel={settingsReturnLabel}
           view={activeView}
         />
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
@@ -204,7 +268,8 @@ function App() {
           ))}
         </div>
       </main>
-    </div>
+      </div>
+    </JobRefreshProvider>
   );
 }
 

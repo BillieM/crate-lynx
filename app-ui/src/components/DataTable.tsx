@@ -10,7 +10,7 @@ import {
   type SortingState,
   useReactTable,
 } from "@tanstack/react-table";
-import { type KeyboardEvent, type MouseEvent, type ReactNode, useEffect, useMemo, useRef } from "react";
+import { type KeyboardEvent, type MouseEvent, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 
 import { controlClasses, surfaceClasses, textClasses } from "../styles/componentClasses";
 
@@ -20,6 +20,7 @@ declare module "@tanstack/react-table" {
   interface ColumnMeta<TData, TValue> {
     align?: "start" | "end";
     hideBelow?: "sm" | "md" | "lg";
+    sticky?: "left" | "right";
     widthClass?: string;
   }
 }
@@ -193,6 +194,7 @@ export function DataTable<TRow>({
     [columnFilters],
   );
   const visibleRows = table.getRowModel().rows;
+  const [activeRowId, setActiveRowId] = useState<string | null>(null);
   const selectableVisibleRows = useMemo(() => visibleRows.filter((row) => row.getCanSelect()), [visibleRows]);
   const visibleRowIds = useMemo(() => selectableVisibleRows.map((row) => row.id), [selectableVisibleRows]);
   const selectedVisibleCount = visibleRowIds.filter((rowIdValue) => currentRowSelection[rowIdValue]).length;
@@ -201,6 +203,17 @@ export function DataTable<TRow>({
   const filteredRowCount = table.getFilteredRowModel().rows.length;
   const totalRowCount = table.getCoreRowModel().rows.length;
   const isRowInteractive = enableRowSelection || onActivate !== undefined;
+
+  useEffect(() => {
+    if (!isRowInteractive || visibleRows.length === 0) {
+      setActiveRowId(null);
+      return;
+    }
+
+    if (activeRowId === null || !visibleRows.some((row) => row.id === activeRowId)) {
+      setActiveRowId(visibleRows[0].id);
+    }
+  }, [activeRowId, isRowInteractive, visibleRows]);
 
   useEffect(() => {
     currentRowSelectionRef.current = currentRowSelection;
@@ -303,23 +316,36 @@ export function DataTable<TRow>({
     setRowSelected(rowIndex, !currentRowSelection[selectedRowId]);
   }
 
-  function focusSiblingRow(currentTarget: HTMLTableRowElement, direction: "next" | "previous") {
+  function focusRowAtIndex(currentTarget: HTMLTableRowElement, nextIndex: number) {
     const rows = Array.from(currentTarget.closest("tbody")?.querySelectorAll<HTMLTableRowElement>("tr[data-row-id]") ?? []);
-    const currentIndex = rows.indexOf(currentTarget);
-    const nextIndex = direction === "next" ? currentIndex + 1 : currentIndex - 1;
+    const nextRow = rows[nextIndex];
+    if (!nextRow) {
+      return;
+    }
 
-    rows[nextIndex]?.focus();
+    setActiveRowId(nextRow.dataset.rowId ?? null);
+    nextRow.focus();
   }
 
   function handleRowKeyDown(event: KeyboardEvent<HTMLTableRowElement>, rowIndex: number, rowOriginal: TRow) {
     if (event.key === "ArrowDown") {
       event.preventDefault();
-      focusSiblingRow(event.currentTarget, "next");
+      focusRowAtIndex(event.currentTarget, rowIndex + 1);
     }
 
     if (event.key === "ArrowUp") {
       event.preventDefault();
-      focusSiblingRow(event.currentTarget, "previous");
+      focusRowAtIndex(event.currentTarget, rowIndex - 1);
+    }
+
+    if (event.key === "Home") {
+      event.preventDefault();
+      focusRowAtIndex(event.currentTarget, 0);
+    }
+
+    if (event.key === "End") {
+      event.preventDefault();
+      focusRowAtIndex(event.currentTarget, visibleRows.length - 1);
     }
 
     if (event.key === " " && enableRowSelection) {
@@ -365,7 +391,7 @@ export function DataTable<TRow>({
             {table.getHeaderGroups().map((headerGroup) => (
               <tr key={headerGroup.id} className="border-b border-ctp-surface1 bg-ctp-surface0/95">
                 {enableRowSelection ? (
-                  <th className={`w-10 ${tableDensity.cell} text-left`}>
+                  <th className={`sticky left-0 z-20 w-10 bg-ctp-surface0 ${tableDensity.cell} text-left shadow-[1px_0_0_0_var(--color-ctp-surface1)]`}>
                     <input
                       aria-label="Select all visible rows"
                       checked={headerSelectionState === "all"}
@@ -384,6 +410,12 @@ export function DataTable<TRow>({
                   const meta = header.column.columnDef.meta;
                   const alignClass = meta?.align === "end" ? "text-right" : "text-left";
                   const hideClass = meta?.hideBelow ? hideBelowClasses[meta.hideBelow] : "";
+                  const stickyClass =
+                    meta?.sticky === "left"
+                      ? `sticky ${enableRowSelection ? "left-10" : "left-0"} z-20 bg-ctp-surface0 shadow-[1px_0_0_0_var(--color-ctp-surface1)]`
+                      : meta?.sticky === "right"
+                        ? "sticky right-0 z-20 bg-ctp-surface0 shadow-[-1px_0_0_0_var(--color-ctp-surface1)]"
+                        : "";
                   const widthClass = meta?.widthClass ?? "";
                   const sortDirection = header.column.getIsSorted();
 
@@ -391,7 +423,7 @@ export function DataTable<TRow>({
                     <th
                       key={header.id}
                       aria-sort={header.column.getCanSort() ? getColumnAriaSort(sortDirection) : undefined}
-                      className={`${tableDensity.cell} ${alignClass} ${hideClass} ${widthClass} ${textClasses.microEyebrow} text-ctp-subtext0`}
+                      className={`${tableDensity.cell} ${alignClass} ${hideClass} ${stickyClass} ${widthClass} ${textClasses.microEyebrow} text-ctp-subtext0`}
                       scope="col"
                     >
                       {header.isPlaceholder ? null : header.column.getCanSort() ? (
@@ -420,12 +452,13 @@ export function DataTable<TRow>({
                 key={row.id}
                 className={`${tableDensity.row} border-b border-ctp-surface0/80 outline-none transition-colors last:border-b-0 hover:bg-ctp-surface0/70 focus-visible:bg-ctp-surface0 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ctp-mauve`}
                 data-row-id={row.id}
-                tabIndex={isRowInteractive ? 0 : undefined}
+                tabIndex={isRowInteractive ? (row.id === activeRowId ? 0 : -1) : undefined}
                 onClick={isRowInteractive ? (event) => handleRowClick(event, row.original) : undefined}
+                onFocus={isRowInteractive && activeRowId !== row.id ? () => setActiveRowId(row.id) : undefined}
                 onKeyDown={isRowInteractive ? (event) => handleRowKeyDown(event, rowIndex, row.original) : undefined}
               >
                 {enableRowSelection ? (
-                  <td className={`w-10 ${tableDensity.cell}`}>
+                  <td className={`sticky left-0 z-10 w-10 bg-ctp-mantle ${tableDensity.cell} shadow-[1px_0_0_0_var(--color-ctp-surface0)]`}>
                     <input
                       aria-label={`Select row ${rowIndex + 1}`}
                       checked={row.getIsSelected()}
@@ -446,12 +479,18 @@ export function DataTable<TRow>({
                   const meta = cell.column.columnDef.meta;
                   const alignClass = meta?.align === "end" ? "text-right" : "text-left";
                   const hideClass = meta?.hideBelow ? hideBelowClasses[meta.hideBelow] : "";
+                  const stickyClass =
+                    meta?.sticky === "left"
+                      ? `sticky ${enableRowSelection ? "left-10" : "left-0"} z-10 bg-ctp-mantle shadow-[1px_0_0_0_var(--color-ctp-surface0)]`
+                      : meta?.sticky === "right"
+                        ? "sticky right-0 z-10 bg-ctp-mantle shadow-[-1px_0_0_0_var(--color-ctp-surface0)]"
+                        : "";
                   const widthClass = meta?.widthClass ?? "";
 
                   return (
                     <td
                       key={cell.id}
-                      className={`${tableDensity.cell} ${alignClass} ${hideClass} ${widthClass} min-w-0 text-[12px] text-ctp-text`}
+                      className={`${tableDensity.cell} ${alignClass} ${hideClass} ${stickyClass} ${widthClass} min-w-0 text-[12px] text-ctp-text`}
                     >
                       {flexRender(cell.column.columnDef.cell, cell.getContext())}
                     </td>

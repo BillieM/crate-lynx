@@ -105,6 +105,7 @@ def test_run_sonic_feature_backfill_claims_and_enqueues_extraction_jobs(
             self,
             func: str,
             local_track_id: int | None = None,
+            attempt_count: int | None = None,
             *,
             depends_on: object | None = None,
             job_timeout: str,
@@ -112,7 +113,7 @@ def test_run_sonic_feature_backfill_claims_and_enqueues_extraction_jobs(
             if func == SONIC_FEATURE_RECONCILIATION_FUNC:
                 seen["reconciliation_job"] = (func, job_timeout, depends_on)
                 return SimpleNamespace(id="sonic-reconciliation-job")
-            seen["jobs"].append((func, local_track_id, job_timeout))
+            seen["jobs"].append((func, local_track_id, attempt_count, job_timeout))
             return SimpleNamespace(id=f"sonic-job-{local_track_id}")
 
     class FakeDependency:
@@ -161,11 +162,13 @@ def test_run_sonic_feature_backfill_claims_and_enqueues_extraction_jobs(
             (
                 SONIC_FEATURE_EXTRACTION_FUNC,
                 missing_track_id,
+                1,
                 "30m",
             ),
             (
                 SONIC_FEATURE_EXTRACTION_FUNC,
                 failed_track_id,
+                1,
                 "30m",
             ),
         ],
@@ -180,10 +183,10 @@ def test_run_sonic_feature_backfill_claims_and_enqueues_extraction_jobs(
     assert rows[ready_track_id]["status"] == SONIC_FEATURE_STATUS_READY
     assert rows[missing_track_id]["status"] == SONIC_FEATURE_STATUS_PENDING
     assert rows[missing_track_id]["failure_detail"] is None
-    assert rows[missing_track_id]["attempt_count"] == 0
+    assert rows[missing_track_id]["attempt_count"] == 1
     assert rows[failed_track_id]["status"] == SONIC_FEATURE_STATUS_PENDING
     assert rows[failed_track_id]["failure_detail"] is None
-    assert rows[failed_track_id]["attempt_count"] == 0
+    assert rows[failed_track_id]["attempt_count"] == 1
     assert untouched_missing_track_id not in rows
 
 
@@ -226,7 +229,7 @@ def test_reconcile_failed_sonic_feature_jobs_marks_pending_rows_failed(
             return SimpleNamespace(
                 id=job_id,
                 func_name=SONIC_FEATURE_EXTRACTION_FUNC,
-                args=(local_track_id,),
+                args=(local_track_id, 1),
                 exc_info="Work-horse terminated unexpectedly; waitpid returned 139",
             )
 
@@ -320,7 +323,7 @@ def test_claim_missing_feature_track_ids_reclaims_stale_pending_with_retry_budge
 
     assert rows[stale_pending_track_id]["status"] == SONIC_FEATURE_STATUS_PENDING
     assert rows[stale_pending_track_id]["failure_detail"] is None
-    assert rows[stale_pending_track_id]["attempt_count"] == 1
+    assert rows[stale_pending_track_id]["attempt_count"] == 2
     assert rows[fresh_pending_track_id]["status"] == SONIC_FEATURE_STATUS_PENDING
     assert rows[fresh_pending_track_id]["attempt_count"] == 1
     assert rows[exhausted_failed_track_id]["status"] == SONIC_FEATURE_STATUS_FAILED
@@ -329,6 +332,65 @@ def test_claim_missing_feature_track_ids_reclaims_stale_pending_with_retry_budge
     )
     assert rows[outdated_ready_track_id]["status"] == SONIC_FEATURE_STATUS_PENDING
     assert rows[outdated_ready_track_id]["analyzer_version"] == "1"
-    assert rows[outdated_ready_track_id]["attempt_count"] == 0
+    assert rows[outdated_ready_track_id]["attempt_count"] == 1
     assert rows[missing_track_id]["status"] == SONIC_FEATURE_STATUS_PENDING
-    assert rows[missing_track_id]["attempt_count"] == 0
+    assert rows[missing_track_id]["attempt_count"] == 1
+
+
+def test_sonic_attempt_cas_rejects_stale_success_and_failure(tmp_path) -> None:
+    database_url = f"sqlite:///{tmp_path / 'sonic-attempt-cas.db'}"
+    engine = create_engine(database_url)
+    local_tracks_metadata.create_all(engine)
+    sonic_metadata.create_all(engine)
+    local_track_id = TestDataFactory(engine).local_track(file_path="Race.mp3")
+    store = SonicStore(database_url)
+
+    stale_attempt = store.mark_feature_pending(
+        analyzer_key="librosa_v1",
+        analyzer_version="1",
+        local_track_id=local_track_id,
+    )
+    current_attempt = store.mark_feature_pending(
+        analyzer_key="librosa_v1",
+        analyzer_version="1",
+        local_track_id=local_track_id,
+    )
+
+    assert current_attempt.attempt_count == stale_attempt.attempt_count + 1
+    assert not store.persist_feature_success_if_current(
+        analyzer_key="librosa_v1",
+        analyzer_version="1",
+        attempt_count=stale_attempt.attempt_count,
+        descriptors={"source": "stale"},
+        local_track_id=local_track_id,
+        vector=[1.0],
+    )
+    assert not store.persist_feature_failure_if_current(
+        analyzer_key="librosa_v1",
+        analyzer_version="1",
+        attempt_count=stale_attempt.attempt_count,
+        failure_detail="stale failure",
+        local_track_id=local_track_id,
+    )
+    assert not store.mark_feature_failed_if_pending(
+        analyzer_key="librosa_v1",
+        analyzer_version="1",
+        attempt_count=stale_attempt.attempt_count,
+        failure_detail="stale registry failure",
+        local_track_id=local_track_id,
+    )
+    assert store.persist_feature_success_if_current(
+        analyzer_key="librosa_v1",
+        analyzer_version="1",
+        attempt_count=current_attempt.attempt_count,
+        descriptors={"source": "current"},
+        local_track_id=local_track_id,
+        vector=[2.0],
+    )
+
+    with engine.connect() as connection:
+        row = connection.execute(select(sonic_track_features_table)).mappings().one()
+    assert row["status"] == SONIC_FEATURE_STATUS_READY
+    assert row["descriptor_json"] == {"source": "current"}
+    assert row["vector_json"] == [2.0]
+    assert row["failure_detail"] is None

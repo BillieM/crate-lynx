@@ -1,3 +1,35 @@
+x-app-environment: &app-environment
+  DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-crate_lynx}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@db:5432/${POSTGRES_DB:-crate_lynx}
+  REDIS_URL: redis://redis:6379/0
+  TOKEN_ENCRYPTION_KEY: ${TOKEN_ENCRYPTION_KEY:?set TOKEN_ENCRYPTION_KEY in .env with a Fernet key}
+  LIBRARY_ROOT: ${LIBRARY_ROOT:-/nas/media/music}
+  LOCAL_DEDUPE_QUARANTINE_ROOT: ${LOCAL_DEDUPE_QUARANTINE_ROOT:-/nas/cratelynx/dedupe-quarantine}
+  BEETS_LIBRARY: ${BEETS_LIBRARY:-/data/beets/library.db}
+  BEETS_IMPORT_LOCK_PATH: ${BEETS_IMPORT_LOCK_PATH:-/data/beets/library.db.import.lock}
+  CRATE_LYNX_STAGING_DIR: ${CRATE_LYNX_STAGING_DIR:-/nas/cratelynx/staging}
+  INGESTION_ROOT: ${INGESTION_ROOT:-/nas/cratelynx/music-in}
+  INGESTION_STABILITY_WORKERS: ${INGESTION_STABILITY_WORKERS:-4}
+  INGESTION_WORKER_COUNT: ${INGESTION_WORKER_COUNT:-1}
+  SONIC_WORKER_COUNT: ${SONIC_WORKER_COUNT:-2}
+  SLSKD_BASE_URL: ${SLSKD_BASE_URL:-}
+  SLSKD_API_KEY: ${SLSKD_API_KEY:-}
+  SLSKD_VERIFY_SSL: ${SLSKD_VERIFY_SSL:-true}
+  SLSKD_REQUEST_TIMEOUT_SECONDS: ${SLSKD_REQUEST_TIMEOUT_SECONDS:-10}
+  SLSKD_SEARCH_TIMEOUT_SECONDS: ${SLSKD_SEARCH_TIMEOUT_SECONDS:-30}
+  SLSKD_SEARCH_POLL_TIMEOUT_SECONDS: ${SLSKD_SEARCH_POLL_TIMEOUT_SECONDS:-30}
+  SLSKD_SEARCH_POLL_INTERVAL_SECONDS: ${SLSKD_SEARCH_POLL_INTERVAL_SECONDS:-2}
+  SLSKD_RESPONSE_LIMIT: ${SLSKD_RESPONSE_LIMIT:-100}
+  SLSKD_FILE_LIMIT: ${SLSKD_FILE_LIMIT:-10000}
+  SLSKD_MAXIMUM_PEER_QUEUE_LENGTH: ${SLSKD_MAXIMUM_PEER_QUEUE_LENGTH:-1000000}
+  SLSKD_MINIMUM_PEER_UPLOAD_SPEED: ${SLSKD_MINIMUM_PEER_UPLOAD_SPEED:-0}
+  SLSKD_WEBHOOK_TOKEN: ${SLSKD_WEBHOOK_TOKEN:-}
+  SLSKD_DOWNLOADS_CONTAINER_ROOT: ${SLSKD_DOWNLOADS_CONTAINER_ROOT:-/data/soulseek/downloads}
+  SLSKD_DOWNLOADS_APP_ROOT: ${SLSKD_DOWNLOADS_APP_ROOT:-/nas/soulseek/downloads}
+
+x-app-volumes: &app-volumes
+  - ${NAS_DATA_HOST_PATH:-/mnt/nas_data}:/nas
+  - ${APP_DATA_HOST_PATH:-/docker/appdata/cratelynx}/app:/data
+
 services:
   db:
     build:
@@ -36,6 +68,14 @@ services:
       retries: 5
       start_period: 5s
 
+  config-preflight:
+    build:
+      context: ./app
+    command: ["python", "-m", "app.core.compose_preflight"]
+    environment: *app-environment
+    volumes: *app-volumes
+    restart: "no"
+
   app:
     build:
       context: ./app
@@ -44,30 +84,13 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-    environment:
-      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-crate_lynx}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@db:5432/${POSTGRES_DB:-crate_lynx}
-      REDIS_URL: redis://redis:6379/0
-      TOKEN_ENCRYPTION_KEY: ${TOKEN_ENCRYPTION_KEY:?set TOKEN_ENCRYPTION_KEY in .env with a Fernet key}
-      LIBRARY_ROOT: ${LIBRARY_ROOT:-/nas/media/music}
-      LOCAL_DEDUPE_QUARANTINE_ROOT: ${LOCAL_DEDUPE_QUARANTINE_ROOT:-/nas/cratelynx/dedupe-quarantine}
-      BEETS_LIBRARY: ${BEETS_LIBRARY:-/data/beets/library.db}
-      CRATE_LYNX_STAGING_DIR: ${CRATE_LYNX_STAGING_DIR:-/nas/cratelynx/staging}
-      INGESTION_ROOT: ${INGESTION_ROOT:-/nas/cratelynx/music-in}
-      M3U_OUTPUT_DIR: ${M3U_OUTPUT_DIR:-/data/m3u}
-      SLSKD_BASE_URL: ${SLSKD_BASE_URL:-}
-      SLSKD_API_KEY: ${SLSKD_API_KEY:-}
-      SLSKD_VERIFY_SSL: ${SLSKD_VERIFY_SSL:-true}
-      SLSKD_SEARCH_POLL_TIMEOUT_SECONDS: ${SLSKD_SEARCH_POLL_TIMEOUT_SECONDS:-30}
-      SLSKD_SEARCH_POLL_INTERVAL_SECONDS: ${SLSKD_SEARCH_POLL_INTERVAL_SECONDS:-2}
-      SLSKD_WEBHOOK_TOKEN: ${SLSKD_WEBHOOK_TOKEN:-}
-      SLSKD_DOWNLOADS_CONTAINER_ROOT: ${SLSKD_DOWNLOADS_CONTAINER_ROOT:-/data/soulseek/downloads}
-      SLSKD_DOWNLOADS_APP_ROOT: ${SLSKD_DOWNLOADS_APP_ROOT:-/nas/soulseek/downloads}
+      config-preflight:
+        condition: service_completed_successfully
+    environment: *app-environment
     ports:
       - "${APP_BIND_HOST:-127.0.0.1}:18101:8000"
-    volumes:
-      # Keep /nas paths in sync with DEFAULT_INGEST_FOLDER_PATHS in app/app/settings/models.py.
-      - ${NAS_DATA_HOST_PATH:-/mnt/nas_data}:/nas
-      - ${APP_DATA_HOST_PATH:-/docker/appdata/cratelynx}/app:/data
+    # Keep /nas paths in sync with DEFAULT_INGEST_FOLDER_PATHS in app/app/settings/models.py.
+    volumes: *app-volumes
     networks:
       - default
       - music

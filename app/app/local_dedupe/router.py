@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import logging
-import os
 from collections.abc import Callable
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -24,10 +22,6 @@ from app.local_dedupe.store import (
     LocalDedupeStore,
     LocalDedupeUnsafePathError,
 )
-from app.m3u.jobs import M3uRegenerationJobEnqueuer
-
-
-logger = logging.getLogger(__name__)
 
 
 def create_router(
@@ -43,23 +37,6 @@ def create_router(
         return create_database_engine(
             require_database_url() if require_database_url is not None else None
         )
-
-    def _redis_url(playlist_ids: tuple[int, ...]) -> str | None:
-        if not playlist_ids:
-            return None
-        redis_url = (
-            require_redis_url()
-            if require_redis_url is not None
-            else os.environ.get("REDIS_URL")
-        )
-        if not redis_url:
-            logger.warning(
-                "REDIS_URL is not configured; skipping M3U regeneration for "
-                "local dedupe playlist_ids=%s",
-                playlist_ids,
-            )
-            return None
-        return redis_url
 
     @router.get("/local-dedupe/queue", response_model=LocalDedupeQueueResponse)
     def list_local_dedupe_queue(
@@ -104,12 +81,6 @@ def create_router(
                 status_code=400,
                 detail=f"Unsafe local file path: {exc}",
             ) from exc
-
-        redis_url = _redis_url(result.affected_playlist_ids)
-        if redis_url is not None:
-            M3uRegenerationJobEnqueuer(redis_url).enqueue_playlists(
-                result.affected_playlist_ids
-            )
 
         return LocalDedupeResolveResponse(
             affected_playlist_ids=list(result.affected_playlist_ids),

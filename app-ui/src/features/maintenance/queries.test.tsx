@@ -6,6 +6,8 @@ import {
   fetchUnidentifiedTracks,
   ignoreUnidentifiedTrack,
   maintenanceQueryKeys,
+  metadataRescueInvalidationKeys,
+  MetadataRescueRequestError,
   rematchLocalTrack,
   rescueLocalTrackMetadata,
   restoreUnidentifiedTrack,
@@ -36,6 +38,12 @@ describe("maintenance queries", () => {
   it("builds stable query keys for maintenance reports", () => {
     expect(maintenanceQueryKeys.all).toEqual(["maintenance"]);
     expect(maintenanceQueryKeys.unidentified()).toEqual(["maintenance", "unidentified"]);
+    expect(metadataRescueInvalidationKeys(1004)).toEqual([
+      ["maintenance", "unidentified"],
+      ["local-tracks", 1004, "detail"],
+      ["library"],
+      ["shell", "summary"],
+    ]);
   });
 
   it("fetches unidentified rows from the durable maintenance route", async () => {
@@ -50,15 +58,10 @@ describe("maintenance queries", () => {
 
   it("posts metadata rescue and local-track re-match to API-prefixed endpoints", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async (url, init) => {
-      if (url === "/api/local-tracks/4001/rescue" && init?.method === "POST") {
+      if (url === "/api/local-tracks/4001/rescue?failed_attempt_id=7001" && init?.method === "POST") {
         return {
           ok: true,
-          json: async () => ({
-            beets_id: 12,
-            file_path: "Artist/rescue.mp3",
-            id: 4001,
-            library_root_rel_path: "Artist/rescue.mp3",
-          }),
+          json: async () => rescuedTrack(),
         } as Response;
       }
       if (url === "/api/local-tracks/4001/rematch" && init?.method === "POST") {
@@ -73,16 +76,51 @@ describe("maintenance queries", () => {
       throw new Error(`Unexpected request: ${String(url)}`);
     });
 
-    await expect(rescueLocalTrackMetadata(4001)).resolves.toMatchObject({
+    await expect(rescueLocalTrackMetadata(4001, 7001)).resolves.toMatchObject({
       id: 4001,
       library_root_rel_path: "Artist/rescue.mp3",
+      metadata: { artist: "Rescue Artist", title: "Rescue Title" },
+      rescue: { completed: true, failed_attempt_id: 7001 },
     });
     await expect(rematchLocalTrack(4001)).resolves.toEqual({
       job_id: "matching-job-1",
       local_track_id: 4001,
     });
-    expect(fetchMock).toHaveBeenCalledWith("/api/local-tracks/4001/rescue", { method: "POST" });
+    expect(fetchMock).toHaveBeenCalledWith("/api/local-tracks/4001/rescue?failed_attempt_id=7001", {
+      method: "POST",
+    });
     expect(fetchMock).toHaveBeenCalledWith("/api/local-tracks/4001/rematch", { method: "POST" });
+  });
+
+  it("preserves structured metadata rescue state on partial failure", async () => {
+    const partialResult = rescuedTrack({
+      rescue: {
+        completed: false,
+        failed_attempt_id: 7001,
+        partial_failure: true,
+        stages: [
+          { detail: "Updated ID3 tags", name: "file_tags", status: "succeeded" },
+          { detail: "mirror offline", name: "postgres_mirror", status: "failed" },
+          { detail: "Skipped after mirror failure", name: "failed_attempt", status: "skipped" },
+        ],
+      },
+    });
+    vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      json: async () => ({
+        detail: {
+          message: "Metadata rescue completed only partially",
+          result: partialResult,
+        },
+      }),
+      ok: false,
+      status: 500,
+    } as Response);
+
+    const error = await rescueLocalTrackMetadata(4001, 7001).catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(MetadataRescueRequestError);
+    expect((error as MetadataRescueRequestError).result).toEqual(partialResult);
+    expect((error as MetadataRescueRequestError).message).toContain("Metadata rescue completed only partially");
   });
 
   it("posts unidentified row actions to durable maintenance endpoints", async () => {
@@ -194,5 +232,33 @@ function unidentifiedTrackShape(): UnidentifiedTrack {
     source_mtime_ns: 1746217040000000000,
     source_path: "ingestion/failed/unknown-import-9a4f.mp3",
     source_size: 3210,
+  };
+}
+
+function rescuedTrack(
+  patch: Partial<Awaited<ReturnType<typeof rescueLocalTrackMetadata>>> = {},
+): Awaited<ReturnType<typeof rescueLocalTrackMetadata>> {
+  return {
+    beets_id: 12,
+    file_path: "Artist/rescue.mp3",
+    id: 4001,
+    library_root_rel_path: "Artist/rescue.mp3",
+    metadata: {
+      album: "Rescue Album",
+      album_art_url: null,
+      artist: "Rescue Artist",
+      title: "Rescue Title",
+      year: 2022,
+    },
+    rescue: {
+      completed: true,
+      failed_attempt_id: 7001,
+      partial_failure: false,
+      stages: [
+        { detail: "Updated ID3 tags", name: "file_tags", status: "succeeded" },
+        { detail: "Resolved failed attempt", name: "failed_attempt", status: "succeeded" },
+      ],
+    },
+    ...patch,
   };
 }

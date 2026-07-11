@@ -8,6 +8,10 @@ from pathlib import Path
 
 DEFAULT_INGESTION_ROOT = Path("/nas/cratelynx/music-in")
 DEFAULT_INGESTION_STABILITY_WORKERS = 4
+DEFAULT_INGESTION_WORKER_COUNT = 1
+DEFAULT_SONIC_WORKER_COUNT = 2
+MAX_INGESTION_STABILITY_WORKERS = 64
+MAX_QUEUE_WORKER_COUNT = 32
 DEFAULT_STAGING_BASE = Path("/tmp")
 CRATE_LYNX_STAGING_DIR_ENV = "CRATE_LYNX_STAGING_DIR"
 
@@ -19,6 +23,9 @@ class RuntimeConfig:
     token_encryption_key: str | None
     ingestion_root: Path
     ingestion_stability_workers: int
+    ingestion_worker_count: int
+    sonic_worker_count: int
+    beets_import_lock_path: Path | None
     warnings: tuple[str, ...] = ()
 
 
@@ -35,7 +42,29 @@ def load_runtime_config(environ: Mapping[str, str] | None = None) -> RuntimeConf
             DEFAULT_INGESTION_STABILITY_WORKERS,
             env,
             minimum=1,
+            maximum=MAX_INGESTION_STABILITY_WORKERS,
             warnings=warnings,
+        ),
+        ingestion_worker_count=int_env(
+            "INGESTION_WORKER_COUNT",
+            DEFAULT_INGESTION_WORKER_COUNT,
+            env,
+            minimum=1,
+            maximum=MAX_QUEUE_WORKER_COUNT,
+            warnings=warnings,
+        ),
+        sonic_worker_count=int_env(
+            "SONIC_WORKER_COUNT",
+            DEFAULT_SONIC_WORKER_COUNT,
+            env,
+            minimum=1,
+            maximum=MAX_QUEUE_WORKER_COUNT,
+            warnings=warnings,
+        ),
+        beets_import_lock_path=(
+            Path(lock_path)
+            if (lock_path := optional_env("BEETS_IMPORT_LOCK_PATH", env))
+            else None
         ),
         warnings=tuple(warnings),
     )
@@ -66,6 +95,7 @@ def int_env(
     environ: Mapping[str, str] | None = None,
     *,
     minimum: int | None = None,
+    maximum: int | None = None,
     warnings: list[str] | None = None,
 ) -> int:
     value = optional_env(name, environ)
@@ -79,8 +109,14 @@ def int_env(
             warnings.append(f"Invalid integer for {name}={value!r}; using {default}")
         return default
 
-    if minimum is not None:
-        return max(minimum, parsed)
+    if minimum is not None and parsed < minimum:
+        if warnings is not None:
+            warnings.append(f"{name}={parsed} is below {minimum}; using {minimum}")
+        return minimum
+    if maximum is not None and parsed > maximum:
+        if warnings is not None:
+            warnings.append(f"{name}={parsed} exceeds {maximum}; using {maximum}")
+        return maximum
     return parsed
 
 

@@ -113,6 +113,7 @@ def test_backfill_features_endpoint_claims_and_enqueues_immediately(
             self,
             func: str,
             local_track_id: int | None = None,
+            attempt_count: int | None = None,
             *,
             depends_on: object | None = None,
             job_timeout: str,
@@ -120,7 +121,7 @@ def test_backfill_features_endpoint_claims_and_enqueues_immediately(
             if func == SONIC_FEATURE_RECONCILIATION_FUNC:
                 seen["reconciliation_job"] = (func, job_timeout, depends_on)
                 return SimpleNamespace(id="sonic-reconciliation-job")
-            seen["jobs"].append((func, local_track_id, job_timeout))
+            seen["jobs"].append((func, local_track_id, attempt_count, job_timeout))
             return SimpleNamespace(id=f"sonic-job-{local_track_id}")
 
     class FakeDependency:
@@ -156,6 +157,7 @@ def test_backfill_features_endpoint_claims_and_enqueues_immediately(
             (
                 SONIC_FEATURE_EXTRACTION_FUNC,
                 missing_track_id,
+                1,
                 "30m",
             ),
         ],

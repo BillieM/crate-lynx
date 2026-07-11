@@ -10,13 +10,13 @@ from sqlalchemy import delete, desc, func, insert, select, update
 from sqlalchemy.engine import Engine
 
 from app.core.db import create_database_engine
-from app.links.store import final_links_table
-from app.matching.pipeline import (
-    SUGGESTED_LINK_STATUS_APPROVED,
-    SUGGESTED_LINK_STATUS_PENDING,
-    suggested_links_table,
+from app.links.store import (
+    FinalLinkConflictError,
+    FinalLinkMutationService,
+    final_links_table,
 )
-from app.m3u.jobs import affected_full_sync_playlist_ids_for_streaming_tracks
+from app.matching.pipeline import SUGGESTED_LINK_STATUS_PENDING, suggested_links_table
+from app.links.impact import affected_full_sync_playlist_ids_for_streaming_tracks
 from app.relationships.resolver import StreamingRelationshipResolver
 from app.soulseek.models import (
     MissingTrackSoulseekSummary,
@@ -76,14 +76,16 @@ _ACTIVE_SEARCH_STATUSES = {
     SOULSEEK_STATUS_FAILED,
     SOULSEEK_STATUS_LINK_FAILED,
 }
-_QUEUE_REVIEW_STATUSES = {SOULSEEK_STATUS_CANDIDATES_FOUND}
+_QUEUE_REVIEW_STATUSES = {
+    SOULSEEK_STATUS_CANDIDATES_FOUND,
+    SOULSEEK_STATUS_PROPOSAL_AVAILABLE,
+}
 _QUEUE_DOWNLOADING_STATUSES = {
     SOULSEEK_STATUS_SEARCHING,
     SOULSEEK_STATUS_QUEUED,
     SOULSEEK_STATUS_DOWNLOADING,
     SOULSEEK_STATUS_COMPLETED,
     SOULSEEK_STATUS_INGESTED,
-    SOULSEEK_STATUS_PROPOSAL_AVAILABLE,
 }
 _QUEUE_FAILED_STATUSES = {SOULSEEK_STATUS_FAILED, SOULSEEK_STATUS_LINK_FAILED}
 _SOURCE_PATH_MATCH_STATUSES = {
@@ -232,7 +234,16 @@ class SoulseekStore:
                 .mappings()
                 .one_or_none()
             )
-        return _acquisition_record(row) if row is not None else None
+            proposal_id = (
+                _proposal_id_for_acquisition_row(connection, row)
+                if row is not None
+                else None
+            )
+        return (
+            _acquisition_record(row, proposal_id=proposal_id)
+            if row is not None
+            else None
+        )
 
     def get_candidate(self, candidate_id: str) -> SoulseekCandidateRecord | None:
         with self._engine.connect() as connection:
@@ -354,7 +365,10 @@ class SoulseekStore:
             )
             if row is None:
                 return None
-            acquisition = _acquisition_record(row)
+            acquisition = _acquisition_record(
+                row,
+                proposal_id=_proposal_id_for_acquisition_row(connection, row),
+            )
             track = _streaming_tracks(
                 connection,
                 [acquisition.streaming_track_id],
@@ -829,7 +843,7 @@ class SoulseekStore:
                 .mappings()
                 .one()
             )
-        return _acquisition_record(updated_row)
+        return _acquisition_record(updated_row, proposal_id=proposal_id)
 
     def backfill_auto_links_from_pending_suggestions(
         self,
@@ -1089,20 +1103,21 @@ class SoulseekStore:
                 .mappings()
                 .all()
             )
-            summaries: dict[int, MissingTrackSoulseekSummary] = {}
+            latest_row_by_track_id = {}
             for row in rows:
                 track_id = int(row["streaming_track_id"])
-                if track_id in summaries:
-                    continue
-                status = row["status"]
-                if row["local_track_id"] is not None:
-                    proposal_id = _pending_proposal_id(
-                        connection,
-                        local_track_id=row["local_track_id"],
-                        streaming_track_id=track_id,
-                    )
-                    if proposal_id is not None:
-                        status = SOULSEEK_STATUS_PROPOSAL_AVAILABLE
+                latest_row_by_track_id.setdefault(track_id, row)
+            latest_rows = list(latest_row_by_track_id.values())
+            proposal_ids = _proposal_ids_for_acquisition_rows(connection, latest_rows)
+            summaries: dict[int, MissingTrackSoulseekSummary] = {}
+            for row in latest_rows:
+                track_id = int(row["streaming_track_id"])
+                proposal_id = proposal_ids.get(row["id"])
+                status = (
+                    SOULSEEK_STATUS_PROPOSAL_AVAILABLE
+                    if proposal_id is not None
+                    else row["status"]
+                )
                 summaries[track_id] = MissingTrackSoulseekSummary(
                     id=row["id"],
                     status=status,
@@ -1116,6 +1131,7 @@ class SoulseekStore:
                     refresh_job_id=row["refresh_job_id"],
                     local_track_id=row["local_track_id"],
                     final_link_id=row["final_link_id"],
+                    proposal_id=proposal_id,
                     error_detail=row["error_detail"],
                     link_error_detail=row["link_error_detail"],
                 )
@@ -1330,12 +1346,19 @@ def _latest_acquisitions(connection) -> dict[int, SoulseekAcquisitionRecord]:
         .mappings()
         .all()
     )
-    acquisitions: dict[int, SoulseekAcquisitionRecord] = {}
+    latest_row_by_track_id = {}
     for row in rows:
         track_id = int(row["streaming_track_id"])
-        if track_id in acquisitions:
-            continue
-        acquisitions[track_id] = _acquisition_record(row)
+        latest_row_by_track_id.setdefault(track_id, row)
+    latest_rows = list(latest_row_by_track_id.values())
+    proposal_ids = _proposal_ids_for_acquisition_rows(connection, latest_rows)
+    acquisitions: dict[int, SoulseekAcquisitionRecord] = {}
+    for row in latest_rows:
+        track_id = int(row["streaming_track_id"])
+        acquisitions[track_id] = _acquisition_record(
+            row,
+            proposal_id=proposal_ids.get(row["id"]),
+        )
     return acquisitions
 
 
@@ -1533,6 +1556,7 @@ def _queue_sort_key(item: SoulseekQueueItemRecord) -> tuple[int, str, int]:
     status = acquisition.status if acquisition is not None else None
     status_rank = {
         SOULSEEK_STATUS_CANDIDATES_FOUND: 0,
+        SOULSEEK_STATUS_PROPOSAL_AVAILABLE: 0,
         SOULSEEK_STATUS_FAILED: 1,
         SOULSEEK_STATUS_LINK_FAILED: 1,
         SOULSEEK_STATUS_SEARCHING: 2,
@@ -1540,7 +1564,6 @@ def _queue_sort_key(item: SoulseekQueueItemRecord) -> tuple[int, str, int]:
         SOULSEEK_STATUS_DOWNLOADING: 2,
         SOULSEEK_STATUS_COMPLETED: 2,
         SOULSEEK_STATUS_INGESTED: 2,
-        SOULSEEK_STATUS_PROPOSAL_AVAILABLE: 2,
         SOULSEEK_STATUS_NO_CANDIDATES: 3,
         SOULSEEK_STATUS_LINKED: 4,
     }.get(status, 3)
@@ -1557,103 +1580,27 @@ def _create_soulseek_final_link(
     local_track_id: int,
     streaming_track_id: int,
 ) -> tuple[int, tuple[int, ...]]:
-    existing_local_link = _final_link_for_local_track(connection, local_track_id)
-    resolver = StreamingRelationshipResolver(connection)
-    target_group_ids = resolver.equivalent_group_track_ids(streaming_track_id)
-    affected_track_ids = set(target_group_ids)
-
-    if existing_local_link is not None:
-        existing_streaming_track_id = int(existing_local_link["streaming_track_id"])
-        existing_group_ids = resolver.equivalent_group_track_ids(
-            existing_streaming_track_id
-        )
-        if set(existing_group_ids).intersection(target_group_ids):
-            return int(existing_local_link["id"]), (
-                affected_full_sync_playlist_ids_for_streaming_tracks(
-                    connection,
-                    (*target_group_ids, *existing_group_ids),
-                )
-            )
-        raise SoulseekAutoLinkConflictError(
-            "Imported local track is already linked to another streaming track"
-        )
-
-    conflicting_links = _conflicting_group_final_links(
-        connection,
-        target_group_ids,
-        local_track_id=local_track_id,
-    )
-    if conflicting_links:
-        raise SoulseekAutoLinkConflictError(
-            "Streaming track or equivalent group is already linked to another local track"
-        )
-
-    result = connection.execute(
-        insert(final_links_table).values(
-            local_track_id=local_track_id,
-            streaming_track_id=streaming_track_id,
-        )
-    )
-    final_link_id = result.inserted_primary_key[0]
-    if not isinstance(final_link_id, int):
-        raise ValueError("Failed to persist Soulseek final link")
-
-    connection.execute(
-        insert(suggested_links_table).values(
+    try:
+        mutation = FinalLinkMutationService(connection).create(
             local_track_id=local_track_id,
             streaming_track_id=streaming_track_id,
             match_method="soulseek",
-            score=1.0,
-            status=SUGGESTED_LINK_STATUS_APPROVED,
         )
-    )
-    connection.execute(
-        delete(suggested_links_table).where(
-            suggested_links_table.c.local_track_id == local_track_id,
-            suggested_links_table.c.status == SUGGESTED_LINK_STATUS_PENDING,
-        )
-    )
+    except FinalLinkConflictError as exc:
+        if exc.reason == "local_track_already_linked":
+            detail = "Imported local track is already linked to another streaming track"
+        else:
+            detail = (
+                "Streaming track or equivalent group is already linked to another "
+                "local track"
+            )
+        raise SoulseekAutoLinkConflictError(detail) from exc
+
     affected_playlist_ids = affected_full_sync_playlist_ids_for_streaming_tracks(
         connection,
-        affected_track_ids,
+        mutation.affected_streaming_track_ids,
     )
-    return final_link_id, affected_playlist_ids
-
-
-def _final_link_for_local_track(connection, local_track_id: int):
-    return (
-        connection.execute(
-            select(
-                final_links_table.c.id,
-                final_links_table.c.local_track_id,
-                final_links_table.c.streaming_track_id,
-            ).where(final_links_table.c.local_track_id == local_track_id)
-        )
-        .mappings()
-        .one_or_none()
-    )
-
-
-def _conflicting_group_final_links(
-    connection,
-    streaming_track_ids: tuple[int, ...],
-    *,
-    local_track_id: int,
-):
-    rows = (
-        connection.execute(
-            select(
-                final_links_table.c.id,
-                final_links_table.c.local_track_id,
-                final_links_table.c.streaming_track_id,
-            )
-            .where(final_links_table.c.streaming_track_id.in_(streaming_track_ids))
-            .order_by(final_links_table.c.id.asc())
-        )
-        .mappings()
-        .all()
-    )
-    return [row for row in rows if row["local_track_id"] != local_track_id]
+    return mutation.final_link_id, affected_playlist_ids
 
 
 def _pending_proposal_id(
@@ -1672,11 +1619,70 @@ def _pending_proposal_id(
     return int(proposal_id) if proposal_id is not None else None
 
 
-def _acquisition_record(row) -> SoulseekAcquisitionRecord:
+def _proposal_ids_for_acquisition_rows(connection, rows) -> dict[str, int]:
+    rows_with_local_track = [row for row in rows if row["local_track_id"] is not None]
+    if not rows_with_local_track:
+        return {}
+
+    local_track_ids = {int(row["local_track_id"]) for row in rows_with_local_track}
+    streaming_track_ids = {
+        int(row["streaming_track_id"]) for row in rows_with_local_track
+    }
+    proposal_rows = (
+        connection.execute(
+            select(
+                suggested_links_table.c.local_track_id,
+                suggested_links_table.c.streaming_track_id,
+                func.min(suggested_links_table.c.id).label("proposal_id"),
+            )
+            .where(
+                suggested_links_table.c.status == SUGGESTED_LINK_STATUS_PENDING,
+                suggested_links_table.c.local_track_id.in_(local_track_ids),
+                suggested_links_table.c.streaming_track_id.in_(streaming_track_ids),
+            )
+            .group_by(
+                suggested_links_table.c.local_track_id,
+                suggested_links_table.c.streaming_track_id,
+            )
+        )
+        .mappings()
+        .all()
+    )
+    proposal_id_by_pair = {
+        (int(row["local_track_id"]), int(row["streaming_track_id"])): int(
+            row["proposal_id"]
+        )
+        for row in proposal_rows
+    }
+    return {
+        row["id"]: proposal_id
+        for row in rows_with_local_track
+        if (
+            proposal_id := proposal_id_by_pair.get(
+                (int(row["local_track_id"]), int(row["streaming_track_id"]))
+            )
+        )
+        is not None
+    }
+
+
+def _proposal_id_for_acquisition_row(connection, row) -> int | None:
+    return _proposal_ids_for_acquisition_rows(connection, [row]).get(row["id"])
+
+
+def _acquisition_record(
+    row,
+    *,
+    proposal_id: int | None = None,
+) -> SoulseekAcquisitionRecord:
     return SoulseekAcquisitionRecord(
         id=row["id"],
         streaming_track_id=row["streaming_track_id"],
-        status=row["status"],
+        status=(
+            SOULSEEK_STATUS_PROPOSAL_AVAILABLE
+            if proposal_id is not None
+            else row["status"]
+        ),
         search_text=row["search_text"],
         fallback_search_text=row["fallback_search_text"],
         slskd_search_id=row["slskd_search_id"],
@@ -1689,6 +1695,7 @@ def _acquisition_record(row) -> SoulseekAcquisitionRecord:
         slskd_completed_event_id=row["slskd_completed_event_id"],
         local_track_id=row["local_track_id"],
         final_link_id=row["final_link_id"],
+        proposal_id=proposal_id,
         job_id=row["job_id"],
         enqueue_job_id=row["enqueue_job_id"],
         refresh_job_id=row["refresh_job_id"],

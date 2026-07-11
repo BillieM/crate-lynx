@@ -137,7 +137,10 @@ class BeetsImporter:
             self.import_lock_path,
         )
         with self._import_lock:
-            with _exclusive_file_lock(import_lock_path):
+            with beets_library_lock(
+                library_database,
+                import_lock_path=import_lock_path,
+            ):
                 previous_item_id = self._latest_item_id(library_database)
 
                 _run_checked(
@@ -339,20 +342,12 @@ class IngestionProcessor:
         try:
             from app.soulseek.store import SoulseekStore
 
-            result = SoulseekStore(
+            SoulseekStore(
                 engine=self.database_engine
             ).mark_ingested_and_auto_link_from_source_path(
                 local_track_id=prepared.local_track_id,
                 source_path=str(prepared.source_path),
             )
-            if result is not None and result.affected_playlist_ids:
-                redis_url = os.environ.get("REDIS_URL")
-                if redis_url:
-                    from app.m3u.jobs import M3uRegenerationJobEnqueuer
-
-                    M3uRegenerationJobEnqueuer(redis_url).enqueue_playlists(
-                        result.affected_playlist_ids
-                    )
         except Exception:
             logger.warning(
                 "Failed to mark Soulseek acquisition ingested for source_path=%s",
@@ -521,6 +516,18 @@ def _resolve_import_lock_path(
         return Path(configured_lock_path)
 
     return library_database.with_name(f"{library_database.name}.import.lock")
+
+
+@contextmanager
+def beets_library_lock(
+    library_database: Path | str,
+    *,
+    import_lock_path: Path | str | None = None,
+) -> Iterator[None]:
+    database_path = Path(library_database)
+    lock_path = _resolve_import_lock_path(database_path, import_lock_path)
+    with _exclusive_file_lock(lock_path):
+        yield
 
 
 @contextmanager

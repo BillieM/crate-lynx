@@ -1,6 +1,6 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 
-import { endpoints, fetchJson, postJson } from "../../lib/api";
+import { ApiRequestError, endpoints, fetchJson, postJson } from "../../lib/api";
 
 export type LocalTrackFinalLink = {
   approved_at: string;
@@ -50,7 +50,40 @@ export type RescuedLocalTrack = {
   file_path: string;
   id: number;
   library_root_rel_path: string | null;
+  metadata: RescuedMetadata | null;
+  rescue: MetadataRescueReport;
 };
+
+export type RescuedMetadata = {
+  album: string | null;
+  album_art_url: string | null;
+  artist: string;
+  title: string;
+  year: number | null;
+};
+
+export type MetadataRescueStage = {
+  detail: string;
+  name: "metadata_fetch" | "file_tags" | "beets_catalogue" | "postgres_mirror" | "failed_attempt" | string;
+  status: "succeeded" | "failed" | "skipped" | "not_applicable";
+};
+
+export type MetadataRescueReport = {
+  completed: boolean;
+  failed_attempt_id: number | null;
+  partial_failure: boolean;
+  stages: MetadataRescueStage[];
+};
+
+export class MetadataRescueRequestError extends ApiRequestError {
+  result: RescuedLocalTrack | null;
+
+  constructor(message: string, status: number, result: RescuedLocalTrack | null = null) {
+    super(message, status);
+    this.name = "MetadataRescueRequestError";
+    this.result = result;
+  }
+}
 
 export const localTrackQueryKeys = {
   all: ["local-tracks"] as const,
@@ -82,13 +115,55 @@ export function useRematchUnresolvedLocalTracksMutation() {
   });
 }
 
-export async function rescueLocalTrackMetadata(localTrackId: number | string): Promise<RescuedLocalTrack> {
-  return postJson<RescuedLocalTrack>(
-    endpoints.api(`/local-tracks/${encodeURIComponent(String(localTrackId))}/rescue`),
-    {
-      errorMessage: "Metadata rescue request failed",
-    },
+export async function rescueLocalTrackMetadata(
+  localTrackId: number | string,
+  failedAttemptId?: number | string | null,
+): Promise<RescuedLocalTrack> {
+  const baseUrl = endpoints.api(`/local-tracks/${encodeURIComponent(String(localTrackId))}/rescue`);
+  const url =
+    failedAttemptId === null || failedAttemptId === undefined
+      ? baseUrl
+      : `${baseUrl}?failed_attempt_id=${encodeURIComponent(String(failedAttemptId))}`;
+  const response = await fetch(url, { method: "POST" });
+  const payload = typeof response.json === "function" ? ((await response.json()) as unknown) : undefined;
+
+  if (!response.ok) {
+    const partialFailure = parseMetadataRescueFailure(payload);
+    throw new MetadataRescueRequestError(
+      partialFailure?.message ?? "Metadata rescue request failed",
+      response.status,
+      partialFailure?.result ?? null,
+    );
+  }
+
+  return payload as RescuedLocalTrack;
+}
+
+function parseMetadataRescueFailure(payload: unknown): { message: string; result: RescuedLocalTrack } | null {
+  if (!isRecord(payload) || !isRecord(payload.detail)) {
+    return null;
+  }
+  const { message, result } = payload.detail;
+  if (typeof message !== "string" || !isRescuedLocalTrack(result)) {
+    return null;
+  }
+  return { message, result };
+}
+
+function isRescuedLocalTrack(value: unknown): value is RescuedLocalTrack {
+  return (
+    isRecord(value) &&
+    typeof value.id === "number" &&
+    typeof value.file_path === "string" &&
+    isRecord(value.rescue) &&
+    typeof value.rescue.completed === "boolean" &&
+    typeof value.rescue.partial_failure === "boolean" &&
+    Array.isArray(value.rescue.stages)
   );
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
 export function useLocalTrackDetailQuery(localTrackId: number | string | null | undefined, enabled = true) {

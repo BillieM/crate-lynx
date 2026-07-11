@@ -338,7 +338,7 @@ def sync_library_playlists(
     sync_started_at: datetime | None = None,
 ) -> list[Any]:
     playlists = adapter.list_library_playlists()
-    return playlist_store.upsert_playlists(
+    return playlist_store.reconcile_playlists(
         account_id=account_id,
         playlists=playlists,
         metadata_synced_at=sync_started_at or datetime.now(UTC),
@@ -354,7 +354,7 @@ def sync_library_playlist_tracks(
 ) -> list[Any]:
     sync_timestamp = sync_started_at or datetime.now(UTC)
     playlists = adapter.list_library_playlists()
-    stored_playlists = playlist_store.upsert_playlists(
+    stored_playlists = playlist_store.reconcile_playlists(
         account_id=account_id,
         playlists=playlists,
         metadata_synced_at=sync_timestamp,

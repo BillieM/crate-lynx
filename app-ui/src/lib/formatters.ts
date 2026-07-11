@@ -10,12 +10,24 @@ export function formatDuration(durationMs: number | null) {
   return `${minutes}:${String(seconds).padStart(2, "0")}`;
 }
 
-export function formatPlaylistTimestamp(timestamp: string | null) {
+export function formatTimestamp(timestamp: string | null, fallback = "Not available") {
   if (!timestamp) {
-    return "Not synced yet";
+    return fallback;
   }
 
-  return timestamp.replace("T", " ").replace(/(?:\.\d+)?Z?$/, "");
+  const value = new Date(timestamp);
+  if (Number.isNaN(value.getTime())) {
+    return "Invalid date";
+  }
+
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(value);
+}
+
+export function formatPlaylistTimestamp(timestamp: string | null) {
+  return formatTimestamp(timestamp, "Not synced yet");
 }
 
 export function getLocalTrackLabel(localTrack: { local_file_path: string }) {

@@ -99,13 +99,19 @@ def _add_foreign_keys(metadata: MetaData) -> None:
                 "accepted_relationship_id",
                 "streaming_relationships.id",
                 "fk_streaming_relationship_suggestions_accepted_relationship",
+                "SET NULL",
             ),
         ),
         "sonic_track_features": (("local_track_id", "local_tracks.id"),),
         "soulseek_acquisitions": (
             ("streaming_track_id", "streaming_tracks.id"),
             ("local_track_id", "local_tracks.id"),
-            ("final_link_id", "final_links.id"),
+            (
+                "final_link_id",
+                "final_links.id",
+                "fk_soulseek_acquisitions_final_link_id_final_links",
+                "SET NULL",
+            ),
         ),
         "soulseek_candidates": (("acquisition_id", "soulseek_acquisitions.id"),),
         "generated_playlists": (
@@ -132,13 +138,15 @@ def _add_foreign_keys(metadata: MetaData) -> None:
             reference = constraint[1]
             name = (
                 constraint[2]
-                if len(constraint) == 3
+                if len(constraint) >= 3
                 else f"fk_{table_name}_{column_name}_{reference.rsplit('.', 1)[0]}"
             )
+            ondelete = constraint[3] if len(constraint) == 4 else None
             table.append_constraint(
                 ForeignKeyConstraint(
                     [column_name],
                     [reference],
                     name=name,
+                    ondelete=ondelete,
                 )
             )

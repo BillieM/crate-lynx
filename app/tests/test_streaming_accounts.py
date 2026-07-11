@@ -310,6 +310,70 @@ def test_streaming_account_store_upserts_playlists(
     assert stored_playlist_rows[1]["provider_track_count"] == 8
 
 
+def test_streaming_account_store_reconciles_playlists_missing_from_full_listing(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite:///{tmp_path / 'streaming-playlist-reconcile.db'}"
+    engine = create_engine(database_url)
+    _create_streaming_schema(engine)
+    monkeypatch.setenv("TOKEN_ENCRYPTION_KEY", Fernet.generate_key().decode("utf-8"))
+
+    store = StreamingAccountStore(database_url)
+    account = store.create_youtube_music_account(
+        display_name="Listener",
+        browser_headers={"refresh_token": "refresh-token"},
+    )
+    kept, removed = store.upsert_playlists(
+        account_id=account.id,
+        playlists=[
+            YouTubeMusicPlaylist(provider_playlist_id="PL1", title="Keep"),
+            YouTubeMusicPlaylist(provider_playlist_id="PL2", title="Remove"),
+        ],
+    )
+    track = store.upsert_tracks(
+        tracks=[
+            YouTubeMusicTrack(
+                provider_track_id="track-removed-playlist",
+                title="Track",
+                artist="Artist",
+                album=None,
+                year=None,
+                isrc=None,
+                duration_ms=120000,
+            )
+        ]
+    )[0]
+    with engine.begin() as connection:
+        connection.execute(
+            insert(playlist_membership_table).values(
+                playlist_id=removed.id,
+                streaming_track_id=track.id,
+                position=1,
+            )
+        )
+
+    reconciled = store.reconcile_playlists(
+        account_id=account.id,
+        playlists=[YouTubeMusicPlaylist(provider_playlist_id="PL1", title="Kept")],
+    )
+
+    assert [(playlist.id, playlist.title) for playlist in reconciled] == [
+        (kept.id, "Kept")
+    ]
+    with engine.connect() as connection:
+        playlist_ids = list(
+            connection.execute(
+                select(streaming_playlists_table.c.id).order_by(
+                    streaming_playlists_table.c.id
+                )
+            ).scalars()
+        )
+        memberships = list(connection.execute(select(playlist_membership_table)))
+    assert playlist_ids == [kept.id]
+    assert memberships == []
+
+
 def test_streaming_account_store_concurrent_upserts_reuse_provider_rows(
     monkeypatch,
     tmp_path: Path,
@@ -817,6 +881,8 @@ def test_streaming_account_store_upserts_tracks_and_playlist_membership(
     assert stored_tracks[1]["year"] == 2024
     assert stored_tracks[0]["isrc"] == "GBUM72105976"
     assert stored_tracks[1]["isrc"] == "USQX92200001"
+    assert stored_tracks[0]["canonical_isrc"] == "GBUM72105976"
+    assert stored_tracks[1]["canonical_isrc"] == "USQX92200001"
     assert stored_tracks[1]["duration_ms"] == 200000
     assert len(stored_memberships) == 2
     assert stored_memberships[0]["playlist_id"] == playlist.id
@@ -825,6 +891,44 @@ def test_streaming_account_store_upserts_tracks_and_playlist_membership(
     assert stored_memberships[1]["playlist_id"] == playlist.id
     assert stored_memberships[1]["position"] == 2
     assert stored_memberships[1]["streaming_track_id"] == stored_tracks[0]["id"]
+
+
+def test_streaming_track_upsert_clears_canonical_isrc_for_invalid_provider_value(
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite:///{tmp_path / 'streaming-canonical-isrc.db'}"
+    engine = create_engine(database_url)
+    _create_streaming_schema(engine)
+    store = StreamingAccountStore(database_url)
+    track = YouTubeMusicTrack(
+        provider_track_id="track-1",
+        title="Track",
+        artist="Artist",
+        album=None,
+        year=None,
+        isrc="GB-UM7-21-05976",
+        duration_ms=180000,
+    )
+
+    store.upsert_tracks(tracks=[track])
+    store.upsert_tracks(
+        tracks=[
+            YouTubeMusicTrack(
+                provider_track_id=track.provider_track_id,
+                title=track.title,
+                artist=track.artist,
+                album=track.album,
+                year=track.year,
+                isrc="N/A",
+                duration_ms=track.duration_ms,
+            )
+        ]
+    )
+
+    with engine.connect() as connection:
+        row = connection.execute(select(streaming_tracks_table)).mappings().one()
+    assert row["isrc"] == "N/A"
+    assert row["canonical_isrc"] is None
 
 
 def test_streaming_account_store_syncs_youtube_music_playlist_tracks(

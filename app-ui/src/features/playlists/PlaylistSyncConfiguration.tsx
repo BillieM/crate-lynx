@@ -33,6 +33,7 @@ import {
 } from "./queries";
 
 type PlaylistCollectionStatus = "empty" | "error" | "loading" | "ready";
+type PlaylistModeFilter = "all" | PlaylistSyncMode;
 const emptyPlaylistConfigs: StreamingPlaylistConfig[] = [];
 
 const activePlaylistSyncModes = new Set<PlaylistSyncMode>(["full", "match_only"]);
@@ -249,6 +250,8 @@ export function PlaylistSyncConfiguration() {
   const configQuery = useStreamingPlaylistConfigQuery();
   const accountsQuery = useStreamingAccountsQuery();
   const [lastSuccessfulConfig, setLastSuccessfulConfig] = useState<StreamingPlaylistConfigResponse>();
+  const [modeFilter, setModeFilter] = useState<PlaylistModeFilter>("all");
+  const [searchQuery, setSearchQuery] = useState("");
   const [sorting, setSorting] = useState<SortingState>([]);
   const [modeUpdateFailed, setModeUpdateFailed] = useState(false);
   const selectedSyncMutation = useMutation({
@@ -312,6 +315,24 @@ export function PlaylistSyncConfiguration() {
   const visibleConfig = configQuery.data ?? lastSuccessfulConfig;
   const accounts = accountsQuery.data?.accounts ?? [];
   const playlists = visibleConfig?.playlists ?? emptyPlaylistConfigs;
+  const filteredPlaylists = useMemo(() => {
+    const normalizedQuery = searchQuery.trim().toLocaleLowerCase();
+
+    return playlists.filter((playlist) => {
+      if (modeFilter !== "all" && playlist.sync_mode !== modeFilter) {
+        return false;
+      }
+
+      if (!normalizedQuery) {
+        return true;
+      }
+
+      return [playlist.title, playlist.provider_playlist_id, playlist.last_sync_error ?? ""]
+        .join(" ")
+        .toLocaleLowerCase()
+        .includes(normalizedQuery);
+    });
+  }, [modeFilter, playlists, searchQuery]);
   const modeCounts = getPlaylistModeCounts(playlists);
   const playlistAccountId = playlists[0]?.account_id;
   const activeAccount =
@@ -365,25 +386,8 @@ export function PlaylistSyncConfiguration() {
         cell: (info) => <span className="block max-w-[18rem] truncate font-semibold">{info.getValue()}</span>,
         header: "Playlist",
         meta: {
+          sticky: "left",
           widthClass: "min-w-[13rem]",
-        },
-      }),
-      columnHelper.display({
-        cell: (info) => (
-          <PlaylistSyncModeControl
-            isPending={pendingModePlaylistId !== null && playlistIdMatches(info.row.original, pendingModePlaylistId)}
-            onChange={(syncMode) =>
-              updatePlaylistMode({
-                playlistId: info.row.original.id,
-                sync_mode: syncMode,
-              })
-            }
-            playlist={info.row.original}
-          />
-        ),
-        header: "Mode",
-        meta: {
-          widthClass: "min-w-[18rem]",
         },
       }),
       columnHelper.accessor("provider_track_count", {
@@ -454,6 +458,25 @@ export function PlaylistSyncConfiguration() {
           widthClass: "w-24",
         },
       }),
+      columnHelper.display({
+        cell: (info) => (
+          <PlaylistSyncModeControl
+            isPending={pendingModePlaylistId !== null && playlistIdMatches(info.row.original, pendingModePlaylistId)}
+            onChange={(syncMode) =>
+              updatePlaylistMode({
+                playlistId: info.row.original.id,
+                sync_mode: syncMode,
+              })
+            }
+            playlist={info.row.original}
+          />
+        ),
+        header: "Mode",
+        meta: {
+          sticky: "right",
+          widthClass: "min-w-[18rem]",
+        },
+      }),
     ],
     [pendingModePlaylistId, updatePlaylistMode],
   );
@@ -481,7 +504,12 @@ export function PlaylistSyncConfiguration() {
   }
 
   if (visibleConfig === undefined && configQuery.isError) {
-    return <PlaylistCollectionState status="error" />;
+    return (
+      <PlaylistCollectionState
+        actionSlot={<ActionButton onClick={() => void configQuery.refetch()}>Retry playlists</ActionButton>}
+        status="error"
+      />
+    );
   }
 
   if (playlists.length === 0) {
@@ -603,6 +631,13 @@ export function PlaylistSyncConfiguration() {
               title={operationMessage.title}
             />
           ) : null}
+          {configQuery.isError && lastSuccessfulConfig !== undefined ? (
+            <StatusMessage
+              body="The latest refresh failed. These are the last successfully loaded playlist settings; retry before relying on them as current."
+              status="error"
+              title="Showing stale playlist settings"
+            />
+          ) : null}
           {accountAuthError ? (
             <div className="grid gap-2">
               <StatusMessage body={accountAuthError.body} status="error" title={accountAuthError.title} />
@@ -615,12 +650,44 @@ export function PlaylistSyncConfiguration() {
             </div>
           ) : null}
           <div className="grid gap-2.5">
-            <div className="flex items-center justify-between gap-3 px-1">
+            <div className="flex flex-wrap items-end justify-between gap-3 px-1">
               <div className="flex items-center gap-2 text-ctp-subtext0">
                 <Settings2 aria-hidden="true" className="h-4 w-4" strokeWidth={1.8} />
                 <h3 className={textClasses.label}>Discovered playlist rows</h3>
               </div>
-              <p className={`${textClasses.caption} tabular-nums`}>{playlists.length} rows</p>
+              <p aria-live="polite" className={`${textClasses.caption} tabular-nums`}>
+                {filteredPlaylists.length} of {playlists.length} rows
+              </p>
+            </div>
+            <div className="flex flex-wrap items-end gap-2" role="search">
+              <label className="grid min-w-[15rem] flex-1 gap-1" htmlFor="playlist-config-search">
+                <span className={textClasses.caption}>Search playlists</span>
+                <span className={`${controlClasses.searchFrame} flex min-h-9 items-center gap-2 px-3`}>
+                  <Search aria-hidden="true" className="h-4 w-4 shrink-0 text-ctp-overlay1" strokeWidth={1.8} />
+                  <input
+                    className="min-w-0 flex-1 bg-transparent text-[13px] text-ctp-text outline-none placeholder:text-ctp-overlay1"
+                    id="playlist-config-search"
+                    placeholder="Title, provider ID, or error"
+                    type="search"
+                    value={searchQuery}
+                    onChange={(event) => setSearchQuery(event.currentTarget.value)}
+                  />
+                </span>
+              </label>
+              <label className="grid gap-1" htmlFor="playlist-mode-filter">
+                <span className={textClasses.caption}>Sync mode</span>
+                <select
+                  className={`${controlClasses.controlRadius} min-h-9 border border-ctp-surface1 bg-ctp-surface0 px-3 text-[13px] text-ctp-text`}
+                  id="playlist-mode-filter"
+                  value={modeFilter}
+                  onChange={(event) => setModeFilter(event.currentTarget.value as PlaylistModeFilter)}
+                >
+                  <option value="all">All modes</option>
+                  <option value="full">Full sync</option>
+                  <option value="match_only">Match only</option>
+                  <option value="off">Off</option>
+                </select>
+              </label>
             </div>
             {modeUpdateFailed ? (
               <StatusMessage
@@ -630,15 +697,33 @@ export function PlaylistSyncConfiguration() {
                 title="Playlist mode update failed"
               />
             ) : null}
-            <DataTable
-              columns={columns}
-              data={playlists}
-              enableRowSelection={false}
-              rowId={(playlist) => String(playlist.id)}
-              sorting={sorting}
-              stickyHeader
-              onSortingChange={setSorting}
-            />
+            {filteredPlaylists.length > 0 ? (
+              <DataTable
+                columns={columns}
+                data={filteredPlaylists}
+                enableRowSelection={false}
+                rowId={(playlist) => String(playlist.id)}
+                sorting={sorting}
+                stickyHeader
+                onSortingChange={setSorting}
+              />
+            ) : (
+              <div className="grid justify-items-start gap-3">
+                <EmptyStateCard
+                  body="No discovered playlists match the current search and sync-mode filter."
+                  className="text-left"
+                  title="No matching playlists"
+                />
+                <ActionButton
+                  onClick={() => {
+                    setSearchQuery("");
+                    setModeFilter("all");
+                  }}
+                >
+                  Clear filters
+                </ActionButton>
+              </div>
+            )}
           </div>
         </div>
       </div>

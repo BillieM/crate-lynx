@@ -103,7 +103,7 @@ export const shellClasses = {
   navSectionTitle: "px-3.5 tracking-[0.18em]",
   navStack: "space-y-1",
   sidebar:
-    "flex min-h-0 w-[208px] shrink-0 flex-col border-r border-ctp-surface0 bg-ctp-mantle max-md:max-h-[45vh] max-md:w-full max-md:border-b",
+    "flex min-h-0 w-[208px] shrink-0 flex-col border-r border-ctp-surface0 bg-ctp-mantle max-md:fixed max-md:inset-y-0 max-md:left-0 max-md:z-50 max-md:h-dvh max-md:w-[min(88vw,20rem)] max-md:shadow-2xl max-md:shadow-ctp-crust/60 max-md:transition-[transform,visibility] max-md:duration-200 max-md:ease-out",
   sidebarBody: "flex-1 space-y-4 overflow-y-auto px-0 py-4",
   sidebarHeader: "border-b border-ctp-surface0 px-4 py-3.5",
   sidebarLogo: `flex h-8 w-8 items-center justify-center ${radiusClasses.control} bg-ctp-surface0 text-ctp-mauve`,

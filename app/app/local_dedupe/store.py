@@ -19,7 +19,7 @@ from app.core.db import create_database_engine
 from app.core.isrc import normalize_isrc_code
 from app.ingestion.beets_mirror import beets_item_attributes_table, beets_items_table
 from app.ingestion.failures import failed_ingestion_attempts_table
-from app.links.store import final_links_table
+from app.links.store import detach_final_links, final_links_table
 from app.local_dedupe.models import (
     LOCAL_DEDUPE_ACTION_DISMISSED,
     LOCAL_DEDUPE_ACTION_RESOLVED,
@@ -36,7 +36,7 @@ from app.local_dedupe.models import (
     local_dedupe_decisions_table,
 )
 from app.local_tracks.store import local_tracks_table
-from app.m3u.jobs import affected_full_sync_playlist_ids_for_streaming_tracks
+from app.links.impact import affected_full_sync_playlist_ids_for_streaming_tracks
 from app.matching.pipeline import SUGGESTED_LINK_STATUS_PENDING, suggested_links_table
 from app.sonic.models import (
     generated_playlist_tracks_table,
@@ -607,11 +607,7 @@ def _delete_duplicate_track_references(
             suggested_links_table.c.local_track_id.in_(duplicate_ids)
         )
     )
-    connection.execute(
-        delete(final_links_table).where(
-            final_links_table.c.local_track_id.in_(duplicate_ids)
-        )
-    )
+    detach_final_links(connection, duplicate_final_link_ids)
     if duplicate_beets_ids:
         connection.execute(
             delete(beets_item_attributes_table).where(

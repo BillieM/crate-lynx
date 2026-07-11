@@ -396,6 +396,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/proposals/{proposal_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Proposal */
+        get: operations["get_proposal_api_proposals__proposal_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/proposals/{proposal_id}/approve": {
         parameters: {
             query?: never;
@@ -1429,8 +1446,14 @@ export interface components {
             stats: components["schemas"]["LibraryStatsResponse"];
             /** Tracks */
             tracks: components["schemas"]["LibraryTrackResponse"][];
+            /** Filtered Total */
+            filtered_total: number;
+            /** Returned Count */
+            returned_count: number;
+            /** Limit */
+            limit: number;
             /** Next Cursor */
-            next_cursor: number | null;
+            next_cursor: string | null;
         };
         /** LocalDedupeDecisionResponse */
         LocalDedupeDecisionResponse: {
@@ -1958,6 +1981,45 @@ export interface components {
             /** Tracks */
             tracks: components["schemas"]["PlaylistTrackResponse"][];
         };
+        /** ProposalDetailResponse */
+        ProposalDetailResponse: {
+            /** Id */
+            id: number;
+            /** Local Track Id */
+            local_track_id: number;
+            /** Local File Path */
+            local_file_path: string;
+            /** Local Title */
+            local_title: string | null;
+            /** Local Artist */
+            local_artist: string | null;
+            /** Local Album */
+            local_album: string | null;
+            /** Streaming Track Id */
+            streaming_track_id: number;
+            /** Streaming Provider Track Id */
+            streaming_provider_track_id: string;
+            /** Streaming Title */
+            streaming_title: string;
+            /** Streaming Artist */
+            streaming_artist: string;
+            /** Streaming Album */
+            streaming_album: string | null;
+            /** Match Method */
+            match_method: string;
+            /** Score */
+            score: number;
+            /** Status */
+            status: string;
+            confidence_band: components["schemas"]["ConfidenceBand"];
+            /** Rejected At */
+            rejected_at: string | null;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "pending" | "resolved" | "stale";
+        };
         /** ProposalListResponse */
         ProposalListResponse: {
             /** Proposals */
@@ -2189,6 +2251,8 @@ export interface components {
             local_track_id?: number | null;
             /** Final Link Id */
             final_link_id?: number | null;
+            /** Proposal Id */
+            proposal_id?: number | null;
             /** Error Detail */
             error_detail: string | null;
             /** Link Error Detail */
@@ -2252,6 +2316,8 @@ export interface components {
             local_track_id?: number | null;
             /** Final Link Id */
             final_link_id?: number | null;
+            /** Proposal Id */
+            proposal_id?: number | null;
             /** Error Detail */
             error_detail: string | null;
             /** Link Error Detail */
@@ -3377,7 +3443,9 @@ export interface operations {
     };
     rescue_local_track_metadata_api_local_tracks__local_track_id__rescue_post: {
         parameters: {
-            query?: never;
+            query?: {
+                failed_attempt_id?: number | null;
+            };
             header?: never;
             path: {
                 local_track_id: number;
@@ -3411,8 +3479,12 @@ export interface operations {
     list_library_tracks_api_library_tracks_get: {
         parameters: {
             query?: {
-                cursor?: number | null;
+                cursor?: string | null;
                 limit?: number;
+                q?: string | null;
+                link_status?: ("linked" | "pending" | "unlinked") | null;
+                sort?: "id" | "title" | "artist" | "album" | "duration_ms" | "link_status";
+                direction?: "asc" | "desc";
             };
             header?: never;
             path?: never;
@@ -3573,6 +3645,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ProposalListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_proposal_api_proposals__proposal_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                proposal_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProposalDetailResponse"];
                 };
             };
             /** @description Validation Error */

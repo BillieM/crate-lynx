@@ -35,6 +35,7 @@ class SoulseekAcquisitionSummaryResponse(BaseModel):
     refresh_job_id: str | None
     local_track_id: int | None = None
     final_link_id: int | None = None
+    proposal_id: int | None = None
     error_detail: str | None
     link_error_detail: str | None = None
 

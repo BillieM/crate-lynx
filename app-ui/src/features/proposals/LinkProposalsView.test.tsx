@@ -4,6 +4,7 @@ import { MemoryRouter } from "react-router-dom";
 
 import { LinkProposalsView } from "./LinkProposalsView";
 import type { LinkProposalsResponse } from "../playlists/queries";
+import type { ProposalDetail } from "./queries";
 
 const proposalsResponse: LinkProposalsResponse = {
   limit: 50,
@@ -88,13 +89,29 @@ function renderLinkProposalsView(initialEntry = "/proposals") {
 
 type MockProposalFetchOptions = {
   approveHandler?: () => Promise<Response> | Response;
+  detailResponse?: ProposalDetail;
+  detailStatus?: number;
   rejectHandler?: () => Promise<Response> | Response;
   response?: LinkProposalsResponse;
 };
 
-function mockProposalFetch({ approveHandler, rejectHandler, response = proposalsResponse }: MockProposalFetchOptions = {}) {
+function mockProposalFetch({
+  approveHandler,
+  detailResponse,
+  detailStatus,
+  rejectHandler,
+  response = proposalsResponse,
+}: MockProposalFetchOptions = {}) {
   return vi.spyOn(globalThis, "fetch").mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
+
+    if (url === "/api/proposals/44" && init?.method === undefined) {
+      return {
+        ok: detailStatus === undefined || detailStatus < 400,
+        status: detailStatus ?? 200,
+        json: async () => detailResponse ?? { ...proposalsResponse.proposals[0], state: "pending" },
+      } as Response;
+    }
 
     if (/^\/api\/proposals(?:\?|$)/.test(url) && init?.method === undefined) {
       return {
@@ -136,20 +153,21 @@ describe("LinkProposalsView", () => {
     vi.restoreAllMocks();
   });
 
-  it("renders flat proposal rows in score order without confidence band filters", async () => {
+  it("groups ranked alternatives into one task per local track with truthful counts", async () => {
     const fetchMock = mockProposalFetch();
 
     renderLinkProposalsView();
 
     expect(await screen.findByRole("heading", { level: 2, name: "Proposal queue" })).toBeInTheDocument();
-    expect(await screen.findAllByText("Night Runner.mp3")).toHaveLength(2);
+    expect(await screen.findAllByText("Night Runner.mp3")).toHaveLength(1);
     expect(fetchMock).toHaveBeenCalledWith("/api/proposals?limit=50");
 
-    expect(screen.queryByRole("heading", { level: 3, name: "High" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("heading", { level: 3, name: "Medium" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("heading", { level: 3, name: "Low" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("group", { name: "Confidence band filters" })).not.toBeInTheDocument();
-    expect(screen.queryByText("Ranked candidates")).not.toBeInTheDocument();
+    expect(screen.getByText("2 local-track tasks shown from 3 matching loaded candidates. 3 of 3 total candidates are loaded.")).toBeInTheDocument();
+    const taskList = screen.getByRole("list", { name: "Local-track proposal tasks" });
+    expect(within(taskList).getAllByRole("listitem", { name: /Local track task/ })).toHaveLength(2);
+    const nightRunnerTask = screen.getByRole("listitem", { name: "Local track task Night Runner.mp3" });
+    expect(within(nightRunnerTask).getByRole("list", { name: "Ranked alternatives for Night Runner.mp3" })).toBeInTheDocument();
+    expect(within(nightRunnerTask).getByText("2 alternatives")).toBeInTheDocument();
 
     const nightRunnerRow = screen.getByRole("listitem", { name: /Proposal 44: Night Runner\.mp3 to Night Runner$/ });
     const alternateRow = screen.getByRole("listitem", {
@@ -161,8 +179,8 @@ describe("LinkProposalsView", () => {
 
     expect(nightRunnerRow.compareDocumentPosition(alternateRow)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
     expect(alternateRow.compareDocumentPosition(pendingSignalRow)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
-    expect(within(nightRunnerRow).getByText("Night Runner File")).toBeInTheDocument();
-    expect(within(nightRunnerRow).getByText("Private Archive")).toBeInTheDocument();
+    expect(within(nightRunnerTask).getByText("Night Runner File")).toBeInTheDocument();
+    expect(within(nightRunnerTask).getByText(/Frame Delay · Private Archive/)).toBeInTheDocument();
     expect(within(nightRunnerRow).getByText("Tag")).toBeInTheDocument();
     expect(within(nightRunnerRow).getByText("92%")).toBeInTheDocument();
     expect(within(nightRunnerRow).getByText("High confidence")).toBeInTheDocument();
@@ -185,20 +203,21 @@ describe("LinkProposalsView", () => {
     expect(within(pendingSignalRow).getByText("ISRC")).toBeInTheDocument();
     expect(within(pendingSignalRow).getAllByText("Album unavailable")).toHaveLength(1);
 
-    expect(
-      within(nightRunnerRow).getByText("Local track").compareDocumentPosition(within(nightRunnerRow).getByText("Streaming track")),
-    ).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(within(nightRunnerRow).getByText("Alternative 1")).toBeInTheDocument();
+    expect(within(alternateRow).getByText("Alternative 2")).toBeInTheDocument();
     expect(screen.getAllByRole("button", { name: /Approve proposal/ })).toHaveLength(3);
     expect(screen.getAllByRole("button", { name: /Reject proposal/ })).toHaveLength(3);
   });
 
-  it("renders missing local metadata as dashes while keeping the filename", async () => {
+  it("keeps the local filename and labels unavailable local metadata once at task level", async () => {
     mockProposalFetch();
 
     renderLinkProposalsView();
 
-    const pendingSignalRow = await screen.findByRole("listitem", { name: /Proposal 45: Pending Signal\.mp3/ });
-    expect(within(pendingSignalRow).getAllByText("—")).toHaveLength(3);
+    const pendingSignalTask = await screen.findByRole("listitem", { name: "Local track task Pending Signal.mp3" });
+    const pendingSignalRow = within(pendingSignalTask).getByRole("listitem", { name: /Proposal 45: Pending Signal\.mp3/ });
+    expect(within(pendingSignalTask).getByText("Metadata unavailable")).toBeInTheDocument();
+    expect(within(pendingSignalTask).getByText("Pending Signal.mp3")).toBeInTheDocument();
     expect(within(pendingSignalRow).getAllByText("Album unavailable")).toHaveLength(1);
   });
 
@@ -234,10 +253,9 @@ describe("LinkProposalsView", () => {
 
     renderLinkProposalsView();
 
-    const partialRow = await screen.findByRole("listitem", { name: /Proposal 50: Partial Signal\.mp3/ });
-    expect(within(partialRow).getAllByText("Partial Signal")).toHaveLength(3);
-    expect(within(partialRow).getByText("Singles")).toBeInTheDocument();
-    expect(within(partialRow).getAllByText("—")).toHaveLength(1);
+    const partialTask = await screen.findByRole("listitem", { name: "Local track task Partial Signal.mp3" });
+    expect(within(partialTask).getAllByText("Partial Signal").length).toBeGreaterThanOrEqual(2);
+    expect(within(partialTask).getByText("Singles")).toBeInTheDocument();
   });
 
   it("ignores legacy confidence band URL state and fetches all proposals", async () => {
@@ -245,11 +263,69 @@ describe("LinkProposalsView", () => {
 
     renderLinkProposalsView("/proposals?band=high");
 
-    expect(await screen.findAllByText("Night Runner.mp3")).toHaveLength(2);
+    expect(await screen.findAllByText("Night Runner.mp3")).toHaveLength(1);
     expect(screen.getByText("Pending Signal.mp3")).toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledWith("/api/proposals?limit=50");
     expect(fetchMock).not.toHaveBeenCalledWith("/api/proposals?band=high");
-    expect(screen.queryByRole("group", { name: "Confidence band filters" })).not.toBeInTheDocument();
+    expect(screen.getByRole("group", { name: "Proposal confidence filters" })).toBeInTheDocument();
+  });
+
+  it("filters loaded tasks by search, method, and confidence without overstating totals", async () => {
+    mockProposalFetch();
+
+    renderLinkProposalsView();
+
+    const searchInput = await screen.findByRole("searchbox", { name: "Search loaded proposals" });
+    fireEvent.change(searchInput, { target: { value: "Pending Signal" } });
+    expect(screen.getByText("1 local-track task shown from 1 matching loaded candidates. 3 of 3 total candidates are loaded.")).toBeInTheDocument();
+    expect(screen.queryByRole("listitem", { name: "Local track task Night Runner.mp3" })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Clear filters" }));
+    fireEvent.change(screen.getByRole("combobox", { name: "Match method" }), { target: { value: "isrc" } });
+    expect(screen.getByRole("listitem", { name: "Local track task Pending Signal.mp3" })).toBeInTheDocument();
+    expect(screen.queryByRole("listitem", { name: "Local track task Night Runner.mp3" })).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByRole("combobox", { name: "Match method" }), { target: { value: "all" } });
+    fireEvent.click(screen.getByRole("button", { name: "High 1" }));
+    expect(screen.getByRole("listitem", { name: "Local track task Night Runner.mp3" })).toBeInTheDocument();
+    expect(screen.queryByRole("listitem", { name: "Local track task Pending Signal.mp3" })).not.toBeInTheDocument();
+  });
+
+  it("loads and focuses the exact pending proposal from a path deep link", async () => {
+    const fetchMock = mockProposalFetch();
+
+    renderLinkProposalsView("/proposals/44");
+
+    const focusedProposal = await screen.findByLabelText("Focused proposal 44");
+    expect(fetchMock).toHaveBeenCalledWith("/api/proposals/44");
+    expect(focusedProposal).toHaveFocus();
+    expect(within(focusedProposal).getByText("Proposal ready for review")).toBeInTheDocument();
+    expect(within(focusedProposal).getByRole("button", { name: "Approve proposal 44" })).toBeInTheDocument();
+  });
+
+  it.each([
+    ["resolved", "Proposal already resolved"],
+    ["stale", "Proposal is stale"],
+  ] as const)("distinguishes an exact %s proposal from a pending proposal", async (state, title) => {
+    mockProposalFetch({
+      detailResponse: { ...proposalsResponse.proposals[0], state },
+    });
+
+    renderLinkProposalsView("/proposals?proposal_id=44");
+
+    const focusedProposal = await screen.findByLabelText("Focused proposal 44");
+    expect(within(focusedProposal).getByText(title)).toBeInTheDocument();
+    expect(within(focusedProposal).queryByRole("button", { name: "Approve proposal 44" })).not.toBeInTheDocument();
+    expect(within(focusedProposal).queryByRole("button", { name: "Reject proposal 44" })).not.toBeInTheDocument();
+  });
+
+  it("distinguishes a missing exact proposal from a general loading failure", async () => {
+    mockProposalFetch({ detailStatus: 404 });
+
+    renderLinkProposalsView("/proposals/44");
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Proposal not found");
+    expect(screen.getByText("Proposal 44 does not exist or is no longer available.")).toBeInTheDocument();
   });
 
   it("loads more proposals with cursor pagination", async () => {
@@ -288,13 +364,13 @@ describe("LinkProposalsView", () => {
 
     renderLinkProposalsView();
 
-    expect(await screen.findByText("Showing 2 of 75 pending suggestions sorted by confidence.")).toBeInTheDocument();
+    expect(await screen.findByText("1 local-track task shown from 2 matching loaded candidates. 2 of 75 total candidates are loaded.")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Load more" }));
 
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith("/api/proposals?cursor=page-2&limit=50");
     });
-    expect(await screen.findByText("Showing 3 of 75 pending suggestions sorted by confidence.")).toBeInTheDocument();
+    expect(await screen.findByText("2 local-track tasks shown from 3 matching loaded candidates. 3 of 75 total candidates are loaded.")).toBeInTheDocument();
     expect(screen.getByRole("listitem", { name: /Proposal 45: Pending Signal\.mp3/ })).toBeInTheDocument();
   });
 
@@ -314,7 +390,7 @@ describe("LinkProposalsView", () => {
 
     renderLinkProposalsView();
 
-    expect(await screen.findAllByText("Night Runner.mp3")).toHaveLength(2);
+    expect(await screen.findAllByText("Night Runner.mp3")).toHaveLength(1);
     expect(screen.getAllByText("Night Runner Alternate")).toHaveLength(2);
     const alternateRow = screen.getByRole("listitem", {
       name: /Proposal 47: Night Runner\.mp3 to Night Runner Alternate$/,

@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { PropsWithChildren, ReactElement } from "react";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, useLocation } from "react-router-dom";
 
 import { SoulseekQueueView } from "./SoulseekQueueView";
 import type { SoulseekQueueResponse } from "./queries";
@@ -28,6 +28,7 @@ const queueResponse: SoulseekQueueResponse = {
         linked_at: null,
         local_track_id: null,
         proposal_available_at: null,
+        proposal_id: null,
         queued_at: null,
         refresh_job_id: null,
         searched_at: "2026-05-25T10:00:00Z",
@@ -91,12 +92,18 @@ function renderWithQueryClient(ui: ReactElement) {
   function Wrapper({ children }: PropsWithChildren) {
     return (
       <MemoryRouter>
+        <LocationProbe />
         <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
       </MemoryRouter>
     );
   }
 
   return render(ui, { wrapper: Wrapper });
+}
+
+function LocationProbe() {
+  const location = useLocation();
+  return <span data-testid="location">{location.pathname}</span>;
 }
 
 describe("SoulseekQueueView", () => {
@@ -175,6 +182,93 @@ describe("SoulseekQueueView", () => {
     const queueItems = await screen.findByRole("region", { name: "Soulseek queue items" });
     expect(within(queueItems).getByText("Searching Track")).toBeInTheDocument();
     expect(within(queueItems).getByText("Searching")).toBeInTheDocument();
+  });
+
+  it("uses a mobile single-pane queue-to-detail flow with a back action", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (url) => {
+      if (url === "/api/soulseek/queue") {
+        return { ok: true, json: async () => queueResponse } as Response;
+      }
+      if (url === "/api/soulseek/acquisitions/acq-1") {
+        return { ok: true, json: async () => queueResponse.items[0] } as Response;
+      }
+      throw new Error(`Unexpected request: ${String(url)}`);
+    });
+
+    renderWithQueryClient(<SoulseekQueueView />);
+
+    const queuePane = await screen.findByRole("region", { name: "Soulseek queue items" });
+    const detailPane = screen.getByRole("region", { name: "Soulseek queue detail" });
+    expect(queuePane).toHaveAttribute("data-mobile-pane", "active");
+    expect(detailPane).toHaveAttribute("data-mobile-pane", "inactive");
+    expect(detailPane).toHaveClass("max-lg:hidden");
+
+    fireEvent.click(screen.getByRole("button", { name: "Open details for Open Eye Signal" }));
+    expect(queuePane).toHaveAttribute("data-mobile-pane", "inactive");
+    expect(queuePane).toHaveClass("max-lg:hidden");
+    expect(detailPane).toHaveAttribute("data-mobile-pane", "active");
+    expect(detailPane).not.toHaveClass("max-lg:hidden");
+
+    fireEvent.click(screen.getByRole("button", { name: "Back to Soulseek queue" }));
+    expect(queuePane).toHaveAttribute("data-mobile-pane", "active");
+    expect(detailPane).toHaveAttribute("data-mobile-pane", "inactive");
+  });
+
+  it("explains optional setup failures and retries the queue", async () => {
+    let queueCalls = 0;
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (url) => {
+      if (url === "/api/soulseek/queue") {
+        queueCalls += 1;
+        if (queueCalls === 1) {
+          return { ok: false, status: 503 } as Response;
+        }
+        return { ok: true, json: async () => queueResponse } as Response;
+      }
+      if (url === "/api/soulseek/status") {
+        return {
+          ok: true,
+          json: async () => ({
+            configured: false,
+            detail: "SLSKD_BASE_URL and SLSKD_API_KEY must be configured",
+            ok: false,
+          }),
+        } as Response;
+      }
+      if (url === "/api/soulseek/acquisitions/acq-1") {
+        return { ok: true, json: async () => queueResponse.items[0] } as Response;
+      }
+      throw new Error(`Unexpected request: ${String(url)}`);
+    });
+
+    renderWithQueryClient(<SoulseekQueueView />);
+
+    expect(await screen.findByText("Soulseek setup incomplete")).toBeInTheDocument();
+    expect(screen.getByText("SLSKD_BASE_URL and SLSKD_API_KEY must be configured")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Retry queue" }));
+    expect(await screen.findByRole("region", { name: "Soulseek queue items" })).toBeInTheDocument();
+  });
+
+  it("checks optional slskd health on demand", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (url) => {
+      if (url === "/api/soulseek/queue") {
+        return { ok: true, json: async () => queueResponse } as Response;
+      }
+      if (url === "/api/soulseek/status") {
+        return { ok: true, json: async () => ({ configured: true, detail: null, ok: true }) } as Response;
+      }
+      if (url === "/api/soulseek/acquisitions/acq-1") {
+        return { ok: true, json: async () => queueResponse.items[0] } as Response;
+      }
+      throw new Error(`Unexpected request: ${String(url)}`);
+    });
+
+    renderWithQueryClient(<SoulseekQueueView />);
+
+    await screen.findByRole("region", { name: "Soulseek queue items" });
+    fireEvent.click(screen.getByRole("button", { name: "Check slskd health" }));
+
+    expect(await screen.findByText("slskd healthy")).toBeInTheDocument();
+    expect(screen.getByText("The optional slskd service is configured and reachable.")).toBeInTheDocument();
   });
 
   it("locks candidate approval controls after a candidate is selected", async () => {
@@ -387,5 +481,48 @@ describe("SoulseekQueueView", () => {
       expect(fetchMock).toHaveBeenCalledWith("/api/soulseek/candidates/candidate-1/approve-download", { method: "POST" });
     });
     expect(await screen.findByText("Download approved")).toBeInTheDocument();
+  });
+
+  it("classifies proposal-available acquisitions as Review and links directly to the proposal", async () => {
+    const proposalItem = {
+      ...queueResponse.items[0],
+      acquisition: {
+        ...queueResponse.items[0].acquisition!,
+        local_track_id: 7001,
+        proposal_available_at: "2026-05-25T10:05:00Z",
+        proposal_id: 44,
+        status: "proposal_available",
+      },
+      candidates: [],
+      selected_candidate: null,
+    };
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (url) => {
+      if (url === "/api/soulseek/queue") {
+        return {
+          ok: true,
+          json: async () => ({ ...queueResponse, items: [proposalItem] }),
+        } as Response;
+      }
+      if (url === "/api/soulseek/acquisitions/acq-1") {
+        return {
+          ok: true,
+          json: async () => proposalItem,
+        } as Response;
+      }
+      throw new Error(`Unexpected request: ${String(url)}`);
+    });
+
+    renderWithQueryClient(<SoulseekQueueView />);
+
+    const filters = await screen.findByRole("group", { name: "Soulseek queue filters" });
+    await waitFor(() => {
+      expect(within(filters).getByRole("button", { name: /Review 1/ })).toHaveAttribute("aria-pressed", "true");
+    });
+    expect(await screen.findAllByText("Review")).not.toHaveLength(0);
+
+    fireEvent.click(screen.getByRole("button", { name: "Review proposal" }));
+    await waitFor(() => {
+      expect(screen.getByTestId("location")).toHaveTextContent("/proposals/44");
+    });
   });
 });

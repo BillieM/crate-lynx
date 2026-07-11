@@ -44,23 +44,46 @@ The screenshots below use synthetic demo data.
 | `db` | PostgreSQL 16+ |
 | `redis` | Message broker for RQ background jobs |
 
-The `app` container runs the FastAPI server (`uvicorn`) plus dedicated RQ workers: one ingestion worker by default, one worker for matching/streaming/M3U jobs, and two sonic feature workers. They share the same codebase and environment config.
+The `app` container runs the FastAPI server (`uvicorn`) plus dedicated RQ workers: one ingestion worker by default, one worker for matching/streaming/Soulseek jobs, and two sonic feature workers. They share the same codebase and environment config.
 
 ---
 
 ## Getting started
 
+Prerequisites: Docker Engine with the Compose v2 plugin, enough disk space for
+Postgres/Redis and the local library, and writable host directories for the two
+bind mounts. `openssl` is useful for generating the database password; Python
+with `cryptography` is used below to generate the Fernet key.
+
 ```bash
 cp .env.example .env
 # Generate TOKEN_ENCRYPTION_KEY and add it to .env:
 python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())'
+# Generate POSTGRES_PASSWORD and add it to .env:
+openssl rand -base64 32
+
+# Create the default bind-mount layout, or change both host paths in .env first.
+sudo mkdir -p \
+  /mnt/nas_data/cratelynx/{music-in,staging,dedupe-quarantine} \
+  /mnt/nas_data/soulseek/downloads \
+  /mnt/nas_data/media/music \
+  /docker/appdata/cratelynx/{app,postgres,redis}
+
 docker network inspect music >/dev/null 2>&1 || docker network create music
+docker compose config >/dev/null
+docker compose run --build --rm config-preflight
 docker compose up --build
 ```
 
 For local backend development, use Python 3.12.13. A repo-level `.python-version` file is included for tools such as `pyenv`.
 
 The UI is served at `http://localhost:18100` (Nginx). The API is available at `http://localhost:18101` and proxied through the UI at `http://localhost:18100/api`. The Compose file also joins an external Docker network named `music` for optional slskd integration; create it once before first startup if it does not already exist.
+
+The one-shot `config-preflight` service runs automatically before `app`. It
+validates required secrets, bounded worker and Soulseek settings, optional
+slskd configuration completeness, and the existence/writeability of mounted
+container paths. It does not connect to or mutate Postgres, Redis, slskd, or
+the music library.
 
 ---
 
@@ -104,6 +127,7 @@ Backend services (`app`, `db`, and `redis`) stay on the internal Compose network
 | Variable | Purpose |
 |---|---|
 | `TOKEN_ENCRYPTION_KEY` | Fernet key for encrypting streaming auth tokens. Generate one with `python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())'` |
+| `POSTGRES_DB` / `POSTGRES_USER` / `POSTGRES_PASSWORD` | Database bootstrap credentials. `POSTGRES_PASSWORD` has no default and must be set |
 | `CRATELYNX_HOST` | Optional hostname used by the Traefik labels. Defaults to `cratelynx.local` |
 | `UI_BIND_HOST` / `APP_BIND_HOST` / `DB_BIND_HOST` / `REDIS_BIND_HOST` | Host interface for published Compose ports. Defaults to `127.0.0.1`; use wider binds only on a trusted LAN |
 | `LIBRARY_ROOT` | Container path where processed music is stored. Defaults to `/nas/media/music` |
@@ -111,15 +135,20 @@ Backend services (`app`, `db`, and `redis`) stay on the internal Compose network
 | `BEETS_LIBRARY` | Container path for the Beets SQLite database. Defaults to `/data/beets/library.db` |
 | `BEETS_IMPORT_LOCK_PATH` | Optional path for the cross-process Beets import lock. Defaults next to `BEETS_LIBRARY` |
 | `CRATE_LYNX_STAGING_DIR` | Container base path for temporary app outputs. Defaults to `/nas/cratelynx/staging` in Compose |
-| `INGESTION_STABILITY_WORKERS` | Number of concurrent watcher stability checks. Defaults to `4` |
-| `INGESTION_WORKER_COUNT` | Number of RQ workers listening to the ingestion queue. Defaults to `1` |
-| `SONIC_WORKER_COUNT` | Number of dedicated RQ workers listening to the sonic queue. Defaults to `2` |
-| `M3U_OUTPUT_DIR` | Container path for generated M3U exports. Defaults to `/data/m3u` in Compose |
+| `INGESTION_STABILITY_WORKERS` | Concurrent watcher stability checks. Defaults to `4`; valid range `1`–`64` |
+| `INGESTION_WORKER_COUNT` | RQ workers listening to the ingestion queue. Defaults to `1`; valid range `1`–`32` |
+| `SONIC_WORKER_COUNT` | Dedicated RQ workers listening to the sonic queue. Defaults to `2`; valid range `1`–`32` |
 | `SLSKD_BASE_URL` | Base URL for the slskd HTTP API. Required for Soulseek search/download actions |
 | `SLSKD_API_KEY` | slskd API key sent as `X-API-Key`. Required for Soulseek search/download actions |
 | `SLSKD_VERIFY_SSL` | Whether to verify slskd HTTPS certificates. Defaults to `true` |
-| `SLSKD_SEARCH_POLL_TIMEOUT_SECONDS` | Maximum seconds to poll slskd search responses before ranking the final result set. Defaults to `30` |
-| `SLSKD_SEARCH_POLL_INTERVAL_SECONDS` | Seconds between slskd search response polls. Defaults to `2` |
+| `SLSKD_REQUEST_TIMEOUT_SECONDS` | Per-request HTTP timeout. Defaults to `10`; valid range `0.1`–`120` |
+| `SLSKD_SEARCH_TIMEOUT_SECONDS` | slskd search lifetime. Defaults to `30`; valid range `1`–`3600` |
+| `SLSKD_SEARCH_POLL_TIMEOUT_SECONDS` | Maximum time to poll search responses. Defaults to `30`; valid range `0.1`–`3600` |
+| `SLSKD_SEARCH_POLL_INTERVAL_SECONDS` | Delay between search polls. Defaults to `2`; valid range `0.05`–`300` and cannot exceed the poll timeout |
+| `SLSKD_RESPONSE_LIMIT` | Maximum search responses considered. Defaults to `100`; valid range `1`–`10000` |
+| `SLSKD_FILE_LIMIT` | Maximum files considered across responses. Defaults to `10000`; valid range `1`–`1000000` |
+| `SLSKD_MAXIMUM_PEER_QUEUE_LENGTH` | Reject candidates above this peer queue length. Defaults to `1000000`; valid range `0`–`10000000` |
+| `SLSKD_MINIMUM_PEER_UPLOAD_SPEED` | Reject peers below this upload speed in bytes/second. Defaults to `0`; valid range `0`–`1000000000` |
 | `SLSKD_WEBHOOK_TOKEN` | Shared token required by the internal slskd download-complete webhook |
 | `SLSKD_DOWNLOADS_CONTAINER_ROOT` | slskd container download root reported in webhook payloads. Defaults to `/data/soulseek/downloads` |
 | `SLSKD_DOWNLOADS_APP_ROOT` | CrateLynx app container path for the same downloads. Defaults to `/nas/soulseek/downloads` |
@@ -136,7 +165,7 @@ Docker Compose reads host paths from `.env`, with Linux host-path defaults that 
 | `NAS_DATA_HOST_PATH` | `/mnt/nas_data` | `/nas` | NAS root containing ingest inputs, staging, Soulseek downloads, and processed music |
 | `APP_DATA_HOST_PATH` | `/docker/appdata/cratelynx` | service-specific paths | Application-owned state for the app, Postgres, and Redis |
 
-Create those host directories before starting the stack, or override the host path variables in `.env`. The paths configured in Settings are container paths, so any useful ingest folder should also be mounted into the `app` container.
+Create those host directories before starting the stack, or override the host path variables in `.env`. They must be writable by containers; permissions and ownership are host-specific. The paths configured in Settings are container paths, so any useful ingest folder should also be mounted into the `app` container.
 
 `/nas/media/music` is output only. Do not add it as an ingest folder, because completed imports are moved there and watching it would re-ingest files that Beets has already processed.
 
@@ -154,7 +183,7 @@ Application state is stored under `APP_DATA_HOST_PATH`:
 
 | Host path | Container path | Purpose |
 |---|---|---|
-| `/docker/appdata/cratelynx/app` | `/data` in `app` | Beets SQLite database and generated M3U exports |
+| `/docker/appdata/cratelynx/app` | `/data` in `app` | Beets SQLite database and application state |
 | `/docker/appdata/cratelynx/postgres` | `/var/lib/postgresql/data` in `db` | Postgres data directory |
 | `/docker/appdata/cratelynx/redis` | `/data` in `redis` | Redis data directory |
 
@@ -202,7 +231,8 @@ Runs two stages in sequence:
 1. **ISRC match** — near-certain if both sides have a matching ISRC
 2. **Fuzzy tag match** — artist/title/album comparison via rapidfuzz, persisted as ranked suggestions across confidence bands
 
-Results land in the **Link Proposals** queue, grouped by confidence band (High / Medium / Low).
+Results land in the **Link Proposals** queue, grouped into one review task per
+local track with ranked alternatives and confidence/method filters.
 
 Local Chromaprint fingerprints are generated and stored during import as internal
 metadata. They are not used for streaming-track matching and are not exposed in the
@@ -210,14 +240,17 @@ maintenance API or UI.
 
 ### Approval
 
-- **Approve** — writes to `final_links`, triggers M3U regeneration
+- **Approve** — writes to `final_links`; exports reflect the change the next time they are downloaded
 - **Reject** — marks the pair as rejected so it never resurfaces
 - **Break Link** — removes from `final_links`, marks rejected
 - **Re-match** — clears the suggestion and reruns the pipeline
 
 ### M3U generation
 
-One M3U file per streaming playlist, generated from `playlist_membership` joined through `final_links` to `local_tracks`. Auto-regenerated on any link change. Paths resolve relative to the consuming tool.
+M3U/M3U8 files are generated on demand from `playlist_membership` joined through
+`final_links` to `local_tracks`. Use the playlist download or batch export screens;
+Crate Lynx does not maintain a second background directory of persisted playlists.
+Paths resolve relative to the consuming tool.
 
 ---
 

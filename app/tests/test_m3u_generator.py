@@ -14,9 +14,7 @@ from app.m3u.generator import (
     format_file_url,
     format_m3u_entry_path,
     generate_m3u,
-    get_m3u_output_dir,
     normalize_m3u_export_path_format,
-    regenerate_m3us_for_streaming_track,
 )
 from app.relationships.models import (
     STREAMING_RELATIONSHIP_TYPE_EQUIVALENT,
@@ -24,12 +22,8 @@ from app.relationships.models import (
     streaming_relationships_table,
 )
 from app.streaming.models import (
-    PLAYLIST_SYNC_MODE_FULL,
-    PLAYLIST_SYNC_MODE_MATCH_ONLY,
-    PLAYLIST_SYNC_MODE_OFF,
     metadata as streaming_metadata,
     playlist_membership_table,
-    streaming_playlists_table,
     streaming_tracks_table,
 )
 
@@ -257,16 +251,6 @@ def test_generate_m3u_uses_equivalent_link_with_playlist_row_metadata(
     ]
 
 
-def test_get_m3u_output_dir_uses_configured_staging_base(
-    monkeypatch,
-    tmp_path: Path,
-) -> None:
-    monkeypatch.delenv("M3U_OUTPUT_DIR", raising=False)
-    monkeypatch.setenv("CRATE_LYNX_STAGING_DIR", str(tmp_path / "stage"))
-
-    assert get_m3u_output_dir() == tmp_path / "stage" / "m3u"
-
-
 def test_format_export_audio_path_supports_windows_roots() -> None:
     assert (
         format_export_audio_path(
@@ -389,101 +373,3 @@ def test_generate_m3u_returns_header_only_when_all_playlist_tracks_are_unlinked(
     )
 
     assert generate_m3u(playlist_id, tmp_path / "exports", engine=engine) == "#EXTM3U"
-
-
-def test_regenerate_m3us_for_streaming_track_writes_only_full_playlists(
-    library_root: Path,
-    tmp_path: Path,
-) -> None:
-    database_url = f"sqlite:///{tmp_path / 'regenerate-full-only.db'}"
-    engine = create_engine(database_url)
-    local_tracks_metadata.create_all(engine)
-    streaming_metadata.create_all(engine)
-    links_metadata.create_all(engine)
-    relationships_metadata.create_all(engine)
-    output_dir = tmp_path / "m3u"
-    stale_match_only_path = output_dir / "Match-Only.m3u"
-    stale_off_path = output_dir / "Off-Playlist.m3u"
-    output_dir.mkdir(parents=True)
-    stale_match_only_path.write_text("stale match-only", encoding="utf-8")
-    stale_off_path.write_text("stale off", encoding="utf-8")
-
-    with engine.begin() as connection:
-        connection.execute(
-            insert(local_tracks_table).values(
-                id=4,
-                file_path="Artist/linked.mp3",
-                library_root_rel_path="Artist/linked.mp3",
-                fingerprint="fp-4",
-                beets_id=4,
-            )
-        )
-        connection.execute(
-            insert(streaming_tracks_table).values(
-                id=9,
-                provider_track_id="ytm-9",
-                title="Linked Track",
-                artist="Artist",
-                album=None,
-                year=None,
-                isrc=None,
-                duration_ms=123000,
-            )
-        )
-        connection.execute(
-            insert(streaming_playlists_table),
-            [
-                {
-                    "id": 7,
-                    "account_id": 1,
-                    "provider_playlist_id": "PL-full",
-                    "title": "Full Playlist",
-                    "sync_mode": PLAYLIST_SYNC_MODE_FULL,
-                },
-                {
-                    "id": 8,
-                    "account_id": 1,
-                    "provider_playlist_id": "PL-match",
-                    "title": "Match Only",
-                    "sync_mode": PLAYLIST_SYNC_MODE_MATCH_ONLY,
-                },
-                {
-                    "id": 9,
-                    "account_id": 1,
-                    "provider_playlist_id": "PL-off",
-                    "title": "Off Playlist",
-                    "sync_mode": PLAYLIST_SYNC_MODE_OFF,
-                },
-            ],
-        )
-        connection.execute(
-            insert(playlist_membership_table),
-            [
-                {"playlist_id": 7, "streaming_track_id": 9, "position": 1},
-                {"playlist_id": 8, "streaming_track_id": 9, "position": 1},
-                {"playlist_id": 9, "streaming_track_id": 9, "position": 1},
-            ],
-        )
-        connection.execute(
-            insert(final_links_table).values(
-                local_track_id=4,
-                streaming_track_id=9,
-            )
-        )
-
-    written_paths = regenerate_m3us_for_streaming_track(
-        9,
-        engine=engine,
-        base_path=library_root,
-        output_dir=output_dir,
-    )
-
-    full_path = (output_dir / "Full-Playlist.m3u").resolve()
-    assert written_paths == [full_path]
-    assert full_path.read_text(encoding="utf-8").splitlines() == [
-        "#EXTM3U",
-        "#EXTINF:123,Artist - Linked Track",
-        str((library_root / "Artist/linked.mp3").resolve()),
-    ]
-    assert stale_match_only_path.read_text(encoding="utf-8") == "stale match-only"
-    assert stale_off_path.read_text(encoding="utf-8") == "stale off"

@@ -1,5 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, BookOpenText, FileDown, ListMusic, RefreshCw, Settings, SlidersHorizontal, Sparkles, type LucideIcon } from "lucide-react";
+import { ArrowLeft, BookOpenText, FileDown, ListMusic, Menu, RefreshCw, Settings, SlidersHorizontal, Sparkles, type LucideIcon } from "lucide-react";
+import type { RefObject } from "react";
 import { useNavigate } from "react-router-dom";
 import { IconButton } from "../../components/IconButton";
 import { useDelayedInvalidate } from "../../lib/useDelayedInvalidate";
@@ -69,16 +70,24 @@ export function PlaylistActionStatus({
 }
 
 export function Topbar({
+  isNavigationOpen,
   isSettingsView,
-  onNavigateHome,
+  navigationTriggerRef,
+  onOpenNavigation,
+  onReturnFromSettings,
   onPlaylistSyncStateChange,
   onOpenAppSettings,
+  settingsReturnLabel,
   view,
 }: {
+  isNavigationOpen: boolean;
   isSettingsView: boolean;
-  onNavigateHome: () => void;
+  navigationTriggerRef: RefObject<HTMLButtonElement>;
+  onOpenNavigation: () => void;
+  onReturnFromSettings: () => void;
   onOpenAppSettings: () => void;
   onPlaylistSyncStateChange: (state: PlaylistSyncViewState) => void;
+  settingsReturnLabel: string;
   view: ViewConfig;
 }) {
   const navigate = useNavigate();
@@ -160,6 +169,18 @@ export function Topbar({
   return (
     <header className={shellClasses.topbar}>
       <div className="flex min-w-0 flex-1 items-center gap-2.5 max-md:w-full">
+        <button
+          aria-controls="primary-navigation"
+          aria-expanded={isNavigationOpen}
+          aria-label="Open navigation"
+          className={`${controlClasses.iconButton} md:hidden`}
+          onClick={onOpenNavigation}
+          ref={navigationTriggerRef}
+          title="Open navigation"
+          type="button"
+        >
+          <Menu aria-hidden="true" focusable="false" strokeWidth={1.8} />
+        </button>
         <span className={`${shellClasses.topbarIcon} shrink-0 ${controlClasses.iconFrame}`}>
           <TopbarIcon icon={view.icon} />
         </span>
@@ -178,8 +199,8 @@ export function Topbar({
         <div aria-label="Topbar actions" className="flex items-center gap-1.5" role="toolbar">
           {view.actionLabels.map((actionLabel) => renderToolbarAction(actionLabel))}
           <IconButton
-            label={isSettingsView ? "Return to Link proposals" : "Open app settings"}
-            onClick={isSettingsView ? onNavigateHome : onOpenAppSettings}
+            label={isSettingsView ? `Return to ${settingsReturnLabel}` : "Open app settings"}
+            onClick={isSettingsView ? onReturnFromSettings : onOpenAppSettings}
           >
             {isSettingsView ? (
               <ArrowLeft aria-hidden="true" focusable="false" strokeWidth={1.8} />

@@ -76,6 +76,12 @@ class SonicReadyTrack:
 
 
 @dataclass(frozen=True, slots=True)
+class ClaimedSonicFeatureAttempt:
+    local_track_id: int
+    attempt_count: int
+
+
+@dataclass(frozen=True, slots=True)
 class SonicGenerationPreviewRecord:
     analyzer_key: str
     analyzer_version: str
@@ -246,6 +252,38 @@ class SonicStore:
 
         return _feature_record(row)
 
+    def persist_feature_success_if_current(
+        self,
+        *,
+        analyzer_key: str,
+        analyzer_version: str,
+        attempt_count: int,
+        descriptors: dict[str, Any],
+        local_track_id: int,
+        vector: list[float],
+    ) -> bool:
+        now = datetime.now(UTC)
+        with self._engine.begin() as connection:
+            result = connection.execute(
+                update(sonic_track_features_table)
+                .where(
+                    sonic_track_features_table.c.local_track_id == local_track_id,
+                    sonic_track_features_table.c.analyzer_key == analyzer_key,
+                    sonic_track_features_table.c.analyzer_version == analyzer_version,
+                    sonic_track_features_table.c.status == SONIC_FEATURE_STATUS_PENDING,
+                    sonic_track_features_table.c.attempt_count == attempt_count,
+                )
+                .values(
+                    status=SONIC_FEATURE_STATUS_READY,
+                    descriptor_json=descriptors,
+                    vector_json=vector,
+                    failure_detail=None,
+                    extracted_at=now,
+                    updated_at=now,
+                )
+            )
+        return result.rowcount == 1
+
     def persist_feature_failure(
         self,
         *,
@@ -300,6 +338,34 @@ class SonicStore:
 
         return _feature_record(row)
 
+    def persist_feature_failure_if_current(
+        self,
+        *,
+        analyzer_key: str,
+        analyzer_version: str,
+        attempt_count: int,
+        failure_detail: str,
+        local_track_id: int,
+    ) -> bool:
+        now = datetime.now(UTC)
+        with self._engine.begin() as connection:
+            result = connection.execute(
+                update(sonic_track_features_table)
+                .where(
+                    sonic_track_features_table.c.local_track_id == local_track_id,
+                    sonic_track_features_table.c.analyzer_key == analyzer_key,
+                    sonic_track_features_table.c.analyzer_version == analyzer_version,
+                    sonic_track_features_table.c.status == SONIC_FEATURE_STATUS_PENDING,
+                    sonic_track_features_table.c.attempt_count == attempt_count,
+                )
+                .values(
+                    status=SONIC_FEATURE_STATUS_FAILED,
+                    failure_detail=failure_detail,
+                    updated_at=now,
+                )
+            )
+        return result.rowcount == 1
+
     def mark_feature_failed_if_pending(
         self,
         *,
@@ -307,6 +373,7 @@ class SonicStore:
         analyzer_version: str,
         failure_detail: str,
         local_track_id: int,
+        attempt_count: int | None = None,
     ) -> bool:
         now = datetime.now(UTC)
         with self._engine.begin() as connection:
@@ -315,6 +382,7 @@ class SonicStore:
                     select(
                         sonic_track_features_table.c.id,
                         sonic_track_features_table.c.status,
+                        sonic_track_features_table.c.attempt_count,
                     ).where(
                         sonic_track_features_table.c.local_track_id == local_track_id
                     )
@@ -344,6 +412,8 @@ class SonicStore:
 
             if existing["status"] != SONIC_FEATURE_STATUS_PENDING:
                 return False
+            if attempt_count is not None and existing["attempt_count"] != attempt_count:
+                return False
 
             connection.execute(
                 update(sonic_track_features_table)
@@ -372,7 +442,7 @@ class SonicStore:
         with self._engine.connect() as connection:
             return [int(track_id) for track_id in connection.execute(query).scalars()]
 
-    def claim_missing_feature_track_ids(
+    def claim_missing_feature_attempts(
         self,
         *,
         analyzer_key: str,
@@ -380,7 +450,7 @@ class SonicStore:
         limit: int = 100,
         max_attempts: int,
         pending_stale_before: datetime | None = None,
-    ) -> list[int]:
+    ) -> list[ClaimedSonicFeatureAttempt]:
         now = datetime.now(UTC)
         retryable_feature = sonic_track_features_table.c.attempt_count < max_attempts
         outdated_feature = or_(
@@ -406,6 +476,7 @@ class SonicStore:
             select(
                 local_tracks_table.c.id.label("local_track_id"),
                 sonic_track_features_table.c.id.label("feature_id"),
+                sonic_track_features_table.c.attempt_count,
                 outdated_feature.label("is_outdated"),
             )
             .select_from(
@@ -425,7 +496,7 @@ class SonicStore:
             .limit(limit)
             .with_for_update(of=local_tracks_table, skip_locked=True)
         )
-        claimed_ids = []
+        claimed_attempts: list[ClaimedSonicFeatureAttempt] = []
         with self._engine.begin() as connection:
             rows = connection.execute(query).mappings().all()
             for row in rows:
@@ -438,8 +509,12 @@ class SonicStore:
                     "failure_detail": None,
                     "updated_at": now,
                 }
-                if feature_id is not None and row["is_outdated"]:
-                    values["attempt_count"] = 0
+                attempt_count = (
+                    1
+                    if feature_id is None or row["is_outdated"]
+                    else int(row["attempt_count"]) + 1
+                )
+                values["attempt_count"] = attempt_count
                 if feature_id is None:
                     connection.execute(
                         insert(sonic_track_features_table).values(
@@ -461,9 +536,34 @@ class SonicStore:
                             **values,
                         )
                     )
-                claimed_ids.append(local_track_id)
+                claimed_attempts.append(
+                    ClaimedSonicFeatureAttempt(
+                        local_track_id=local_track_id,
+                        attempt_count=attempt_count,
+                    )
+                )
 
-        return claimed_ids
+        return claimed_attempts
+
+    def claim_missing_feature_track_ids(
+        self,
+        *,
+        analyzer_key: str,
+        analyzer_version: str,
+        limit: int = 100,
+        max_attempts: int,
+        pending_stale_before: datetime | None = None,
+    ) -> list[int]:
+        return [
+            attempt.local_track_id
+            for attempt in self.claim_missing_feature_attempts(
+                analyzer_key=analyzer_key,
+                analyzer_version=analyzer_version,
+                limit=limit,
+                max_attempts=max_attempts,
+                pending_stale_before=pending_stale_before,
+            )
+        ]
 
     def ready_tracks_for_source(
         self,

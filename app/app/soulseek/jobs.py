@@ -381,10 +381,6 @@ def backfill_soulseek_auto_links() -> dict[str, object]:
             for playlist_id in result.affected_playlist_ids
         }
     )
-    if affected_playlist_ids and (redis_url := os.environ.get("REDIS_URL")):
-        from app.m3u.jobs import M3uRegenerationJobEnqueuer
-
-        M3uRegenerationJobEnqueuer(redis_url).enqueue_playlists(affected_playlist_ids)
     return {
         "linked_count": len(results),
         "acquisition_ids": [result.acquisition.id for result in results],

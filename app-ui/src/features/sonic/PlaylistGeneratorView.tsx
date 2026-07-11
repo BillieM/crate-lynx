@@ -5,6 +5,7 @@ import {
   AudioLines,
   ChevronDown,
   ChevronRight,
+  CircleX,
   DatabaseZap,
   ListChecks,
   Minus,
@@ -24,6 +25,7 @@ import { MetricCard } from "../../components/MetricCard";
 import { Pill, type PillTone } from "../../components/Pill";
 import { StatusMessage } from "../../components/StatusMessage";
 import { formatPlaylistTimestamp } from "../../lib/formatters";
+import { setSessionDraftCodec, useSessionDraftState } from "../../lib/useSessionDraftState";
 import { controlClasses, layoutClasses, surfaceClasses, textClasses } from "../../styles/componentClasses";
 import { type StreamingPlaylist, useStreamingPlaylistsQuery } from "../playlists/queries";
 import { shellSummaryInvalidationKeys } from "../shell/queries";
@@ -45,6 +47,8 @@ const emptyStreamingPlaylists: StreamingPlaylist[] = [];
 const emptyGenerationRuns: PlaylistGenerationRun[] = [];
 const runColumnHelper = createColumnHelper<PlaylistGenerationRun>();
 const sonicBackfillLimit = 500;
+const numberSetSessionDraftCodec = setSessionDraftCodec<number>();
+const generatorDraftKey = (field: string) => `crate-lynx:playlist-generator:v1:${field}`;
 
 type SourceType = "all_local" | "streaming_playlists";
 type ClusteringMethod = PlaylistGenerationConfig["clustering_method"];
@@ -229,24 +233,40 @@ export function PlaylistGeneratorView() {
   const runsQuery = useSonicRunsQuery();
   const playlists = playlistsQuery.data?.playlists ?? emptyStreamingPlaylists;
   const generationRuns = runsQuery.data?.runs ?? emptyGenerationRuns;
-  const [sourceType, setSourceType] = useState<SourceType>("all_local");
-  const [selectedPlaylistIds, setSelectedPlaylistIds] = useState<Set<number>>(new Set());
-  const [tagFilters, setTagFilters] = useState<SonicTagFilter[]>([]);
+  const [sourceType, setSourceType] = useSessionDraftState<SourceType>(generatorDraftKey("source-type"), "all_local");
+  const [selectedPlaylistIds, setSelectedPlaylistIds] = useSessionDraftState<Set<number>>(
+    generatorDraftKey("playlist-ids"),
+    () => new Set(),
+    numberSetSessionDraftCodec,
+  );
+  const [tagFilters, setTagFilters] = useSessionDraftState<SonicTagFilter[]>(generatorDraftKey("tag-filters"), []);
   const [runRowSelection, setRunRowSelection] = useState<RowSelectionState>({});
   const [runSorting, setRunSorting] = useState<SortingState>([]);
   const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
   const [bulkDeleteStatus, setBulkDeleteStatus] = useState<RunBulkStatus | null>(null);
-  const [presetKey, setPresetKey] = useState<PresetKey>("dj_crate_tree_v1");
-  const [clusteringMethod, setClusteringMethod] = useState<ClusteringMethod>("dj_hierarchical_v1");
-  const [featureProfile, setFeatureProfile] = useState<FeatureProfile>("balanced_v1");
-  const [namingStrategy, setNamingStrategy] = useState<NamingStrategy>("dj_utility_v1");
-  const [orderingStrategy, setOrderingStrategy] = useState<OrderingStrategy>("profile_nearest_neighbor_rolling_v2");
-  const [diversityMode, setDiversityMode] = useState<DiversityMode>("balanced_v1");
-  const [tempoMode, setTempoMode] = useState<TempoMode>("mixable_v1");
-  const [outputScope, setOutputScope] = useState<OutputScope>("tree_v1");
-  const [numericDrafts, setNumericDrafts] = useState<NumericDrafts>(() => numericValuesToDrafts(fallbackNumericValues));
-  const [numericDefaultsAreAdaptive, setNumericDefaultsAreAdaptive] = useState(true);
-  const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [presetKey, setPresetKey] = useSessionDraftState<PresetKey>(generatorDraftKey("preset"), "dj_crate_tree_v1");
+  const [clusteringMethod, setClusteringMethod] = useSessionDraftState<ClusteringMethod>(
+    generatorDraftKey("clustering-method"),
+    "dj_hierarchical_v1",
+  );
+  const [featureProfile, setFeatureProfile] = useSessionDraftState<FeatureProfile>(generatorDraftKey("feature-profile"), "balanced_v1");
+  const [namingStrategy, setNamingStrategy] = useSessionDraftState<NamingStrategy>(generatorDraftKey("naming-strategy"), "dj_utility_v1");
+  const [orderingStrategy, setOrderingStrategy] = useSessionDraftState<OrderingStrategy>(
+    generatorDraftKey("ordering-strategy"),
+    "profile_nearest_neighbor_rolling_v2",
+  );
+  const [diversityMode, setDiversityMode] = useSessionDraftState<DiversityMode>(generatorDraftKey("diversity-mode"), "balanced_v1");
+  const [tempoMode, setTempoMode] = useSessionDraftState<TempoMode>(generatorDraftKey("tempo-mode"), "mixable_v1");
+  const [outputScope, setOutputScope] = useSessionDraftState<OutputScope>(generatorDraftKey("output-scope"), "tree_v1");
+  const [numericDrafts, setNumericDrafts] = useSessionDraftState<NumericDrafts>(
+    generatorDraftKey("numeric-values"),
+    () => numericValuesToDrafts(fallbackNumericValues),
+  );
+  const [numericDefaultsAreAdaptive, setNumericDefaultsAreAdaptive] = useSessionDraftState(
+    generatorDraftKey("adaptive-numeric-values"),
+    true,
+  );
+  const [advancedOpen, setAdvancedOpen] = useSessionDraftState(generatorDraftKey("advanced-open"), false);
   const selectedPlaylistIdList = useMemo(
     () => playlists.filter((playlist) => selectedPlaylistIds.has(playlist.id)).map((playlist) => playlist.id),
     [playlists, selectedPlaylistIds],
@@ -325,7 +345,13 @@ export function PlaylistGeneratorView() {
     }
     const readyCount = previewQuery.data?.ready_track_count ?? featureSummaryQuery.data?.ready_tracks ?? fallbackNumericValues.targetPlaylistSize;
     setNumericDrafts(numericValuesToDrafts(adaptiveNumericDefaults(readyCount, presetKey)));
-  }, [featureSummaryQuery.data?.ready_tracks, numericDefaultsAreAdaptive, presetKey, previewQuery.data?.ready_track_count]);
+  }, [
+    featureSummaryQuery.data?.ready_tracks,
+    numericDefaultsAreAdaptive,
+    presetKey,
+    previewQuery.data?.ready_track_count,
+    setNumericDrafts,
+  ]);
   const backfillMutation = useMutation({
     mutationFn: backfillSonicFeatures,
     onSuccess: async () => {
@@ -560,10 +586,11 @@ export function PlaylistGeneratorView() {
 
   return (
     <form className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto pr-1" onSubmit={handleSubmit}>
-      <div className="grid gap-3 md:grid-cols-4">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
         <MetricCard icon={AudioLines} label="Ready" toneClass="bg-ctp-green/10 text-ctp-green ring-ctp-green/25" value={summary.ready_tracks.toLocaleString()} />
         <MetricCard icon={Activity} label="Pending" toneClass="bg-ctp-yellow/10 text-ctp-yellow ring-ctp-yellow/25" value={summary.pending_tracks.toLocaleString()} />
         <MetricCard icon={DatabaseZap} label="Missing" toneClass="bg-ctp-red/10 text-ctp-red ring-ctp-red/25" value={summary.missing_tracks.toLocaleString()} />
+        <MetricCard icon={CircleX} label="Failed" toneClass="bg-ctp-red/10 text-ctp-red ring-ctp-red/25" value={summary.failed_tracks.toLocaleString()} />
         <MetricCard icon={ListChecks} label="Total" toneClass="bg-ctp-blue/10 text-ctp-blue ring-ctp-blue/25" value={summary.total_tracks.toLocaleString()} />
       </div>
 

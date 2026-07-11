@@ -44,7 +44,9 @@ def postgres_database_url() -> Iterator[str]:
     try:
         from testcontainers.postgres import PostgresContainer
     except ImportError as exc:
-        pytest.skip(f"testcontainers is required for migrated database tests: {exc}")
+        _postgres_unavailable(
+            f"testcontainers is required for migrated database tests: {exc}"
+        )
 
     container = None
     try:
@@ -54,7 +56,7 @@ def postgres_database_url() -> Iterator[str]:
         if container is not None:
             with suppress(Exception):
                 container.stop()
-        pytest.skip(f"Postgres test container unavailable: {exc}")
+        _postgres_unavailable(f"Postgres test container unavailable: {exc}")
 
     try:
         yield _normalize_postgres_url(container.get_connection_url())
@@ -72,7 +74,11 @@ def migrated_database(
     with admin_engine.connect() as connection:
         connection.execute(text(f'CREATE DATABASE "{database_name}"'))
 
-    database_url = str(make_url(postgres_database_url).set(database=database_name))
+    database_url = (
+        make_url(postgres_database_url)
+        .set(database=database_name)
+        .render_as_string(hide_password=False)
+    )
     engine: Engine | None = None
     try:
         monkeypatch.setenv("DATABASE_URL", database_url)
@@ -126,3 +132,14 @@ def _create_postgres_container(postgres_container_type):
         return postgres_container_type("postgres:16-alpine", driver="psycopg")
     except TypeError:
         return postgres_container_type("postgres:16-alpine")
+
+
+def _postgres_unavailable(message: str) -> None:
+    require_postgres = os.environ.get("REQUIRE_POSTGRES_TESTS", "").casefold() in {
+        "1",
+        "true",
+        "yes",
+    }
+    if require_postgres:
+        pytest.fail(message)
+    pytest.skip(message)

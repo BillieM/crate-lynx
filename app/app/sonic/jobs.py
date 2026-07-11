@@ -83,32 +83,44 @@ class SonicFeatureBackfillEnqueueResult:
     claimed_count: int
 
 
-def run_sonic_feature_extraction_job(local_track_id: int) -> int:
+def run_sonic_feature_extraction_job(
+    local_track_id: int,
+    attempt_count: int | None = None,
+) -> int:
     database_url = _require_database_url()
     store = SonicStore(database_url)
     analyzer = build_sonic_analyzer(SONIC_ANALYZER_LIBROSA_V1)
-    store.mark_feature_pending(
-        analyzer_key=analyzer.analyzer_key,
-        analyzer_version=analyzer.analyzer_version,
-        local_track_id=local_track_id,
-    )
+    if attempt_count is None:
+        attempt_count = store.mark_feature_pending(
+            analyzer_key=analyzer.analyzer_key,
+            analyzer_version=analyzer.analyzer_version,
+            local_track_id=local_track_id,
+        ).attempt_count
     try:
         audio_path = _resolve_local_audio_path(store, local_track_id)
         result = analyzer.analyze(audio_path)
-        store.persist_feature_success(
+        persisted = store.persist_feature_success_if_current(
             analyzer_key=result.analyzer_key,
             analyzer_version=result.analyzer_version,
+            attempt_count=attempt_count,
             descriptors=result.descriptors,
             local_track_id=local_track_id,
             vector=result.vector,
         )
+        if not persisted:
+            logger.info(
+                "Ignored stale Sonic feature success local_track_id=%s attempt_count=%s",
+                local_track_id,
+                attempt_count,
+            )
     except Exception as exc:
         logger.exception(
             "Sonic feature extraction failed local_track_id=%s", local_track_id
         )
-        store.persist_feature_failure(
+        store.persist_feature_failure_if_current(
             analyzer_key=analyzer.analyzer_key,
             analyzer_version=analyzer.analyzer_version,
+            attempt_count=attempt_count,
             failure_detail=str(exc),
             local_track_id=local_track_id,
         )
@@ -142,7 +154,7 @@ def enqueue_sonic_feature_backfill(
     store: SonicStore,
 ) -> SonicFeatureBackfillEnqueueResult:
     analyzer = build_sonic_analyzer(SONIC_ANALYZER_LIBROSA_V1)
-    local_track_ids = store.claim_missing_feature_track_ids(
+    attempts = store.claim_missing_feature_attempts(
         analyzer_key=analyzer.analyzer_key,
         analyzer_version=analyzer.analyzer_version,
         limit=max(1, min(limit, MAX_SONIC_BACKFILL_LIMIT)),
@@ -153,11 +165,13 @@ def enqueue_sonic_feature_backfill(
     queue = Queue(DEFAULT_SONIC_QUEUE_NAME, connection=connection)
     enqueued_ids = []
     enqueued_jobs = []
-    for local_track_id in local_track_ids:
+    for attempt in attempts:
+        local_track_id = attempt.local_track_id
         try:
             job = queue.enqueue(
                 SONIC_FEATURE_EXTRACTION_FUNC,
                 local_track_id,
+                attempt.attempt_count,
                 job_timeout=DEFAULT_SONIC_FEATURE_JOB_TIMEOUT,
             )
         except Exception as exc:
@@ -165,9 +179,10 @@ def enqueue_sonic_feature_backfill(
                 "Sonic feature backfill failed to enqueue extraction local_track_id=%s",
                 local_track_id,
             )
-            store.persist_feature_failure(
+            store.persist_feature_failure_if_current(
                 analyzer_key=analyzer.analyzer_key,
                 analyzer_version=analyzer.analyzer_version,
+                attempt_count=attempt.attempt_count,
                 failure_detail=f"Failed to enqueue sonic feature extraction job: {exc}",
                 local_track_id=local_track_id,
             )
@@ -189,7 +204,7 @@ def enqueue_sonic_feature_backfill(
     return SonicFeatureBackfillEnqueueResult(
         job_id=job_id,
         job_ids=enqueued_ids,
-        claimed_count=len(local_track_ids),
+        claimed_count=len(attempts),
     )
 
 
@@ -233,11 +248,30 @@ def reconcile_failed_sonic_feature_jobs(
             )
             continue
 
+        if len(job.args) <= 1:
+            logger.warning(
+                "Skipping unversioned failed sonic extraction job job_id=%s args=%s",
+                job_id,
+                job.args,
+            )
+            continue
+        try:
+            attempt_count = int(job.args[1])
+        except (TypeError, ValueError):
+            logger.warning(
+                "Failed sonic extraction job has invalid attempt_count "
+                "job_id=%s args=%s",
+                job_id,
+                job.args,
+            )
+            continue
+
         if store.mark_feature_failed_if_pending(
             analyzer_key=analyzer.analyzer_key,
             analyzer_version=analyzer.analyzer_version,
             failure_detail=_failed_job_detail(job),
             local_track_id=local_track_id,
+            attempt_count=attempt_count,
         ):
             logger.warning(
                 "Reconciled failed sonic extraction job job_id=%s local_track_id=%s",

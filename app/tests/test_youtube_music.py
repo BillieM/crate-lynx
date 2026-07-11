@@ -733,7 +733,7 @@ def test_sync_library_playlists_uses_adapter_and_store() -> None:
     seen: dict[str, object] = {}
 
     class FakePlaylistStore:
-        def upsert_playlists(self, *, account_id, playlists, metadata_synced_at):
+        def reconcile_playlists(self, *, account_id, playlists, metadata_synced_at):
             seen["account_id"] = account_id
             seen["playlists"] = playlists
             seen["metadata_synced_at"] = metadata_synced_at
@@ -761,7 +761,7 @@ def test_sync_library_playlist_tracks_uses_active_sync_modes_and_full_fetches() 
     seen: dict[str, object] = {}
 
     class FakePlaylistStore:
-        def upsert_playlists(self, *, account_id, playlists, metadata_synced_at):
+        def reconcile_playlists(self, *, account_id, playlists, metadata_synced_at):
             seen["account_id"] = account_id
             seen["playlists"] = playlists
             seen["metadata_synced_at"] = metadata_synced_at
@@ -880,7 +880,7 @@ def test_sync_library_playlist_tracks_skips_malformed_playlist_payload() -> None
     seen: dict[str, object] = {"replaced_playlist_ids": []}
 
     class FakePlaylistStore:
-        def upsert_playlists(self, *, account_id, playlists, metadata_synced_at):
+        def reconcile_playlists(self, *, account_id, playlists, metadata_synced_at):
             return [
                 SimpleNamespace(
                     id=11,
@@ -949,7 +949,7 @@ def test_sync_library_playlist_tracks_isolates_playlist_failures() -> None:
     seen: dict[str, object] = {"replaced_playlist_ids": []}
 
     class FakePlaylistStore:
-        def upsert_playlists(self, *, account_id, playlists, metadata_synced_at):
+        def reconcile_playlists(self, *, account_id, playlists, metadata_synced_at):
             return [
                 SimpleNamespace(
                     id=11,

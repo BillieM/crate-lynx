@@ -1,10 +1,19 @@
-import { type CSSProperties } from "react";
-import { Package } from "lucide-react";
+import { type CSSProperties, type KeyboardEvent, useEffect, useRef } from "react";
+import { Package, X } from "lucide-react";
 import { ActionButton } from "../../components/ActionButton";
 import { controlClasses, layoutClasses, shellClasses, textClasses } from "../../styles/componentClasses";
 import { pillToneClasses } from "../../styles/toneClasses";
 import { getProgressColor } from "./progress";
 import type { NavItem } from "./types";
+
+const focusableSelector = [
+  "button:not([disabled])",
+  "a[href]",
+  "input:not([disabled])",
+  "select:not([disabled])",
+  "textarea:not([disabled])",
+  '[tabindex]:not([tabindex="-1"])',
+].join(", ");
 
 function getBadgeClasses(tone: NavItem["tone"]) {
   switch (tone) {
@@ -74,6 +83,7 @@ function SidebarSection({
         {items.map((item) => (
           <button
             key={item.id}
+            aria-current={item.id === activeItemId ? "page" : undefined}
             className={`${shellClasses.navItem} ${
               item.id === activeItemId ? "bg-ctp-surface0 text-ctp-text" : "text-ctp-subtext1"
             }`}
@@ -100,11 +110,13 @@ function SidebarSection({
 
 export function Sidebar({
   activeItemId,
+  isOpen,
   isSettingsMode,
   libraryItems,
   maintenanceItems,
   generatedRunItems,
   onConfigureSync,
+  onClose,
   onHome,
   onSelect,
   playlistEmptyActionLabel,
@@ -114,11 +126,13 @@ export function Sidebar({
   toolItems,
 }: {
   activeItemId: string;
+  isOpen: boolean;
   isSettingsMode: boolean;
   generatedRunItems: NavItem[];
   libraryItems: NavItem[];
   maintenanceItems: NavItem[];
   onConfigureSync: () => void;
+  onClose: () => void;
   onHome: () => void;
   onSelect: (itemId: string) => void;
   playlistEmptyActionLabel?: string;
@@ -127,47 +141,114 @@ export function Sidebar({
   settingsItems: NavItem[];
   toolItems: NavItem[];
 }) {
-  return (
-    <aside className={shellClasses.sidebar}>
-      <div className={shellClasses.sidebarHeader}>
-        <button
-          className="flex w-full items-center gap-2.5 text-left transition-opacity hover:opacity-90"
-          onClick={onHome}
-          type="button"
-        >
-          <div className={shellClasses.sidebarLogo}>
-            <Package aria-hidden="true" className="h-4 w-4" strokeWidth={1.7} />
-          </div>
-          <div>
-            <p className={`${shellClasses.brandEyebrow} text-ctp-mauve`}>
-              CRATELYNX
-            </p>
-            <p className={`mt-0.5 text-ctp-subtext0 ${textClasses.finePrint}`}>Playlist linking control room</p>
-          </div>
-        </button>
-      </div>
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
 
-      <div className={shellClasses.sidebarBody}>
-        {isSettingsMode ? (
-          <SidebarSection activeItemId={activeItemId} items={settingsItems} onSelect={onSelect} title="Settings" />
-        ) : (
-          <>
-            <SidebarSection activeItemId={activeItemId} items={maintenanceItems} onSelect={onSelect} title="Maintenance" />
-            <SidebarSection activeItemId={activeItemId} items={toolItems} onSelect={onSelect} title="Tools" />
-            <SidebarSection
-              activeItemId={activeItemId}
-              emptyActionLabel={playlistEmptyActionLabel}
-              emptyMessage={playlistEmptyMessage}
-              items={playlistItems}
-              onEmptyAction={onConfigureSync}
-              onSelect={onSelect}
-              title="YouTube Music"
-            />
-            <SidebarSection activeItemId={activeItemId} items={generatedRunItems} onSelect={onSelect} title="Generated runs" />
-            <SidebarSection activeItemId={activeItemId} items={libraryItems} onSelect={onSelect} title="Local Library" />
-          </>
-        )}
-      </div>
-    </aside>
+  useEffect(() => {
+    if (!isOpen) {
+      return;
+    }
+
+    closeButtonRef.current?.focus();
+    const handleEscape = (event: globalThis.KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        onClose();
+      }
+    };
+    document.addEventListener("keydown", handleEscape);
+    return () => document.removeEventListener("keydown", handleEscape);
+  }, [isOpen, onClose]);
+
+  function handleDialogKeyDown(event: KeyboardEvent<HTMLElement>) {
+    if (!isOpen || event.key !== "Tab") {
+      return;
+    }
+
+    const focusableElements = Array.from(event.currentTarget.querySelectorAll<HTMLElement>(focusableSelector));
+    const firstFocusable = focusableElements[0];
+    const lastFocusable = focusableElements.at(-1);
+
+    if (event.shiftKey && document.activeElement === firstFocusable) {
+      event.preventDefault();
+      lastFocusable?.focus();
+    } else if (!event.shiftKey && document.activeElement === lastFocusable) {
+      event.preventDefault();
+      firstFocusable?.focus();
+    }
+  }
+
+  return (
+    <>
+      {isOpen ? (
+        <button
+          aria-label="Close navigation"
+          className="fixed inset-0 z-40 cursor-default bg-ctp-crust/70 backdrop-blur-[2px] md:hidden"
+          onClick={onClose}
+          type="button"
+        />
+      ) : null}
+      <aside
+        aria-label="Primary navigation"
+        aria-modal={isOpen ? "true" : undefined}
+        className={`${shellClasses.sidebar} ${
+          isOpen
+            ? "max-md:visible max-md:translate-x-0"
+            : "max-md:invisible max-md:-translate-x-full"
+        }`}
+        id="primary-navigation"
+        onKeyDown={handleDialogKeyDown}
+        role={isOpen ? "dialog" : "complementary"}
+        tabIndex={-1}
+      >
+        <div className={`${shellClasses.sidebarHeader} flex items-start gap-2`}>
+          <button
+            aria-label="Go to home"
+            className="flex min-w-0 flex-1 items-center gap-2.5 text-left transition-opacity hover:opacity-90"
+            onClick={onHome}
+            type="button"
+          >
+            <div className={shellClasses.sidebarLogo}>
+              <Package aria-hidden="true" className="h-4 w-4" strokeWidth={1.7} />
+            </div>
+            <div className="min-w-0">
+              <p className={`${shellClasses.brandEyebrow} text-ctp-mauve`}>CRATELYNX</p>
+              <p className={`mt-0.5 truncate text-ctp-subtext0 ${textClasses.finePrint}`}>Playlist linking control room</p>
+            </div>
+          </button>
+          <button
+            aria-label="Close navigation panel"
+            className={`${controlClasses.iconButton} md:hidden`}
+            onClick={onClose}
+            ref={closeButtonRef}
+            title="Close navigation panel"
+            type="button"
+          >
+            <X aria-hidden="true" focusable="false" strokeWidth={1.8} />
+          </button>
+        </div>
+
+        <div className={shellClasses.sidebarBody}>
+          {isSettingsMode ? (
+            <SidebarSection activeItemId={activeItemId} items={settingsItems} onSelect={onSelect} title="Settings" />
+          ) : (
+            <>
+              <SidebarSection activeItemId={activeItemId} items={maintenanceItems} onSelect={onSelect} title="Maintenance" />
+              <SidebarSection activeItemId={activeItemId} items={toolItems} onSelect={onSelect} title="Tools" />
+              <SidebarSection
+                activeItemId={activeItemId}
+                emptyActionLabel={playlistEmptyActionLabel}
+                emptyMessage={playlistEmptyMessage}
+                items={playlistItems}
+                onEmptyAction={onConfigureSync}
+                onSelect={onSelect}
+                title="YouTube Music"
+              />
+              <SidebarSection activeItemId={activeItemId} items={generatedRunItems} onSelect={onSelect} title="Generated runs" />
+              <SidebarSection activeItemId={activeItemId} items={libraryItems} onSelect={onSelect} title="Local Library" />
+            </>
+          )}
+        </div>
+      </aside>
+    </>
   );
 }

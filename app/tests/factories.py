@@ -6,6 +6,7 @@ from typing import Any
 
 from sqlalchemy import Engine, insert
 
+from app.core.isrc import normalize_valid_isrc_code
 from app.ingestion.beets_mirror import (
     beets_item_attributes_table,
     beets_items_table,
@@ -106,6 +107,7 @@ class TestDataFactory:
             artist=artist,
             duration_ms=duration_ms,
             isrc=isrc,
+            canonical_isrc=normalize_valid_isrc_code(isrc),
             provider_track_id=provider_track_id,
             title=title,
             year=year,

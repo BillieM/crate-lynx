@@ -36,4 +36,9 @@ describe("viewRegistry", () => {
     expect(getViewIdFromPath("/not-a-real-route")).toBe(routeFallbackViewId);
     expect(getViewIdFromPath("/generated-runs/not-a-number")).toBe(routeFallbackViewId);
   });
+
+  it("routes an exact proposal URL to the proposal review view", () => {
+    expect(getViewIdFromPath("/proposals/44")).toBe("proposals");
+    expect(getViewIdFromPath("/proposals/not-a-number")).toBe(routeFallbackViewId);
+  });
 });

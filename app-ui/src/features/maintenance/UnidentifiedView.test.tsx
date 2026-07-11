@@ -83,13 +83,16 @@ function renderUnidentifiedView(props: ComponentProps<typeof UnidentifiedView> =
     },
   });
 
-  return render(<UnidentifiedView {...props} />, {
-    wrapper: ({ children }: { children: ReactNode }) => (
-      <MemoryRouter>
-        <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-      </MemoryRouter>
-    ),
-  });
+  return {
+    ...render(<UnidentifiedView {...props} />, {
+      wrapper: ({ children }: { children: ReactNode }) => (
+        <MemoryRouter>
+          <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+        </MemoryRouter>
+      ),
+    }),
+    queryClient,
+  };
 }
 
 describe("UnidentifiedView", () => {
@@ -253,27 +256,72 @@ describe("UnidentifiedView", () => {
 
   it("posts to the metadata rescue endpoint only when the backend marks the row eligible", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({
-      json: async () => ({
-        beets_id: 91,
-        file_path: "Artist/rescue.mp3",
-        id: 1004,
-        library_root_rel_path: "Artist/rescue.mp3",
-      }),
+      json: async () => rescueResponse(),
       ok: true,
     } as Response);
 
-    renderUnidentifiedView({ tracksResponse: unidentifiedResponse });
+    const { queryClient } = renderUnidentifiedView({ tracksResponse: unidentifiedResponse });
+    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
 
     expect(screen.queryByRole("button", { name: "Rescue unknown-import-9a4f.mp3" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Rescue unlinked-local-demo.mp3" })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Rescue side-b-live-rip.flac" }));
 
     await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledWith("/api/local-tracks/1004/rescue", {
+      expect(fetchMock).toHaveBeenCalledWith("/api/local-tracks/1004/rescue?failed_attempt_id=4002", {
         method: "POST",
       });
     });
     expect(await screen.findByText("Rescue complete")).toBeInTheDocument();
+    const result = screen.getByLabelText("Metadata rescue result for side-b-live-rip.flac");
+    expect(within(result).getByText("Rescue Title")).toBeInTheDocument();
+    expect(result).toHaveTextContent("File tags: Succeeded — Updated ID3 tags");
+    await waitFor(() => {
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["maintenance", "unidentified"] });
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["local-tracks", 1004, "detail"] });
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["library"] });
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["shell", "summary"] });
+    });
+  });
+
+  it("shows and refreshes structured metadata rescue partial failures", async () => {
+    const partialResult = rescueResponse({
+      rescue: {
+        completed: false,
+        failed_attempt_id: 4002,
+        partial_failure: true,
+        stages: [
+          { detail: "Updated ID3 tags", name: "file_tags", status: "succeeded" },
+          { detail: "mirror offline", name: "postgres_mirror", status: "failed" },
+          { detail: "Skipped after mirror failure", name: "failed_attempt", status: "skipped" },
+        ],
+      },
+    });
+    vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      json: async () => ({
+        detail: {
+          message: "Metadata rescue completed only partially",
+          result: partialResult,
+        },
+      }),
+      ok: false,
+      status: 500,
+    } as Response);
+
+    const { queryClient } = renderUnidentifiedView({ tracksResponse: unidentifiedResponse });
+    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+    fireEvent.click(screen.getByRole("button", { name: "Rescue side-b-live-rip.flac" }));
+
+    expect(await screen.findByText("Rescue partially complete")).toBeInTheDocument();
+    const result = screen.getByLabelText("Metadata rescue result for side-b-live-rip.flac");
+    expect(result).toHaveTextContent("Database mirror: Failed — mirror offline");
+    expect(result).toHaveTextContent("Failed attempt: Skipped");
+    await waitFor(() => {
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["maintenance", "unidentified"] });
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["local-tracks", 1004, "detail"] });
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["library"] });
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["shell", "summary"] });
+    });
   });
 
   it("posts re-match only when a local track cannot be rescued", async () => {
@@ -368,3 +416,53 @@ describe("UnidentifiedView", () => {
     expect(screen.getByLabelText("Total attempts")).toHaveTextContent("0");
   });
 });
+
+function rescueResponse(
+  patch: Partial<{
+    beets_id: number | null;
+    file_path: string;
+    id: number;
+    library_root_rel_path: string;
+    metadata: {
+      album: string | null;
+      album_art_url: string | null;
+      artist: string;
+      title: string;
+      year: number | null;
+    };
+    rescue: {
+      completed: boolean;
+      failed_attempt_id: number | null;
+      partial_failure: boolean;
+      stages: Array<{
+        detail: string;
+        name: string;
+        status: "failed" | "not_applicable" | "skipped" | "succeeded";
+      }>;
+    };
+  }> = {},
+) {
+  return {
+    beets_id: 91,
+    file_path: "Artist/rescue.mp3",
+    id: 1004,
+    library_root_rel_path: "Artist/rescue.mp3",
+    metadata: {
+      album: "Rescue Album",
+      album_art_url: null,
+      artist: "Rescue Artist",
+      title: "Rescue Title",
+      year: 2022,
+    },
+    rescue: {
+      completed: true,
+      failed_attempt_id: 4002,
+      partial_failure: false,
+      stages: [
+        { detail: "Updated ID3 tags", name: "file_tags", status: "succeeded" as const },
+        { detail: "Resolved failed attempt", name: "failed_attempt", status: "succeeded" as const },
+      ],
+    },
+    ...patch,
+  };
+}

@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from pathlib import Path
 
-from sqlalchemy import create_engine, insert
+from sqlalchemy import create_engine, event, insert
 
 from app.ingestion.beets_mirror import metadata as beets_metadata
 from app.ingestion.failures import (
@@ -14,6 +14,7 @@ from app.links.store import metadata as links_metadata
 from app.local_tracks.store import metadata as local_tracks_metadata
 from app.matching.pipeline import metadata as suggested_links_metadata
 from app.relationships.models import metadata as relationships_metadata
+from app.relationships.store import StreamingRelationshipSuggestionStore
 from app.shell.router import create_router
 from app.sonic.models import metadata as sonic_metadata
 from app.soulseek.models import (
@@ -122,6 +123,40 @@ def test_shell_summary_returns_lightweight_nav_counts(tmp_path: Path) -> None:
         (run.id, run.generation_number, run.playlist_count)
         for run in response.generated_runs
     ] == [(run_id, 1, 2)]
+
+
+def test_relationship_summary_count_is_set_based(tmp_path: Path) -> None:
+    engine = _create_engine(tmp_path / "relationship-summary-query-count.db")
+    factory = TestDataFactory(engine)
+    for index in range(100):
+        first_track_id = factory.streaming_track(
+            provider_track_id=f"summary-first-{index}",
+            isrc=None,
+        )
+        second_track_id = factory.streaming_track(
+            provider_track_id=f"summary-second-{index}",
+            isrc=None,
+        )
+        factory.streaming_relationship_suggestion(
+            first_track_id=first_track_id,
+            second_track_id=second_track_id,
+        )
+
+    statement_count = 0
+
+    def count_statement(*_args) -> None:
+        nonlocal statement_count
+        statement_count += 1
+
+    event.listen(engine, "before_cursor_execute", count_statement)
+    try:
+        assert (
+            StreamingRelationshipSuggestionStore(engine=engine).count_pending() == 100
+        )
+    finally:
+        event.remove(engine, "before_cursor_execute", count_statement)
+
+    assert statement_count <= 3
 
 
 def _create_engine(path: Path):

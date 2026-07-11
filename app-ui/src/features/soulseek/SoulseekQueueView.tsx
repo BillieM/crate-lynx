@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { CheckCircle2, Download, RefreshCw, Search } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Download, RefreshCw, Search } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ActionButton } from "../../components/ActionButton";
@@ -24,6 +24,7 @@ import {
   type SoulseekQueueItem,
   useSoulseekAcquisitionQuery,
   useSoulseekQueueQuery,
+  useSoulseekStatusQuery,
 } from "./queries";
 
 type QueueActionStatus = {
@@ -92,7 +93,7 @@ function queueFilterForItem(item: SoulseekQueueItem): SoulseekQueueFilter {
   if (!status || status === "no_candidates") {
     return "needs_search";
   }
-  if (status === "candidates_found") {
+  if (status === "candidates_found" || status === "proposal_available") {
     return "review";
   }
   if (status === "failed" || status === "link_failed") {
@@ -127,7 +128,7 @@ function getStatusLabel(item: SoulseekQueueItem) {
       link_failed: "Link failed",
       linked: "Auto-linked",
       no_candidates: "No candidates",
-      proposal_available: "Link review",
+      proposal_available: "Review",
       queued: item.acquisition?.slskd_transfer_id ? "Queued" : "Queueing",
       searching: "Searching",
     }[status] ?? status
@@ -176,7 +177,7 @@ function linkStatus(acquisition: NonNullable<SoulseekQueueItem["acquisition"]>) 
     return acquisition.link_error_detail ?? "Auto-link failed";
   }
   if (acquisition.status === "proposal_available") {
-    return "Manual link review";
+    return "Ready for proposal review";
   }
   return "Pending";
 }
@@ -203,9 +204,12 @@ export function SoulseekQueueView() {
   const queryClient = useQueryClient();
   const delayedInvalidate = useDelayedInvalidate();
   const queueQuery = useSoulseekQueueQuery();
+  const [healthCheckRequested, setHealthCheckRequested] = useState(false);
+  const statusQuery = useSoulseekStatusQuery({ enabled: healthCheckRequested || queueQuery.isError });
   const [activeFilter, setActiveFilter] = useState<SoulseekQueueFilter>("all");
   const [hasUserSelectedFilter, setHasUserSelectedFilter] = useState(false);
   const [activeItemKey, setActiveItemKey] = useState<string | null>(null);
+  const [mobilePane, setMobilePane] = useState<"detail" | "queue">("queue");
   const [actionStatus, setActionStatus] = useState<QueueActionStatus | null>(null);
   const [rowSelection, setRowSelection] = useState<Record<string, boolean>>({});
   const [isSyncingPlaylists, setIsSyncingPlaylists] = useState(false);
@@ -355,6 +359,7 @@ export function SoulseekQueueView() {
     setHasUserSelectedFilter(true);
     setActiveFilter(value);
     setActiveItemKey(null);
+    setMobilePane("queue");
   }
 
   function toggleItemSelection(item: SoulseekQueueItem, checked: boolean) {
@@ -416,18 +421,59 @@ export function SoulseekQueueView() {
             Review approved searches, downloads, failures, and auto-linked imports.
           </p>
         </div>
-        <FilterChipGroup
-          activeValue={activeFilter}
-          ariaLabel="Soulseek queue filters"
-          density="compact"
-          onValueChange={handleFilterChange}
-          options={filterOptions}
-        />
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <ActionButton
+            className={controlClasses.actionButtonCompact}
+            disabled={statusQuery.isFetching}
+            onClick={() => {
+              if (healthCheckRequested) {
+                void statusQuery.refetch();
+              } else {
+                setHealthCheckRequested(true);
+              }
+            }}
+            type="button"
+          >
+            <RefreshCw aria-hidden="true" className="h-3.5 w-3.5" strokeWidth={1.9} />
+            {statusQuery.isFetching ? "Checking slskd..." : "Check slskd health"}
+          </ActionButton>
+          <FilterChipGroup
+            activeValue={activeFilter}
+            ariaLabel="Soulseek queue filters"
+            density="compact"
+            onValueChange={handleFilterChange}
+            options={filterOptions}
+          />
+        </div>
       </div>
 
-      {actionStatus ? (
-        <StatusMessage body={actionStatus.body} status={actionStatus.status} title={actionStatus.title} />
+      {statusQuery.isError ? (
+        <StatusMessage
+          body="Crate Lynx could not check the optional slskd service. Verify the API URL and retry."
+          status="error"
+          title="slskd health check failed"
+        />
+      ) : statusQuery.data && !statusQuery.data.configured ? (
+        <StatusMessage
+          body={statusQuery.data.detail ?? "Set SLSKD_BASE_URL and SLSKD_API_KEY to enable Soulseek."}
+          status="pending"
+          title="Soulseek setup incomplete"
+        />
+      ) : statusQuery.data && !statusQuery.data.ok ? (
+        <StatusMessage
+          body={statusQuery.data.detail ?? "slskd is configured but did not pass its health check."}
+          status="error"
+          title="slskd unavailable"
+        />
+      ) : statusQuery.data?.ok ? (
+        <StatusMessage body="The optional slskd service is configured and reachable." status="success" title="slskd healthy" />
       ) : null}
+
+      <div aria-live="polite">
+        {actionStatus ? (
+          <StatusMessage body={actionStatus.body} status={actionStatus.status} title={actionStatus.title} />
+        ) : null}
+      </div>
 
       <BulkActionBar selectedCount={selectedTrackIds.length} onClearSelection={() => setRowSelection({})}>
         <ActionButton
@@ -455,8 +501,16 @@ export function SoulseekQueueView() {
           <EmptyStateCard body="Loading Soulseek acquisition state." role="status" title="Loading Soulseek queue" />
         </div>
       ) : queueQuery.isError ? (
-        <div className="flex min-h-0 flex-1 items-center justify-center">
-          <EmptyStateCard body="Soulseek queue could not be loaded." role="alert" title="Soulseek unavailable" tone="error" />
+        <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3">
+          <EmptyStateCard
+            body="Soulseek queue could not be loaded. Check the optional slskd setup and retry when it is reachable."
+            role="alert"
+            title="Soulseek unavailable"
+            tone="error"
+          />
+          <ActionButton className={controlClasses.actionButtonCompact} onClick={() => void queueQuery.refetch()}>
+            Retry queue
+          </ActionButton>
         </div>
       ) : visibleItems.length === 0 ? (
         <div className="flex min-h-0 flex-1 items-center justify-center">
@@ -464,7 +518,12 @@ export function SoulseekQueueView() {
         </div>
       ) : (
         <div className="grid min-h-0 flex-1 gap-3 lg:grid-cols-[minmax(16rem,0.8fr)_minmax(0,1.4fr)]">
-          <div className="min-h-0 overflow-y-auto pr-1" aria-label="Soulseek queue items" role="region">
+          <div
+            className={`min-h-0 overflow-y-auto pr-1 ${mobilePane === "detail" ? "max-lg:hidden" : ""}`}
+            aria-label="Soulseek queue items"
+            data-mobile-pane={mobilePane === "queue" ? "active" : "inactive"}
+            role="region"
+          >
             <ul className="grid gap-2">
               {visibleItems.map((item) => {
                 const isSelected = selectedItem !== null && queueItemKey(selectedItem) === queueItemKey(item);
@@ -491,9 +550,13 @@ export function SoulseekQueueView() {
                           />
                         ) : null}
                         <button
+                          aria-label={`Open details for ${item.streaming_track.title}`}
                           aria-pressed={isSelected}
                           className="grid min-w-0 flex-1 gap-2 text-left"
-                          onClick={() => setActiveItemKey(queueItemKey(item))}
+                          onClick={() => {
+                            setActiveItemKey(queueItemKey(item));
+                            setMobilePane("detail");
+                          }}
                           type="button"
                         >
                           <span className="flex min-w-0 items-start justify-between gap-2">
@@ -529,9 +592,24 @@ export function SoulseekQueueView() {
             </ul>
           </div>
 
-          <div className="min-h-0 overflow-y-auto pr-1" aria-label="Soulseek queue detail" role="region">
+          <div
+            className={`min-h-0 overflow-y-auto pr-1 ${mobilePane === "queue" ? "max-lg:hidden" : ""}`}
+            aria-label="Soulseek queue detail"
+            data-mobile-pane={mobilePane === "detail" ? "active" : "inactive"}
+            role="region"
+          >
             {detailItem ? (
               <article className={`${surfaceClasses.rowCard} gap-4`}>
+                <div className="lg:hidden">
+                  <ActionButton
+                    aria-label="Back to Soulseek queue"
+                    className={`${controlClasses.actionButtonCompact} inline-flex items-center gap-1.5`}
+                    onClick={() => setMobilePane("queue")}
+                  >
+                    <ArrowLeft aria-hidden="true" className="h-3.5 w-3.5" strokeWidth={1.9} />
+                    Back to queue
+                  </ActionButton>
+                </div>
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div className="min-w-0">
                     <p className={textClasses.eyebrow}>Streaming track</p>
@@ -551,6 +629,22 @@ export function SoulseekQueueView() {
                     status="error"
                     title={activeAcquisition.status === "link_failed" ? "Auto-link failed" : "Soulseek failed"}
                   />
+                ) : null}
+
+                {detailQuery.isError ? (
+                  <div className="grid gap-2">
+                    <StatusMessage
+                      body="The latest acquisition detail could not be loaded. Queue summary data is shown below."
+                      status="error"
+                      title="Detail refresh failed"
+                    />
+                    <ActionButton
+                      className={`${controlClasses.actionButtonCompact} w-fit`}
+                      onClick={() => void detailQuery.refetch()}
+                    >
+                      Retry detail
+                    </ActionButton>
+                  </div>
                 ) : null}
 
                 {activeAcquisition?.final_link_id ? (
@@ -594,6 +688,16 @@ export function SoulseekQueueView() {
                     >
                       <Download aria-hidden="true" className="h-3.5 w-3.5" strokeWidth={1.9} />
                       Retry selected
+                    </ActionButton>
+                  ) : null}
+                  {activeAcquisition?.status === "proposal_available" && activeAcquisition.proposal_id !== null ? (
+                    <ActionButton
+                      className={`${controlClasses.actionButtonCompact} inline-flex items-center gap-1.5`}
+                      onClick={() => navigate(`/proposals/${activeAcquisition.proposal_id}`)}
+                      tone="success"
+                    >
+                      <CheckCircle2 aria-hidden="true" className="h-3.5 w-3.5" strokeWidth={1.9} />
+                      Review proposal
                     </ActionButton>
                   ) : null}
                 </div>

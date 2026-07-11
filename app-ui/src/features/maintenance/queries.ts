@@ -3,11 +3,17 @@ import { type QueryClient, type QueryKey, useQuery } from "@tanstack/react-query
 import { ApiRequestError, endpoints, fetchJson, postJson } from "../../lib/api";
 import { invalidateQueryKeys } from "../../lib/queryInvalidation";
 import {
+  localTrackQueryKeys,
+  MetadataRescueRequestError,
   rematchLocalTrack,
   rescueLocalTrackMetadata,
+  type MetadataRescueReport,
+  type MetadataRescueStage,
   type RematchLocalTrackResponse,
+  type RescuedMetadata,
   type RescuedLocalTrack,
 } from "../localTracks/queries";
+import { libraryQueryKeys } from "../library/queries";
 import { shellSummaryInvalidationKeys } from "../shell/queries";
 
 export type UnidentifiedTrack = {
@@ -48,8 +54,14 @@ export type UnidentifiedRestoreResponse = {
   source_path: string;
 };
 
-export { rematchLocalTrack, rescueLocalTrackMetadata };
-export type { RematchLocalTrackResponse, RescuedLocalTrack };
+export { MetadataRescueRequestError, rematchLocalTrack, rescueLocalTrackMetadata };
+export type {
+  MetadataRescueReport,
+  MetadataRescueStage,
+  RematchLocalTrackResponse,
+  RescuedLocalTrack,
+  RescuedMetadata,
+};
 
 export function getMaintenanceRequestStatus(error: unknown): number | null {
   return error instanceof ApiRequestError ? error.status : null;
@@ -66,6 +78,22 @@ export function unidentifiedInvalidationKeys(): QueryKey[] {
 
 export async function invalidateUnidentifiedQueries(queryClient: QueryClient): Promise<void> {
   await invalidateQueryKeys(queryClient, unidentifiedInvalidationKeys());
+}
+
+export function metadataRescueInvalidationKeys(localTrackId: number | string): QueryKey[] {
+  return [
+    maintenanceQueryKeys.unidentified(),
+    localTrackQueryKeys.detail(localTrackId),
+    libraryQueryKeys.all,
+    ...shellSummaryInvalidationKeys(),
+  ];
+}
+
+export async function invalidateMetadataRescueQueries(
+  queryClient: QueryClient,
+  localTrackId: number | string,
+): Promise<void> {
+  await invalidateQueryKeys(queryClient, metadataRescueInvalidationKeys(localTrackId));
 }
 
 export async function fetchUnidentifiedTracks(): Promise<UnidentifiedResponse> {
