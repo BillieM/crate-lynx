@@ -38,7 +38,12 @@ jobs:
       - name: Check generated OpenAPI schema
         run: |
           PYTHONPATH=app .venv/bin/python -m app.openapi_export > /tmp/generated-openapi.json
-          diff -u openapi.json /tmp/generated-openapi.json
+          if ! diff -u openapi.json /tmp/generated-openapi.json; then
+            committed_hash="$(sha256sum openapi.json | cut -d ' ' -f 1)"
+            generated_hash="$(sha256sum /tmp/generated-openapi.json | cut -d ' ' -f 1)"
+            echo "::error file=openapi.json::Generated OpenAPI differs (committed=${committed_hash}, generated=${generated_hash})"
+            exit 1
+          fi
       - name: Lint backend
         run: .venv/bin/ruff check .
       - name: Check backend formatting
@@ -61,6 +66,8 @@ jobs:
           node-version: 22
       - name: Install frontend dependencies
         run: npm ci
+      - name: Check generated frontend types
+        run: npm run codegen:check
       - name: Lint frontend
         run: npm run lint
       - name: Test frontend

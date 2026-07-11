@@ -9,7 +9,7 @@
     "build": "tsc --noEmit -p tsconfig.app.json && tsc --noEmit -p tsconfig.node.json && vite build",
     "codegen": "../scripts/generate-types.sh",
     "codegen:check": "node ./scripts/check-generated-types.mjs",
-    "lint": "npm run codegen:check && eslint .",
+    "lint": "eslint .",
     "test": "node --require ./scripts/fix-localhost.cjs ./node_modules/vitest/vitest.mjs run --exclude 'e2e/**'",
     "test:browser": "npm run build && playwright test",
     "test:browser:ci": "playwright test",
