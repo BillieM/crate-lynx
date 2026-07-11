@@ -10,9 +10,11 @@
   :root {
     --catppuccin-color-blue: #1650c3;
     --catppuccin-color-green: #2a6f1b;
-    --catppuccin-color-mauve: #7731d2;
+    --catppuccin-color-mauve: #6624ba;
+    --catppuccin-color-red: #a30b2c;
     --catppuccin-color-subtext0: #52556d;
     --catppuccin-color-text: #45475f;
+    --catppuccin-color-yellow: #734900;
   }
 }
 
