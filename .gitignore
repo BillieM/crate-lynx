@@ -28,7 +28,6 @@ node_modules/
 app-ui/dist/
 
 # Generated
-openapi.json
 
 # OS
 .DS_Store
