@@ -4,7 +4,9 @@ import logging
 from pathlib import Path
 from types import SimpleNamespace
 
-from app.core.worker import build_worker, main, resolve_queue_names
+from redis.exceptions import TimeoutError as RedisTimeoutError
+
+from app.core.worker import CrateLynxWorker, build_worker, main, resolve_queue_names
 from app.matching.jobs import run_matching_pipeline
 
 
@@ -50,7 +52,7 @@ def test_build_worker_uses_redis_url_and_queue_names(monkeypatch) -> None:
 
     monkeypatch.setattr("app.core.worker.Redis", FakeRedis)
     monkeypatch.setattr("app.core.worker.Queue", FakeQueue)
-    monkeypatch.setattr("app.core.worker.Worker", FakeWorker)
+    monkeypatch.setattr("app.core.worker.CrateLynxWorker", FakeWorker)
 
     build_worker(
         redis_url="redis://redis:6379/5",
@@ -64,6 +66,20 @@ def test_build_worker_uses_redis_url_and_queue_names(monkeypatch) -> None:
         "worker_queue_names": ["ingestion", "matching"],
         "worker_connection": seen["worker_connection"],
     }
+
+
+def test_worker_keeps_pubsub_listener_alive_after_redis_timeout(caplog) -> None:
+    worker = object.__new__(CrateLynxWorker)
+    worker.log = logging.getLogger("app.tests.worker")
+
+    with caplog.at_level(logging.WARNING, logger="app.tests.worker"):
+        worker._pubsub_exception_handler(
+            RedisTimeoutError("Timeout reading from socket"),
+            object(),
+            object(),
+        )
+
+    assert "Redis pubsub timed out; reconnecting" in caplog.text
 
 
 def test_main_starts_worker(monkeypatch) -> None:

@@ -5,11 +5,27 @@ import logging
 import os
 
 from redis import Redis
+from redis.exceptions import TimeoutError as RedisTimeoutError
 from rq import Queue, Worker
 
 
 DEFAULT_QUEUE_NAMES = ("ingestion", "matching", "streaming", "sonic", "soulseek")
 DEFAULT_REDIS_URL = "redis://localhost:6379/0"
+
+
+class CrateLynxWorker(Worker):
+    """Keep RQ's control-channel listener alive across idle Redis timeouts."""
+
+    def _pubsub_exception_handler(
+        self,
+        exc: Exception,
+        pubsub: object,
+        pubsub_thread: object,
+    ) -> None:
+        if isinstance(exc, RedisTimeoutError):
+            self.log.warning("Redis pubsub timed out; reconnecting")
+            return
+        super()._pubsub_exception_handler(exc, pubsub, pubsub_thread)
 
 
 def resolve_queue_names(raw_queue_names: str | None = None) -> tuple[str, ...]:
@@ -36,7 +52,7 @@ def build_worker(
     resolved_queue_names = tuple(queue_names or resolve_queue_names())
     connection = Redis.from_url(resolved_redis_url)
     queues = [Queue(name, connection=connection) for name in resolved_queue_names]
-    return Worker(queues, connection=connection)
+    return CrateLynxWorker(queues, connection=connection)
 
 
 def configure_logging() -> None:
