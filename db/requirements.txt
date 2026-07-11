@@ -1,6 +1,6 @@
 fastapi==0.115.12
 uvicorn[standard]==0.34.2
-redis==5.2.1
+redis==8.0.1
 rq==2.2.0
 beets==2.2.0
 ytmusicapi==1.12.0
