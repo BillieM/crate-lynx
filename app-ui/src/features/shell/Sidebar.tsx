@@ -148,7 +148,7 @@ export function Sidebar({
       return;
     }
 
-    closeButtonRef.current?.focus();
+    const focusTimer = window.setTimeout(() => closeButtonRef.current?.focus(), 0);
     const handleEscape = (event: globalThis.KeyboardEvent) => {
       if (event.key === "Escape") {
         event.preventDefault();
@@ -156,7 +156,10 @@ export function Sidebar({
       }
     };
     document.addEventListener("keydown", handleEscape);
-    return () => document.removeEventListener("keydown", handleEscape);
+    return () => {
+      window.clearTimeout(focusTimer);
+      document.removeEventListener("keydown", handleEscape);
+    };
   }, [isOpen, onClose]);
 
   function handleDialogKeyDown(event: KeyboardEvent<HTMLElement>) {
