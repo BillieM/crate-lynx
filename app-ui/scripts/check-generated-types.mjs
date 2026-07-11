@@ -3,10 +3,14 @@ import { spawnSync } from "node:child_process";
 
 const generatedTypesPath = new URL("../src/lib/api-types.ts", import.meta.url);
 const original = await readFile(generatedTypesPath);
-const result = spawnSync("../scripts/generate-types.sh", {
+const result = spawnSync(
+  "npx",
+  ["openapi-typescript", "../openapi.json", "-o", "src/lib/api-types.ts"],
+  {
   cwd: new URL("..", import.meta.url),
   encoding: "utf8",
-});
+  },
+);
 
 if (result.stdout) {
   process.stdout.write(result.stdout);

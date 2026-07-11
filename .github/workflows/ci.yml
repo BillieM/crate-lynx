@@ -35,6 +35,10 @@ jobs:
         run: |
           python -m venv .venv
           .venv/bin/python -m pip install -r app/requirements.txt -r requirements-dev.txt
+      - name: Check generated OpenAPI schema
+        run: |
+          PYTHONPATH=app .venv/bin/python -m app.openapi_export > /tmp/generated-openapi.json
+          diff -u openapi.json /tmp/generated-openapi.json
       - name: Lint backend
         run: .venv/bin/ruff check .
       - name: Check backend formatting
