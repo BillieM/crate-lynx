@@ -14,6 +14,7 @@ export default defineConfig({
       name: "chromium",
       use: {
         ...devices["Desktop Chrome"],
+        colorScheme: "light",
       },
     },
   ],
