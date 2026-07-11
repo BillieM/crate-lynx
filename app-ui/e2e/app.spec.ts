@@ -224,7 +224,7 @@ test("supports mobile navigation as a single off-canvas flow", async ({ page }) 
   const navigation = page.getByRole("dialog", { name: "Primary navigation" });
   await expect(navigation).toBeVisible();
   await expect(menuButton).toHaveAttribute("aria-expanded", "true");
-  await expect(navigation.getByRole("button", { name: "Close navigation panel" })).toBeFocused();
+  await expect(navigation).toBeFocused();
   await expect(navigation.getByRole("button", { name: /Link proposals/i })).toHaveAttribute("aria-current", "page");
 
   await navigation.getByRole("button", { name: /All tracks/i }).click();

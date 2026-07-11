@@ -141,14 +141,14 @@ export function Sidebar({
   settingsItems: NavItem[];
   toolItems: NavItem[];
 }) {
-  const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const navigationRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
     if (!isOpen) {
       return;
     }
 
-    const focusTimer = window.setTimeout(() => closeButtonRef.current?.focus(), 0);
+    const focusTimer = window.setTimeout(() => navigationRef.current?.focus(), 250);
     const handleEscape = (event: globalThis.KeyboardEvent) => {
       if (event.key === "Escape") {
         event.preventDefault();
@@ -200,6 +200,7 @@ export function Sidebar({
         }`}
         id="primary-navigation"
         onKeyDown={handleDialogKeyDown}
+        ref={navigationRef}
         role={isOpen ? "dialog" : "complementary"}
         tabIndex={-1}
       >
@@ -222,7 +223,6 @@ export function Sidebar({
             aria-label="Close navigation panel"
             className={`${controlClasses.iconButton} md:hidden`}
             onClick={onClose}
-            ref={closeButtonRef}
             title="Close navigation panel"
             type="button"
           >

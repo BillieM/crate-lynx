@@ -962,7 +962,7 @@ describe("App", () => {
     const navigationDialog = screen.getByRole("dialog", { name: "Primary navigation" });
     expect(navigationDialog).toHaveAttribute("aria-modal", "true");
     expect(menuButton).toHaveAttribute("aria-expanded", "true");
-    await waitFor(() => expect(screen.getByRole("button", { name: "Close navigation panel" })).toHaveFocus());
+    await waitFor(() => expect(navigationDialog).toHaveFocus());
 
     fireEvent.keyDown(document, { key: "Escape" });
 
