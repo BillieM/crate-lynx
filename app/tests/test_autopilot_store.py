@@ -81,6 +81,7 @@ def test_run_and_item_idempotency_and_bounded_retry(tmp_path) -> None:
     )
 
     assert item_created is True
+    assert item.status == "planned"
     assert replay_item_created is False
     assert replay_item.id == item.id
 

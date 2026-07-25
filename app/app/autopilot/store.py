@@ -11,6 +11,7 @@ from sqlalchemy.engine import Engine
 
 from app.autopilot.models import (
     AUTOPILOT_ITEM_STATUS_FAILED,
+    AUTOPILOT_ITEM_STATUS_PLANNED,
     AUTOPILOT_ITEM_STATUS_RETRY_WAIT,
     AUTOPILOT_ITEM_STATUSES,
     AUTOPILOT_RUN_STATUS_PLANNING,
@@ -342,6 +343,7 @@ class AutopilotStore:
                 idempotency_key=normalized_key,
                 stage=stage,
                 action=action,
+                status=AUTOPILOT_ITEM_STATUS_PLANNED,
                 created_at=now,
                 updated_at=now,
                 **evidence,
