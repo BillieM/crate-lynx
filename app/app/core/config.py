@@ -10,10 +10,14 @@ DEFAULT_INGESTION_ROOT = Path("/nas/cratelynx/music-in")
 DEFAULT_INGESTION_STABILITY_WORKERS = 4
 DEFAULT_INGESTION_WORKER_COUNT = 1
 DEFAULT_SONIC_WORKER_COUNT = 2
+DEFAULT_AUTOPILOT_SCHEDULER_TICK_SECONDS = 30
 MAX_INGESTION_STABILITY_WORKERS = 64
 MAX_QUEUE_WORKER_COUNT = 32
+MAX_AUTOPILOT_SCHEDULER_TICK_SECONDS = 3600
 DEFAULT_STAGING_BASE = Path("/tmp")
 CRATE_LYNX_STAGING_DIR_ENV = "CRATE_LYNX_STAGING_DIR"
+DEFAULT_SONIC_SEMANTIC_MODEL_PATH = Path("/data/models/clap-htsat-unfused-audio.onnx")
+DEFAULT_AUTOPILOT_EXPORT_ROOT = Path("/data/exports/autopilot")
 
 
 @dataclass(frozen=True, slots=True)
@@ -25,6 +29,12 @@ class RuntimeConfig:
     ingestion_stability_workers: int
     ingestion_worker_count: int
     sonic_worker_count: int
+    sonic_semantic_enabled: bool
+    sonic_semantic_model_path: Path
+    autopilot_scheduler_enabled: bool
+    autopilot_scheduler_tick_seconds: int
+    autopilot_startup_run_dry_run: bool
+    autopilot_export_root: Path
     beets_import_lock_path: Path | None
     warnings: tuple[str, ...] = ()
 
@@ -60,6 +70,42 @@ def load_runtime_config(environ: Mapping[str, str] | None = None) -> RuntimeConf
             minimum=1,
             maximum=MAX_QUEUE_WORKER_COUNT,
             warnings=warnings,
+        ),
+        sonic_semantic_enabled=bool_env(
+            "SONIC_SEMANTIC_ENABLED",
+            False,
+            env,
+            warnings=warnings,
+        ),
+        sonic_semantic_model_path=path_env(
+            "SONIC_SEMANTIC_MODEL_PATH",
+            DEFAULT_SONIC_SEMANTIC_MODEL_PATH,
+            env,
+        ),
+        autopilot_scheduler_enabled=bool_env(
+            "AUTOPILOT_SCHEDULER_ENABLED",
+            True,
+            env,
+            warnings=warnings,
+        ),
+        autopilot_scheduler_tick_seconds=int_env(
+            "AUTOPILOT_SCHEDULER_TICK_SECONDS",
+            DEFAULT_AUTOPILOT_SCHEDULER_TICK_SECONDS,
+            env,
+            minimum=5,
+            maximum=MAX_AUTOPILOT_SCHEDULER_TICK_SECONDS,
+            warnings=warnings,
+        ),
+        autopilot_startup_run_dry_run=bool_env(
+            "AUTOPILOT_STARTUP_RUN_DRY_RUN",
+            False,
+            env,
+            warnings=warnings,
+        ),
+        autopilot_export_root=path_env(
+            "AUTOPILOT_EXPORT_ROOT",
+            DEFAULT_AUTOPILOT_EXPORT_ROOT,
+            env,
         ),
         beets_import_lock_path=(
             Path(lock_path)
@@ -118,6 +164,27 @@ def int_env(
             warnings.append(f"{name}={parsed} exceeds {maximum}; using {maximum}")
         return maximum
     return parsed
+
+
+def bool_env(
+    name: str,
+    default: bool,
+    environ: Mapping[str, str] | None = None,
+    *,
+    warnings: list[str] | None = None,
+) -> bool:
+    value = optional_env(name, environ)
+    if value is None:
+        return default
+
+    normalized = value.casefold()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off"}:
+        return False
+    if warnings is not None:
+        warnings.append(f"Invalid boolean for {name}={value!r}; using {default}")
+    return default
 
 
 def default_staging_path(name: str) -> Path:

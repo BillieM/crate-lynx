@@ -80,17 +80,21 @@ def _create_engine(path):
 
 class _FakeRedisConnection:
     def __init__(self) -> None:
-        self.token: bytes | None = None
+        self.token: str | None = None
 
-    def set(self, key, value, *, nx, ex):
-        self.token = str(value).encode()
+    def set(self, key, value, *, nx, px):
+        self.token = str(value)
         return True
 
-    def get(self, key):
-        return self.token
-
-    def delete(self, key):
-        self.token = None
+    def eval(self, script, key_count, key, token, *args):
+        if self.token != token:
+            return 0
+        if "pexpire" in script:
+            return 1
+        if "del" in script:
+            self.token = None
+            return 1
+        raise AssertionError("Unexpected Redis script")
 
 
 class _FakeRedis:

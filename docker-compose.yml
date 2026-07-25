@@ -11,6 +11,12 @@ x-app-environment: &app-environment
   INGESTION_STABILITY_WORKERS: ${INGESTION_STABILITY_WORKERS:-4}
   INGESTION_WORKER_COUNT: ${INGESTION_WORKER_COUNT:-1}
   SONIC_WORKER_COUNT: ${SONIC_WORKER_COUNT:-2}
+  SONIC_SEMANTIC_ENABLED: ${SONIC_SEMANTIC_ENABLED:-false}
+  SONIC_SEMANTIC_MODEL_PATH: ${SONIC_SEMANTIC_MODEL_PATH:-/data/models/clap-htsat-unfused-audio.onnx}
+  AUTOPILOT_SCHEDULER_ENABLED: ${AUTOPILOT_SCHEDULER_ENABLED:-true}
+  AUTOPILOT_SCHEDULER_TICK_SECONDS: ${AUTOPILOT_SCHEDULER_TICK_SECONDS:-30}
+  AUTOPILOT_STARTUP_RUN_DRY_RUN: ${AUTOPILOT_STARTUP_RUN_DRY_RUN:-false}
+  AUTOPILOT_EXPORT_ROOT: ${AUTOPILOT_EXPORT_ROOT:-/data/exports/autopilot}
   SLSKD_BASE_URL: ${SLSKD_BASE_URL:-}
   SLSKD_API_KEY: ${SLSKD_API_KEY:-}
   SLSKD_VERIFY_SSL: ${SLSKD_VERIFY_SSL:-true}
@@ -47,7 +53,9 @@ services:
     healthcheck:
       test:
         - CMD-SHELL
-        - pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"
+        - >-
+          pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"
+          && test -f /tmp/crate-lynx-migrations-ready
       interval: 10s
       timeout: 5s
       retries: 5

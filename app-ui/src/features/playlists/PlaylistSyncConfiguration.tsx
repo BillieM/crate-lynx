@@ -23,11 +23,14 @@ import {
   playlistQueryKeys,
   refreshStreamingAccountMetadata,
   syncStreamingAccount,
+  type PlaylistAutomationLevel,
   type PlaylistSyncMode,
   type StreamingPlaylistConfig,
   type StreamingPlaylistConfigResponse,
   type StreamingPlaylistsResponse,
   type UpdateStreamingPlaylistConfigInput,
+  type UpdateStreamingPlaylistAutomationInput,
+  updateStreamingPlaylistAutomationLevel,
   updateStreamingPlaylistConfig,
   useStreamingPlaylistConfigQuery,
 } from "./queries";
@@ -52,6 +55,28 @@ const selectedSyncModeClasses = {
   match_only: "border-ctp-blue/60 bg-ctp-blue/15 text-ctp-blue shadow-sm",
   full: "border-ctp-green/60 bg-ctp-green/15 text-ctp-green shadow-sm",
 } satisfies Record<PlaylistSyncMode, string>;
+const playlistAutomationLevelOptions = [
+  {
+    description: "No background maintenance.",
+    label: "Off",
+    value: "off",
+  },
+  {
+    description: "Refresh and reconcile links only.",
+    label: "Sync only",
+    value: "sync_only",
+  },
+  {
+    description: "Refresh, reconcile, and search; you still approve downloads.",
+    label: "Assist / search",
+    value: "assist",
+  },
+  {
+    description: "Explicit opt-in: matching downloads may run automatically without asking.",
+    label: "Full autopilot",
+    value: "full",
+  },
+] satisfies Array<{ description: string; label: string; value: PlaylistAutomationLevel }>;
 
 function isActiveSyncMode(syncMode: PlaylistSyncMode) {
   return activePlaylistSyncModes.has(syncMode);
@@ -86,6 +111,11 @@ type PlaylistModeMutationContext = {
   configSnapshot: StreamingPlaylistConfigResponse | undefined;
   listSnapshot: StreamingPlaylistsResponse | undefined;
   previousPlaylist: StreamingPlaylistConfig | undefined;
+};
+
+type PlaylistAutomationMutationContext = {
+  configSnapshot: StreamingPlaylistConfigResponse | undefined;
+  listSnapshot: StreamingPlaylistsResponse | undefined;
 };
 
 function playlistIdMatches(playlist: { id: number }, playlistId: number | string) {
@@ -244,6 +274,51 @@ function PlaylistSyncModeControl({
   );
 }
 
+function PlaylistAutomationControl({
+  isPending,
+  onChange,
+  playlist,
+}: {
+  isPending: boolean;
+  onChange: (automationLevel: PlaylistAutomationLevel) => void;
+  playlist: StreamingPlaylistConfig;
+}) {
+  const activeOption =
+    playlistAutomationLevelOptions.find((option) => option.value === playlist.automation_level) ??
+    playlistAutomationLevelOptions[0];
+  const automationLevel = playlist.automation_level;
+
+  return (
+    <div className="grid min-w-[15rem] gap-1.5">
+      <label className="sr-only" htmlFor={`playlist-automation-${playlist.id}`}>
+        Keep fresh for {playlist.title}
+      </label>
+      <select
+        aria-describedby={`playlist-automation-help-${playlist.id}`}
+        className={`${controlClasses.controlRadius} min-h-9 border border-ctp-surface1 bg-ctp-surface0 px-3 text-[12px] font-semibold text-ctp-text outline-none disabled:cursor-not-allowed disabled:opacity-60`}
+        disabled={isPending}
+        id={`playlist-automation-${playlist.id}`}
+        onChange={(event) => onChange(event.currentTarget.value as PlaylistAutomationLevel)}
+        value={automationLevel}
+      >
+        {playlistAutomationLevelOptions.map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+      <p
+        className={`${textClasses.finePrint} ${
+          automationLevel === "full" ? "font-semibold text-ctp-yellow" : "text-ctp-subtext0"
+        }`}
+        id={`playlist-automation-help-${playlist.id}`}
+      >
+        {isPending ? "Saving…" : activeOption.description}
+      </p>
+    </div>
+  );
+}
+
 export function PlaylistSyncConfiguration() {
   const queryClient = useQueryClient();
   const delayedInvalidate = useDelayedInvalidate();
@@ -254,6 +329,7 @@ export function PlaylistSyncConfiguration() {
   const [searchQuery, setSearchQuery] = useState("");
   const [sorting, setSorting] = useState<SortingState>([]);
   const [modeUpdateFailed, setModeUpdateFailed] = useState(false);
+  const [automationUpdateFailed, setAutomationUpdateFailed] = useState(false);
   const selectedSyncMutation = useMutation({
     mutationFn: syncStreamingAccount,
     onSuccess: () => {
@@ -310,6 +386,47 @@ export function PlaylistSyncConfiguration() {
           ...soulseekQueueInvalidationKeys(),
         ]);
       }
+    },
+  });
+  const automationMutation = useMutation({
+    mutationFn: updateStreamingPlaylistAutomationLevel,
+    onError: (_error, _variables, context: PlaylistAutomationMutationContext | undefined) => {
+      queryClient.setQueryData(playlistQueryKeys.config(), context?.configSnapshot);
+      queryClient.setQueryData(playlistQueryKeys.list(), context?.listSnapshot);
+      setAutomationUpdateFailed(true);
+    },
+    onMutate: async (variables: UpdateStreamingPlaylistAutomationInput) => {
+      setAutomationUpdateFailed(false);
+      await Promise.all([
+        queryClient.cancelQueries({ queryKey: playlistQueryKeys.config() }),
+        queryClient.cancelQueries({ queryKey: playlistQueryKeys.list() }),
+      ]);
+
+      const configSnapshot = queryClient.getQueryData<StreamingPlaylistConfigResponse>(playlistQueryKeys.config());
+      const listSnapshot = queryClient.getQueryData<StreamingPlaylistsResponse>(playlistQueryKeys.list());
+      const playlist = findPlaylistForModeUpdate(configSnapshot, listSnapshot, variables.playlistId);
+
+      if (playlist !== undefined) {
+        const optimisticPlaylist = { ...playlist, automation_level: variables.automation_level };
+
+        queryClient.setQueryData<StreamingPlaylistConfigResponse>(playlistQueryKeys.config(), (current) =>
+          updatePlaylistConfigCache(current, optimisticPlaylist),
+        );
+        queryClient.setQueryData<StreamingPlaylistsResponse>(playlistQueryKeys.list(), (current) =>
+          updateFullPlaylistListCache(current, optimisticPlaylist),
+        );
+      }
+
+      return { configSnapshot, listSnapshot };
+    },
+    onSuccess: async (updatedPlaylist) => {
+      queryClient.setQueryData<StreamingPlaylistConfigResponse>(playlistQueryKeys.config(), (current) =>
+        updatePlaylistConfigCache(current, updatedPlaylist),
+      );
+      queryClient.setQueryData<StreamingPlaylistsResponse>(playlistQueryKeys.list(), (current) =>
+        updateFullPlaylistListCache(current, updatedPlaylist),
+      );
+      await queryClient.invalidateQueries({ queryKey: ["autopilot"] });
     },
   });
   const visibleConfig = configQuery.data ?? lastSuccessfulConfig;
@@ -379,7 +496,12 @@ export function PlaylistSyncConfiguration() {
     toggleMutation.isPending && toggleMutation.variables?.playlistId !== undefined
       ? String(toggleMutation.variables.playlistId)
       : null;
+  const pendingAutomationPlaylistId =
+    automationMutation.isPending && automationMutation.variables?.playlistId !== undefined
+      ? String(automationMutation.variables.playlistId)
+      : null;
   const updatePlaylistMode = toggleMutation.mutate;
+  const updatePlaylistAutomation = automationMutation.mutate;
   const columns = useMemo(
     () => [
       columnHelper.accessor("title", {
@@ -473,12 +595,33 @@ export function PlaylistSyncConfiguration() {
         ),
         header: "Mode",
         meta: {
-          sticky: "right",
           widthClass: "min-w-[18rem]",
         },
       }),
+      columnHelper.display({
+        cell: (info) => (
+          <PlaylistAutomationControl
+            isPending={
+              pendingAutomationPlaylistId !== null &&
+              playlistIdMatches(info.row.original, pendingAutomationPlaylistId)
+            }
+            onChange={(automationLevel) =>
+              updatePlaylistAutomation({
+                automation_level: automationLevel,
+                playlistId: info.row.original.id,
+              })
+            }
+            playlist={info.row.original}
+          />
+        ),
+        header: "Keep fresh",
+        meta: {
+          sticky: "right",
+          widthClass: "min-w-[17rem]",
+        },
+      }),
     ],
-    [pendingModePlaylistId, updatePlaylistMode],
+    [pendingAutomationPlaylistId, pendingModePlaylistId, updatePlaylistAutomation, updatePlaylistMode],
   );
 
   useEffect(() => {
@@ -563,6 +706,10 @@ export function PlaylistSyncConfiguration() {
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h2 className={textClasses.sectionTitle}>Playlist sync configuration</h2>
+          <p className={`mt-1 max-w-3xl ${textClasses.bodyMuted}`}>
+            Choose how playlists sync, then opt selected playlists into quiet background maintenance with Keep fresh.
+            Full autopilot is always an explicit per-playlist choice.
+          </p>
           <div className="mt-2 flex flex-wrap gap-2">
             <span className={`${controlClasses.countBadge} min-w-fit px-2.5 py-1`}>
               {playlists.length.toLocaleString()} discovered
@@ -695,6 +842,14 @@ export function PlaylistSyncConfiguration() {
                 className="max-w-2xl"
                 status="error"
                 title="Playlist mode update failed"
+              />
+            ) : null}
+            {automationUpdateFailed ? (
+              <StatusMessage
+                body="The Keep fresh level could not be saved. The table was restored to its previous state."
+                className="max-w-2xl"
+                status="error"
+                title="Keep fresh update failed"
               />
             ) : null}
             {filteredPlaylists.length > 0 ? (

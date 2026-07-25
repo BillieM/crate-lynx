@@ -1,27 +1,27 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
 import logging
 import os
+from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from redis import Redis
 from rq import Queue
 from rq.job import Dependency, Job
 from rq.registry import FailedJobRegistry
 
 from app.sonic.analyzer import build_sonic_analyzer
-from app.sonic.generation import generate_playlist_tree
+from app.sonic.generation import generate_playlists
 from app.sonic.models import (
     DEFAULT_SONIC_BACKFILL_LIMIT,
-    MAX_SONIC_FEATURE_ATTEMPTS,
     MAX_SONIC_BACKFILL_LIMIT,
+    MAX_SONIC_FEATURE_ATTEMPTS,
+    PLAYLIST_GENERATION_TRIGGER_MANUAL,
     SONIC_ANALYZER_LIBROSA_V1,
 )
 from app.sonic.profiles import resolve_feature_profile_from_config
 from app.sonic.store import PlaylistGenerationRunNotFoundError, SonicStore
-
+from redis import Redis
 
 logger = logging.getLogger(__name__)
 
@@ -304,9 +304,32 @@ def run_playlist_generation_job(run_id: int) -> int:
             analyzer_key=profile.analyzer_key,
             analyzer_version=profile.analyzer_version,
         )
-        drafts = generate_playlist_tree(tracks, run.generation_config_json)
+        generation_result = generate_playlists(
+            tracks,
+            run.generation_config_json,
+            source_track_count=preview.source_track_count,
+        )
+        readiness = generation_result.readiness
+        if not readiness["can_generate"]:
+            raise RuntimeError(
+                "Playlist generation readiness gate failed: "
+                + ", ".join(readiness["reasons"])
+            )
+        if (
+            run.trigger != PLAYLIST_GENERATION_TRIGGER_MANUAL
+            and not readiness["safe_for_automatic_regeneration"]
+        ):
+            raise RuntimeError(
+                "Automatic regeneration coverage gate failed; "
+                "the previous healthy snapshot was preserved"
+            )
+        drafts = generation_result.playlists
         source_summary = {
+            "current_feature_count": preview.current_feature_count,
             "failed_feature_count": preview.failed_feature_count,
+            "legacy_descriptor_feature_count": (
+                preview.legacy_descriptor_feature_count
+            ),
             "missing_feature_count": preview.missing_feature_count,
             "pending_feature_count": preview.pending_feature_count,
             "ready_track_count": preview.ready_track_count,
@@ -317,12 +340,23 @@ def run_playlist_generation_job(run_id: int) -> int:
             draft["summary"] = {
                 **draft["summary"],
                 "source_summary": source_summary,
+                "analyzer_evidence": generation_result.analyzer_evidence,
             }
+        store.update_generation_run_evidence(
+            run_id,
+            analyzer_evidence=generation_result.analyzer_evidence,
+            readiness_summary=readiness,
+        )
         store.replace_generated_playlists(
             playlists=drafts,
             run_id=run_id,
             track_count=len(tracks),
         )
+        if run.recipe_id is not None:
+            store.mark_generation_recipe_regenerated(
+                run.recipe_id,
+                run_id=run_id,
+            )
     except Exception as exc:
         logger.exception("Playlist generation failed run_id=%s", run_id)
         store.mark_generation_run_failed(run_id, str(exc))

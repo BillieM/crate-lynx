@@ -1,9 +1,9 @@
 from __future__ import annotations
 
+import re
 from collections import Counter
 from dataclasses import dataclass
 from pathlib import PureWindowsPath
-import re
 from typing import Any
 
 from rapidfuzz import fuzz
@@ -11,7 +11,6 @@ from rapidfuzz import fuzz
 from app.ingestion.pipeline import LOSSLESS_AUDIO_EXTENSIONS, SUPPORTED_AUDIO_EXTENSIONS
 from app.matching.tags import normalize_match_text, score_track_tags
 from app.soulseek.models import StreamingTrackForSoulseek
-
 
 MIN_CANDIDATE_SCORE = 0.36
 WEAK_TOP_CANDIDATE_SCORE = 0.68
@@ -69,6 +68,9 @@ class RankedSoulseekCandidate:
     queue_length: int | None
     upload_speed: int | None
     score: float
+    identity_confidence: float | None = None
+    version_confidence: float | None = None
+    quality_score: float | None = None
 
 
 def soulseek_query_for_track(
@@ -182,7 +184,16 @@ def merge_ranked_candidates(
 
 
 def is_weak_candidate_set(candidates: list[RankedSoulseekCandidate]) -> bool:
-    return not candidates or candidates[0].score < WEAK_TOP_CANDIDATE_SCORE
+    if not candidates:
+        return True
+    candidate = candidates[0]
+    if candidate.identity_confidence is not None:
+        return (
+            candidate.identity_confidence < WEAK_TOP_CANDIDATE_SCORE
+            or candidate.quality_score is not None
+            and candidate.quality_score < 0.35
+        )
+    return candidate.score < WEAK_TOP_CANDIDATE_SCORE
 
 
 def _candidate_from_file(
@@ -261,23 +272,30 @@ def _candidate_from_file(
         right_album=normalized_album_context or normalized_path_context,
         right_duration_ms=duration_ms,
     )
-    score = (
-        tag_score * 0.58
+    identity_confidence = min(
+        1.0,
+        tag_score * 0.82
         + _album_bonus(
             normalized_album, normalized_album_context or normalized_path_context
         )
-        * 0.07
-        + _duration_bonus(track.duration_ms, duration_ms) * 0.12
-        + _extension_bonus(extension) * 0.07
+        * 0.08
+        + _duration_bonus(track.duration_ms, duration_ms) * 0.10,
+    )
+    version_confidence = _version_confidence(track.title, path_context)
+    quality_score = (
+        _extension_bonus(extension) * 0.30
         + _quality_bonus(
             bit_depth=_int_value(file_data, "bitDepth", "BitDepth"),
             bit_rate=_int_value(file_data, "bitRate", "BitRate"),
             extension=extension,
         )
-        * 0.08
-        + (0.04 if has_free_upload_slot else 0.0)
-        + _queue_bonus(queue_length) * 0.02
-        + _upload_speed_bonus(upload_speed) * 0.02
+        * 0.40
+        + (0.10 if has_free_upload_slot else 0.0)
+        + _queue_bonus(queue_length) * 0.08
+        + _upload_speed_bonus(upload_speed) * 0.12
+    )
+    score = (
+        identity_confidence * 0.78 + version_confidence * 0.14 + quality_score * 0.08
     )
     if score < MIN_CANDIDATE_SCORE:
         return _reject(diagnostics, "low_score")
@@ -301,7 +319,53 @@ def _candidate_from_file(
         queue_length=queue_length,
         upload_speed=upload_speed,
         score=min(score, 1.0),
+        identity_confidence=identity_confidence,
+        version_confidence=version_confidence,
+        quality_score=quality_score,
     )
+
+
+_VERSION_TOKEN_GROUPS = {
+    "acoustic": {"acoustic"},
+    "club": {"club"},
+    "dub": {"dub"},
+    "extended": {"extended"},
+    "instrumental": {"instrumental"},
+    "live": {"live"},
+    "radio": {"radio"},
+    "remaster": {"remaster", "remastered"},
+    "remix": {"remix"},
+    "vip": {"vip"},
+}
+_ORIGINAL_VERSION_TOKENS = {"original"}
+
+
+def _version_confidence(expected_title: str, candidate_context: str) -> float:
+    expected = _version_tokens(expected_title)
+    candidate = _version_tokens(candidate_context)
+    if not expected:
+        if not candidate or candidate == {"original"}:
+            return 1.0
+        return 0.25
+    if expected == candidate:
+        return 1.0
+    if expected.issubset(candidate):
+        return 0.9
+    if not candidate:
+        return 0.5
+    overlap = len(expected & candidate) / len(expected | candidate)
+    return 0.2 + (overlap * 0.55)
+
+
+def _version_tokens(value: str) -> set[str]:
+    normalized = normalize_match_text(value) or ""
+    words = set(normalized.split())
+    tokens = {
+        group for group, aliases in _VERSION_TOKEN_GROUPS.items() if words & aliases
+    }
+    if words & _ORIGINAL_VERSION_TOKENS:
+        tokens.add("original")
+    return tokens
 
 
 def _files(response: dict[str, Any], *keys: str) -> tuple[list[dict[str, Any]]]:
@@ -552,4 +616,3 @@ def _reject(
 ) -> None:
     if diagnostics is not None:
         diagnostics[reason] += 1
-    return None

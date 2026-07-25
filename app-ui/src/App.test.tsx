@@ -34,6 +34,7 @@ const playlistDetailResponse: PlaylistDetailResponse = {
     name: "Late Night Drive",
     cover_art_url: "https://cdn.example.test/late-night-drive.jpg",
     sync_mode: "full",
+    automation_level: "off",
     provider_track_count: 70,
     imported_track_count: 62,
     linked_count: 58,
@@ -105,6 +106,7 @@ const streamingPlaylistsResponse: StreamingPlaylistsResponse = {
       provider_playlist_id: "PL12",
       title: "Late Night Drive",
       sync_mode: "full",
+      automation_level: "off",
       provider_track_count: 70,
       imported_track_count: 62,
       metadata_synced_at: "2026-05-01T08:55:00Z",
@@ -118,6 +120,7 @@ const streamingPlaylistsResponse: StreamingPlaylistsResponse = {
       provider_playlist_id: `PL${id}`,
       title: name,
       sync_mode: "full" as const,
+      automation_level: "off" as const,
       provider_track_count: 1,
       imported_track_count: 1,
       metadata_synced_at: "2026-05-01T08:55:00Z",
@@ -140,6 +143,7 @@ const streamingPlaylistConfigResponse: StreamingPlaylistConfigResponse = {
       provider_playlist_id: "PL31",
       title: "Fresh Discoveries",
       sync_mode: "off",
+      automation_level: "off",
       provider_track_count: 12,
       imported_track_count: 0,
       metadata_synced_at: null,
@@ -431,9 +435,13 @@ const sonicGenerationPreviewResponse: SonicGenerationPreview = {
   analyzer_key: "librosa_v1",
   analyzer_version: "1",
   can_generate: true,
+  confidence: 0,
+  coverage: 0,
+  current_feature_count: 58,
   failed_feature_count: 0,
   feature_profile: "balanced_v1",
   missing_feature_count: 2,
+  legacy_descriptor_feature_count: 0,
   pending_feature_count: 1,
   projection: {
     config_notes: [],
@@ -474,6 +482,7 @@ const sonicRunsResponse: PlaylistGenerationRunListResponse = {
       generation_number: 19,
       id: 501,
       playlist_count: 2,
+      run_name: "Generation 19",
       source_filter: {
         source_type: "all_local",
         streaming_playlist_ids: [],
@@ -481,6 +490,7 @@ const sonicRunsResponse: PlaylistGenerationRunListResponse = {
       },
       status: "completed",
       track_count: 58,
+      trigger: "manual",
       updated_at: "2026-05-24T12:00:00Z",
     },
   ],
@@ -683,6 +693,7 @@ function mockPlaylistFetch({
     .post("/api/sonic/runs/preview", ({ init }) =>
       sonicGenerationPreviewHandler?.(init) ?? jsonResponse(sonicGenerationPreviewResponse),
     )
+    .get("/api/sonic/recipes", () => jsonResponse({ recipes: [] }))
     .get("/api/sonic/runs", () => sonicRunsHandler?.() ?? jsonResponse(sonicRunsResponse))
     .get("/api/sonic/generated-playlists", () => jsonResponse(generatedPlaylistsResponse))
     .get(/^\/api\/sonic\/runs\/(\d+)$/, ({ match }) =>
@@ -1392,6 +1403,81 @@ describe("App", () => {
       const latestPreview = previewBodies.at(-1) as { generation_config?: Record<string, unknown> };
       expect(latestPreview.generation_config?.target_playlist_size).toBe(30);
       expect(latestPreview.generation_config?.max_depth).toBe(3);
+    });
+  });
+
+  it("leads with musical sequencing intent and renders real proposed playlist evidence", async () => {
+    const previewBodies: unknown[] = [];
+    mockPlaylistFetch({
+      sonicGenerationPreviewHandler: (init) => {
+        previewBodies.push(JSON.parse(String(init?.body ?? "{}")));
+        return jsonResponse({
+          ...sonicGenerationPreviewResponse,
+          confidence: 0.82,
+          coverage: 0.9,
+          playlists: [
+            {
+              boundary_tracks: [
+                {
+                  artist: "Night Driver",
+                  local_track_id: 2,
+                  title: "Edge Signal",
+                },
+              ],
+              client_key: "uk-garage-rolling",
+              cohesion: 0.84,
+              confidence: 0.82,
+              coverage: 0.9,
+              depth: 1,
+              export_default: true,
+              name: "UK Garage / Rolling / 128–134 BPM",
+              outlier_tracks: [
+                {
+                  artist: "Static Gate",
+                  local_track_id: 3,
+                  title: "Loose Cable",
+                },
+              ],
+              parent_key: "rolling",
+              representative_tracks: [
+                {
+                  artist: "Frame Delay",
+                  local_track_id: 1,
+                  title: "Night Runner",
+                },
+              ],
+              sequencing: { intent: "warm_up_to_peak" },
+              sequencing_intent: "warm_up_to_peak",
+              size: 19,
+              skipped_reasons: {},
+              warnings: ["Two tracks used descriptor-only fallback."],
+            },
+          ],
+          skipped_reasons: { awaiting_analysis: 3 },
+          warnings: ["Semantic coverage is partial."],
+        });
+      },
+    });
+
+    renderApp(["/playlist-generator"]);
+
+    expect(await screen.findByRole("region", { name: "Actual playlist preview" })).toBeInTheDocument();
+    expect(screen.getByText("UK Garage / Rolling / 128–134 BPM")).toBeInTheDocument();
+    expect(screen.getByText(/Frame Delay — Night Runner/)).toBeInTheDocument();
+    expect(screen.getByText(/Night Driver — Edge Signal/)).toBeInTheDocument();
+    expect(screen.getByText(/Static Gate — Loose Cable/)).toBeInTheDocument();
+    expect(screen.getByText("Semantic coverage is partial.")).toBeInTheDocument();
+    expect(screen.getByText("Awaiting analysis: 3")).toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "Generation projection" })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /Warm-up to peak/ }));
+
+    await waitFor(() => {
+      const latestPreview = previewBodies.at(-1) as { generation_config?: Record<string, unknown> };
+      expect(latestPreview.generation_config?.semantic_mode).toBe("off");
+      expect(latestPreview.generation_config?.semantic_weight).toBe(0.15);
+      expect(latestPreview.generation_config?.sequencing_intent).toBe("warm_up_to_peak");
+      expect(latestPreview.generation_config?.output_scope).toBe("leaf_only_v1");
     });
   });
 

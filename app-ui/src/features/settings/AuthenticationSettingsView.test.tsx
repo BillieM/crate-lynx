@@ -9,6 +9,7 @@ import {
   getViewIdFromPath,
   getViewPath,
   settingsAuthenticationViewId,
+  settingsAutopilotViewId,
   staticViewRoutes,
 } from "../shell/viewRegistry";
 import { soulseekQueryKeys } from "../soulseek/queryKeys";
@@ -108,10 +109,13 @@ describe("AuthenticationSettingsView", () => {
     expect(staticViewRoutes[settingsAuthenticationViewId]).toBe("/settings/authentication");
     expect(getViewPath(settingsAuthenticationViewId)).toBe("/settings/authentication");
     expect(getViewIdFromPath("/settings/authentication")).toBe(settingsAuthenticationViewId);
+    expect(staticViewRoutes[settingsAutopilotViewId]).toBe("/settings/autopilot");
+    expect(getViewIdFromPath("/settings/autopilot")).toBe(settingsAutopilotViewId);
     expect(buildSettingsNavItems().map((item) => item.label)).toEqual([
       "General",
       "Authentication",
       "YouTube Music sync",
+      "Autopilot",
     ]);
   });
 

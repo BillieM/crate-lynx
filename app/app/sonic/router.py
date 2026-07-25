@@ -7,10 +7,12 @@ from sqlalchemy.engine import Engine
 
 from app.core.db import get_engine
 from app.sonic.generation import (
+    build_generation_preview,
     normalize_generation_config,
-    project_playlist_generation,
 )
 from app.sonic.jobs import SonicJobEnqueuer, enqueue_sonic_feature_backfill
+from app.sonic.models import PLAYLIST_GENERATION_TRIGGER_RECIPE
+from app.sonic.profiles import resolve_feature_profile_from_config
 from app.sonic.schemas import (
     CreatePlaylistGenerationRunRequest,
     CreatePlaylistGenerationRunResponse,
@@ -21,16 +23,21 @@ from app.sonic.schemas import (
     GeneratedPlaylistTrackResponse,
     GeneratedPlaylistTracksResponse,
     PlaylistGenerationProjectionResponse,
+    PlaylistGenerationRecipeListResponse,
+    PlaylistGenerationRecipeResponse,
+    PlaylistGenerationRecipeUpsertRequest,
     PlaylistGenerationRunDetailResponse,
     PlaylistGenerationRunListResponse,
     PlaylistGenerationRunResponse,
+    RegeneratePlaylistGenerationRecipeResponse,
     SonicBackfillRequest,
     SonicBackfillResponse,
     SonicFeatureSummaryResponse,
     SonicGenerationPreviewResponse,
 )
-from app.sonic.profiles import resolve_feature_profile_from_config
 from app.sonic.store import (
+    PlaylistGenerationRecipeNameConflictError,
+    PlaylistGenerationRecipeNotFoundError,
     PlaylistGenerationRunActiveError,
     PlaylistGenerationRunNotFoundError,
     SonicStore,
@@ -108,14 +115,24 @@ def create_router(
             analyzer_version=profile.analyzer_version,
             feature_profile=profile.key,
         )
-        projection = project_playlist_generation(
-            preview.ready_track_count,
-            generation_config,
+        tracks = _store(engine).ready_tracks_for_source(
+            payload.source_filter.model_dump(),
+            analyzer_key=profile.analyzer_key,
+            analyzer_version=profile.analyzer_version,
         )
+        actual_preview = build_generation_preview(
+            tracks,
+            generation_config,
+            failed_feature_count=preview.failed_feature_count,
+            missing_feature_count=preview.missing_feature_count,
+            pending_feature_count=preview.pending_feature_count,
+            source_track_count=preview.source_track_count,
+        )
+        projection = _actual_projection(actual_preview["playlists"])
         return SonicGenerationPreviewResponse(
             analyzer_key=preview.analyzer_key,
             analyzer_version=preview.analyzer_version,
-            can_generate=preview.can_generate,
+            can_generate=bool(actual_preview["readiness"]["can_generate"]),
             failed_feature_count=preview.failed_feature_count,
             feature_profile=preview.feature_profile,
             missing_feature_count=preview.missing_feature_count,
@@ -124,6 +141,15 @@ def create_router(
             ready_track_count=preview.ready_track_count,
             skipped_track_count=preview.skipped_track_count,
             source_track_count=preview.source_track_count,
+            analyzer_evidence=actual_preview["analyzer_evidence"],
+            confidence=actual_preview["confidence"],
+            coverage=actual_preview["coverage"],
+            current_feature_count=preview.current_feature_count,
+            legacy_descriptor_feature_count=preview.legacy_descriptor_feature_count,
+            playlists=actual_preview["playlists"],
+            readiness=actual_preview["readiness"],
+            skipped_reasons=actual_preview["skipped_reasons"],
+            warnings=actual_preview["warnings"],
         )
 
     @router.post(
@@ -143,6 +169,7 @@ def create_router(
         enqueuer = _enqueuer()
         run = store.create_generation_run(
             generation_config=generation_config,
+            run_name=payload.run_name or "Generated crates",
             source_filter=source_filter,
         )
         try:
@@ -157,6 +184,129 @@ def create_router(
                 detail="Failed to enqueue playlist generation job",
             ) from exc
         return CreatePlaylistGenerationRunResponse(
+            run=_run_response(run),
+            job_id=job_id,
+        )
+
+    @router.get(
+        "/sonic/recipes",
+        response_model=PlaylistGenerationRecipeListResponse,
+    )
+    def list_generation_recipes(
+        engine: Engine = Depends(get_engine),
+    ) -> PlaylistGenerationRecipeListResponse:
+        return PlaylistGenerationRecipeListResponse(
+            recipes=[
+                _recipe_response(recipe)
+                for recipe in _store(engine).list_generation_recipes()
+            ]
+        )
+
+    @router.post(
+        "/sonic/recipes",
+        response_model=PlaylistGenerationRecipeResponse,
+        status_code=201,
+    )
+    def create_generation_recipe(
+        payload: PlaylistGenerationRecipeUpsertRequest,
+        engine: Engine = Depends(get_engine),
+    ) -> PlaylistGenerationRecipeResponse:
+        try:
+            recipe = _store(engine).create_generation_recipe(
+                enabled=payload.enabled,
+                export_config=payload.export_config,
+                generation_config=normalize_generation_config(
+                    payload.generation_config.model_dump()
+                ),
+                name=payload.name,
+                regenerate_on_change=payload.regenerate_on_change,
+                source_filter=payload.source_filter.model_dump(),
+            )
+        except PlaylistGenerationRecipeNameConflictError as exc:
+            raise HTTPException(
+                status_code=409, detail="Recipe name already exists"
+            ) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        return _recipe_response(recipe)
+
+    @router.put(
+        "/sonic/recipes/{recipe_id}",
+        response_model=PlaylistGenerationRecipeResponse,
+    )
+    def update_generation_recipe(
+        recipe_id: int,
+        payload: PlaylistGenerationRecipeUpsertRequest,
+        engine: Engine = Depends(get_engine),
+    ) -> PlaylistGenerationRecipeResponse:
+        try:
+            recipe = _store(engine).update_generation_recipe(
+                recipe_id,
+                enabled=payload.enabled,
+                export_config=payload.export_config,
+                generation_config=normalize_generation_config(
+                    payload.generation_config.model_dump()
+                ),
+                name=payload.name,
+                regenerate_on_change=payload.regenerate_on_change,
+                source_filter=payload.source_filter.model_dump(),
+            )
+        except PlaylistGenerationRecipeNotFoundError as exc:
+            raise HTTPException(status_code=404, detail="Recipe not found") from exc
+        except PlaylistGenerationRecipeNameConflictError as exc:
+            raise HTTPException(
+                status_code=409, detail="Recipe name already exists"
+            ) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        return _recipe_response(recipe)
+
+    @router.delete("/sonic/recipes/{recipe_id}", status_code=204)
+    def delete_generation_recipe(
+        recipe_id: int,
+        engine: Engine = Depends(get_engine),
+    ) -> Response:
+        try:
+            _store(engine).delete_generation_recipe(recipe_id)
+        except PlaylistGenerationRecipeNotFoundError as exc:
+            raise HTTPException(status_code=404, detail="Recipe not found") from exc
+        return Response(status_code=204)
+
+    @router.post(
+        "/sonic/recipes/{recipe_id}/regenerate",
+        response_model=RegeneratePlaylistGenerationRecipeResponse,
+        status_code=201,
+    )
+    def regenerate_generation_recipe(
+        recipe_id: int,
+        engine: Engine = Depends(get_engine),
+    ) -> RegeneratePlaylistGenerationRecipeResponse:
+        store = _store(engine)
+        recipe = store.get_generation_recipe(recipe_id)
+        if recipe is None:
+            raise HTTPException(status_code=404, detail="Recipe not found")
+        run = store.create_generation_run(
+            generation_config=normalize_generation_config(
+                recipe.generation_config_json
+            ),
+            recipe_id=recipe.id,
+            run_name=recipe.name,
+            source_filter=recipe.source_filter_json,
+            trigger=PLAYLIST_GENERATION_TRIGGER_RECIPE,
+        )
+        try:
+            job_id = _enqueuer().enqueue_generation(run.id)
+        except Exception as exc:
+            store.mark_generation_run_failed(
+                run.id,
+                f"Failed to enqueue playlist generation job: {exc}",
+            )
+            raise HTTPException(
+                status_code=503,
+                detail="Failed to enqueue playlist generation job",
+            ) from exc
+        return RegeneratePlaylistGenerationRecipeResponse(
+            recipe=_recipe_response(recipe),
             run=_run_response(run),
             job_id=job_id,
         )
@@ -283,6 +433,11 @@ def _run_response(run) -> PlaylistGenerationRunResponse:
         status=run.status,
         source_filter=run.source_filter_json,
         generation_config=run.generation_config_json,
+        recipe_id=run.recipe_id,
+        run_name=run.run_name,
+        trigger=run.trigger,
+        readiness_summary=run.readiness_summary_json,
+        analyzer_evidence=run.analyzer_evidence_json,
         playlist_count=run.playlist_count,
         track_count=run.track_count,
         error_detail=run.error_detail,
@@ -290,6 +445,51 @@ def _run_response(run) -> PlaylistGenerationRunResponse:
         created_at=run.created_at,
         updated_at=run.updated_at,
     )
+
+
+def _recipe_response(recipe) -> PlaylistGenerationRecipeResponse:
+    return PlaylistGenerationRecipeResponse(
+        id=recipe.id,
+        name=recipe.name,
+        source_filter=recipe.source_filter_json,
+        generation_config=recipe.generation_config_json,
+        enabled=recipe.enabled,
+        regenerate_on_change=recipe.regenerate_on_change,
+        export_config=recipe.export_config_json,
+        last_run_id=recipe.last_run_id,
+        last_regenerated_at=recipe.last_regenerated_at,
+        created_at=recipe.created_at,
+        updated_at=recipe.updated_at,
+    )
+
+
+def _actual_projection(playlists: list[dict[str, object]]) -> dict[str, object]:
+    sizes = sorted(
+        int(playlist["size"])
+        for playlist in playlists
+        if isinstance(playlist.get("size"), int)
+    )
+    depth_counts: dict[str, int] = {}
+    for playlist in playlists:
+        depth = str(playlist.get("depth", 0))
+        depth_counts[depth] = depth_counts.get(depth, 0) + 1
+    leaf_count = sum(bool(playlist.get("export_default")) for playlist in playlists)
+    midpoint = sizes[len(sizes) // 2] if sizes else 0
+    return {
+        "config_notes": [],
+        "depth_counts": depth_counts,
+        "leaf_playlist_count": leaf_count,
+        "mode": "actual",
+        "playlist_count": len(playlists),
+        "sample_names": [
+            str(playlist["name"])
+            for playlist in playlists[:5]
+            if isinstance(playlist.get("name"), str)
+        ],
+        "size_max": max(sizes) if sizes else 0,
+        "size_median": midpoint,
+        "size_min": min(sizes) if sizes else 0,
+    }
 
 
 def _generated_playlist_response(playlist) -> GeneratedPlaylistResponse:

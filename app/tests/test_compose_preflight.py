@@ -15,6 +15,7 @@ def _valid_environment(root: Path) -> dict[str, str]:
         "INGESTION_ROOT": root / "ingestion",
         "BEETS_LIBRARY": root / "app-data" / "library.db",
         "BEETS_IMPORT_LOCK_PATH": root / "app-data" / "library.db.import.lock",
+        "AUTOPILOT_EXPORT_ROOT": root / "app-data" / "autopilot-exports",
     }
     for name, path in paths.items():
         directory = (
@@ -41,12 +42,46 @@ def test_compose_preflight_rejects_invalid_secret_and_worker_bounds(
     environ["TOKEN_ENCRYPTION_KEY"] = "not-a-fernet-key"
     environ["INGESTION_WORKER_COUNT"] = "0"
     environ["SONIC_WORKER_COUNT"] = "many"
+    environ["AUTOPILOT_SCHEDULER_TICK_SECONDS"] = "0"
 
     errors = collect_preflight_errors(environ)
 
     assert "TOKEN_ENCRYPTION_KEY must be a valid Fernet key" in errors
     assert "INGESTION_WORKER_COUNT=0 is below 1; using 1" in errors
     assert "Invalid integer for SONIC_WORKER_COUNT='many'; using 2" in errors
+    assert "AUTOPILOT_SCHEDULER_TICK_SECONDS=0 is below 5; using 5" in errors
+
+
+def test_compose_preflight_requires_verified_semantic_asset_when_enabled(
+    tmp_path: Path,
+) -> None:
+    environ = _valid_environment(tmp_path)
+    missing_model = tmp_path / "models" / "missing.onnx"
+    environ["SONIC_SEMANTIC_ENABLED"] = "true"
+    environ["SONIC_SEMANTIC_MODEL_PATH"] = str(missing_model)
+
+    errors = collect_preflight_errors(environ)
+
+    assert f"CLAP ONNX model asset not found: {missing_model}" in errors
+
+
+def test_compose_preflight_rejects_relative_automation_paths(
+    tmp_path: Path,
+) -> None:
+    environ = _valid_environment(tmp_path)
+    environ["SONIC_SEMANTIC_MODEL_PATH"] = "models/clap.onnx"
+    environ["AUTOPILOT_EXPORT_ROOT"] = "exports/autopilot"
+
+    errors = collect_preflight_errors(environ, check_paths=False)
+
+    assert (
+        "SONIC_SEMANTIC_MODEL_PATH must resolve to an absolute container "
+        "path: models/clap.onnx"
+    ) in errors
+    assert (
+        "AUTOPILOT_EXPORT_ROOT must resolve to an absolute container "
+        "path: exports/autopilot"
+    ) in errors
 
 
 def test_compose_preflight_requires_complete_valid_soulseek_configuration(

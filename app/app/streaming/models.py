@@ -17,7 +17,6 @@ from sqlalchemy import (
     text,
 )
 
-
 YOUTUBE_MUSIC_PROVIDER = "youtube_music"
 STREAMING_ACCOUNT_AUTH_STATE_CONNECTED = "connected"
 STREAMING_ACCOUNT_AUTH_STATE_ERROR = "error"
@@ -28,6 +27,16 @@ PLAYLIST_SYNC_MODES = (
     PLAYLIST_SYNC_MODE_OFF,
     PLAYLIST_SYNC_MODE_MATCH_ONLY,
     PLAYLIST_SYNC_MODE_FULL,
+)
+PLAYLIST_AUTOMATION_LEVEL_OFF = "off"
+PLAYLIST_AUTOMATION_LEVEL_SYNC_ONLY = "sync_only"
+PLAYLIST_AUTOMATION_LEVEL_ASSIST = "assist"
+PLAYLIST_AUTOMATION_LEVEL_FULL = "full"
+PLAYLIST_AUTOMATION_LEVELS = (
+    PLAYLIST_AUTOMATION_LEVEL_OFF,
+    PLAYLIST_AUTOMATION_LEVEL_SYNC_ONLY,
+    PLAYLIST_AUTOMATION_LEVEL_ASSIST,
+    PLAYLIST_AUTOMATION_LEVEL_FULL,
 )
 
 metadata = MetaData()
@@ -63,6 +72,12 @@ streaming_playlists_table = Table(
         nullable=False,
         server_default=text(f"'{PLAYLIST_SYNC_MODE_OFF}'"),
     ),
+    Column(
+        "automation_level",
+        String,
+        nullable=False,
+        server_default=text(f"'{PLAYLIST_AUTOMATION_LEVEL_OFF}'"),
+    ),
     Column("provider_track_count", Integer, nullable=True),
     Column("metadata_synced_at", DateTime(timezone=True), nullable=True),
     Column("tracks_synced_at", DateTime(timezone=True), nullable=True),
@@ -71,6 +86,10 @@ streaming_playlists_table = Table(
     CheckConstraint(
         "sync_mode IN ('off', 'match_only', 'full')",
         name="ck_streaming_playlists_sync_mode",
+    ),
+    CheckConstraint(
+        "automation_level IN ('off', 'sync_only', 'assist', 'full')",
+        name="ck_streaming_playlists_automation_level",
     ),
     UniqueConstraint(
         "account_id",
@@ -151,6 +170,7 @@ class StreamingPlaylistRecord:
     provider_playlist_id: str
     title: str
     sync_mode: str
+    automation_level: str
     provider_track_count: int | None
     metadata_synced_at: datetime | None
     tracks_synced_at: datetime | None
@@ -165,6 +185,7 @@ class StreamingPlaylistSummary:
     provider_playlist_id: str
     title: str
     sync_mode: str
+    automation_level: str
     provider_track_count: int | None
     imported_track_count: int
     metadata_synced_at: datetime | None

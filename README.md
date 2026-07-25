@@ -28,10 +28,13 @@ The screenshots below use synthetic demo data.
   entries can share one local file.
 - Searches and queues missing tracks through an optional slskd/Soulseek
   integration.
+- Keeps explicitly selected playlists current through bounded `sync only`,
+  `assist`, or full-autopilot maintenance; every playlist defaults to off.
 - Generates M3U/M3U8 and Rekordbox XML exports from linked streaming playlists
   and generated local playlists.
-- Builds sonic playlist trees from local audio features for crate-digging and
-  library exploration.
+- Builds disposable sonic playlist snapshots from interpretable acoustic
+  features and an optional learned CLAP audio embedding, with separate grouping,
+  sequencing, naming, real previews, and reusable generation recipes.
 
 ---
 
@@ -44,7 +47,12 @@ The screenshots below use synthetic demo data.
 | `db` | PostgreSQL 16+ |
 | `redis` | Message broker for RQ background jobs |
 
-The `app` container runs the FastAPI server (`uvicorn`) plus dedicated RQ workers: one ingestion worker by default, one worker for matching/streaming/Soulseek jobs, and two sonic feature workers. They share the same codebase and environment config.
+The `app` container runs the FastAPI server (`uvicorn`) plus dedicated RQ
+workers: one ingestion worker by default, one worker for
+matching/streaming/Soulseek/autopilot jobs, and two sonic feature workers. A
+single scheduler process plans startup and periodic autopilot work; Redis
+token-owned renewable locks prevent overlapping runs. They share the same
+codebase and environment config.
 
 ---
 
@@ -75,6 +83,23 @@ docker compose run --build --rm config-preflight
 docker compose up --build
 ```
 
+Learned audio semantics are optional and never downloaded during normal
+analysis. To install the pinned, checksum-verified ONNX asset into the app-data
+volume, then enable it:
+
+```bash
+docker compose build app
+docker compose run --rm --no-deps app python -m app.sonic.model_assets
+# Set SONIC_SEMANTIC_ENABLED=true in .env, then run the preflight again.
+docker compose run --rm config-preflight
+```
+
+The model asset is the audio encoder from the
+[Xenova CLAP ONNX conversion](https://huggingface.co/Xenova/clap-htsat-unfused),
+derived from LAION's Apache-licensed
+[CLAP model](https://huggingface.co/laion/clap-htsat-unfused). Crate Lynx pins
+the exact model revision, byte size, and SHA-256 before loading it.
+
 For local backend development, use Python 3.12.13. A repo-level `.python-version` file is included for tools such as `pyenv`.
 
 The UI is served at `http://localhost:18100` (Nginx). The API is available at `http://localhost:18101` and proxied through the UI at `http://localhost:18100/api`. The Compose file also joins an external Docker network named `music` for optional slskd integration; create it once before first startup if it does not already exist.
@@ -90,6 +115,12 @@ the music library.
 ## Deployment
 
 This is a personal/LAN-oriented app, not a hardened multi-user hosted service. Deploy it on a trusted machine or private Docker host, put it behind your own reverse proxy if needed, and avoid exposing the API, Postgres, or Redis directly to the public internet.
+
+Before a schema-changing deploy, create a timestamped PostgreSQL custom-format
+backup outside the database container and mutable database volume. Verify it
+with `pg_restore --list` and, preferably, a full restore rehearsal into an
+isolated PostgreSQL 16 database. Record pre-deploy row-count invariants and the
+exact restore command beside the backup.
 
 Deploy with Docker Compose from a checkout that has a populated `.env` file:
 
@@ -138,6 +169,12 @@ Backend services (`app`, `db`, and `redis`) stay on the internal Compose network
 | `INGESTION_STABILITY_WORKERS` | Concurrent watcher stability checks. Defaults to `4`; valid range `1`–`64` |
 | `INGESTION_WORKER_COUNT` | RQ workers listening to the ingestion queue. Defaults to `1`; valid range `1`–`32` |
 | `SONIC_WORKER_COUNT` | Dedicated RQ workers listening to the sonic queue. Defaults to `2`; valid range `1`–`32` |
+| `SONIC_SEMANTIC_ENABLED` | Enables the pinned offline CLAP ONNX embedding alongside interpretable features. Defaults to `false`; analysis remains available in explicit degraded mode |
+| `SONIC_SEMANTIC_MODEL_PATH` | Absolute container path to the verified CLAP ONNX asset. Defaults to `/data/models/clap-htsat-unfused-audio.onnx` |
+| `AUTOPILOT_SCHEDULER_ENABLED` | Starts the singleton startup/periodic scheduler. Defaults to `true`; playlist automation still defaults to `off` |
+| `AUTOPILOT_SCHEDULER_TICK_SECONDS` | Scheduler wake interval. Defaults to `30`; valid range `5`–`3600` |
+| `AUTOPILOT_STARTUP_RUN_DRY_RUN` | Makes the automatic startup run planning-only. Defaults to `false`; useful for a first deployment smoke |
+| `AUTOPILOT_EXPORT_ROOT` | Absolute container root for atomically refreshed configured recipe exports. Defaults to `/data/exports/autopilot` |
 | `SLSKD_BASE_URL` | Base URL for the slskd HTTP API. Required for Soulseek search/download actions |
 | `SLSKD_API_KEY` | slskd API key sent as `X-API-Key`. Required for Soulseek search/download actions |
 | `SLSKD_VERIFY_SSL` | Whether to verify slskd HTTPS certificates. Defaults to `true` |
@@ -251,6 +288,49 @@ M3U/M3U8 files are generated on demand from `playlist_membership` joined through
 `final_links` to `local_tracks`. Use the playlist download or batch export screens;
 Crate Lynx does not maintain a second background directory of persisted playlists.
 Paths resolve relative to the consuming tool.
+
+### Generated crates and recipes
+
+Sonic analysis first understands each track, then groups compatible tracks,
+sequences each group for a musical intent, and names the result from stable
+evidence. Interpretable tempo, energy, rhythm, and tonal descriptors remain
+major signals. If the optional learned embedding is unavailable or does not
+have enough coverage, the run records the degraded reason instead of silently
+changing meaning.
+
+Preview runs the real generator in memory and returns actual candidate playlist
+names, sizes, representative and boundary/outlier tracks, coverage,
+cohesion/confidence, skips, and warnings without persisting a disposable run.
+Saved recipes can regenerate against the latest eligible library. Generated
+runs are immutable snapshots rather than editable playlists; recipe exports use
+leaf playlists by default to avoid redundant parent/child files.
+
+Genre/style metadata never hard-partitions tracks. Specific normalized tags may
+help a name only when they have strong cluster-wide agreement and agree with
+the acoustic evidence; generic or contradictory tags are ignored.
+
+### Keep fresh and autopilot
+
+Each mirrored playlist has an explicit automation level:
+
+- **Off** — no background maintenance.
+- **Sync only** — refresh and reconcile playlist metadata.
+- **Assist/search** — also search unresolved tracks and leave candidate review.
+- **Full autopilot** — after strict identity, version, duration, quality, and
+  runner-up-margin gates, queue bounded unattended downloads.
+
+Transfer desirability cannot compensate for weak track identity. Successful
+unattended imports are verified for readable audio and duration compatibility,
+then linked without a second confirmation. Ambiguous, corrupt, or materially
+mismatched items remain in the compact review history. Global pause,
+per-run download/storage/concurrency caps, exponential retry limits,
+idempotency, quiet-period recipe regeneration, and renewable singleton locks
+bound the workflow across restart and connectivity failures.
+
+Use a manual dry run before enabling full autopilot. It refreshes and plans
+eligible work, may issue provider/Soulseek searches, and records acquisition and
+gate evidence, but suppresses download, ingest, automatic linking, regeneration,
+and export writes.
 
 ---
 

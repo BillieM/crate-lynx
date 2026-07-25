@@ -8,6 +8,7 @@ from sqlalchemy import text
 from sqlalchemy.engine import Engine
 from sqlalchemy.exc import SQLAlchemyError
 
+from app.autopilot.router import create_router as create_autopilot_router
 from app.core.config import RuntimeConfig, load_runtime_config
 from app.core.db import create_database_engine
 from app.core.paths import resolve_staging_path
@@ -194,6 +195,12 @@ def create_app() -> FastAPI:
     )
     app.include_router(
         create_soulseek_router(
+            require_redis_url=require_redis_url,
+        ),
+        prefix="/api",
+    )
+    app.include_router(
+        create_autopilot_router(
             require_redis_url=require_redis_url,
         ),
         prefix="/api",

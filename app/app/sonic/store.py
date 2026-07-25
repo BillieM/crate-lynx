@@ -14,12 +14,23 @@ from sqlalchemy import (
     delete,
     func,
     insert,
+    inspect as sqlalchemy_inspect,
     or_,
     select,
     update,
 )
 from sqlalchemy.engine import Connection, Engine
+from sqlalchemy.exc import IntegrityError
 
+from app.autopilot.models import (
+    AUTOPILOT_ITEM_STATUS_FAILED,
+    AUTOPILOT_ITEM_STATUS_RETRY_WAIT,
+    AUTOPILOT_ITEM_STATUS_REVIEW,
+    AUTOPILOT_RUN_STATUS_PARTIAL,
+    AUTOPILOT_RUN_STATUS_SUCCEEDED,
+    autopilot_run_items_table,
+    autopilot_runs_table,
+)
 from app.core.db import create_database_engine
 from app.ingestion.beets_mirror import (
     beets_item_attributes_table,
@@ -31,6 +42,9 @@ from app.sonic.models import (
     PLAYLIST_GENERATION_STATUS_FAILED,
     PLAYLIST_GENERATION_STATUS_PENDING,
     PLAYLIST_GENERATION_STATUS_RUNNING,
+    PLAYLIST_GENERATION_TRIGGER_MANUAL,
+    SONIC_ANALYZER_CURRENT_VERSION,
+    SONIC_ANALYZER_DESCRIPTOR_LEGACY_VERSION,
     SONIC_FEATURE_STATUS_FAILED,
     SONIC_FEATURE_STATUS_PENDING,
     SONIC_FEATURE_STATUS_READY,
@@ -41,11 +55,13 @@ from app.sonic.models import (
     SONIC_TAG_FILTER_MATCH_CONTAINS,
     GeneratedPlaylistRecord,
     GeneratedPlaylistTrackRecord,
+    PlaylistGenerationRecipeRecord,
     PlaylistGenerationRunRecord,
     SonicFeatureSummaryRecord,
     SonicTrackFeatureRecord,
     generated_playlist_tracks_table,
     generated_playlists_table,
+    playlist_generation_recipes_table,
     playlist_generation_runs_table,
     sonic_track_features_table,
 )
@@ -64,6 +80,14 @@ class GeneratedPlaylistNotFoundError(ValueError):
     pass
 
 
+class PlaylistGenerationRecipeNotFoundError(ValueError):
+    pass
+
+
+class PlaylistGenerationRecipeNameConflictError(ValueError):
+    pass
+
+
 @dataclass(frozen=True, slots=True)
 class SonicReadyTrack:
     local_track_id: int
@@ -73,6 +97,7 @@ class SonicReadyTrack:
     artist: str | None = None
     tag_values: tuple[str, ...] = ()
     title: str | None = None
+    analyzer_version: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -88,6 +113,8 @@ class SonicGenerationPreviewRecord:
     can_generate: bool
     failed_feature_count: int
     feature_profile: str
+    current_feature_count: int
+    legacy_descriptor_feature_count: int
     missing_feature_count: int
     pending_feature_count: int
     ready_track_count: int
@@ -108,10 +135,12 @@ class SonicStore:
         self._engine = engine or create_database_engine(database_url)
 
     def feature_summary(self) -> SonicFeatureSummaryRecord:
-        status_case = lambda status: case(  # noqa: E731
-            (sonic_track_features_table.c.status == status, 1),
-            else_=0,
-        )
+        def status_case(status: str) -> object:
+            return case(
+                (sonic_track_features_table.c.status == status, 1),
+                else_=0,
+            )
+
         query = select(
             func.count(local_tracks_table.c.id).label("total_tracks"),
             func.sum(status_case(SONIC_FEATURE_STATUS_READY)).label("ready_tracks"),
@@ -146,12 +175,16 @@ class SonicStore:
     ) -> SonicTrackFeatureRecord:
         now = datetime.now(UTC)
         with self._engine.begin() as connection:
-            existing_id = connection.execute(
-                select(sonic_track_features_table.c.id).where(
-                    sonic_track_features_table.c.local_track_id == local_track_id
+            existing = (
+                connection.execute(
+                    select(sonic_track_features_table).where(
+                        sonic_track_features_table.c.local_track_id == local_track_id
+                    )
                 )
-            ).scalar_one_or_none()
-            if existing_id is None:
+                .mappings()
+                .one_or_none()
+            )
+            if existing is None:
                 result = connection.execute(
                     insert(sonic_track_features_table).values(
                         local_track_id=local_track_id,
@@ -168,21 +201,35 @@ class SonicStore:
                 )
                 feature_id = result.inserted_primary_key[0]
             else:
-                feature_id = existing_id
+                feature_id = existing["id"]
+                preserves_legacy_evidence = _is_legacy_upgrade(
+                    existing,
+                    analyzer_key=analyzer_key,
+                    analyzer_version=analyzer_version,
+                )
+                values: dict[str, Any] = {
+                    "status": SONIC_FEATURE_STATUS_PENDING,
+                    "failure_detail": None,
+                    "attempt_count": sonic_track_features_table.c.attempt_count + 1,
+                    "updated_at": now,
+                }
+                if preserves_legacy_evidence:
+                    values["failure_detail"] = _feature_upgrade_pending_marker(
+                        analyzer_key=analyzer_key,
+                        analyzer_version=analyzer_version,
+                    )
+                else:
+                    values.update(
+                        analyzer_key=analyzer_key,
+                        analyzer_version=analyzer_version,
+                        descriptor_json=None,
+                        vector_json=None,
+                        extracted_at=None,
+                    )
                 connection.execute(
                     update(sonic_track_features_table)
                     .where(sonic_track_features_table.c.id == feature_id)
-                    .values(
-                        analyzer_key=analyzer_key,
-                        analyzer_version=analyzer_version,
-                        status=SONIC_FEATURE_STATUS_PENDING,
-                        descriptor_json=None,
-                        vector_json=None,
-                        failure_detail=None,
-                        extracted_at=None,
-                        attempt_count=sonic_track_features_table.c.attempt_count + 1,
-                        updated_at=now,
-                    )
+                    .values(**values)
                 )
 
             row = (
@@ -213,22 +260,19 @@ class SonicStore:
                     sonic_track_features_table.c.local_track_id == local_track_id
                 )
             ).scalar_one_or_none()
-            values = {
-                "analyzer_key": analyzer_key,
-                "analyzer_version": analyzer_version,
-                "status": SONIC_FEATURE_STATUS_READY,
-                "descriptor_json": descriptors,
-                "vector_json": vector,
-                "failure_detail": None,
-                "extracted_at": now,
-                "updated_at": now,
-            }
             if existing_id is None:
                 result = connection.execute(
                     insert(sonic_track_features_table).values(
                         local_track_id=local_track_id,
+                        analyzer_key=analyzer_key,
+                        analyzer_version=analyzer_version,
+                        status=SONIC_FEATURE_STATUS_READY,
+                        descriptor_json=descriptors,
+                        vector_json=vector,
+                        failure_detail=None,
+                        extracted_at=now,
                         attempt_count=1,
-                        **values,
+                        updated_at=now,
                     )
                 )
                 feature_id = result.inserted_primary_key[0]
@@ -237,7 +281,16 @@ class SonicStore:
                 connection.execute(
                     update(sonic_track_features_table)
                     .where(sonic_track_features_table.c.id == feature_id)
-                    .values(**values)
+                    .values(
+                        analyzer_key=analyzer_key,
+                        analyzer_version=analyzer_version,
+                        status=SONIC_FEATURE_STATUS_READY,
+                        descriptor_json=descriptors,
+                        vector_json=vector,
+                        failure_detail=None,
+                        extracted_at=now,
+                        updated_at=now,
+                    )
                 )
 
             row = (
@@ -268,12 +321,12 @@ class SonicStore:
                 update(sonic_track_features_table)
                 .where(
                     sonic_track_features_table.c.local_track_id == local_track_id,
-                    sonic_track_features_table.c.analyzer_key == analyzer_key,
-                    sonic_track_features_table.c.analyzer_version == analyzer_version,
                     sonic_track_features_table.c.status == SONIC_FEATURE_STATUS_PENDING,
                     sonic_track_features_table.c.attempt_count == attempt_count,
                 )
                 .values(
+                    analyzer_key=analyzer_key,
+                    analyzer_version=analyzer_version,
                     status=SONIC_FEATURE_STATUS_READY,
                     descriptor_json=descriptors,
                     vector_json=vector,
@@ -349,22 +402,33 @@ class SonicStore:
     ) -> bool:
         now = datetime.now(UTC)
         with self._engine.begin() as connection:
-            result = connection.execute(
-                update(sonic_track_features_table)
-                .where(
-                    sonic_track_features_table.c.local_track_id == local_track_id,
-                    sonic_track_features_table.c.analyzer_key == analyzer_key,
-                    sonic_track_features_table.c.analyzer_version == analyzer_version,
-                    sonic_track_features_table.c.status == SONIC_FEATURE_STATUS_PENDING,
-                    sonic_track_features_table.c.attempt_count == attempt_count,
+            existing = (
+                connection.execute(
+                    select(sonic_track_features_table).where(
+                        sonic_track_features_table.c.local_track_id == local_track_id,
+                        sonic_track_features_table.c.status
+                        == SONIC_FEATURE_STATUS_PENDING,
+                        sonic_track_features_table.c.attempt_count == attempt_count,
+                    )
                 )
-                .values(
-                    status=SONIC_FEATURE_STATUS_FAILED,
-                    failure_detail=failure_detail,
-                    updated_at=now,
-                )
+                .mappings()
+                .one_or_none()
             )
-        return result.rowcount == 1
+            if existing is None:
+                return False
+            values = _feature_failure_values(
+                existing,
+                analyzer_key=analyzer_key,
+                analyzer_version=analyzer_version,
+                failure_detail=failure_detail,
+                now=now,
+            )
+            connection.execute(
+                update(sonic_track_features_table)
+                .where(sonic_track_features_table.c.id == existing["id"])
+                .values(**values)
+            )
+        return True
 
     def mark_feature_failed_if_pending(
         self,
@@ -381,7 +445,12 @@ class SonicStore:
                 connection.execute(
                     select(
                         sonic_track_features_table.c.id,
+                        sonic_track_features_table.c.analyzer_key,
+                        sonic_track_features_table.c.analyzer_version,
                         sonic_track_features_table.c.status,
+                        sonic_track_features_table.c.descriptor_json,
+                        sonic_track_features_table.c.vector_json,
+                        sonic_track_features_table.c.failure_detail,
                         sonic_track_features_table.c.attempt_count,
                     ).where(
                         sonic_track_features_table.c.local_track_id == local_track_id
@@ -390,14 +459,14 @@ class SonicStore:
                 .mappings()
                 .one_or_none()
             )
-            values = {
-                "analyzer_key": analyzer_key,
-                "analyzer_version": analyzer_version,
-                "status": SONIC_FEATURE_STATUS_FAILED,
-                "failure_detail": failure_detail,
-                "updated_at": now,
-            }
             if existing is None:
+                values = {
+                    "analyzer_key": analyzer_key,
+                    "analyzer_version": analyzer_version,
+                    "status": SONIC_FEATURE_STATUS_FAILED,
+                    "failure_detail": failure_detail,
+                    "updated_at": now,
+                }
                 connection.execute(
                     insert(sonic_track_features_table).values(
                         local_track_id=local_track_id,
@@ -415,6 +484,13 @@ class SonicStore:
             if attempt_count is not None and existing["attempt_count"] != attempt_count:
                 return False
 
+            values = _feature_failure_values(
+                existing,
+                analyzer_key=analyzer_key,
+                analyzer_version=analyzer_version,
+                failure_detail=failure_detail,
+                now=now,
+            )
             connection.execute(
                 update(sonic_track_features_table)
                 .where(sonic_track_features_table.c.id == existing["id"])
@@ -457,9 +533,38 @@ class SonicStore:
             sonic_track_features_table.c.analyzer_key != analyzer_key,
             sonic_track_features_table.c.analyzer_version != analyzer_version,
         )
-        retryable_statuses = [
+        upgrade_failure_prefix = _feature_upgrade_failure_prefix(
+            analyzer_key=analyzer_key,
+            analyzer_version=analyzer_version,
+        )
+        previous_upgrade_failed = (
+            sonic_track_features_table.c.failure_detail.startswith(
+                upgrade_failure_prefix
+            )
+        )
+        first_upgrade_attempt = and_(
             outdated_feature,
+            sonic_track_features_table.c.status != SONIC_FEATURE_STATUS_PENDING,
+            or_(
+                sonic_track_features_table.c.failure_detail.is_(None),
+                ~previous_upgrade_failed,
+            ),
+        )
+        retry_upgrade_after = [
+            outdated_feature,
+            sonic_track_features_table.c.status == SONIC_FEATURE_STATUS_READY,
+            previous_upgrade_failed,
+            retryable_feature,
+        ]
+        if pending_stale_before is not None:
+            retry_upgrade_after.append(
+                sonic_track_features_table.c.updated_at < pending_stale_before
+            )
+        retryable_statuses = [
+            first_upgrade_attempt,
+            and_(*retry_upgrade_after),
             and_(
+                ~outdated_feature,
                 sonic_track_features_table.c.status == SONIC_FEATURE_STATUS_FAILED,
                 retryable_feature,
             ),
@@ -476,7 +581,13 @@ class SonicStore:
             select(
                 local_tracks_table.c.id.label("local_track_id"),
                 sonic_track_features_table.c.id.label("feature_id"),
+                sonic_track_features_table.c.analyzer_key,
+                sonic_track_features_table.c.analyzer_version,
                 sonic_track_features_table.c.attempt_count,
+                sonic_track_features_table.c.descriptor_json,
+                sonic_track_features_table.c.vector_json,
+                sonic_track_features_table.c.status,
+                sonic_track_features_table.c.failure_detail,
                 outdated_feature.label("is_outdated"),
             )
             .select_from(
@@ -502,23 +613,41 @@ class SonicStore:
             for row in rows:
                 local_track_id = int(row["local_track_id"])
                 feature_id = row["feature_id"]
-                values = {
-                    "analyzer_key": analyzer_key,
-                    "analyzer_version": analyzer_version,
+                values: dict[str, Any] = {
                     "status": SONIC_FEATURE_STATUS_PENDING,
                     "failure_detail": None,
                     "updated_at": now,
                 }
-                attempt_count = (
-                    1
-                    if feature_id is None or row["is_outdated"]
-                    else int(row["attempt_count"]) + 1
+                preserves_legacy_evidence = bool(
+                    feature_id is not None
+                    and _is_legacy_upgrade(
+                        row,
+                        analyzer_key=analyzer_key,
+                        analyzer_version=analyzer_version,
+                    )
                 )
+                is_upgrade_retry = bool(
+                    preserves_legacy_evidence
+                    and (
+                        row["status"] == SONIC_FEATURE_STATUS_PENDING
+                        or (
+                            isinstance(row["failure_detail"], str)
+                            and row["failure_detail"].startswith(upgrade_failure_prefix)
+                        )
+                    )
+                )
+                attempt_count = 1
+                if feature_id is not None and (
+                    not row["is_outdated"] or is_upgrade_retry
+                ):
+                    attempt_count = int(row["attempt_count"]) + 1
                 values["attempt_count"] = attempt_count
                 if feature_id is None:
                     connection.execute(
                         insert(sonic_track_features_table).values(
                             local_track_id=local_track_id,
+                            analyzer_key=analyzer_key,
+                            analyzer_version=analyzer_version,
                             descriptor_json=None,
                             vector_json=None,
                             extracted_at=None,
@@ -526,15 +655,23 @@ class SonicStore:
                         )
                     )
                 else:
-                    connection.execute(
-                        update(sonic_track_features_table)
-                        .where(sonic_track_features_table.c.id == feature_id)
-                        .values(
+                    if preserves_legacy_evidence:
+                        values["failure_detail"] = _feature_upgrade_pending_marker(
+                            analyzer_key=analyzer_key,
+                            analyzer_version=analyzer_version,
+                        )
+                    else:
+                        values.update(
+                            analyzer_key=analyzer_key,
+                            analyzer_version=analyzer_version,
                             descriptor_json=None,
                             vector_json=None,
                             extracted_at=None,
-                            **values,
                         )
+                    connection.execute(
+                        update(sonic_track_features_table)
+                        .where(sonic_track_features_table.c.id == feature_id)
+                        .values(**values)
                     )
                 claimed_attempts.append(
                     ClaimedSonicFeatureAttempt(
@@ -583,15 +720,25 @@ class SonicStore:
                         sonic_track_features_table.c.local_track_id,
                         sonic_track_features_table.c.analyzer_key,
                         sonic_track_features_table.c.analyzer_version,
+                        sonic_track_features_table.c.status,
                         sonic_track_features_table.c.descriptor_json,
                         sonic_track_features_table.c.vector_json,
+                        sonic_track_features_table.c.failure_detail,
                     )
                     .where(
                         sonic_track_features_table.c.local_track_id.in_(
                             sorted(local_track_ids)
                         ),
-                        sonic_track_features_table.c.status
-                        == SONIC_FEATURE_STATUS_READY,
+                        or_(
+                            sonic_track_features_table.c.status
+                            == SONIC_FEATURE_STATUS_READY,
+                            and_(
+                                sonic_track_features_table.c.status
+                                == SONIC_FEATURE_STATUS_PENDING,
+                                sonic_track_features_table.c.analyzer_version
+                                == SONIC_ANALYZER_DESCRIPTOR_LEGACY_VERSION,
+                            ),
+                        ),
                         sonic_track_features_table.c.vector_json.is_not(None),
                     )
                     .order_by(sonic_track_features_table.c.local_track_id.asc())
@@ -618,6 +765,7 @@ class SonicStore:
                     )
                 ),
                 title=metadata_by_id.get(int(row["local_track_id"]), {}).get("title"),
+                analyzer_version=str(row["analyzer_version"]),
             )
             for row in rows
             if isinstance(row["vector_json"], list)
@@ -625,6 +773,14 @@ class SonicStore:
                 row,
                 analyzer_key=analyzer_key,
                 analyzer_version=analyzer_version,
+            )
+            and (
+                row["status"] == SONIC_FEATURE_STATUS_READY
+                or _is_active_legacy_upgrade(
+                    row,
+                    analyzer_key=analyzer_key or str(row["analyzer_key"]),
+                    analyzer_version=analyzer_version or str(row["analyzer_version"]),
+                )
             )
         ]
 
@@ -646,6 +802,8 @@ class SonicStore:
                     can_generate=False,
                     failed_feature_count=0,
                     feature_profile=feature_profile,
+                    current_feature_count=0,
+                    legacy_descriptor_feature_count=0,
                     missing_feature_count=0,
                     pending_feature_count=0,
                     ready_track_count=0,
@@ -662,6 +820,7 @@ class SonicStore:
                         sonic_track_features_table.c.status,
                         sonic_track_features_table.c.descriptor_json,
                         sonic_track_features_table.c.vector_json,
+                        sonic_track_features_table.c.failure_detail,
                     )
                     .where(
                         sonic_track_features_table.c.local_track_id.in_(
@@ -676,6 +835,8 @@ class SonicStore:
 
         rows_by_track_id = {int(row["local_track_id"]): row for row in rows}
         ready_track_count = 0
+        current_feature_count = 0
+        legacy_descriptor_feature_count = 0
         pending_feature_count = 0
         failed_feature_count = 0
         for local_track_id in local_track_ids:
@@ -683,14 +844,32 @@ class SonicStore:
             if row is None:
                 continue
             status = row["status"]
-            if status == SONIC_FEATURE_STATUS_READY:
-                if _feature_is_compatible(
+            usable_legacy_upgrade = (
+                status == SONIC_FEATURE_STATUS_PENDING
+                and isinstance(row["vector_json"], list)
+                and _is_active_legacy_upgrade(
                     row,
                     analyzer_key=analyzer_key,
                     analyzer_version=analyzer_version,
-                ) and isinstance(row["vector_json"], list):
-                    ready_track_count += 1
-            elif status == SONIC_FEATURE_STATUS_PENDING:
+                )
+            )
+            if (status == SONIC_FEATURE_STATUS_READY or usable_legacy_upgrade) and (
+                _feature_is_compatible(
+                    row,
+                    analyzer_key=analyzer_key,
+                    analyzer_version=analyzer_version,
+                )
+                and isinstance(row["vector_json"], list)
+            ):
+                ready_track_count += 1
+                if str(row["analyzer_version"]) == analyzer_version:
+                    current_feature_count += 1
+                elif (
+                    str(row["analyzer_version"])
+                    == SONIC_ANALYZER_DESCRIPTOR_LEGACY_VERSION
+                ):
+                    legacy_descriptor_feature_count += 1
+            if status == SONIC_FEATURE_STATUS_PENDING:
                 pending_feature_count += 1
             elif status == SONIC_FEATURE_STATUS_FAILED:
                 failed_feature_count += 1
@@ -703,6 +882,8 @@ class SonicStore:
             can_generate=ready_track_count > 0,
             failed_feature_count=failed_feature_count,
             feature_profile=feature_profile,
+            current_feature_count=current_feature_count,
+            legacy_descriptor_feature_count=legacy_descriptor_feature_count,
             missing_feature_count=missing_feature_count,
             pending_feature_count=pending_feature_count,
             ready_track_count=ready_track_count,
@@ -713,8 +894,13 @@ class SonicStore:
     def create_generation_run(
         self,
         *,
+        analyzer_evidence: dict[str, Any] | None = None,
         generation_config: dict[str, Any],
+        readiness_summary: dict[str, Any] | None = None,
+        recipe_id: int | None = None,
+        run_name: str = "Generated crates",
         source_filter: dict[str, Any],
+        trigger: str = PLAYLIST_GENERATION_TRIGGER_MANUAL,
     ) -> PlaylistGenerationRunRecord:
         with self._engine.begin() as connection:
             result = connection.execute(
@@ -722,6 +908,11 @@ class SonicStore:
                     status=PLAYLIST_GENERATION_STATUS_PENDING,
                     source_filter_json=source_filter,
                     generation_config_json=generation_config,
+                    recipe_id=recipe_id,
+                    run_name=run_name,
+                    trigger=trigger,
+                    readiness_summary_json=readiness_summary,
+                    analyzer_evidence_json=analyzer_evidence,
                     playlist_count=0,
                     track_count=0,
                 )
@@ -732,6 +923,204 @@ class SonicStore:
         if run is None:
             raise PlaylistGenerationRunNotFoundError(str(run_id))
         return run
+
+    def create_generation_recipe(
+        self,
+        *,
+        enabled: bool,
+        export_config: dict[str, Any] | None,
+        generation_config: dict[str, Any],
+        name: str,
+        regenerate_on_change: bool,
+        source_filter: dict[str, Any],
+    ) -> PlaylistGenerationRecipeRecord:
+        from app.autopilot.exports import validate_recipe_export_config
+
+        validated_export_config = validate_recipe_export_config(
+            engine=self._engine,
+            raw=export_config,
+        )
+        now = datetime.now(UTC)
+        try:
+            with self._engine.begin() as connection:
+                result = connection.execute(
+                    insert(playlist_generation_recipes_table).values(
+                        name=name,
+                        source_filter_json=source_filter,
+                        generation_config_json=generation_config,
+                        enabled=enabled,
+                        regenerate_on_change=regenerate_on_change,
+                        export_config_json=validated_export_config,
+                        updated_at=now,
+                    )
+                )
+                recipe_id = int(result.inserted_primary_key[0])
+        except IntegrityError as exc:
+            raise PlaylistGenerationRecipeNameConflictError(name) from exc
+        recipe = self.get_generation_recipe(recipe_id)
+        if recipe is None:
+            raise PlaylistGenerationRecipeNotFoundError(str(recipe_id))
+        return recipe
+
+    def list_generation_recipes(
+        self,
+        *,
+        enabled_only: bool = False,
+    ) -> list[PlaylistGenerationRecipeRecord]:
+        query = select(playlist_generation_recipes_table)
+        if enabled_only:
+            query = query.where(playlist_generation_recipes_table.c.enabled.is_(True))
+        query = query.order_by(
+            playlist_generation_recipes_table.c.name.asc(),
+            playlist_generation_recipes_table.c.id.asc(),
+        )
+        with self._engine.connect() as connection:
+            rows = connection.execute(query).mappings().all()
+        return [_recipe_record(row) for row in rows]
+
+    def get_generation_recipe(
+        self,
+        recipe_id: int,
+    ) -> PlaylistGenerationRecipeRecord | None:
+        with self._engine.connect() as connection:
+            row = (
+                connection.execute(
+                    select(playlist_generation_recipes_table).where(
+                        playlist_generation_recipes_table.c.id == recipe_id
+                    )
+                )
+                .mappings()
+                .one_or_none()
+            )
+        return _recipe_record(row) if row is not None else None
+
+    def update_generation_recipe(
+        self,
+        recipe_id: int,
+        *,
+        enabled: bool,
+        export_config: dict[str, Any] | None,
+        generation_config: dict[str, Any],
+        name: str,
+        regenerate_on_change: bool,
+        source_filter: dict[str, Any],
+    ) -> PlaylistGenerationRecipeRecord:
+        from app.autopilot.exports import validate_recipe_export_config
+
+        validated_export_config = validate_recipe_export_config(
+            engine=self._engine,
+            raw=export_config,
+        )
+        try:
+            with self._engine.begin() as connection:
+                result = connection.execute(
+                    update(playlist_generation_recipes_table)
+                    .where(playlist_generation_recipes_table.c.id == recipe_id)
+                    .values(
+                        name=name,
+                        source_filter_json=source_filter,
+                        generation_config_json=generation_config,
+                        enabled=enabled,
+                        regenerate_on_change=regenerate_on_change,
+                        export_config_json=validated_export_config,
+                        updated_at=datetime.now(UTC),
+                    )
+                )
+        except IntegrityError as exc:
+            raise PlaylistGenerationRecipeNameConflictError(name) from exc
+        if result.rowcount == 0:
+            raise PlaylistGenerationRecipeNotFoundError(str(recipe_id))
+        recipe = self.get_generation_recipe(recipe_id)
+        if recipe is None:
+            raise PlaylistGenerationRecipeNotFoundError(str(recipe_id))
+        return recipe
+
+    def delete_generation_recipe(self, recipe_id: int) -> None:
+        with self._engine.begin() as connection:
+            recipe_exists = connection.execute(
+                select(playlist_generation_recipes_table.c.id).where(
+                    playlist_generation_recipes_table.c.id == recipe_id
+                )
+            ).scalar_one_or_none()
+            if recipe_exists is None:
+                raise PlaylistGenerationRecipeNotFoundError(str(recipe_id))
+
+            now = datetime.now(UTC)
+            inspector = sqlalchemy_inspect(connection)
+            if inspector.has_table(
+                autopilot_run_items_table.name
+            ) and inspector.has_table(autopilot_runs_table.name):
+                pending_rows = (
+                    connection.execute(
+                        select(
+                            autopilot_run_items_table.c.id,
+                            autopilot_run_items_table.c.run_id,
+                        ).where(
+                            autopilot_run_items_table.c.action == "regenerate_recipe",
+                            autopilot_run_items_table.c.recipe_id == recipe_id,
+                            autopilot_run_items_table.c.status
+                            == AUTOPILOT_ITEM_STATUS_RETRY_WAIT,
+                        )
+                    )
+                    .mappings()
+                    .all()
+                )
+                if pending_rows:
+                    pending_ids = [row["id"] for row in pending_rows]
+                    connection.execute(
+                        update(autopilot_run_items_table)
+                        .where(autopilot_run_items_table.c.id.in_(pending_ids))
+                        .values(
+                            status="skipped",
+                            recipe_id=None,
+                            next_attempt_at=None,
+                            reason_code="recipe_deleted",
+                            detail=(
+                                "Cancelled pending regeneration because its saved "
+                                "recipe was deleted"
+                            ),
+                            completed_at=now,
+                            updated_at=now,
+                        )
+                    )
+                    _finish_autopilot_runs_in_transaction(
+                        connection,
+                        {str(row["run_id"]) for row in pending_rows},
+                        now=now,
+                    )
+
+            connection.execute(
+                update(playlist_generation_runs_table)
+                .where(playlist_generation_runs_table.c.recipe_id == recipe_id)
+                .values(recipe_id=None)
+            )
+            result = connection.execute(
+                delete(playlist_generation_recipes_table).where(
+                    playlist_generation_recipes_table.c.id == recipe_id
+                )
+            )
+            if result.rowcount == 0:
+                raise PlaylistGenerationRecipeNotFoundError(str(recipe_id))
+
+    def mark_generation_recipe_regenerated(
+        self,
+        recipe_id: int,
+        *,
+        run_id: int,
+    ) -> None:
+        now = datetime.now(UTC)
+        with self._engine.begin() as connection:
+            result = connection.execute(
+                update(playlist_generation_recipes_table)
+                .where(playlist_generation_recipes_table.c.id == recipe_id)
+                .values(
+                    last_run_id=run_id,
+                    last_regenerated_at=now,
+                    updated_at=now,
+                )
+            )
+        if result.rowcount == 0:
+            raise PlaylistGenerationRecipeNotFoundError(str(recipe_id))
 
     def list_generation_runs(
         self, *, limit: int = 50
@@ -802,6 +1191,11 @@ class SonicStore:
                     generated_playlists_table.c.run_id == run_id
                 )
             )
+            connection.execute(
+                update(playlist_generation_recipes_table)
+                .where(playlist_generation_recipes_table.c.last_run_id == run_id)
+                .values(last_run_id=None, updated_at=datetime.now(UTC))
+            )
             result = connection.execute(
                 delete(playlist_generation_runs_table).where(
                     playlist_generation_runs_table.c.id == run_id
@@ -824,6 +1218,20 @@ class SonicStore:
             status=PLAYLIST_GENERATION_STATUS_FAILED,
             error_detail=error_detail,
             completed_at=datetime.now(UTC),
+            updated_at=datetime.now(UTC),
+        )
+
+    def update_generation_run_evidence(
+        self,
+        run_id: int,
+        *,
+        analyzer_evidence: dict[str, Any],
+        readiness_summary: dict[str, Any],
+    ) -> None:
+        self._update_run(
+            run_id,
+            analyzer_evidence_json=analyzer_evidence,
+            readiness_summary_json=readiness_summary,
             updated_at=datetime.now(UTC),
         )
 
@@ -1023,6 +1431,42 @@ class SonicStore:
             raise PlaylistGenerationRunNotFoundError(str(run_id))
 
 
+def _finish_autopilot_runs_in_transaction(
+    connection: Connection,
+    run_ids: set[str],
+    *,
+    now: datetime,
+) -> None:
+    for run_id in run_ids:
+        statuses = (
+            connection.execute(
+                select(autopilot_run_items_table.c.status).where(
+                    autopilot_run_items_table.c.run_id == run_id
+                )
+            )
+            .scalars()
+            .all()
+        )
+        failed = sum(status == AUTOPILOT_ITEM_STATUS_FAILED for status in statuses)
+        review = sum(status == AUTOPILOT_ITEM_STATUS_REVIEW for status in statuses)
+        waiting = sum(status == AUTOPILOT_ITEM_STATUS_RETRY_WAIT for status in statuses)
+        connection.execute(
+            update(autopilot_runs_table)
+            .where(autopilot_runs_table.c.id == run_id)
+            .values(
+                status=(
+                    AUTOPILOT_RUN_STATUS_PARTIAL
+                    if failed or review or waiting
+                    else AUTOPILOT_RUN_STATUS_SUCCEEDED
+                ),
+                failed_items=failed,
+                review_items=review,
+                finished_at=now,
+                updated_at=now,
+            )
+        )
+
+
 def _resolve_source_track_ids(
     connection: Connection,
     source_filter: dict[str, Any],
@@ -1034,12 +1478,12 @@ def _resolve_source_track_ids(
             [int(value) for value in source_filter.get("streaming_playlist_ids", [])],
         )
     else:
-        track_ids = set(
+        track_ids = {
             int(track_id)
             for track_id in connection.execute(
                 select(local_tracks_table.c.id).order_by(local_tracks_table.c.id.asc())
             ).scalars()
-        )
+        }
 
     for tag_filter in source_filter.get("tag_filters", []):
         track_ids &= _local_track_ids_for_tag_filter(connection, track_ids, tag_filter)
@@ -1055,9 +1499,97 @@ def _feature_is_compatible(
 ) -> bool:
     if analyzer_key is not None and row["analyzer_key"] != analyzer_key:
         return False
-    if analyzer_version is not None and row["analyzer_version"] != analyzer_version:
-        return False
-    return True
+    return not (
+        analyzer_version is not None
+        and row["analyzer_version"] != analyzer_version
+        and not (
+            analyzer_version == SONIC_ANALYZER_CURRENT_VERSION
+            and row["analyzer_version"] == SONIC_ANALYZER_DESCRIPTOR_LEGACY_VERSION
+        )
+    )
+
+
+def _is_legacy_upgrade(
+    row: Any,
+    *,
+    analyzer_key: str,
+    analyzer_version: str,
+) -> bool:
+    return bool(
+        analyzer_version == SONIC_ANALYZER_CURRENT_VERSION
+        and row["analyzer_key"] == analyzer_key
+        and row["analyzer_version"] == SONIC_ANALYZER_DESCRIPTOR_LEGACY_VERSION
+        and row["status"] in (SONIC_FEATURE_STATUS_READY, SONIC_FEATURE_STATUS_PENDING)
+        and isinstance(row["descriptor_json"], dict)
+        and isinstance(row["vector_json"], list)
+    )
+
+
+def _feature_upgrade_failure_prefix(
+    *,
+    analyzer_key: str,
+    analyzer_version: str,
+) -> str:
+    return f"Upgrade to {analyzer_key}@{analyzer_version} failed:"
+
+
+def _feature_upgrade_pending_marker(
+    *,
+    analyzer_key: str,
+    analyzer_version: str,
+) -> str:
+    return f"Upgrade to {analyzer_key}@{analyzer_version} pending"
+
+
+def _is_active_legacy_upgrade(
+    row: Any,
+    *,
+    analyzer_key: str,
+    analyzer_version: str,
+) -> bool:
+    return bool(
+        _is_legacy_upgrade(
+            row,
+            analyzer_key=analyzer_key,
+            analyzer_version=analyzer_version,
+        )
+        and row["failure_detail"]
+        == _feature_upgrade_pending_marker(
+            analyzer_key=analyzer_key,
+            analyzer_version=analyzer_version,
+        )
+    )
+
+
+def _feature_failure_values(
+    existing: Any,
+    *,
+    analyzer_key: str,
+    analyzer_version: str,
+    failure_detail: str,
+    now: datetime,
+) -> dict[str, Any]:
+    if _is_active_legacy_upgrade(
+        existing,
+        analyzer_key=analyzer_key,
+        analyzer_version=analyzer_version,
+    ):
+        prefix = _feature_upgrade_failure_prefix(
+            analyzer_key=analyzer_key,
+            analyzer_version=analyzer_version,
+        )
+        return {
+            "status": SONIC_FEATURE_STATUS_READY,
+            "failure_detail": f"{prefix} {failure_detail}",
+            "updated_at": now,
+        }
+    return {
+        "analyzer_key": analyzer_key,
+        "analyzer_version": analyzer_version,
+        "status": SONIC_FEATURE_STATUS_FAILED,
+        "failure_detail": failure_detail,
+        "updated_at": now,
+    }
 
 
 def _track_metadata_for_local_tracks(
@@ -1263,6 +1795,11 @@ def _numbered_generation_runs_query():
         playlist_generation_runs_table.c.status,
         playlist_generation_runs_table.c.source_filter_json,
         playlist_generation_runs_table.c.generation_config_json,
+        playlist_generation_runs_table.c.recipe_id,
+        playlist_generation_runs_table.c.run_name,
+        playlist_generation_runs_table.c.trigger,
+        playlist_generation_runs_table.c.readiness_summary_json,
+        playlist_generation_runs_table.c.analyzer_evidence_json,
         playlist_generation_runs_table.c.playlist_count,
         playlist_generation_runs_table.c.track_count,
         playlist_generation_runs_table.c.error_detail,
@@ -1280,10 +1817,45 @@ def _run_record(row: Any) -> PlaylistGenerationRunRecord:
         status=row["status"],
         source_filter_json=dict(row["source_filter_json"] or {}),
         generation_config_json=dict(row["generation_config_json"] or {}),
+        recipe_id=row["recipe_id"],
+        run_name=row["run_name"],
+        trigger=row["trigger"],
+        readiness_summary_json=(
+            dict(row["readiness_summary_json"])
+            if isinstance(row["readiness_summary_json"], dict)
+            else None
+        ),
+        analyzer_evidence_json=(
+            dict(row["analyzer_evidence_json"])
+            if isinstance(row["analyzer_evidence_json"], dict)
+            else None
+        ),
         playlist_count=row["playlist_count"],
         track_count=row["track_count"],
         error_detail=row["error_detail"],
         completed_at=row["completed_at"],
+        created_at=row["created_at"],
+        updated_at=row["updated_at"],
+    )
+
+
+def _recipe_record(row: Any) -> PlaylistGenerationRecipeRecord:
+    return PlaylistGenerationRecipeRecord(
+        id=int(row["id"]),
+        name=str(row["name"]),
+        source_filter_json=dict(row["source_filter_json"] or {}),
+        generation_config_json=dict(row["generation_config_json"] or {}),
+        enabled=bool(row["enabled"]),
+        regenerate_on_change=bool(row["regenerate_on_change"]),
+        export_config_json=(
+            dict(row["export_config_json"])
+            if isinstance(row["export_config_json"], dict)
+            else None
+        ),
+        last_run_id=(
+            int(row["last_run_id"]) if row["last_run_id"] is not None else None
+        ),
+        last_regenerated_at=row["last_regenerated_at"],
         created_at=row["created_at"],
         updated_at=row["updated_at"],
     )

@@ -1,8 +1,9 @@
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 
 PlaylistSyncMode = Literal["off", "match_only", "full"]
+PlaylistAutomationLevel = Literal["off", "sync_only", "assist", "full"]
 
 
 class StreamingAccountResponse(BaseModel):
@@ -26,6 +27,7 @@ class StreamingPlaylistResponse(BaseModel):
     provider_playlist_id: str
     title: str
     sync_mode: PlaylistSyncMode
+    automation_level: PlaylistAutomationLevel
     provider_track_count: int | None
     imported_track_count: int
     metadata_synced_at: str | None
@@ -47,7 +49,18 @@ class StreamingPlaylistConfigListResponse(BaseModel):
 
 
 class UpdateStreamingPlaylistRequest(BaseModel):
-    sync_mode: PlaylistSyncMode
+    sync_mode: PlaylistSyncMode | None = None
+    automation_level: PlaylistAutomationLevel | None = None
+
+    @model_validator(mode="after")
+    def require_a_change(self) -> "UpdateStreamingPlaylistRequest":
+        if self.sync_mode is None and self.automation_level is None:
+            raise ValueError("At least one playlist setting must be supplied")
+        return self
+
+
+class UpdatePlaylistAutomationLevelRequest(BaseModel):
+    automation_level: PlaylistAutomationLevel
 
 
 class PlaylistDetail(BaseModel):
@@ -57,6 +70,7 @@ class PlaylistDetail(BaseModel):
     name: str
     cover_art_url: str | None
     sync_mode: PlaylistSyncMode
+    automation_level: PlaylistAutomationLevel
     provider_track_count: int | None
     imported_track_count: int
     linked_count: int

@@ -54,7 +54,7 @@ export async function fetchJson<T>(
 }
 
 async function requestJson<T>(
-  method: "DELETE" | "PATCH" | "POST",
+  method: "DELETE" | "PATCH" | "POST" | "PUT",
   input: RequestInfo | URL,
   options: JsonRequestOptions<T> = {},
 ): Promise<T> {
@@ -90,6 +90,13 @@ export function patchJson<T>(
   options?: JsonRequestOptions<T>,
 ): Promise<T> {
   return requestJson("PATCH", input, options);
+}
+
+export function putJson<T>(
+  input: RequestInfo | URL,
+  options?: JsonRequestOptions<T>,
+): Promise<T> {
+  return requestJson("PUT", input, options);
 }
 
 export function deleteJson<T>(

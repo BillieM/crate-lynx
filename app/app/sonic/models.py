@@ -5,11 +5,13 @@ from datetime import datetime
 from typing import Any
 
 from sqlalchemy import (
+    JSON,
+    Boolean,
+    CheckConstraint,
     Column,
     DateTime,
     Index,
     Integer,
-    JSON,
     MetaData,
     String,
     Table,
@@ -18,8 +20,11 @@ from sqlalchemy import (
     func,
 )
 
-
 SONIC_ANALYZER_LIBROSA_V1 = "librosa_v1"
+SONIC_ANALYZER_CURRENT_VERSION = "2"
+SONIC_ANALYZER_DESCRIPTOR_LEGACY_VERSION = "1"
+SONIC_SEMANTIC_MODEL_CLAP_ONNX_V1 = "clap_onnx_v1"
+SONIC_SEMANTIC_STATUSES = ("ready", "disabled", "unavailable", "failed")
 DEFAULT_SONIC_BACKFILL_LIMIT = 500
 MAX_SONIC_BACKFILL_LIMIT = 1000
 MAX_SONIC_FEATURE_ATTEMPTS = 3
@@ -85,6 +90,17 @@ PLAYLIST_ORDERING_STRATEGIES = (
     PLAYLIST_ORDERING_STRATEGY_SEEDED_SHUFFLE,
 )
 
+PLAYLIST_SEQUENCING_INTENT_SMOOTH_MIX = "smooth_mix"
+PLAYLIST_SEQUENCING_INTENT_RISING_ENERGY = "rising_energy"
+PLAYLIST_SEQUENCING_INTENT_WARM_UP_TO_PEAK = "warm_up_to_peak"
+PLAYLIST_SEQUENCING_INTENT_VARIED_LISTENING = "varied_listening"
+PLAYLIST_SEQUENCING_INTENTS = (
+    PLAYLIST_SEQUENCING_INTENT_SMOOTH_MIX,
+    PLAYLIST_SEQUENCING_INTENT_RISING_ENERGY,
+    PLAYLIST_SEQUENCING_INTENT_WARM_UP_TO_PEAK,
+    PLAYLIST_SEQUENCING_INTENT_VARIED_LISTENING,
+)
+
 PLAYLIST_DIVERSITY_MODE_BALANCED = "balanced_v1"
 PLAYLIST_DIVERSITY_MODE_LOOSE = "loose_v1"
 PLAYLIST_DIVERSITY_MODE_STRICT = "strict_v1"
@@ -127,6 +143,15 @@ SONIC_TAG_FILTER_MATCHES = (
     SONIC_TAG_FILTER_MATCH_CONTAINS,
 )
 
+PLAYLIST_GENERATION_TRIGGER_MANUAL = "manual"
+PLAYLIST_GENERATION_TRIGGER_RECIPE = "recipe"
+PLAYLIST_GENERATION_TRIGGER_AUTOPILOT = "autopilot"
+PLAYLIST_GENERATION_TRIGGERS = (
+    PLAYLIST_GENERATION_TRIGGER_MANUAL,
+    PLAYLIST_GENERATION_TRIGGER_RECIPE,
+    PLAYLIST_GENERATION_TRIGGER_AUTOPILOT,
+)
+
 metadata = MetaData()
 
 sonic_track_features_table = Table(
@@ -161,6 +186,21 @@ playlist_generation_runs_table = Table(
     Column("status", String, nullable=False),
     Column("source_filter_json", JSON, nullable=False),
     Column("generation_config_json", JSON, nullable=False),
+    Column("recipe_id", Integer, nullable=True),
+    Column(
+        "run_name",
+        String,
+        nullable=False,
+        server_default="Generated crates",
+    ),
+    Column(
+        "trigger",
+        String,
+        nullable=False,
+        server_default=PLAYLIST_GENERATION_TRIGGER_MANUAL,
+    ),
+    Column("readiness_summary_json", JSON, nullable=True),
+    Column("analyzer_evidence_json", JSON, nullable=True),
     Column("playlist_count", Integer, nullable=False, server_default="0"),
     Column("track_count", Integer, nullable=False, server_default="0"),
     Column("error_detail", Text, nullable=True),
@@ -171,8 +211,35 @@ playlist_generation_runs_table = Table(
     Column(
         "updated_at", DateTime(timezone=True), server_default=func.now(), nullable=False
     ),
+    CheckConstraint(
+        "trigger IN ('manual', 'recipe', 'autopilot')",
+        name="ck_playlist_generation_runs_trigger",
+    ),
     Index("ix_playlist_generation_runs_status", "status"),
     Index("ix_playlist_generation_runs_created_at", "created_at"),
+    Index("ix_playlist_generation_runs_recipe_id", "recipe_id"),
+)
+
+playlist_generation_recipes_table = Table(
+    "playlist_generation_recipes",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column("name", String, nullable=False),
+    Column("source_filter_json", JSON, nullable=False),
+    Column("generation_config_json", JSON, nullable=False),
+    Column("enabled", Boolean, nullable=False, server_default="true"),
+    Column("regenerate_on_change", Boolean, nullable=False, server_default="true"),
+    Column("export_config_json", JSON, nullable=True),
+    Column("last_run_id", Integer, nullable=True),
+    Column("last_regenerated_at", DateTime(timezone=True), nullable=True),
+    Column(
+        "created_at", DateTime(timezone=True), server_default=func.now(), nullable=False
+    ),
+    Column(
+        "updated_at", DateTime(timezone=True), server_default=func.now(), nullable=False
+    ),
+    UniqueConstraint("name", name="uq_playlist_generation_recipes_name"),
+    Index("ix_playlist_generation_recipes_enabled", "enabled"),
 )
 
 generated_playlists_table = Table(
@@ -246,10 +313,30 @@ class PlaylistGenerationRunRecord:
     status: str
     source_filter_json: dict[str, Any]
     generation_config_json: dict[str, Any]
+    recipe_id: int | None
+    run_name: str
+    trigger: str
+    readiness_summary_json: dict[str, Any] | None
+    analyzer_evidence_json: dict[str, Any] | None
     playlist_count: int
     track_count: int
     error_detail: str | None
     completed_at: datetime | None
+    created_at: datetime
+    updated_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class PlaylistGenerationRecipeRecord:
+    id: int
+    name: str
+    source_filter_json: dict[str, Any]
+    generation_config_json: dict[str, Any]
+    enabled: bool
+    regenerate_on_change: bool
+    export_config_json: dict[str, Any] | None
+    last_run_id: int | None
+    last_regenerated_at: datetime | None
     created_at: datetime
     updated_at: datetime
 

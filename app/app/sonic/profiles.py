@@ -4,8 +4,10 @@ from dataclasses import dataclass
 from typing import Any
 
 from app.sonic.analyzer import vector_descriptor_keys
-from app.sonic.models import SONIC_ANALYZER_LIBROSA_V1
-
+from app.sonic.models import (
+    SONIC_ANALYZER_CURRENT_VERSION,
+    SONIC_ANALYZER_LIBROSA_V1,
+)
 
 SONIC_FEATURE_PROFILE_BALANCED_V1 = "balanced_v1"
 SONIC_FEATURE_PROFILE_ENERGY_V1 = "energy_v1"
@@ -82,7 +84,7 @@ def resolved_feature_profile_config(profile_key: str | None) -> dict[str, Any]:
 def _balanced_profile() -> SonicFeatureProfile:
     return SonicFeatureProfile(
         analyzer_key=SONIC_ANALYZER_LIBROSA_V1,
-        analyzer_version="1",
+        analyzer_version=SONIC_ANALYZER_CURRENT_VERSION,
         descriptor_weights={key: 1.0 for key in vector_descriptor_keys()},
         key=SONIC_FEATURE_PROFILE_BALANCED_V1,
     )
@@ -103,7 +105,7 @@ def _energy_profile() -> SonicFeatureProfile:
     )
     return SonicFeatureProfile(
         analyzer_key=SONIC_ANALYZER_LIBROSA_V1,
-        analyzer_version="1",
+        analyzer_version=SONIC_ANALYZER_CURRENT_VERSION,
         descriptor_weights=weights,
         key=SONIC_FEATURE_PROFILE_ENERGY_V1,
     )
@@ -125,7 +127,7 @@ def _texture_profile() -> SonicFeatureProfile:
         weights[f"spectral_contrast_{index:02d}_mean"] = 1.3
     return SonicFeatureProfile(
         analyzer_key=SONIC_ANALYZER_LIBROSA_V1,
-        analyzer_version="1",
+        analyzer_version=SONIC_ANALYZER_CURRENT_VERSION,
         descriptor_weights=weights,
         key=SONIC_FEATURE_PROFILE_TEXTURE_V1,
     )
@@ -139,7 +141,7 @@ def _harmony_profile() -> SonicFeatureProfile:
         weights[f"mfcc_{index:02d}_mean"] = 0.9
     return SonicFeatureProfile(
         analyzer_key=SONIC_ANALYZER_LIBROSA_V1,
-        analyzer_version="1",
+        analyzer_version=SONIC_ANALYZER_CURRENT_VERSION,
         descriptor_weights=weights,
         key=SONIC_FEATURE_PROFILE_HARMONY_V1,
     )

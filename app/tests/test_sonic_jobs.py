@@ -3,8 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
-from sqlalchemy import create_engine, select
-
+from app.ingestion.beets_mirror import metadata as beets_metadata
 from app.local_tracks.store import metadata as local_tracks_metadata
 from app.sonic.jobs import (
     SONIC_FEATURE_BACKFILL_FUNC,
@@ -20,10 +19,13 @@ from app.sonic.models import (
     SONIC_FEATURE_STATUS_FAILED,
     SONIC_FEATURE_STATUS_PENDING,
     SONIC_FEATURE_STATUS_READY,
-    metadata as sonic_metadata,
     sonic_track_features_table,
 )
+from app.sonic.models import (
+    metadata as sonic_metadata,
+)
 from app.sonic.store import SonicStore
+from sqlalchemy import create_engine, select, update
 from tests.factories import TestDataFactory
 
 
@@ -80,6 +82,7 @@ def test_run_sonic_feature_backfill_claims_and_enqueues_extraction_jobs(
     failed_track_id = factory.local_track(file_path="Failed.mp3")
     untouched_missing_track_id = factory.local_track(file_path="Later.mp3")
     factory.sonic_track_feature(
+        analyzer_version="2",
         local_track_id=ready_track_id,
         status=SONIC_FEATURE_STATUS_READY,
     )
@@ -335,6 +338,129 @@ def test_claim_missing_feature_track_ids_reclaims_stale_pending_with_retry_budge
     assert rows[outdated_ready_track_id]["attempt_count"] == 1
     assert rows[missing_track_id]["status"] == SONIC_FEATURE_STATUS_PENDING
     assert rows[missing_track_id]["attempt_count"] == 1
+
+
+def test_v2_backfill_preserves_legacy_generation_evidence_on_claim_and_failure(
+    tmp_path,
+) -> None:
+    database_url = f"sqlite:///{tmp_path / 'sonic-safe-upgrade.db'}"
+    engine = create_engine(database_url)
+    local_tracks_metadata.create_all(engine)
+    beets_metadata.create_all(engine)
+    sonic_metadata.create_all(engine)
+    factory = TestDataFactory(engine)
+    local_track_id = factory.local_track(file_path="Legacy.mp3")
+    legacy_descriptors = {"tempo_bpm": 128.0, "rms_mean": 0.55}
+    legacy_vector = [128.0, 0.55]
+    factory.sonic_track_feature(
+        analyzer_version="1",
+        attempt_count=7,
+        descriptor_json=legacy_descriptors,
+        local_track_id=local_track_id,
+        status=SONIC_FEATURE_STATUS_READY,
+        vector_json=legacy_vector,
+    )
+    store = SonicStore(database_url)
+    stale_before = datetime.now(UTC) - timedelta(hours=1)
+
+    attempts = store.claim_missing_feature_attempts(
+        analyzer_key="librosa_v1",
+        analyzer_version="2",
+        limit=10,
+        max_attempts=MAX_SONIC_FEATURE_ATTEMPTS,
+        pending_stale_before=stale_before,
+    )
+
+    assert [
+        (attempt.local_track_id, attempt.attempt_count) for attempt in attempts
+    ] == [(local_track_id, 1)]
+    ready_tracks = store.ready_tracks_for_source(
+        {"source_type": "all_local"},
+        analyzer_key="librosa_v1",
+        analyzer_version="2",
+    )
+    assert len(ready_tracks) == 1
+    assert ready_tracks[0].analyzer_version == "1"
+    assert ready_tracks[0].descriptors == legacy_descriptors
+    assert ready_tracks[0].vector == legacy_vector
+    preview = store.generation_preview(
+        {"source_type": "all_local"},
+        analyzer_key="librosa_v1",
+        analyzer_version="2",
+        feature_profile="dj_balanced_v1",
+    )
+    assert preview.ready_track_count == 1
+    assert preview.legacy_descriptor_feature_count == 1
+    assert preview.pending_feature_count == 1
+    assert preview.skipped_track_count == 0
+
+    assert (
+        store.claim_missing_feature_attempts(
+            analyzer_key="librosa_v1",
+            analyzer_version="2",
+            limit=10,
+            max_attempts=MAX_SONIC_FEATURE_ATTEMPTS,
+            pending_stale_before=stale_before,
+        )
+        == []
+    )
+    assert store.persist_feature_failure_if_current(
+        analyzer_key="librosa_v1",
+        analyzer_version="2",
+        attempt_count=1,
+        failure_detail="decoder unavailable",
+        local_track_id=local_track_id,
+    )
+
+    with engine.connect() as connection:
+        failed_upgrade = (
+            connection.execute(select(sonic_track_features_table)).mappings().one()
+        )
+    assert failed_upgrade["status"] == SONIC_FEATURE_STATUS_READY
+    assert failed_upgrade["analyzer_version"] == "1"
+    assert failed_upgrade["descriptor_json"] == legacy_descriptors
+    assert failed_upgrade["vector_json"] == legacy_vector
+    assert (
+        failed_upgrade["failure_detail"]
+        == "Upgrade to librosa_v1@2 failed: decoder unavailable"
+    )
+    assert (
+        len(
+            store.ready_tracks_for_source(
+                {"source_type": "all_local"},
+                analyzer_key="librosa_v1",
+                analyzer_version="2",
+            )
+        )
+        == 1
+    )
+
+    assert (
+        store.claim_missing_feature_attempts(
+            analyzer_key="librosa_v1",
+            analyzer_version="2",
+            limit=10,
+            max_attempts=MAX_SONIC_FEATURE_ATTEMPTS,
+            pending_stale_before=stale_before,
+        )
+        == []
+    )
+    with engine.begin() as connection:
+        connection.execute(
+            update(sonic_track_features_table)
+            .where(sonic_track_features_table.c.local_track_id == local_track_id)
+            .values(updated_at=stale_before - timedelta(minutes=1))
+        )
+    retry_attempts = store.claim_missing_feature_attempts(
+        analyzer_key="librosa_v1",
+        analyzer_version="2",
+        limit=10,
+        max_attempts=MAX_SONIC_FEATURE_ATTEMPTS,
+        pending_stale_before=stale_before,
+    )
+    assert [
+        (attempt.local_track_id, attempt.attempt_count) for attempt in retry_attempts
+    ] == [(local_track_id, 2)]
 
 
 def test_sonic_attempt_cas_rejects_stale_success_and_failure(tmp_path) -> None:

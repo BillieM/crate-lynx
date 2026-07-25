@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from collections.abc import Callable
 import os
+from collections.abc import Callable
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, HTTPException
@@ -30,8 +30,8 @@ from app.soulseek.schemas import (
     SoulseekQueueResponse,
     SoulseekRefreshResponse,
     SoulseekSearchResponse,
-    SoulseekStreamingTrackResponse,
     SoulseekStatusResponse,
+    SoulseekStreamingTrackResponse,
     SoulseekWebhookResponse,
 )
 from app.soulseek.store import (
@@ -374,6 +374,11 @@ def _acquisition_response(acquisition) -> SoulseekAcquisitionSummaryResponse:
         proposal_id=acquisition.proposal_id,
         error_detail=acquisition.error_detail,
         link_error_detail=acquisition.link_error_detail,
+        automation_run_id=acquisition.automation_run_id,
+        unattended=acquisition.unattended,
+        verification_status=acquisition.verification_status,
+        verification_detail=acquisition.verification_detail,
+        verified_at=_optional_isoformat(acquisition.verified_at),
     )
 
 
@@ -416,6 +421,9 @@ def _candidate_response(candidate) -> SoulseekCandidateResponse:
         queue_length=candidate.queue_length,
         upload_speed=candidate.upload_speed,
         score=candidate.score,
+        identity_confidence=candidate.identity_confidence,
+        version_confidence=candidate.version_confidence,
+        quality_score=candidate.quality_score,
         created_at=candidate.created_at.isoformat(),
     )
 

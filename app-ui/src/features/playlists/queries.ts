@@ -11,6 +11,7 @@ type ApiSchemas = components["schemas"];
 
 export type PlaylistTrackStatus = "linked" | "pending" | "unlinked";
 export type LinkProposalConfidenceBand = ApiSchemas["ConfidenceBand"];
+export type PlaylistAutomationLevel = ApiSchemas["StreamingPlaylistResponse"]["automation_level"];
 
 export type PlaylistDetail = ApiSchemas["PlaylistDetail"];
 export type StreamingPlaylist = ApiSchemas["StreamingPlaylistResponse"];
@@ -23,7 +24,11 @@ export type PlaylistTrack = Omit<ApiSchemas["PlaylistTrackResponse"], "status"> 
 export type PlaylistDetailResponse = ApiSchemas["PlaylistDetailResponse"];
 export type StreamingPlaylistsResponse = ApiSchemas["StreamingPlaylistsResponse"];
 export type StreamingPlaylistConfigResponse = ApiSchemas["StreamingPlaylistConfigListResponse"];
-export type UpdateStreamingPlaylistConfigInput = ApiSchemas["UpdateStreamingPlaylistRequest"] & {
+export type UpdateStreamingPlaylistConfigInput = {
+  playlistId: number | string;
+  sync_mode: PlaylistSyncMode;
+};
+export type UpdateStreamingPlaylistAutomationInput = ApiSchemas["UpdatePlaylistAutomationLevelRequest"] & {
   playlistId: number | string;
 };
 export type PlaylistTracksResponse = {
@@ -86,6 +91,7 @@ export const DEFAULT_LINK_PROPOSAL_LIMIT = 50;
 
 const nullableStringSchema = z.string().nullable();
 const playlistSyncModeSchema = z.enum(["off", "match_only", "full"]);
+const playlistAutomationLevelSchema = z.enum(["off", "sync_only", "assist", "full"]);
 
 const playlistDetailSchema: z.ZodType<PlaylistDetail> = z.object({
   account_id: z.number(),
@@ -101,6 +107,7 @@ const playlistDetailSchema: z.ZodType<PlaylistDetail> = z.object({
   provider_track_count: z.number().nullable(),
   provider_playlist_id: z.string(),
   sync_mode: playlistSyncModeSchema,
+  automation_level: playlistAutomationLevelSchema,
   tracks_synced_at: nullableStringSchema,
   unlinked_count: z.number(),
 });
@@ -111,6 +118,7 @@ const playlistDetailResponseSchema: z.ZodType<PlaylistDetailResponse> = z.object
 
 const streamingPlaylistBaseSchema = z.object({
   account_id: z.number(),
+  automation_level: playlistAutomationLevelSchema,
   id: z.number(),
   last_sync_error: nullableStringSchema,
   last_sync_error_at: nullableStringSchema,
@@ -373,6 +381,20 @@ export async function updateStreamingPlaylistConfig({
     errorMessage: "Playlist update request failed",
     schema: streamingPlaylistConfigSchema,
   });
+}
+
+export async function updateStreamingPlaylistAutomationLevel({
+  automation_level,
+  playlistId,
+}: UpdateStreamingPlaylistAutomationInput): Promise<StreamingPlaylistConfig> {
+  return patchJson(
+    endpoints.api(`/streaming/playlists/${encodeURIComponent(String(playlistId))}/automation-level`),
+    {
+      body: { automation_level },
+      errorMessage: "Playlist automation update request failed",
+      schema: streamingPlaylistConfigSchema,
+    },
+  );
 }
 
 export async function refreshStreamingAccountMetadata(accountId: number | string): Promise<StreamingSyncResponse> {

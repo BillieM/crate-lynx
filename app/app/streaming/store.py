@@ -29,16 +29,21 @@ from app.streaming.adapters.youtube_music import (
     YouTubeMusicAuthenticationError,
     YouTubeMusicPlaylist,
     YouTubeMusicTrack,
-    sync_library_playlists,
     sync_library_playlist_tracks,
+    sync_library_playlists,
     sync_single_library_playlist_tracks,
 )
 from app.streaming.crypto import decrypt_token, encrypt_token
 from app.streaming.models import (
+    PLAYLIST_AUTOMATION_LEVEL_OFF,
+    PLAYLIST_AUTOMATION_LEVELS,
     PLAYLIST_SYNC_MODE_OFF,
     PLAYLIST_SYNC_MODES,
-    PlaylistMembershipRecord,
+    STREAMING_ACCOUNT_AUTH_STATE_CONNECTED,
+    STREAMING_ACCOUNT_AUTH_STATE_ERROR,
+    YOUTUBE_MUSIC_PROVIDER,
     PersistedStreamingAccount,
+    PlaylistMembershipRecord,
     StoredStreamingAccount,
     StreamingAccountRecord,
     StreamingPlaylistDetail,
@@ -46,9 +51,6 @@ from app.streaming.models import (
     StreamingPlaylistSummary,
     StreamingPlaylistTrack,
     StreamingTrackRecord,
-    STREAMING_ACCOUNT_AUTH_STATE_CONNECTED,
-    STREAMING_ACCOUNT_AUTH_STATE_ERROR,
-    YOUTUBE_MUSIC_PROVIDER,
     playlist_membership_table,
     streaming_accounts_table,
     streaming_playlists_table,
@@ -383,6 +385,7 @@ class StreamingAccountStore:
                     provider_playlist_id=playlist.provider_playlist_id,
                     title=playlist.title,
                     sync_mode=PLAYLIST_SYNC_MODE_OFF,
+                    automation_level=PLAYLIST_AUTOMATION_LEVEL_OFF,
                     provider_track_count=playlist.provider_track_count,
                     metadata_synced_at=sync_timestamp,
                     tracks_synced_at=None,
@@ -411,6 +414,7 @@ class StreamingAccountStore:
                             streaming_playlists_table.c.provider_playlist_id,
                             streaming_playlists_table.c.title,
                             streaming_playlists_table.c.sync_mode,
+                            streaming_playlists_table.c.automation_level,
                             streaming_playlists_table.c.provider_track_count,
                             streaming_playlists_table.c.metadata_synced_at,
                             streaming_playlists_table.c.tracks_synced_at,
@@ -484,6 +488,7 @@ class StreamingAccountStore:
             provider_playlist_id=playlist.provider_playlist_id,
             title=playlist.title,
             sync_mode=playlist.sync_mode,
+            automation_level=playlist.automation_level,
             provider_track_count=playlist.provider_track_count,
             imported_track_count=playlist.imported_track_count,
             metadata_synced_at=playlist.metadata_synced_at,
@@ -512,6 +517,26 @@ class StreamingAccountStore:
                 update(streaming_playlists_table)
                 .where(streaming_playlists_table.c.id == playlist_id)
                 .values(sync_mode=sync_mode)
+            )
+
+        if result.rowcount == 0:
+            return None
+
+        return self._get_playlist_summary(playlist_id)
+
+    def set_playlist_automation_level(
+        self, *, playlist_id: int, automation_level: str
+    ) -> StreamingPlaylistSummary | None:
+        if automation_level not in PLAYLIST_AUTOMATION_LEVELS:
+            raise ValueError(
+                f"Unsupported playlist automation level: {automation_level}"
+            )
+
+        with self._engine.begin() as connection:
+            result = connection.execute(
+                update(streaming_playlists_table)
+                .where(streaming_playlists_table.c.id == playlist_id)
+                .values(automation_level=automation_level)
             )
 
         if result.rowcount == 0:
@@ -1025,7 +1050,7 @@ class StreamingAccountStore:
 
     def generate_streaming_relationship_suggestions(
         self,
-    ) -> "StreamingRelationshipSuggestionGenerationResult":
+    ) -> StreamingRelationshipSuggestionGenerationResult:
         from app.relationships.suggestions import (
             StreamingRelationshipSuggestionGenerator,
         )
@@ -1093,6 +1118,7 @@ def _streaming_playlist_record(row) -> StreamingPlaylistRecord:
         provider_playlist_id=row["provider_playlist_id"],
         title=row["title"],
         sync_mode=row["sync_mode"],
+        automation_level=row["automation_level"],
         provider_track_count=row["provider_track_count"],
         metadata_synced_at=row["metadata_synced_at"],
         tracks_synced_at=row["tracks_synced_at"],
@@ -1108,6 +1134,7 @@ def _streaming_playlist_summary(row) -> StreamingPlaylistSummary:
         provider_playlist_id=row["provider_playlist_id"],
         title=row["title"],
         sync_mode=row["sync_mode"],
+        automation_level=row["automation_level"],
         provider_track_count=row["provider_track_count"],
         imported_track_count=row["imported_track_count"],
         metadata_synced_at=row["metadata_synced_at"],
@@ -1129,6 +1156,7 @@ def _playlist_summary_query(
             streaming_playlists_table.c.provider_playlist_id,
             streaming_playlists_table.c.title,
             streaming_playlists_table.c.sync_mode,
+            streaming_playlists_table.c.automation_level,
             streaming_playlists_table.c.provider_track_count,
             streaming_playlists_table.c.metadata_synced_at,
             streaming_playlists_table.c.tracks_synced_at,
@@ -1149,6 +1177,7 @@ def _playlist_summary_query(
             streaming_playlists_table.c.provider_playlist_id,
             streaming_playlists_table.c.title,
             streaming_playlists_table.c.sync_mode,
+            streaming_playlists_table.c.automation_level,
             streaming_playlists_table.c.provider_track_count,
             streaming_playlists_table.c.metadata_synced_at,
             streaming_playlists_table.c.tracks_synced_at,

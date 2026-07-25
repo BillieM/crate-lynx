@@ -1,0 +1,5 @@
+[lint]
+# Keep the documented repository lint command stable across Ruff releases.
+# These are Ruff's long-standing default correctness rules; stricter cleanup
+# remains an intentional, separately scoped change.
+select = ["E4", "E7", "E9", "F"]

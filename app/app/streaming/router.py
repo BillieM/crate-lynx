@@ -7,6 +7,11 @@ from sqlalchemy.engine import Engine
 
 from app.core.db import get_engine
 from app.core.queueing import StreamingSyncJobEnqueuer
+from app.streaming.adapters.youtube_music import (
+    YouTubeMusicAuthValidationError,
+    validate_youtube_music_browser_auth,
+)
+from app.streaming.models import PLAYLIST_SYNC_MODE_FULL
 from app.streaming.schemas import (
     CreateStreamingAccountRequest,
     PlaylistDetail,
@@ -18,6 +23,9 @@ from app.streaming.schemas import (
     StreamingAccountsResponse,
     StreamingPlaylistConfigListResponse,
     StreamingPlaylistConfigResponse,
+    StreamingPlaylistResponse,
+    StreamingPlaylistsResponse,
+    StreamingSyncResponse,
     StreamingTrackDetailResponse,
     StreamingTrackLocalLinkResponse,
     StreamingTrackLocalSummaryResponse,
@@ -27,17 +35,10 @@ from app.streaming.schemas import (
     StreamingTrackRelationshipResponse,
     StreamingTrackSearchResponse,
     StreamingTrackSearchResultResponse,
-    StreamingPlaylistResponse,
-    StreamingPlaylistsResponse,
-    StreamingSyncResponse,
+    UpdatePlaylistAutomationLevelRequest,
     UpdateStreamingAccountAuthRequest,
     UpdateStreamingPlaylistRequest,
 )
-from app.streaming.adapters.youtube_music import (
-    YouTubeMusicAuthValidationError,
-    validate_youtube_music_browser_auth,
-)
-from app.streaming.models import PLAYLIST_SYNC_MODE_FULL
 from app.streaming.store import StreamingAccountStore
 
 
@@ -80,6 +81,7 @@ def create_router(
             "provider_playlist_id": playlist.provider_playlist_id,
             "title": playlist.title,
             "sync_mode": playlist.sync_mode,
+            "automation_level": playlist.automation_level,
             "provider_track_count": playlist.provider_track_count,
             "imported_track_count": playlist.imported_track_count,
             "metadata_synced_at": serialize_datetime(playlist.metadata_synced_at),
@@ -105,6 +107,7 @@ def create_router(
                 name=playlist.title,
                 cover_art_url=playlist.cover_art_url,
                 sync_mode=playlist.sync_mode,
+                automation_level=playlist.automation_level,
                 provider_track_count=playlist.provider_track_count,
                 imported_track_count=playlist.imported_track_count,
                 linked_count=playlist.linked_count,
@@ -257,13 +260,38 @@ def create_router(
         payload: UpdateStreamingPlaylistRequest,
         engine: Engine = Depends(get_engine),
     ) -> StreamingPlaylistConfigResponse:
-        playlist = _store(engine).set_playlist_sync_mode(
-            playlist_id=playlist_id,
-            sync_mode=payload.sync_mode,
-        )
+        store = _store(engine)
+        playlist = store.get_playlist_summary(playlist_id)
+        if playlist is not None and payload.sync_mode is not None:
+            playlist = store.set_playlist_sync_mode(
+                playlist_id=playlist_id,
+                sync_mode=payload.sync_mode,
+            )
+        if playlist is not None and payload.automation_level is not None:
+            playlist = store.set_playlist_automation_level(
+                playlist_id=playlist_id,
+                automation_level=payload.automation_level,
+            )
         if playlist is None:
             raise HTTPException(status_code=404, detail="Playlist not found")
 
+        return serialize_streaming_playlist_config(playlist)
+
+    @router.patch(
+        "/streaming/playlists/{playlist_id}/automation-level",
+        response_model=StreamingPlaylistConfigResponse,
+    )
+    def update_streaming_playlist_automation_level(
+        playlist_id: int,
+        payload: UpdatePlaylistAutomationLevelRequest,
+        engine: Engine = Depends(get_engine),
+    ) -> StreamingPlaylistConfigResponse:
+        playlist = _store(engine).set_playlist_automation_level(
+            playlist_id=playlist_id,
+            automation_level=payload.automation_level,
+        )
+        if playlist is None:
+            raise HTTPException(status_code=404, detail="Playlist not found")
         return serialize_streaming_playlist_config(playlist)
 
     @router.get("/playlists/{playlist_id}", response_model=PlaylistDetailResponse)

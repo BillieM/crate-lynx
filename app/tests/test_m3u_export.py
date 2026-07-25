@@ -8,7 +8,7 @@ from zipfile import ZipFile
 
 from fastapi import HTTPException
 import pytest
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, insert, select
 
 from app.ingestion.beets_mirror import metadata as beets_metadata
 from app.links.store import metadata as links_metadata
@@ -21,15 +21,18 @@ from app.m3u.exporter import (
     build_rekordbox_xml,
     normalize_m3u_export_formats,
 )
+from app.m3u.models import m3u_export_profiles_table
 from app.m3u.models import metadata as m3u_metadata
 from app.m3u.router import create_router
 from app.m3u.schemas import M3uExportRequest
 from app.m3u.store import (
     InvalidM3uExportLibraryPathError,
+    M3uExportProfileInUseError,
     M3uExportProfileStore,
     normalize_m3u_export_library_path,
 )
 from app.relationships.models import metadata as relationships_metadata
+from app.sonic.models import playlist_generation_recipes_table
 from app.sonic.models import metadata as sonic_metadata
 from app.streaming.models import (
     PLAYLIST_SYNC_MODE_FULL,
@@ -86,6 +89,69 @@ def test_export_profile_store_saves_first_profile_as_default(tmp_path: Path) -> 
     store.delete_profile(second.id)
 
     assert store.list_profiles()[0].is_default is True
+
+
+def test_referenced_export_profile_cannot_be_deleted_by_store_or_route(
+    tmp_path: Path,
+) -> None:
+    engine = _create_generated_export_engine(
+        tmp_path,
+        "referenced-export-profile.db",
+    )
+    store = M3uExportProfileStore(engine=engine)
+    profile = store.create_profile(name="DJ laptop", library_path="/music")
+    with engine.begin() as connection:
+        recipe_id = connection.execute(
+            insert(playlist_generation_recipes_table).values(
+                name="Friday crates",
+                source_filter_json={"source_type": "all_local"},
+                generation_config_json={"sequencing_intent": "smooth_mix"},
+                enabled=True,
+                regenerate_on_change=True,
+                export_config_json={
+                    "enabled": True,
+                    "profile_id": profile.id,
+                    "formats": ["m3u"],
+                    "path_format": "absolute",
+                    "scope": "leaf_only",
+                },
+            )
+        ).inserted_primary_key[0]
+
+    with pytest.raises(M3uExportProfileInUseError):
+        store.delete_profile(profile.id)
+
+    router = create_router()
+    with pytest.raises(HTTPException) as exc_info:
+        _call_endpoint(
+            _route(
+                router,
+                "DELETE",
+                "/m3u/export-profiles/{profile_id}",
+            ).endpoint,
+            profile.id,
+            engine=engine,
+        )
+
+    assert exc_info.value.status_code == 409
+    assert "Friday crates" in exc_info.value.detail
+    with engine.connect() as connection:
+        assert (
+            connection.execute(
+                select(m3u_export_profiles_table.c.id).where(
+                    m3u_export_profiles_table.c.id == profile.id
+                )
+            ).scalar_one()
+            == profile.id
+        )
+        assert (
+            connection.execute(
+                select(playlist_generation_recipes_table.c.id).where(
+                    playlist_generation_recipes_table.c.id == recipe_id
+                )
+            ).scalar_one()
+            == recipe_id
+        )
 
 
 def test_export_library_path_validation_accepts_posix_and_windows() -> None:

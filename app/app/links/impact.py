@@ -7,6 +7,7 @@ from sqlalchemy.engine import Connection
 
 from app.relationships.resolver import StreamingRelationshipResolver
 from app.streaming.models import (
+    PLAYLIST_AUTOMATION_LEVEL_OFF,
     PLAYLIST_SYNC_MODE_FULL,
     playlist_membership_table,
     streaming_playlists_table,
@@ -64,3 +65,55 @@ def affected_full_sync_playlist_ids_for_streaming_tracks(
         .order_by(streaming_playlists_table.c.id.asc())
     ).scalars()
     return tuple(int(playlist_id) for playlist_id in rows)
+
+
+def affected_automation_playlist_ids_for_streaming_tracks(
+    connection: Connection,
+    streaming_track_ids: Iterable[int],
+) -> tuple[int, ...]:
+    """Return keep-fresh playlists whose generation inputs include these tracks."""
+    resolved_track_ids = tuple(
+        sorted({int(identifier) for identifier in streaming_track_ids})
+    )
+    if not resolved_track_ids:
+        return ()
+
+    rows = connection.execute(
+        select(streaming_playlists_table.c.id)
+        .select_from(
+            streaming_playlists_table.join(
+                playlist_membership_table,
+                playlist_membership_table.c.playlist_id
+                == streaming_playlists_table.c.id,
+            )
+        )
+        .where(playlist_membership_table.c.streaming_track_id.in_(resolved_track_ids))
+        .where(
+            streaming_playlists_table.c.automation_level
+            != PLAYLIST_AUTOMATION_LEVEL_OFF
+        )
+        .distinct()
+        .order_by(streaming_playlists_table.c.id.asc())
+    ).scalars()
+    return tuple(int(playlist_id) for playlist_id in rows)
+
+
+def affected_sync_or_automation_playlist_ids_for_streaming_tracks(
+    connection: Connection,
+    streaming_track_ids: Iterable[int],
+) -> tuple[int, ...]:
+    track_ids = tuple(streaming_track_ids)
+    return tuple(
+        sorted(
+            {
+                *affected_full_sync_playlist_ids_for_streaming_tracks(
+                    connection,
+                    track_ids,
+                ),
+                *affected_automation_playlist_ids_for_streaming_tracks(
+                    connection,
+                    track_ids,
+                ),
+            }
+        )
+    )

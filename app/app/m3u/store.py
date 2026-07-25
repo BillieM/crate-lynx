@@ -4,11 +4,19 @@ import ntpath
 import posixpath
 from datetime import UTC, datetime
 
-from sqlalchemy import delete, func, insert, select, update
+from sqlalchemy import (
+    delete,
+    func,
+    insert,
+    inspect as sqlalchemy_inspect,
+    select,
+    update,
+)
 from sqlalchemy.engine import Engine
 
 from app.core.db import create_database_engine
 from app.m3u.models import M3uExportProfileRecord, m3u_export_profiles_table
+from app.sonic.models import playlist_generation_recipes_table
 
 
 class InvalidM3uExportProfileNameError(ValueError):
@@ -20,6 +28,10 @@ class InvalidM3uExportLibraryPathError(ValueError):
 
 
 class M3uExportProfileNotFoundError(ValueError):
+    pass
+
+
+class M3uExportProfileInUseError(ValueError):
     pass
 
 
@@ -199,6 +211,38 @@ class M3uExportProfileStore:
                 raise M3uExportProfileNotFoundError(str(profile_id))
 
             deleted_profile = _profile_from_row(row)
+            referencing_recipes = []
+            if sqlalchemy_inspect(connection).has_table(
+                playlist_generation_recipes_table.name
+            ):
+                referencing_recipes = [
+                    recipe
+                    for recipe in (
+                        connection.execute(
+                            select(
+                                playlist_generation_recipes_table.c.id,
+                                playlist_generation_recipes_table.c.name,
+                                playlist_generation_recipes_table.c.export_config_json,
+                            ).where(
+                                playlist_generation_recipes_table.c.export_config_json.is_not(
+                                    None
+                                )
+                            )
+                        )
+                        .mappings()
+                        .all()
+                    )
+                    if isinstance(recipe["export_config_json"], dict)
+                    and recipe["export_config_json"].get("profile_id") == profile_id
+                ]
+            if referencing_recipes:
+                recipe_names = ", ".join(
+                    str(recipe["name"]) for recipe in referencing_recipes[:3]
+                )
+                raise M3uExportProfileInUseError(
+                    f"Export profile is used by saved generation recipe(s): "
+                    f"{recipe_names}"
+                )
             result = connection.execute(
                 delete(m3u_export_profiles_table).where(
                     m3u_export_profiles_table.c.id == profile_id

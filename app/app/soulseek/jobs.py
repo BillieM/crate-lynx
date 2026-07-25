@@ -1,16 +1,16 @@
 from __future__ import annotations
 
-from collections import Counter
-from dataclasses import dataclass
 import logging
 import os
 import time
 import uuid
+from collections import Counter
+from dataclasses import dataclass
 from typing import Any
 
-from redis import Redis
 from rq import Queue
 
+from app.autopilot.lock import RenewableRedisLock
 from app.soulseek.client import SlskdClient
 from app.soulseek.config import SlskdConfig, load_slskd_config
 from app.soulseek.models import (
@@ -36,7 +36,7 @@ from app.soulseek.store import (
     SoulseekStore,
     validate_candidate_enqueue,
 )
-
+from redis import Redis
 
 logger = logging.getLogger(__name__)
 
@@ -416,29 +416,19 @@ def _stable_enqueue_result(payload: dict[str, Any]) -> str:
 
 class _search_lock:
     def __init__(self, redis_url: str) -> None:
-        self._connection = Redis.from_url(redis_url)
-        self._token = uuid.uuid4().hex
-        self._acquired = False
+        self._lock = RenewableRedisLock(
+            connection=Redis.from_url(redis_url),
+            key=SOULSEEK_SEARCH_LOCK_KEY,
+            ttl_seconds=SOULSEEK_SEARCH_LOCK_TTL_SECONDS,
+            wait_seconds=SOULSEEK_SEARCH_LOCK_WAIT_SECONDS,
+            retry_interval_seconds=1,
+        )
 
     def __enter__(self) -> None:
-        deadline = time.monotonic() + SOULSEEK_SEARCH_LOCK_WAIT_SECONDS
-        while time.monotonic() < deadline:
-            if self._connection.set(
-                SOULSEEK_SEARCH_LOCK_KEY,
-                self._token,
-                nx=True,
-                ex=SOULSEEK_SEARCH_LOCK_TTL_SECONDS,
-            ):
-                self._acquired = True
-                return
-            time.sleep(1)
-        raise TimeoutError("Timed out waiting for Soulseek search lock")
+        self._lock.acquire()
 
     def __exit__(self, exc_type, exc, traceback) -> None:
-        if not self._acquired:
-            return
-        if self._connection.get(SOULSEEK_SEARCH_LOCK_KEY) == self._token.encode():
-            self._connection.delete(SOULSEEK_SEARCH_LOCK_KEY)
+        self._lock.release()
 
 
 def _transfer_status(transfer: dict[str, Any]) -> tuple[str, str | None]:

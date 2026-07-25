@@ -38,6 +38,11 @@ class SoulseekAcquisitionSummaryResponse(BaseModel):
     proposal_id: int | None = None
     error_detail: str | None
     link_error_detail: str | None = None
+    automation_run_id: str | None = None
+    unattended: bool = False
+    verification_status: str | None = None
+    verification_detail: str | None = None
+    verified_at: str | None = None
 
 
 class SoulseekCandidateResponse(BaseModel):
@@ -57,6 +62,9 @@ class SoulseekCandidateResponse(BaseModel):
     queue_length: int | None
     upload_speed: int | None
     score: float
+    identity_confidence: float | None = None
+    version_confidence: float | None = None
+    quality_score: float | None = None
     created_at: str
 
 

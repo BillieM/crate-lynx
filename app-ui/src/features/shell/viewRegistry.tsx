@@ -18,6 +18,8 @@ const loadStreamingRelationshipsView = () =>
   import("../relationships/StreamingRelationshipsView").then((module) => ({ default: module.StreamingRelationshipsView }));
 const loadAuthenticationSettingsView = () =>
   import("../settings/AuthenticationSettingsView").then((module) => ({ default: module.AuthenticationSettingsView }));
+const loadAutopilotSettingsView = () =>
+  import("../autopilot/AutopilotSettingsView").then((module) => ({ default: module.AutopilotSettingsView }));
 const loadGeneralSettingsView = () =>
   import("../settings/GeneralSettingsView").then((module) => ({ default: module.GeneralSettingsView }));
 const loadGeneratedRunView = () => import("../sonic/GeneratedRunView").then((module) => ({ default: module.GeneratedRunView }));
@@ -33,6 +35,7 @@ export const soulseekQueueViewId = "soulseek-queue";
 export const shellLoadingViewId = "shell-loading";
 export const streamingRelationshipsViewId = "streaming-relationships";
 export const settingsAuthenticationViewId = "settings-authentication";
+export const settingsAutopilotViewId = "settings-autopilot";
 export const settingsGeneralViewId = "settings-general";
 export const settingsSyncYoutubeMusicViewId = "settings-sync-youtube-music";
 
@@ -169,6 +172,14 @@ const staticViewEntries = [
     render: ({ retryKey }) => <RetryableLazyView loader={loadAuthenticationSettingsView} props={{}} retryKey={retryKey} />,
   },
   {
+    id: settingsAutopilotViewId,
+    title: "Settings",
+    actionLabels: [],
+    icon: "settings",
+    path: "/settings/autopilot",
+    render: ({ retryKey }) => <RetryableLazyView loader={loadAutopilotSettingsView} props={{}} retryKey={retryKey} />,
+  },
+  {
     id: settingsSyncYoutubeMusicViewId,
     title: "Settings",
     actionLabels: [],
@@ -303,6 +314,7 @@ export function buildSettingsNavItems(): NavItem[] {
     { id: settingsGeneralViewId, label: "General", tone: "accent" },
     { id: settingsAuthenticationViewId, label: "Authentication", tone: "accent" },
     { id: settingsSyncYoutubeMusicViewId, label: "YouTube Music sync", tone: "accent" },
+    { id: settingsAutopilotViewId, label: "Autopilot", tone: "accent" },
   ];
 }
 

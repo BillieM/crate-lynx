@@ -30,6 +30,10 @@ from app.sonic.models import (
     PLAYLIST_OUTPUT_SCOPE_LEAF_ONLY,
     PLAYLIST_OUTPUT_SCOPE_TOP_LEVEL,
     PLAYLIST_OUTPUT_SCOPE_TREE,
+    PLAYLIST_SEQUENCING_INTENT_RISING_ENERGY,
+    PLAYLIST_SEQUENCING_INTENT_SMOOTH_MIX,
+    PLAYLIST_SEQUENCING_INTENT_VARIED_LISTENING,
+    PLAYLIST_SEQUENCING_INTENT_WARM_UP_TO_PEAK,
     PLAYLIST_TEMPO_MODE_MIXABLE,
     PLAYLIST_TEMPO_MODE_RAW,
     SONIC_SOURCE_ALL_LOCAL,
@@ -70,7 +74,7 @@ class SonicTagFilterRequest(BaseModel):
     match: Literal["equals", "contains"] = SONIC_TAG_FILTER_MATCH_CONTAINS
 
     @model_validator(mode="after")
-    def normalize_filter(self) -> "SonicTagFilterRequest":
+    def normalize_filter(self) -> SonicTagFilterRequest:
         self.key = self.key.strip()
         self.value = self.value.strip()
         if not self.key:
@@ -86,7 +90,7 @@ class SonicSourceFilterRequest(BaseModel):
     tag_filters: list[SonicTagFilterRequest] = Field(default_factory=list)
 
     @model_validator(mode="after")
-    def normalize_source(self) -> "SonicSourceFilterRequest":
+    def normalize_source(self) -> SonicSourceFilterRequest:
         if self.source_type == SONIC_SOURCE_STREAMING_PLAYLISTS:
             seen_ids = set()
             self.streaming_playlist_ids = [
@@ -151,10 +155,22 @@ class PlaylistGenerationConfigRequest(BaseModel):
         "micro_crates_v1",
     ] = PLAYLIST_GENERATION_PRESET_DJ_CRATE_TREE
     random_seed: int = DEFAULT_GENERATION_CONFIG["random_seed"]
+    semantic_mode: Literal["auto", "off"] = DEFAULT_GENERATION_CONFIG["semantic_mode"]
+    semantic_weight: float = Field(
+        default=DEFAULT_GENERATION_CONFIG["semantic_weight"],
+        ge=0,
+        le=0.75,
+    )
+    sequencing_intent: Literal[
+        "smooth_mix",
+        "rising_energy",
+        "warm_up_to_peak",
+        "varied_listening",
+    ] = PLAYLIST_SEQUENCING_INTENT_SMOOTH_MIX
     tempo_mode: Literal["mixable_v1", "raw_v1"] = PLAYLIST_TEMPO_MODE_MIXABLE
 
     @model_validator(mode="after")
-    def normalize_config(self) -> "PlaylistGenerationConfigRequest":
+    def normalize_config(self) -> PlaylistGenerationConfigRequest:
         normalized = normalize_generation_config(self.model_dump())
         self.clustering_method = normalized["clustering_method"]
         self.diversity_mode = normalized["diversity_mode"]
@@ -168,6 +184,9 @@ class PlaylistGenerationConfigRequest(BaseModel):
         self.output_scope = normalized["output_scope"]
         self.preset_key = normalized["preset_key"]
         self.random_seed = normalized["random_seed"]
+        self.semantic_mode = normalized["semantic_mode"]
+        self.semantic_weight = normalized["semantic_weight"]
+        self.sequencing_intent = normalized["sequencing_intent"]
         self.tempo_mode = normalized["tempo_mode"]
         return self
 
@@ -179,6 +198,13 @@ class CreatePlaylistGenerationRunRequest(BaseModel):
     generation_config: PlaylistGenerationConfigRequest = Field(
         default_factory=PlaylistGenerationConfigRequest
     )
+    run_name: str | None = Field(default=None, min_length=1, max_length=120)
+
+    @model_validator(mode="after")
+    def normalize_name(self) -> CreatePlaylistGenerationRunRequest:
+        if self.run_name is not None:
+            self.run_name = " ".join(self.run_name.split())
+        return self
 
 
 class PlaylistGenerationProjectionResponse(BaseModel):
@@ -193,6 +219,32 @@ class PlaylistGenerationProjectionResponse(BaseModel):
     config_notes: list[str]
 
 
+class SonicPreviewTrackEvidenceResponse(BaseModel):
+    local_track_id: int
+    title: str | None = None
+    artist: str | None = None
+    distance_from_center: float | None = None
+
+
+class SonicGenerationPlaylistPreviewResponse(BaseModel):
+    client_key: str
+    parent_key: str | None
+    depth: int
+    name: str
+    size: int
+    coverage: float
+    cohesion: float
+    confidence: float
+    representative_tracks: list[SonicPreviewTrackEvidenceResponse]
+    boundary_tracks: list[SonicPreviewTrackEvidenceResponse]
+    outlier_tracks: list[SonicPreviewTrackEvidenceResponse]
+    skipped_reasons: dict[str, int]
+    warnings: list[str]
+    sequencing: dict[str, Any]
+    sequencing_intent: str
+    export_default: bool
+
+
 class SonicGenerationPreviewResponse(BaseModel):
     analyzer_key: str
     analyzer_version: str
@@ -205,6 +257,17 @@ class SonicGenerationPreviewResponse(BaseModel):
     skipped_track_count: int
     source_track_count: int
     projection: PlaylistGenerationProjectionResponse | None
+    analyzer_evidence: dict[str, Any] = Field(default_factory=dict)
+    confidence: float = 0.0
+    coverage: float = 0.0
+    current_feature_count: int = 0
+    legacy_descriptor_feature_count: int = 0
+    playlists: list[SonicGenerationPlaylistPreviewResponse] = Field(
+        default_factory=list
+    )
+    readiness: dict[str, Any] = Field(default_factory=dict)
+    skipped_reasons: dict[str, int] = Field(default_factory=dict)
+    warnings: list[str] = Field(default_factory=list)
 
 
 class PlaylistGenerationRunResponse(BaseModel):
@@ -213,6 +276,11 @@ class PlaylistGenerationRunResponse(BaseModel):
     status: str
     source_filter: dict[str, Any]
     generation_config: dict[str, Any]
+    recipe_id: int | None = None
+    run_name: str
+    trigger: str
+    readiness_summary: dict[str, Any] | None = None
+    analyzer_evidence: dict[str, Any] | None = None
     playlist_count: int
     track_count: int
     error_detail: str | None
@@ -229,7 +297,7 @@ class DeletePlaylistGenerationRunsRequest(BaseModel):
     run_ids: list[int] = Field(min_length=1, max_length=100)
 
     @model_validator(mode="after")
-    def normalize_run_ids(self) -> "DeletePlaylistGenerationRunsRequest":
+    def normalize_run_ids(self) -> DeletePlaylistGenerationRunsRequest:
         seen_ids = set()
         self.run_ids = [
             run_id
@@ -248,6 +316,48 @@ class DeletePlaylistGenerationRunsResponse(BaseModel):
 
 
 class CreatePlaylistGenerationRunResponse(BaseModel):
+    run: PlaylistGenerationRunResponse
+    job_id: str
+
+
+class PlaylistGenerationRecipeUpsertRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    source_filter: SonicSourceFilterRequest = Field(
+        default_factory=SonicSourceFilterRequest
+    )
+    generation_config: PlaylistGenerationConfigRequest = Field(
+        default_factory=PlaylistGenerationConfigRequest
+    )
+    enabled: bool = True
+    regenerate_on_change: bool = True
+    export_config: dict[str, Any] | None = None
+
+    @model_validator(mode="after")
+    def normalize_recipe(self) -> PlaylistGenerationRecipeUpsertRequest:
+        self.name = " ".join(self.name.split())
+        return self
+
+
+class PlaylistGenerationRecipeResponse(BaseModel):
+    id: int
+    name: str
+    source_filter: dict[str, Any]
+    generation_config: dict[str, Any]
+    enabled: bool
+    regenerate_on_change: bool
+    export_config: dict[str, Any] | None
+    last_run_id: int | None
+    last_regenerated_at: datetime | None
+    created_at: datetime
+    updated_at: datetime
+
+
+class PlaylistGenerationRecipeListResponse(BaseModel):
+    recipes: list[PlaylistGenerationRecipeResponse]
+
+
+class RegeneratePlaylistGenerationRecipeResponse(BaseModel):
+    recipe: PlaylistGenerationRecipeResponse
     run: PlaylistGenerationRunResponse
     job_id: str
 
@@ -333,5 +443,11 @@ PLAYLIST_OUTPUT_SCOPE_VALUES = (
     PLAYLIST_OUTPUT_SCOPE_TREE,
     PLAYLIST_OUTPUT_SCOPE_LEAF_ONLY,
     PLAYLIST_OUTPUT_SCOPE_TOP_LEVEL,
+)
+PLAYLIST_SEQUENCING_INTENT_VALUES = (
+    PLAYLIST_SEQUENCING_INTENT_SMOOTH_MIX,
+    PLAYLIST_SEQUENCING_INTENT_RISING_ENERGY,
+    PLAYLIST_SEQUENCING_INTENT_WARM_UP_TO_PEAK,
+    PLAYLIST_SEQUENCING_INTENT_VARIED_LISTENING,
 )
 SONIC_FEATURE_PROFILE_VALUES = SONIC_FEATURE_PROFILE_KEYS

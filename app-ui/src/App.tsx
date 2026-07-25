@@ -25,6 +25,7 @@ import {
   getViewPath,
   routeFallbackViewId,
   settingsAuthenticationViewId,
+  settingsAutopilotViewId,
   settingsGeneralViewId,
   settingsSyncYoutubeMusicViewId,
   shellLoadingViewId,
@@ -222,6 +223,7 @@ function App() {
   const isSettingsView =
     activeViewId === settingsGeneralViewId ||
     activeViewId === settingsAuthenticationViewId ||
+    activeViewId === settingsAutopilotViewId ||
     activeViewId === settingsSyncYoutubeMusicViewId;
 
   return (

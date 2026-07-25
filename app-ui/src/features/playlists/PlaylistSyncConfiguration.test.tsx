@@ -50,6 +50,7 @@ const playlistConfigResponse: StreamingPlaylistConfigResponse = {
   playlists: [
     {
       account_id: 4,
+      automation_level: "sync_only",
       id: 12,
       last_sync_error: null,
       last_sync_error_at: null,
@@ -63,6 +64,7 @@ const playlistConfigResponse: StreamingPlaylistConfigResponse = {
     },
     {
       account_id: 4,
+      automation_level: "off",
       id: 31,
       last_sync_error: "Malformed playlist payload",
       last_sync_error_at: "2026-05-02T10:30:00Z",
@@ -76,6 +78,7 @@ const playlistConfigResponse: StreamingPlaylistConfigResponse = {
     },
     {
       account_id: 4,
+      automation_level: "assist",
       id: 44,
       last_sync_error: null,
       last_sync_error_at: null,
@@ -173,6 +176,23 @@ function mockConfigFetch(
       } as Response;
     }
 
+    if (/^\/api\/streaming\/playlists\/\d+\/automation-level$/.test(url) && init?.method === "PATCH") {
+      const requestBody = JSON.parse(String(init.body)) as {
+        automation_level: PlaylistConfigRow["automation_level"];
+      };
+      const playlistId = Number(url.split("/").at(-2));
+      const playlist = response.playlists.find((candidate) => candidate.id === playlistId);
+
+      if (playlist === undefined) {
+        throw new Error(`Unexpected playlist automation PATCH URL: ${url}`);
+      }
+
+      return {
+        ok: true,
+        json: async () => ({ ...playlist, automation_level: requestBody.automation_level }),
+      } as Response;
+    }
+
     if (/^\/api\/streaming\/playlists\/\d+\/sync$/.test(url) && init?.method === "POST") {
       const playlistId = Number(url.split("/").at(-2));
 
@@ -248,6 +268,9 @@ describe("PlaylistSyncConfiguration", () => {
     expect(within(offModeControl).getByRole("button", { name: "Off" })).toHaveAttribute("aria-pressed", "true");
     const matchModeControl = screen.getByRole("group", { name: "Sync mode for Matcher Seeds" });
     expect(within(matchModeControl).getByRole("button", { name: "Match only" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByLabelText("Keep fresh for Late Night Drive")).toHaveValue("sync_only");
+    expect(screen.getByLabelText("Keep fresh for Fresh Discoveries")).toHaveValue("off");
+    expect(screen.getByLabelText("Keep fresh for Matcher Seeds")).toHaveValue("assist");
     expect(screen.getByRole("columnheader", { name: /YouTube count/ })).toBeInTheDocument();
     expect(screen.getByRole("columnheader", { name: /Imported/ })).toBeInTheDocument();
     expect(screen.getByRole("columnheader", { name: /Metadata refreshed/ })).toBeInTheDocument();
@@ -255,6 +278,30 @@ describe("PlaylistSyncConfiguration", () => {
     expect(screen.getByRole("columnheader", { name: /Provider ID/ })).toBeInTheDocument();
     expect(screen.getByText("PL31")).toBeInTheDocument();
     expect(screen.getByText("Malformed playlist payload")).toBeInTheDocument();
+  });
+
+  it("makes Full autopilot an explicit per-playlist opt-in and saves it independently from sync mode", async () => {
+    const fetchMock = mockConfigFetch();
+
+    renderPlaylistSyncConfiguration();
+
+    const keepFreshControl = await screen.findByLabelText("Keep fresh for Fresh Discoveries");
+    expect(keepFreshControl).toHaveValue("off");
+    expect(within(keepFreshControl).getByRole("option", { name: "Full autopilot" })).toBeInTheDocument();
+
+    fireEvent.change(keepFreshControl, { target: { value: "full" } });
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith("/api/streaming/playlists/31/automation-level", {
+        body: JSON.stringify({ automation_level: "full" }),
+        headers: {
+          "Content-Type": "application/json",
+        },
+        method: "PATCH",
+      });
+    });
+    expect(await screen.findByText(/Explicit opt-in: matching downloads may run automatically/)).toBeInTheDocument();
+    expect(screen.getByRole("group", { name: "Sync mode for Fresh Discoveries" })).toBeInTheDocument();
   });
 
   it("renders playlist sync rows without row checkboxes or selected-row action bar", async () => {

@@ -11,6 +11,7 @@ function buildPlaylist(overrides: Partial<PlaylistDetail> = {}): PlaylistDetail 
     name: "Late Night Drive",
     cover_art_url: "https://cdn.example.test/cover.jpg",
     sync_mode: "full",
+    automation_level: "off",
     provider_track_count: 70,
     imported_track_count: 62,
     linked_count: 58,

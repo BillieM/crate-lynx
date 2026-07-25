@@ -23,10 +23,12 @@ const nullableStringSchema = z.string().nullable();
 const nullableNumberSchema = z.number().nullable();
 
 const playlistSyncModeSchema = z.enum(["off", "match_only", "full"]);
+const playlistAutomationLevelSchema = z.enum(["off", "sync_only", "assist", "full"]);
 const runStatusSchema = z.enum(["pending", "running", "completed", "failed"]);
 
 const shellPlaylistSchema: z.ZodType<StreamingPlaylist> = z.object({
   account_id: z.number(),
+  automation_level: playlistAutomationLevelSchema,
   id: z.number(),
   imported_track_count: z.number(),
   last_sync_error: nullableStringSchema,
@@ -40,6 +42,7 @@ const shellPlaylistSchema: z.ZodType<StreamingPlaylist> = z.object({
 });
 
 const shellGeneratedRunSchema: z.ZodType<PlaylistGenerationRun> = z.object({
+  analyzer_evidence: z.record(z.string(), z.unknown()).nullable().optional(),
   completed_at: nullableStringSchema,
   created_at: z.string(),
   error_detail: nullableStringSchema,
@@ -47,9 +50,13 @@ const shellGeneratedRunSchema: z.ZodType<PlaylistGenerationRun> = z.object({
   generation_number: z.number(),
   id: z.number(),
   playlist_count: z.number(),
+  readiness_summary: z.record(z.string(), z.unknown()).nullable().optional(),
+  recipe_id: z.number().nullable().optional(),
+  run_name: z.string(),
   source_filter: z.record(z.string(), z.unknown()),
   status: runStatusSchema,
   track_count: z.number(),
+  trigger: z.string(),
   updated_at: z.string(),
 });
 

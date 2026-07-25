@@ -1,26 +1,27 @@
 from __future__ import annotations
 
+import re
+import uuid
 from collections.abc import Iterable
 from datetime import UTC, datetime
 from pathlib import Path
-import re
-import uuid
 
 from sqlalchemy import delete, desc, func, insert, select, update
 from sqlalchemy.engine import Engine
 
 from app.core.db import create_database_engine
+from app.links.impact import (
+    affected_full_sync_playlist_ids_for_streaming_tracks,
+    affected_sync_or_automation_playlist_ids_for_streaming_tracks,
+)
 from app.links.store import (
     FinalLinkConflictError,
     FinalLinkMutationService,
     final_links_table,
 )
 from app.matching.pipeline import SUGGESTED_LINK_STATUS_PENDING, suggested_links_table
-from app.links.impact import affected_full_sync_playlist_ids_for_streaming_tracks
 from app.relationships.resolver import StreamingRelationshipResolver
 from app.soulseek.models import (
-    MissingTrackSoulseekSummary,
-    SoulseekAutoLinkResult,
     SOULSEEK_STATUS_CANDIDATES_FOUND,
     SOULSEEK_STATUS_COMPLETED,
     SOULSEEK_STATUS_DOWNLOADING,
@@ -32,7 +33,13 @@ from app.soulseek.models import (
     SOULSEEK_STATUS_PROPOSAL_AVAILABLE,
     SOULSEEK_STATUS_QUEUED,
     SOULSEEK_STATUS_SEARCHING,
+    SOULSEEK_VERIFICATION_FAILED,
+    SOULSEEK_VERIFICATION_PENDING,
+    SOULSEEK_VERIFICATION_REVIEW,
+    SOULSEEK_VERIFICATION_VERIFIED,
+    MissingTrackSoulseekSummary,
     SoulseekAcquisitionRecord,
+    SoulseekAutoLinkResult,
     SoulseekCandidateRecord,
     SoulseekQueueItemRecord,
     StreamingTrackForSoulseek,
@@ -75,6 +82,14 @@ _ACTIVE_SEARCH_STATUSES = {
     SOULSEEK_STATUS_NO_CANDIDATES,
     SOULSEEK_STATUS_FAILED,
     SOULSEEK_STATUS_LINK_FAILED,
+}
+_UNATTENDED_RESUME_STATUSES = {
+    *_ACTIVE_SEARCH_STATUSES,
+    SOULSEEK_STATUS_QUEUED,
+    SOULSEEK_STATUS_DOWNLOADING,
+    SOULSEEK_STATUS_COMPLETED,
+    SOULSEEK_STATUS_INGESTED,
+    SOULSEEK_STATUS_PROPOSAL_AVAILABLE,
 }
 _QUEUE_REVIEW_STATUSES = {
     SOULSEEK_STATUS_CANDIDATES_FOUND,
@@ -180,6 +195,11 @@ class SoulseekStore:
                         refresh_job_id=None,
                         error_detail=None,
                         link_error_detail=None,
+                        automation_run_id=None,
+                        unattended=False,
+                        verification_status=None,
+                        verification_detail=None,
+                        verified_at=None,
                         searched_at=None,
                         queued_at=None,
                         completed_at=None,
@@ -198,11 +218,87 @@ class SoulseekStore:
                         streaming_track_id=streaming_track_id,
                         status=SOULSEEK_STATUS_SEARCHING,
                         candidate_count=0,
+                        unattended=False,
                         created_at=now,
                         updated_at=now,
                     )
                 )
 
+            row = (
+                connection.execute(
+                    select(soulseek_acquisitions_table).where(
+                        soulseek_acquisitions_table.c.id == acquisition_id
+                    )
+                )
+                .mappings()
+                .one()
+            )
+        return _acquisition_record(row)
+
+    def create_autopilot_search_acquisition(
+        self,
+        *,
+        automation_run_id: str,
+        streaming_track_id: int,
+    ) -> SoulseekAcquisitionRecord:
+        """Create or resume an unattended search without resetting a manual one."""
+        now = datetime.now(UTC)
+        with self._engine.begin() as connection:
+            latest = (
+                connection.execute(
+                    select(soulseek_acquisitions_table)
+                    .where(
+                        soulseek_acquisitions_table.c.streaming_track_id
+                        == streaming_track_id
+                    )
+                    .order_by(
+                        desc(soulseek_acquisitions_table.c.created_at),
+                        desc(soulseek_acquisitions_table.c.id),
+                    )
+                    .limit(1)
+                )
+                .mappings()
+                .one_or_none()
+            )
+            if latest is not None and latest["status"] in _UNATTENDED_RESUME_STATUSES:
+                if not latest["unattended"]:
+                    raise SoulseekCandidateConflictError(
+                        "A manual acquisition is already active for this track"
+                    )
+                acquisition_id = latest["id"]
+                has_import_evidence = (
+                    latest["local_track_id"] is not None
+                    or latest["completed_source_path"] is not None
+                )
+                review_required = latest["status"] == SOULSEEK_STATUS_LINK_FAILED or (
+                    latest["status"] == SOULSEEK_STATUS_FAILED and has_import_evidence
+                )
+                if latest["status"] in _ACTIVE_SEARCH_STATUSES and not review_required:
+                    connection.execute(
+                        update(soulseek_acquisitions_table)
+                        .where(soulseek_acquisitions_table.c.id == acquisition_id)
+                        .values(
+                            automation_run_id=automation_run_id,
+                            verification_status=None,
+                            verification_detail=None,
+                            verified_at=None,
+                            updated_at=now,
+                        )
+                    )
+            else:
+                acquisition_id = str(uuid.uuid4())
+                connection.execute(
+                    insert(soulseek_acquisitions_table).values(
+                        id=acquisition_id,
+                        streaming_track_id=streaming_track_id,
+                        status=SOULSEEK_STATUS_SEARCHING,
+                        candidate_count=0,
+                        automation_run_id=automation_run_id,
+                        unattended=True,
+                        created_at=now,
+                        updated_at=now,
+                    )
+                )
             row = (
                 connection.execute(
                     select(soulseek_acquisitions_table).where(
@@ -257,6 +353,29 @@ class SoulseekStore:
                 .one_or_none()
             )
         return _candidate_record(row) if row is not None else None
+
+    def list_unattended_acquisitions(
+        self,
+        *,
+        statuses: set[str] | frozenset[str] | None = None,
+        verification_status: str | None = None,
+    ) -> list[SoulseekAcquisitionRecord]:
+        query = select(soulseek_acquisitions_table).where(
+            soulseek_acquisitions_table.c.unattended.is_(True)
+        )
+        if statuses:
+            query = query.where(soulseek_acquisitions_table.c.status.in_(statuses))
+        if verification_status is not None:
+            query = query.where(
+                soulseek_acquisitions_table.c.verification_status == verification_status
+            )
+        query = query.order_by(
+            soulseek_acquisitions_table.c.updated_at.asc(),
+            soulseek_acquisitions_table.c.id.asc(),
+        )
+        with self._engine.connect() as connection:
+            rows = connection.execute(query).mappings().all()
+        return [_acquisition_record(row) for row in rows]
 
     def list_candidates(self, acquisition_id: str) -> list[SoulseekCandidateRecord]:
         with self._engine.connect() as connection:
@@ -439,6 +558,9 @@ class SoulseekStore:
                             "queue_length": candidate.queue_length,
                             "upload_speed": candidate.upload_speed,
                             "score": candidate.score,
+                            "identity_confidence": candidate.identity_confidence,
+                            "version_confidence": candidate.version_confidence,
+                            "quality_score": candidate.quality_score,
                             "created_at": now,
                         }
                         for candidate in candidates
@@ -703,6 +825,30 @@ class SoulseekStore:
                     updated_at=now,
                 )
             )
+            if row["unattended"]:
+                connection.execute(
+                    update(soulseek_acquisitions_table)
+                    .where(soulseek_acquisitions_table.c.id == acquisition_id)
+                    .values(
+                        verification_status=SOULSEEK_VERIFICATION_PENDING,
+                        verification_detail=None,
+                        verified_at=None,
+                        updated_at=now,
+                    )
+                )
+                updated_row = (
+                    connection.execute(
+                        select(soulseek_acquisitions_table).where(
+                            soulseek_acquisitions_table.c.id == acquisition_id
+                        )
+                    )
+                    .mappings()
+                    .one()
+                )
+                return SoulseekAutoLinkResult(
+                    acquisition=_acquisition_record(updated_row),
+                    affected_playlist_ids=(),
+                )
 
             try:
                 final_link_id, affected_playlist_ids = _create_soulseek_final_link(
@@ -735,6 +881,112 @@ class SoulseekStore:
                     )
                 )
 
+            updated_row = (
+                connection.execute(
+                    select(soulseek_acquisitions_table).where(
+                        soulseek_acquisitions_table.c.id == acquisition_id
+                    )
+                )
+                .mappings()
+                .one()
+            )
+        return SoulseekAutoLinkResult(
+            acquisition=_acquisition_record(updated_row),
+            affected_playlist_ids=affected_playlist_ids,
+        )
+
+    def mark_unattended_verification_review(
+        self,
+        acquisition_id: str,
+        *,
+        detail: str,
+        failed: bool = False,
+    ) -> SoulseekAcquisitionRecord:
+        acquisition = self.get_acquisition(acquisition_id)
+        if acquisition is None:
+            raise SoulseekAcquisitionNotFoundError(acquisition_id)
+        if not acquisition.unattended:
+            raise SoulseekCandidateConflictError(
+                "Manual acquisitions do not use unattended verification"
+            )
+        return self._update_acquisition(
+            acquisition_id,
+            verification_status=(
+                SOULSEEK_VERIFICATION_FAILED if failed else SOULSEEK_VERIFICATION_REVIEW
+            ),
+            verification_detail=detail[:4000],
+            verified_at=datetime.now(UTC),
+        )
+
+    def mark_unattended_verified_and_auto_link(
+        self,
+        acquisition_id: str,
+        *,
+        detail: str,
+    ) -> SoulseekAutoLinkResult:
+        now = datetime.now(UTC)
+        with self._engine.begin() as connection:
+            row = (
+                connection.execute(
+                    select(soulseek_acquisitions_table).where(
+                        soulseek_acquisitions_table.c.id == acquisition_id
+                    )
+                )
+                .mappings()
+                .one_or_none()
+            )
+            if row is None:
+                raise SoulseekAcquisitionNotFoundError(acquisition_id)
+            if not row["unattended"]:
+                raise SoulseekCandidateConflictError(
+                    "Manual acquisitions do not use unattended verification"
+                )
+            if row["local_track_id"] is None:
+                raise SoulseekCandidateConflictError(
+                    "Unattended acquisition has not been ingested"
+                )
+            if row["final_link_id"] is not None:
+                updated = _acquisition_record(row)
+                return SoulseekAutoLinkResult(
+                    acquisition=updated,
+                    affected_playlist_ids=(),
+                )
+            try:
+                final_link_id, affected_playlist_ids = _create_soulseek_final_link(
+                    connection,
+                    local_track_id=int(row["local_track_id"]),
+                    streaming_track_id=int(row["streaming_track_id"]),
+                )
+            except SoulseekAutoLinkConflictError as exc:
+                connection.execute(
+                    update(soulseek_acquisitions_table)
+                    .where(soulseek_acquisitions_table.c.id == acquisition_id)
+                    .values(
+                        status=SOULSEEK_STATUS_LINK_FAILED,
+                        verification_status=SOULSEEK_VERIFICATION_REVIEW,
+                        verification_detail=str(exc)[:4000],
+                        verified_at=now,
+                        link_error_detail=str(exc)[:4000],
+                        updated_at=now,
+                    )
+                )
+                affected_playlist_ids = ()
+            else:
+                connection.execute(
+                    update(soulseek_acquisitions_table)
+                    .where(soulseek_acquisitions_table.c.id == acquisition_id)
+                    .values(
+                        status=SOULSEEK_STATUS_LINKED,
+                        final_link_id=final_link_id,
+                        verification_status=SOULSEEK_VERIFICATION_VERIFIED,
+                        verification_detail=detail[:4000],
+                        verified_at=now,
+                        linked_at=now,
+                        error_detail=None,
+                        link_error_detail=None,
+                        updated_at=now,
+                    )
+                )
             updated_row = (
                 connection.execute(
                     select(soulseek_acquisitions_table).where(
@@ -862,6 +1114,7 @@ class SoulseekStore:
                     .where(
                         soulseek_acquisitions_table.c.local_track_id.is_(None),
                         soulseek_acquisitions_table.c.final_link_id.is_(None),
+                        soulseek_acquisitions_table.c.unattended.is_(False),
                         soulseek_acquisitions_table.c.selected_candidate_id.is_not(
                             None
                         ),
@@ -986,6 +1239,7 @@ class SoulseekStore:
                     .where(
                         soulseek_acquisitions_table.c.local_track_id.is_(None),
                         soulseek_acquisitions_table.c.final_link_id.is_(None),
+                        soulseek_acquisitions_table.c.unattended.is_(False),
                         soulseek_acquisitions_table.c.selected_candidate_id.is_not(
                             None
                         ),
@@ -1596,9 +1850,11 @@ def _create_soulseek_final_link(
             )
         raise SoulseekAutoLinkConflictError(detail) from exc
 
-    affected_playlist_ids = affected_full_sync_playlist_ids_for_streaming_tracks(
-        connection,
-        mutation.affected_streaming_track_ids,
+    affected_playlist_ids = (
+        affected_sync_or_automation_playlist_ids_for_streaming_tracks(
+            connection,
+            mutation.affected_streaming_track_ids,
+        )
     )
     return mutation.final_link_id, affected_playlist_ids
 
@@ -1701,6 +1957,11 @@ def _acquisition_record(
         refresh_job_id=row["refresh_job_id"],
         error_detail=row["error_detail"],
         link_error_detail=row["link_error_detail"],
+        automation_run_id=row["automation_run_id"],
+        unattended=bool(row["unattended"]),
+        verification_status=row["verification_status"],
+        verification_detail=row["verification_detail"],
+        verified_at=row["verified_at"],
         searched_at=row["searched_at"],
         queued_at=row["queued_at"],
         completed_at=row["completed_at"],
@@ -1733,5 +1994,8 @@ def _candidate_record(row) -> SoulseekCandidateRecord:
         ),
         upload_speed=row["upload_speed"],
         score=float(row["score"]),
+        identity_confidence=row["identity_confidence"],
+        version_confidence=row["version_confidence"],
+        quality_score=row["quality_score"],
         created_at=row["created_at"],
     )

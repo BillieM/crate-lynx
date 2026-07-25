@@ -19,11 +19,23 @@ else
   RQ_QUEUE_NAMES="${RQ_BACKGROUND_QUEUE_NAMES:-matching,streaming,soulseek}" python -m app.core.worker &
   worker_pids+=("$!")
 
+  RQ_QUEUE_NAMES=autopilot python -m app.core.worker &
+  worker_pids+=("$!")
+
   SONIC_WORKER_COUNT="${SONIC_WORKER_COUNT:-2}"
   for ((i = 0; i < SONIC_WORKER_COUNT; i++)); do
     RQ_QUEUE_NAMES=sonic python -m app.core.worker &
     worker_pids+=("$!")
   done
+
+  case "${AUTOPILOT_SCHEDULER_ENABLED:-true}" in
+    0|false|FALSE|no|NO|off|OFF)
+      ;;
+    *)
+      python -m app.autopilot.scheduler &
+      worker_pids+=("$!")
+      ;;
+  esac
 fi
 
 shutdown() {

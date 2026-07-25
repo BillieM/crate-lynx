@@ -7,6 +7,7 @@ from pathlib import Path
 from cryptography.fernet import Fernet
 
 from app.core.config import load_runtime_config, optional_env
+from app.sonic.semantic import verify_model_asset
 from app.soulseek.config import SoulseekConfigurationError, load_slskd_config
 
 
@@ -35,11 +36,59 @@ def collect_preflight_errors(
 
     errors.extend(config.warnings)
     _validate_slskd(env, errors)
+    _validate_automation_paths(
+        semantic_enabled=config.sonic_semantic_enabled,
+        semantic_model_path=config.sonic_semantic_model_path,
+        export_root=config.autopilot_export_root,
+        check_paths=check_paths,
+        errors=errors,
+    )
 
     if check_paths:
         _validate_paths(env, config.beets_import_lock_path, errors)
 
     return tuple(errors)
+
+
+def _validate_automation_paths(
+    *,
+    semantic_enabled: bool,
+    semantic_model_path: Path,
+    export_root: Path,
+    check_paths: bool,
+    errors: list[str],
+) -> None:
+    if not semantic_model_path.is_absolute():
+        errors.append(
+            "SONIC_SEMANTIC_MODEL_PATH must resolve to an absolute container "
+            f"path: {semantic_model_path}"
+        )
+    elif semantic_enabled and check_paths:
+        try:
+            verify_model_asset(semantic_model_path)
+        except (FileNotFoundError, OSError, RuntimeError) as exc:
+            errors.append(str(exc))
+
+    if not export_root.is_absolute():
+        errors.append(
+            "AUTOPILOT_EXPORT_ROOT must resolve to an absolute container "
+            f"path: {export_root}"
+        )
+    elif check_paths:
+        writable_parent = export_root
+        while (
+            not writable_parent.exists() and writable_parent != writable_parent.parent
+        ):
+            writable_parent = writable_parent.parent
+        if not writable_parent.is_dir():
+            errors.append(
+                "AUTOPILOT_EXPORT_ROOT has no existing directory ancestor: "
+                f"{export_root}"
+            )
+        elif not os.access(writable_parent, os.W_OK | os.X_OK):
+            errors.append(
+                f"AUTOPILOT_EXPORT_ROOT parent is not writable: {writable_parent}"
+            )
 
 
 def _validate_slskd(env: Mapping[str, str], errors: list[str]) -> None:

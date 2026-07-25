@@ -4,8 +4,9 @@ from collections.abc import Iterable
 
 from sqlalchemy import ForeignKeyConstraint, MetaData, Table
 
-from app.ingestion.failures import metadata as failed_ingestion_attempts_metadata
+from app.autopilot.models import metadata as autopilot_metadata
 from app.ingestion.beets_mirror import metadata as beets_mirror_metadata
+from app.ingestion.failures import metadata as failed_ingestion_attempts_metadata
 from app.links.store import metadata as links_metadata
 from app.local_dedupe.models import metadata as local_dedupe_metadata
 from app.local_tracks.store import metadata as local_tracks_metadata
@@ -48,6 +49,7 @@ def _app_tables() -> Iterable[Table]:
         settings_metadata,
         sonic_metadata,
         soulseek_metadata,
+        autopilot_metadata,
         local_dedupe_metadata,
         m3u_metadata,
         failed_ingestion_attempts_metadata,
@@ -112,8 +114,30 @@ def _add_foreign_keys(metadata: MetaData) -> None:
                 "fk_soulseek_acquisitions_final_link_id_final_links",
                 "SET NULL",
             ),
+            (
+                "automation_run_id",
+                "autopilot_runs.id",
+                "fk_soulseek_acquisitions_automation_run_id_autopilot_runs",
+                "SET NULL",
+            ),
         ),
         "soulseek_candidates": (("acquisition_id", "soulseek_acquisitions.id"),),
+        "playlist_generation_recipes": (
+            (
+                "last_run_id",
+                "playlist_generation_runs.id",
+                "fk_generation_recipes_last_run_id_generation_runs",
+                "SET NULL",
+            ),
+        ),
+        "playlist_generation_runs": (
+            (
+                "recipe_id",
+                "playlist_generation_recipes.id",
+                "fk_generation_runs_recipe_id_generation_recipes",
+                "SET NULL",
+            ),
+        ),
         "generated_playlists": (
             ("run_id", "playlist_generation_runs.id"),
             (
@@ -129,6 +153,44 @@ def _add_foreign_keys(metadata: MetaData) -> None:
                 "fk_generated_playlist_tracks_generated_playlist_id_generated_playlists",
             ),
             ("local_track_id", "local_tracks.id"),
+        ),
+        "autopilot_run_items": (
+            (
+                "run_id",
+                "autopilot_runs.id",
+                "fk_autopilot_run_items_run_id_autopilot_runs",
+                "CASCADE",
+            ),
+            (
+                "playlist_id",
+                "streaming_playlists.id",
+                "fk_autopilot_run_items_playlist_id_streaming_playlists",
+                "SET NULL",
+            ),
+            (
+                "streaming_track_id",
+                "streaming_tracks.id",
+                "fk_autopilot_run_items_streaming_track_id_streaming_tracks",
+                "SET NULL",
+            ),
+            (
+                "acquisition_id",
+                "soulseek_acquisitions.id",
+                "fk_autopilot_run_items_acquisition_id_soulseek_acquisitions",
+                "SET NULL",
+            ),
+            (
+                "recipe_id",
+                "playlist_generation_recipes.id",
+                "fk_autopilot_run_items_recipe_id_playlist_generation_recipes",
+                "SET NULL",
+            ),
+            (
+                "candidate_id",
+                "soulseek_candidates.id",
+                "fk_autopilot_run_items_candidate_id_soulseek_candidates",
+                "SET NULL",
+            ),
         ),
     }
     for table_name, constraints in foreign_keys.items():

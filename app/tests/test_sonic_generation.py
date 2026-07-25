@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from sqlalchemy import create_engine
-
 from app.ingestion.beets_mirror import metadata as beets_metadata
 from app.links.store import metadata as links_metadata
 from app.local_tracks.store import metadata as local_tracks_metadata
@@ -18,11 +16,14 @@ from app.sonic.models import (
     SONIC_ANALYZER_LIBROSA_V1,
     SONIC_FEATURE_STATUS_FAILED,
     SONIC_FEATURE_STATUS_PENDING,
+)
+from app.sonic.models import (
     metadata as sonic_metadata,
 )
 from app.sonic.profiles import resolve_feature_profile
 from app.sonic.store import SonicReadyTrack, SonicStore
 from app.streaming.models import metadata as streaming_metadata
+from sqlalchemy import create_engine
 from tests.factories import TestDataFactory
 
 
@@ -205,7 +206,9 @@ def test_dj_hierarchical_auto_k_selects_target_sized_clusters() -> None:
 
         assert len(drafts) == cluster_count
         assert [len(draft["track_ids"]) for draft in drafts] == [8] * cluster_count
-        assert all(draft["summary"]["naming"]["discriminators"] for draft in drafts)
+        assert all(
+            draft["summary"]["sequencing"]["intent"] == "smooth_mix" for draft in drafts
+        )
 
 
 def test_dj_hierarchical_keeps_weak_non_forced_split_as_single_playlist() -> None:
@@ -232,24 +235,21 @@ def test_dj_hierarchical_keeps_weak_non_forced_split_as_single_playlist() -> Non
     assert len(drafts[0]["track_ids"]) == 16
 
 
-def test_dj_hierarchical_names_use_relative_sibling_discriminators() -> None:
+def test_dj_hierarchical_names_are_intrinsic_with_relative_evidence_only() -> None:
     drafts = generate_playlist_tree(
         _separated_dj_tracks(4, tracks_per_cluster=8),
         _dj_hierarchical_config(target_playlist_size=8),
     )
     names = [draft["name"] for draft in drafts]
-    leading_labels = [name.split(" / ", maxsplit=1)[0] for name in names]
-
     assert len(names) == len({name.casefold() for name in names})
-    assert len(leading_labels) == len(set(leading_labels))
     assert all(
         draft["summary"]["naming"]["discriminators"]
         == draft["summary"]["name_components"]["differentiators"]
         for draft in drafts
     )
-    assert any(
-        "Slowest" in leading_label or "Fastest" in leading_label
-        for leading_label in leading_labels
+    assert not any(
+        name.startswith(("Slowest", "Fastest", "Highest Energy", "Lowest Energy"))
+        for name in names
     )
 
 
@@ -329,7 +329,7 @@ def test_generate_playlist_tree_parent_labels_use_style_and_bpm_range() -> None:
 
     drafts = generate_playlist_tree(tracks, {"max_depth": 1})
 
-    assert drafts[0]["name"] == "Ambient Dub / 84-102 BPM"
+    assert drafts[0]["name"] == "Ambient Dub / Warm-up / 84-102 BPM"
     assert drafts[0]["summary"]["bpm"] == {
         "average": 93.0,
         "count": 4,
@@ -378,7 +378,7 @@ def test_playlist_name_child_labels_use_dj_role_and_traits() -> None:
         used_names=set(),
     )
 
-    assert name == "Warm-up / Low Energy + Warm"
+    assert name == "Ambient Dub / Warm-up / 84-102 BPM"
     assert debug["components"]["role"] == "Warm-up"
     assert debug["components"]["traits"] == ["Warm"]
     assert debug["components"]["energy"]["band"] == "Low Energy"
@@ -461,12 +461,8 @@ def test_generate_playlist_tree_names_surface_sibling_differentiators() -> None:
 
     assert len(drafts) == 2
     assert all(draft["summary"]["sibling_differentiators"] for draft in drafts)
-    assert any(
-        "Fastest" in name or "Highest Energy" in name or "Brightest" in name
-        for name in names
-    )
-    assert any(
-        "Slowest" in name or "Lowest Energy" in name or "Warmest" in name
+    assert not any(
+        name.startswith(("Fastest", "Slowest", "Highest Energy", "Lowest Energy"))
         for name in names
     )
 
@@ -571,7 +567,7 @@ def test_generate_playlist_tree_names_require_dominant_tags() -> None:
         SonicReadyTrack(
             descriptors={"tempo_bpm": 90.0},
             local_track_id=index,
-            tag_values=("ambient dub",) if index <= 2 else (),
+            tag_values=("ambient dub",) if index <= 4 else (),
             vector=[90.0],
         )
         for index in range(1, 6)
@@ -586,7 +582,7 @@ def test_generate_playlist_tree_names_require_dominant_tags() -> None:
     assert sparse_drafts[0]["summary"]["name_components"]["style"] is None
     assert sparse_drafts[0]["name"] == "90 BPM / Low Energy"
     assert dominant_drafts[0]["summary"]["name_components"]["style"] == "Ambient Dub"
-    assert dominant_drafts[0]["name"] == "Ambient Dub / 90 BPM"
+    assert dominant_drafts[0]["name"] == "Ambient Dub / Warm-up / 90 BPM"
 
 
 def test_generate_playlist_tree_fallback_names_without_tags_are_dj_useful() -> None:
@@ -632,7 +628,7 @@ def test_generate_playlist_tree_does_not_use_artist_or_title_as_primary_name() -
     )
 
 
-def test_playlist_name_uses_parent_context_before_numeric_suffix() -> None:
+def test_playlist_name_uses_stable_suffix_instead_of_parent_context() -> None:
     name, debug = _playlist_name(
         {
             "common_tags": [],
@@ -648,8 +644,8 @@ def test_playlist_name_uses_parent_context_before_numeric_suffix() -> None:
         used_names={"bright", "dj utility split"},
     )
 
-    assert name == "Bright / Warm Open"
-    assert debug["strategy"] == "dj_utility_contextual_parent"
+    assert name == "DJ Utility Split 2"
+    assert debug["strategy"] == "dj_utility_numeric_suffix"
 
 
 def test_generate_playlist_tree_falls_back_without_name_signals() -> None:
@@ -841,6 +837,19 @@ def test_playlist_generation_job_excludes_incompatible_features(
         local_track_id=incompatible_track_id,
         vector_json=[90.0, 0.2],
     )
+    additional_ready_ids = []
+    for beets_id in range(3, 6):
+        local_track_id = factory.local_track(
+            beets_id=beets_id,
+            file_path=f"Ready-{beets_id}.mp3",
+        )
+        additional_ready_ids.append(local_track_id)
+        factory.beets_item(beets_id=beets_id, title=f"Ready {beets_id}", artist="A")
+        factory.sonic_track_feature(
+            descriptor_json={"tempo_bpm": 118.0 + beets_id, "rms_mean": 0.5},
+            local_track_id=local_track_id,
+            vector_json=[118.0 + beets_id, 0.5],
+        )
     run_id = factory.playlist_generation_run(
         generation_config_json={
             "clustering_method": "kmeans",
@@ -863,19 +872,21 @@ def test_playlist_generation_job_excludes_incompatible_features(
     playlists = store.list_generated_playlists(run_id=run_id)
 
     assert run is not None
-    assert run.track_count == 1
+    assert run.track_count == 4
     assert playlists[0].summary_json["source_summary"] == {
+        "current_feature_count": 0,
         "failed_feature_count": 0,
+        "legacy_descriptor_feature_count": 4,
         "missing_feature_count": 0,
         "pending_feature_count": 0,
-        "ready_track_count": 1,
+        "ready_track_count": 4,
         "skipped_track_count": 1,
-        "source_track_count": 2,
+        "source_track_count": 5,
     }
-    assert [
+    assert {
         track.local_track_id
         for track in store.list_generated_playlist_tracks(playlists[0].id)
-    ] == [ready_track_id]
+    } == {ready_track_id, *additional_ready_ids}
 
 
 def test_generated_playlist_can_be_exported_as_m3u(tmp_path) -> None:

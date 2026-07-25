@@ -6,6 +6,7 @@ from datetime import datetime
 from sqlalchemy import (
     BigInteger,
     Boolean,
+    CheckConstraint,
     Column,
     DateTime,
     Float,
@@ -16,8 +17,8 @@ from sqlalchemy import (
     Table,
     Text,
     func,
+    text,
 )
-
 
 SOULSEEK_STATUS_SEARCHING = "searching"
 SOULSEEK_STATUS_CANDIDATES_FOUND = "candidates_found"
@@ -47,6 +48,10 @@ SOULSEEK_STATUSES = (
 SOULSEEK_QUEUE_NAME = "soulseek"
 SOULSEEK_SEARCH_TIMEOUT_SECONDS = 15
 SOULSEEK_BULK_SEARCH_LIMIT = 25
+SOULSEEK_VERIFICATION_PENDING = "pending"
+SOULSEEK_VERIFICATION_VERIFIED = "verified"
+SOULSEEK_VERIFICATION_REVIEW = "review"
+SOULSEEK_VERIFICATION_FAILED = "failed"
 
 metadata = MetaData()
 
@@ -73,6 +78,11 @@ soulseek_acquisitions_table = Table(
     Column("refresh_job_id", String, nullable=True),
     Column("error_detail", Text, nullable=True),
     Column("link_error_detail", Text, nullable=True),
+    Column("automation_run_id", String, nullable=True),
+    Column("unattended", Boolean, nullable=False, server_default=text("false")),
+    Column("verification_status", String, nullable=True),
+    Column("verification_detail", Text, nullable=True),
+    Column("verified_at", DateTime(timezone=True), nullable=True),
     Column("searched_at", DateTime(timezone=True), nullable=True),
     Column("queued_at", DateTime(timezone=True), nullable=True),
     Column("completed_at", DateTime(timezone=True), nullable=True),
@@ -90,6 +100,11 @@ soulseek_acquisitions_table = Table(
     Index("ix_soulseek_acquisitions_status", "status"),
     Index("ix_soulseek_acquisitions_local_track_id", "local_track_id"),
     Index("ix_soulseek_acquisitions_completed_source_path", "completed_source_path"),
+    CheckConstraint(
+        "verification_status IS NULL OR verification_status IN "
+        "('pending', 'verified', 'review', 'failed')",
+        name="ck_soulseek_acquisitions_verification_status",
+    ),
 )
 
 soulseek_candidates_table = Table(
@@ -111,6 +126,9 @@ soulseek_candidates_table = Table(
     Column("queue_length", BigInteger, nullable=True),
     Column("upload_speed", Integer, nullable=True),
     Column("score", Float, nullable=False),
+    Column("identity_confidence", Float, nullable=True),
+    Column("version_confidence", Float, nullable=True),
+    Column("quality_score", Float, nullable=True),
     Column(
         "created_at", DateTime(timezone=True), server_default=func.now(), nullable=False
     ),
@@ -155,6 +173,11 @@ class SoulseekAcquisitionRecord:
     refresh_job_id: str | None
     error_detail: str | None
     link_error_detail: str | None
+    automation_run_id: str | None
+    unattended: bool
+    verification_status: str | None
+    verification_detail: str | None
+    verified_at: datetime | None
     searched_at: datetime | None
     queued_at: datetime | None
     completed_at: datetime | None
@@ -184,6 +207,9 @@ class SoulseekCandidateRecord:
     queue_length: int | None
     upload_speed: int | None
     score: float
+    identity_confidence: float | None
+    version_confidence: float | None
+    quality_score: float | None
     created_at: datetime
 
 

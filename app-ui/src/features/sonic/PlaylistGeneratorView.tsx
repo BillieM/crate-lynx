@@ -11,6 +11,7 @@ import {
   Minus,
   Plus,
   RotateCcw,
+  Save,
   SlidersHorizontal,
   Trash2,
   Undo2,
@@ -27,28 +28,45 @@ import { StatusMessage } from "../../components/StatusMessage";
 import { formatPlaylistTimestamp } from "../../lib/formatters";
 import { setSessionDraftCodec, useSessionDraftState } from "../../lib/useSessionDraftState";
 import { controlClasses, layoutClasses, surfaceClasses, textClasses } from "../../styles/componentClasses";
-import { type StreamingPlaylist, useStreamingPlaylistsQuery } from "../playlists/queries";
+import {
+  type M3uExportProfile,
+  type StreamingPlaylist,
+  useM3uExportProfilesQuery,
+  useStreamingPlaylistsQuery,
+} from "../playlists/queries";
 import { shellSummaryInvalidationKeys } from "../shell/queries";
 import {
   backfillSonicFeatures,
   createPlaylistGenerationRun,
   sonicQueryKeys,
   type PlaylistGenerationProjection,
+  type PlaylistGenerationRecipe,
   type PlaylistGenerationRun,
   type PlaylistGenerationConfig,
+  type SavePlaylistGenerationRecipeRequest,
+  type SequenceIntent,
   type SonicTagFilter,
+  type SonicPreviewPlaylist,
+  type SonicPreviewTrack,
+  useCreatePlaylistGenerationRecipeMutation,
+  useDeletePlaylistGenerationRecipeMutation,
+  usePlaylistGenerationRecipesQuery,
+  useRegeneratePlaylistGenerationRecipeMutation,
   useSonicFeatureSummaryQuery,
   useSonicGenerationPreviewQuery,
   useDeleteSelectedPlaylistGenerationRunsMutation,
   useSonicRunsQuery,
+  useUpdatePlaylistGenerationRecipeMutation,
 } from "./queries";
 
 const emptyStreamingPlaylists: StreamingPlaylist[] = [];
 const emptyGenerationRuns: PlaylistGenerationRun[] = [];
+const emptyRecipes: PlaylistGenerationRecipe[] = [];
+const emptyExportProfiles: M3uExportProfile[] = [];
 const runColumnHelper = createColumnHelper<PlaylistGenerationRun>();
 const sonicBackfillLimit = 500;
 const numberSetSessionDraftCodec = setSessionDraftCodec<number>();
-const generatorDraftKey = (field: string) => `crate-lynx:playlist-generator:v1:${field}`;
+const generatorDraftKey = (field: string) => `crate-lynx:playlist-generator:v2:${field}`;
 
 type SourceType = "all_local" | "streaming_playlists";
 type ClusteringMethod = PlaylistGenerationConfig["clustering_method"];
@@ -58,10 +76,17 @@ type NamingStrategy = PlaylistGenerationConfig["naming_strategy"];
 type OrderingStrategy = PlaylistGenerationConfig["ordering_strategy"];
 type OutputScope = PlaylistGenerationConfig["output_scope"];
 type PresetKey = PlaylistGenerationConfig["preset_key"];
+type SemanticMode = PlaylistGenerationConfig["semantic_mode"];
 type TempoMode = PlaylistGenerationConfig["tempo_mode"];
 type NumericConfigKey = "maxChildren" | "maxDepth" | "minPlaylistSize" | "randomSeed" | "targetPlaylistSize";
 type NumericDrafts = Record<NumericConfigKey, string>;
 type NumericValues = Record<NumericConfigKey, number>;
+
+type RecipeMutationStatus = {
+  body: string;
+  status: "error" | "success";
+  title: string;
+};
 
 type RunBulkStatus = {
   body: string;
@@ -89,6 +114,28 @@ const defaultTagFilter: SonicTagFilter = {
   value: "",
 };
 const previewDebounceMs = 300;
+const sequenceIntentOptions = [
+  {
+    description: "Prioritise small tempo, energy, and harmonic transitions where the evidence is reliable.",
+    label: "Smooth mix",
+    value: "smooth_mix",
+  },
+  {
+    description: "Build steadily from lower-energy selections toward a stronger finish.",
+    label: "Rising energy",
+    value: "rising_energy",
+  },
+  {
+    description: "Shape a patient opening, controlled build, and a clear peak.",
+    label: "Warm-up to peak",
+    value: "warm_up_to_peak",
+  },
+  {
+    description: "Balance contrast and repetition for varied everyday listening.",
+    label: "Varied listening",
+    value: "varied_listening",
+  },
+] satisfies Array<{ description: string; label: string; value: SequenceIntent }>;
 
 const fallbackNumericValues: NumericValues = {
   maxChildren: 4,
@@ -148,14 +195,14 @@ const numericFieldSpecs: Record<
 const generationPresets: GenerationPreset[] = [
   {
     clusteringMethod: "dj_hierarchical_v1",
-    description: "Balanced tree for browsable DJ crates.",
+    description: "Balanced mix-ready crates, with leaf playlists as the default output.",
     diversityMode: "balanced_v1",
     featureProfile: "balanced_v1",
     key: "dj_crate_tree_v1",
-    label: "DJ crate tree",
+    label: "Mix-ready crates",
     namingStrategy: "dj_utility_v1",
     orderingStrategy: "profile_nearest_neighbor_rolling_v2",
-    outputScope: "tree_v1",
+    outputScope: "leaf_only_v1",
     tempoMode: "mixable_v1",
   },
   {
@@ -167,7 +214,7 @@ const generationPresets: GenerationPreset[] = [
     label: "Set builder",
     namingStrategy: "functional_slot_v1",
     orderingStrategy: "profile_nearest_neighbor_rolling_v2",
-    outputScope: "tree_v1",
+    outputScope: "leaf_only_v1",
     tempoMode: "mixable_v1",
   },
   {
@@ -184,14 +231,14 @@ const generationPresets: GenerationPreset[] = [
   },
   {
     clusteringMethod: "agglomerative",
-    description: "Style/tag-forward collections with descriptive names.",
+    description: "Acoustic texture collections with conservative, evidence-backed names.",
     diversityMode: "balanced_v1",
     featureProfile: "texture_v1",
     key: "metadata_collections_v1",
-    label: "Metadata collections",
+    label: "Texture collections",
     namingStrategy: "metadata_tagline_v1",
     orderingStrategy: "center_out_v1",
-    outputScope: "tree_v1",
+    outputScope: "leaf_only_v1",
     tempoMode: "raw_v1",
   },
   {
@@ -229,9 +276,13 @@ export function PlaylistGeneratorView() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const featureSummaryQuery = useSonicFeatureSummaryQuery();
+  const exportProfilesQuery = useM3uExportProfilesQuery();
   const playlistsQuery = useStreamingPlaylistsQuery();
+  const recipesQuery = usePlaylistGenerationRecipesQuery();
   const runsQuery = useSonicRunsQuery();
   const playlists = playlistsQuery.data?.playlists ?? emptyStreamingPlaylists;
+  const exportProfiles = exportProfilesQuery.data?.profiles ?? emptyExportProfiles;
+  const recipes = recipesQuery.data?.recipes ?? emptyRecipes;
   const generationRuns = runsQuery.data?.runs ?? emptyGenerationRuns;
   const [sourceType, setSourceType] = useSessionDraftState<SourceType>(generatorDraftKey("source-type"), "all_local");
   const [selectedPlaylistIds, setSelectedPlaylistIds] = useSessionDraftState<Set<number>>(
@@ -244,6 +295,17 @@ export function PlaylistGeneratorView() {
   const [runSorting, setRunSorting] = useState<SortingState>([]);
   const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
   const [bulkDeleteStatus, setBulkDeleteStatus] = useState<RunBulkStatus | null>(null);
+  const [recipeName, setRecipeName] = useState("");
+  const [editingRecipeId, setEditingRecipeId] = useState<number | null>(null);
+  const [recipeEnabled, setRecipeEnabled] = useState(true);
+  const [recipeRegenerateOnChange, setRecipeRegenerateOnChange] = useState(true);
+  const [recipeAutoExport, setRecipeAutoExport] = useState(false);
+  const [recipeExportProfileId, setRecipeExportProfileId] = useState<number | null>(null);
+  const [recipeMutationStatus, setRecipeMutationStatus] = useState<RecipeMutationStatus | null>(null);
+  const [sequenceIntent, setSequenceIntent] = useSessionDraftState<SequenceIntent>(
+    generatorDraftKey("sequence-intent"),
+    "smooth_mix",
+  );
   const [presetKey, setPresetKey] = useSessionDraftState<PresetKey>(generatorDraftKey("preset"), "dj_crate_tree_v1");
   const [clusteringMethod, setClusteringMethod] = useSessionDraftState<ClusteringMethod>(
     generatorDraftKey("clustering-method"),
@@ -257,7 +319,18 @@ export function PlaylistGeneratorView() {
   );
   const [diversityMode, setDiversityMode] = useSessionDraftState<DiversityMode>(generatorDraftKey("diversity-mode"), "balanced_v1");
   const [tempoMode, setTempoMode] = useSessionDraftState<TempoMode>(generatorDraftKey("tempo-mode"), "mixable_v1");
-  const [outputScope, setOutputScope] = useSessionDraftState<OutputScope>(generatorDraftKey("output-scope"), "tree_v1");
+  const [semanticMode, setSemanticMode] = useSessionDraftState<SemanticMode>(
+    generatorDraftKey("semantic-mode"),
+    "off",
+  );
+  const [semanticWeight, setSemanticWeight] = useSessionDraftState(
+    generatorDraftKey("semantic-weight"),
+    0.15,
+  );
+  const [outputScope, setOutputScope] = useSessionDraftState<OutputScope>(
+    generatorDraftKey("output-scope"),
+    "leaf_only_v1",
+  );
   const [numericDrafts, setNumericDrafts] = useSessionDraftState<NumericDrafts>(
     generatorDraftKey("numeric-values"),
     () => numericValuesToDrafts(fallbackNumericValues),
@@ -307,6 +380,9 @@ export function PlaylistGeneratorView() {
       output_scope: outputScope,
       preset_key: presetKey,
       random_seed: numericValues.randomSeed,
+      semantic_mode: semanticMode,
+      semantic_weight: semanticWeight,
+      sequencing_intent: sequenceIntent,
       target_playlist_size: numericValues.targetPlaylistSize,
       tempo_mode: tempoMode,
     }),
@@ -319,6 +395,9 @@ export function PlaylistGeneratorView() {
       orderingStrategy,
       outputScope,
       presetKey,
+      semanticMode,
+      semanticWeight,
+      sequenceIntent,
       tempoMode,
     ],
   );
@@ -339,6 +418,13 @@ export function PlaylistGeneratorView() {
   );
   const previewQuery = useSonicGenerationPreviewQuery(previewPayload, !sourceIsInvalid);
   const previewIsSettling = sourceFilter !== debouncedPreviewSourceFilter;
+  useEffect(() => {
+    if (recipeExportProfileId !== null || exportProfiles.length === 0) {
+      return;
+    }
+    const defaultProfile = exportProfiles.find((profile) => profile.is_default) ?? exportProfiles[0];
+    setRecipeExportProfileId(defaultProfile.id);
+  }, [exportProfiles, recipeExportProfileId]);
   useEffect(() => {
     if (!numericDefaultsAreAdaptive) {
       return;
@@ -369,6 +455,10 @@ export function PlaylistGeneratorView() {
     },
   });
   const deleteSelectedRunsMutation = useDeleteSelectedPlaylistGenerationRunsMutation();
+  const createRecipeMutation = useCreatePlaylistGenerationRecipeMutation();
+  const updateRecipeMutation = useUpdatePlaylistGenerationRecipeMutation();
+  const deleteRecipeMutation = useDeletePlaylistGenerationRecipeMutation();
+  const regenerateRecipeMutation = useRegeneratePlaylistGenerationRecipeMutation();
   const selectedRunIds = useMemo(
     () =>
       generationRuns
@@ -498,6 +588,164 @@ export function PlaylistGeneratorView() {
     );
   }
 
+  function buildRecipePayload(): SavePlaylistGenerationRecipeRequest {
+    return {
+      enabled: recipeEnabled,
+      export_config: recipeAutoExport
+        ? {
+            enabled: true,
+            formats: ["m3u8"],
+            path_format: "absolute",
+            profile_id: recipeExportProfileId,
+            scope: "leaf_only",
+          }
+        : null,
+      generation_config: generationConfig,
+      name: recipeName.trim(),
+      regenerate_on_change: recipeRegenerateOnChange,
+      source_filter: sourceFilter,
+    };
+  }
+
+  function resetRecipeEditor() {
+    setEditingRecipeId(null);
+    setRecipeName("");
+    setRecipeEnabled(true);
+    setRecipeRegenerateOnChange(true);
+    setRecipeAutoExport(false);
+  }
+
+  function handleSaveRecipe() {
+    if (!recipeName.trim() || sourceIsInvalid) {
+      return;
+    }
+
+    setRecipeMutationStatus(null);
+    const payload = buildRecipePayload();
+    const callbacks = {
+      onError: () => {
+        setRecipeMutationStatus({
+          body: "The saved recipe could not be written.",
+          status: "error" as const,
+          title: "Recipe save failed",
+        });
+      },
+      onSuccess: (savedRecipe: PlaylistGenerationRecipe) => {
+        resetRecipeEditor();
+        setRecipeMutationStatus({
+          body: `${savedRecipe.name} is ready to regenerate against the latest eligible library.`,
+          status: "success" as const,
+          title: editingRecipeId === null ? "Recipe saved" : "Recipe updated",
+        });
+      },
+    };
+
+    if (editingRecipeId === null) {
+      createRecipeMutation.mutate(payload, callbacks);
+      return;
+    }
+
+    updateRecipeMutation.mutate({ payload, recipeId: editingRecipeId }, callbacks);
+  }
+
+  function loadRecipe(recipe: PlaylistGenerationRecipe) {
+    const config = recipe.generation_config;
+    const recipeSource = recipe.source_filter;
+    const sourceTypeValue = recipeSource.source_type;
+    const playlistIds = recipeSource.streaming_playlist_ids;
+    const filters = recipeSource.tag_filters;
+
+    setEditingRecipeId(recipe.id);
+    setRecipeName(recipe.name);
+    setRecipeEnabled(recipe.enabled);
+    setRecipeRegenerateOnChange(recipe.regenerate_on_change);
+    setRecipeAutoExport(Boolean(recipe.export_config?.enabled));
+    setRecipeExportProfileId(
+      typeof recipe.export_config?.profile_id === "number" ? recipe.export_config.profile_id : null,
+    );
+    setSourceType(sourceTypeValue === "streaming_playlists" ? "streaming_playlists" : "all_local");
+    setSelectedPlaylistIds(
+      new Set(Array.isArray(playlistIds) ? playlistIds.filter((id): id is number => typeof id === "number") : []),
+    );
+    setTagFilters(
+      Array.isArray(filters)
+        ? filters.filter(
+            (filter): filter is SonicTagFilter =>
+              typeof filter === "object" &&
+              filter !== null &&
+              typeof (filter as Record<string, unknown>).key === "string" &&
+              typeof (filter as Record<string, unknown>).value === "string",
+          )
+        : [],
+    );
+    setSequenceIntent(readStringOption(config.sequencing_intent, sequenceIntentOptions, "smooth_mix"));
+    setPresetKey(readStringValue(config.preset_key, "dj_crate_tree_v1") as PresetKey);
+    setClusteringMethod(readStringValue(config.clustering_method, "dj_hierarchical_v1") as ClusteringMethod);
+    setFeatureProfile(readStringValue(config.feature_profile, "balanced_v1") as FeatureProfile);
+    setNamingStrategy(readStringValue(config.naming_strategy, "dj_utility_v1") as NamingStrategy);
+    setOrderingStrategy(
+      readStringValue(config.ordering_strategy, "profile_nearest_neighbor_rolling_v2") as OrderingStrategy,
+    );
+    setDiversityMode(readStringValue(config.diversity_mode, "balanced_v1") as DiversityMode);
+    setSemanticMode(readStringValue(config.semantic_mode, "off") as SemanticMode);
+    setSemanticWeight(readNumberValue(config.semantic_weight, 0.15));
+    setTempoMode(readStringValue(config.tempo_mode, "mixable_v1") as TempoMode);
+    setOutputScope(readStringValue(config.output_scope, "leaf_only_v1") as OutputScope);
+    setNumericDefaultsAreAdaptive(false);
+    setNumericDrafts(
+      numericValuesToDrafts({
+        maxChildren: readNumberValue(config.max_children, fallbackNumericValues.maxChildren),
+        maxDepth: readNumberValue(config.max_depth, fallbackNumericValues.maxDepth),
+        minPlaylistSize: readNumberValue(config.min_playlist_size, fallbackNumericValues.minPlaylistSize),
+        randomSeed: readNumberValue(config.random_seed, fallbackNumericValues.randomSeed),
+        targetPlaylistSize: readNumberValue(
+          config.target_playlist_size,
+          fallbackNumericValues.targetPlaylistSize,
+        ),
+      }),
+    );
+    setRecipeMutationStatus(null);
+  }
+
+  function handleRegenerateRecipe(recipe: PlaylistGenerationRecipe) {
+    setRecipeMutationStatus(null);
+    regenerateRecipeMutation.mutate(recipe.id, {
+      onError: () => {
+        setRecipeMutationStatus({
+          body: `${recipe.name} could not be queued.`,
+          status: "error",
+          title: "Regeneration failed",
+        });
+      },
+      onSuccess: (response) => {
+        navigate(`/generated-runs/${response.run_id}`);
+      },
+    });
+  }
+
+  function handleDeleteRecipe(recipe: PlaylistGenerationRecipe) {
+    setRecipeMutationStatus(null);
+    deleteRecipeMutation.mutate(recipe.id, {
+      onError: () => {
+        setRecipeMutationStatus({
+          body: `${recipe.name} could not be deleted.`,
+          status: "error",
+          title: "Recipe delete failed",
+        });
+      },
+      onSuccess: () => {
+        if (editingRecipeId === recipe.id) {
+          resetRecipeEditor();
+        }
+        setRecipeMutationStatus({
+          body: `${recipe.name} was deleted. Existing immutable runs were left untouched.`,
+          status: "success",
+          title: "Recipe deleted",
+        });
+      },
+    });
+  }
+
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (sourceType === "streaming_playlists" && selectedPlaylistIdList.length === 0) {
@@ -597,7 +845,10 @@ export function PlaylistGeneratorView() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className={textClasses.sectionTitle}>Playlist generator</h2>
-          <p className={`mt-1 ${textClasses.bodyMuted}`}>{summary.ready_tracks.toLocaleString()} tracks ready</p>
+          <p className={`mt-1 ${textClasses.bodyMuted}`}>
+            Choose how the music should flow, preview the real proposed crates, then generate or save the setup as
+            a reusable recipe.
+          </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <ActionButton
@@ -622,6 +873,39 @@ export function PlaylistGeneratorView() {
         <StatusMessage body="Selected source has no compatible analyzed tracks." status="pending" title="No ready tracks" />
       ) : null}
       {createRunMutation.isError ? <StatusMessage body="Generation run could not be queued." status="error" title="Generation failed" /> : null}
+      {recipesQuery.isError ? (
+        <StatusMessage
+          body="Saved recipes could not be loaded. One-off preview and generation remain available."
+          status="error"
+          title="Recipes unavailable"
+        />
+      ) : null}
+
+      <SavedRecipesPanel
+        autoExport={recipeAutoExport}
+        editingRecipeId={editingRecipeId}
+        enabled={recipeEnabled}
+        isDeleting={deleteRecipeMutation.isPending}
+        isRegenerating={regenerateRecipeMutation.isPending}
+        isSaving={createRecipeMutation.isPending || updateRecipeMutation.isPending}
+        mutationStatus={recipeMutationStatus}
+        name={recipeName}
+        onAutoExportChange={setRecipeAutoExport}
+        onCancelEdit={resetRecipeEditor}
+        onDelete={handleDeleteRecipe}
+        onEdit={loadRecipe}
+        onEnabledChange={setRecipeEnabled}
+        onExportProfileChange={setRecipeExportProfileId}
+        onNameChange={setRecipeName}
+        onRegenerate={handleRegenerateRecipe}
+        onRegenerateOnChangeChange={setRecipeRegenerateOnChange}
+        onSave={handleSaveRecipe}
+        recipes={recipes}
+        regenerateOnChange={recipeRegenerateOnChange}
+        saveDisabled={!recipeName.trim() || sourceIsInvalid || (recipeAutoExport && recipeExportProfileId === null)}
+        selectedExportProfileId={recipeExportProfileId}
+        exportProfiles={exportProfiles}
+      />
 
       <section className={`${surfaceClasses.compactCard} grid gap-3`} aria-label="Source filters">
         <div className="flex items-center gap-2 text-ctp-subtext0">
@@ -724,13 +1008,47 @@ export function PlaylistGeneratorView() {
       <section className={`${surfaceClasses.compactCard} grid gap-3`} aria-label="Generation parameters">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h3 className={textClasses.label}>Generation</h3>
-            <p className={`mt-1 ${textClasses.caption}`}>{activePreset.description}</p>
+            <h3 className={textClasses.label}>Musical flow</h3>
+            <p className={`mt-1 ${textClasses.caption}`}>
+              Grouping finds compatible tracks; this separate intent decides the order inside each proposed crate.
+            </p>
           </div>
           <ActionButton className={controlClasses.actionButtonCompact} onClick={resetAdaptiveDefaults} type="button">
             <RotateCcw aria-hidden="true" className="h-3.5 w-3.5" strokeWidth={1.9} />
             Reset defaults
           </ActionButton>
+        </div>
+
+        <fieldset className="grid gap-2">
+          <legend className={textClasses.label}>Sequencing intent</legend>
+          <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-4">
+            {sequenceIntentOptions.map((option) => {
+              const isSelected = sequenceIntent === option.value;
+              return (
+                <button
+                  aria-pressed={isSelected}
+                  className={`${surfaceClasses.rowCardCompact} text-left transition-colors ${
+                    isSelected
+                      ? "border-ctp-mauve/60 bg-ctp-mauve/10 ring-1 ring-ctp-mauve/20"
+                      : "hover:border-ctp-surface2"
+                  }`}
+                  key={option.value}
+                  onClick={() => setSequenceIntent(option.value)}
+                  type="button"
+                >
+                  <span className={`block ${textClasses.title}`}>{option.label}</span>
+                  <span className={`mt-1 block ${textClasses.caption}`}>{option.description}</span>
+                </button>
+              );
+            })}
+          </div>
+        </fieldset>
+
+        <div className="flex items-start justify-between gap-3 border-t border-ctp-surface1 pt-3">
+          <div>
+            <h3 className={textClasses.label}>Grouping recipe</h3>
+            <p className={`mt-1 ${textClasses.caption}`}>{activePreset.description}</p>
+          </div>
         </div>
 
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
@@ -841,7 +1159,7 @@ export function PlaylistGeneratorView() {
         </button>
 
         {advancedOpen ? (
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-7">
             <label className="grid gap-1.5">
               <span className={textClasses.label}>Ordering</span>
               <select
@@ -878,6 +1196,34 @@ export function PlaylistGeneratorView() {
               </select>
             </label>
             <label className="grid gap-1.5">
+              <span className={textClasses.label}>Semantic audio</span>
+              <select
+                className={`${controlClasses.controlRadius} min-h-10 border border-ctp-surface1 bg-ctp-surface0 px-3 text-ctp-text outline-none ${textClasses.input}`}
+                onChange={(event) => setSemanticMode(event.target.value as SemanticMode)}
+                value={semanticMode}
+              >
+                <option value="off">Descriptors only</option>
+                <option value="auto">Use when available</option>
+              </select>
+            </label>
+            <label className="grid gap-1.5">
+              <span className={textClasses.label}>Semantic weight</span>
+              <input
+                className={`${controlClasses.controlRadius} min-h-10 border border-ctp-surface1 bg-ctp-surface0 px-3 text-ctp-text outline-none ${textClasses.input}`}
+                max={1}
+                min={0}
+                onChange={(event) => {
+                  const nextValue = Number(event.currentTarget.value);
+                  if (Number.isFinite(nextValue)) {
+                    setSemanticWeight(Math.max(0, Math.min(1, nextValue)));
+                  }
+                }}
+                step={0.05}
+                type="number"
+                value={semanticWeight}
+              />
+            </label>
+            <label className="grid gap-1.5">
               <span className={textClasses.label}>Output</span>
               <select
                 className={`${controlClasses.controlRadius} min-h-10 border border-ctp-surface1 bg-ctp-surface0 px-3 text-ctp-text outline-none ${textClasses.input}`}
@@ -901,7 +1247,17 @@ export function PlaylistGeneratorView() {
           </div>
         ) : null}
 
-        {preview?.projection ? <GenerationProjection projection={preview.projection} /> : null}
+        {preview && (preview.playlists?.length ?? 0) > 0 ? (
+          <RealPlaylistPreview
+            confidence={preview.confidence ?? null}
+            coverage={preview.coverage ?? null}
+            playlists={preview.playlists ?? []}
+            skippedReasons={formatSkippedReasons(preview.skipped_reasons)}
+            warnings={preview.warnings ?? []}
+          />
+        ) : preview?.projection ? (
+          <GenerationProjection projection={preview.projection} />
+        ) : null}
       </section>
 
       <section className={`${surfaceClasses.compactCard} grid gap-3`} aria-label="Generated run management">
@@ -1006,6 +1362,395 @@ export function PlaylistGeneratorView() {
       </section>
     </form>
   );
+}
+
+function SavedRecipesPanel({
+  autoExport,
+  editingRecipeId,
+  enabled,
+  exportProfiles,
+  isDeleting,
+  isRegenerating,
+  isSaving,
+  mutationStatus,
+  name,
+  onAutoExportChange,
+  onCancelEdit,
+  onDelete,
+  onEdit,
+  onEnabledChange,
+  onExportProfileChange,
+  onNameChange,
+  onRegenerate,
+  onRegenerateOnChangeChange,
+  onSave,
+  recipes,
+  regenerateOnChange,
+  saveDisabled,
+  selectedExportProfileId,
+}: {
+  autoExport: boolean;
+  editingRecipeId: number | null;
+  enabled: boolean;
+  exportProfiles: M3uExportProfile[];
+  isDeleting: boolean;
+  isRegenerating: boolean;
+  isSaving: boolean;
+  mutationStatus: RecipeMutationStatus | null;
+  name: string;
+  onAutoExportChange: (value: boolean) => void;
+  onCancelEdit: () => void;
+  onDelete: (recipe: PlaylistGenerationRecipe) => void;
+  onEdit: (recipe: PlaylistGenerationRecipe) => void;
+  onEnabledChange: (value: boolean) => void;
+  onExportProfileChange: (profileId: number | null) => void;
+  onNameChange: (value: string) => void;
+  onRegenerate: (recipe: PlaylistGenerationRecipe) => void;
+  onRegenerateOnChangeChange: (value: boolean) => void;
+  onSave: () => void;
+  recipes: PlaylistGenerationRecipe[];
+  regenerateOnChange: boolean;
+  saveDisabled: boolean;
+  selectedExportProfileId: number | null;
+}) {
+  return (
+    <section className={`${surfaceClasses.compactCard} grid gap-3`} aria-label="Saved generation recipes">
+      <div>
+        <h3 className={textClasses.label}>Saved recipes</h3>
+        <p className={`mt-1 ${textClasses.caption}`}>
+          Reuse a named musical setup against the latest eligible library. Regeneration creates a new immutable run.
+        </p>
+      </div>
+
+      {mutationStatus ? (
+        <StatusMessage body={mutationStatus.body} status={mutationStatus.status} title={mutationStatus.title} />
+      ) : null}
+
+      {recipes.length > 0 ? (
+        <div className="grid gap-2 lg:grid-cols-2">
+          {recipes.map((recipe) => (
+            <article className={`${surfaceClasses.insetPanel} grid gap-2 p-3`} key={recipe.id}>
+              <div className="flex min-w-0 items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <h4 className={`truncate ${textClasses.title}`}>{recipe.name}</h4>
+                  <p className={`mt-1 ${textClasses.caption}`}>
+                    {recipe.enabled ? "Automation eligible" : "Manual only"}
+                    {recipe.regenerate_on_change ? " · regenerates after relevant changes" : ""}
+                    {recipe.export_config?.enabled ? " · leaf export refresh enabled" : ""}
+                  </p>
+                </div>
+                <Pill tone={recipe.enabled ? "success" : "neutral"}>{recipe.enabled ? "Enabled" : "Paused"}</Pill>
+              </div>
+              <p className={textClasses.finePrint}>
+                {recipe.last_run_id !== null
+                  ? `Last run #${recipe.last_run_id}${
+                      recipe.last_regenerated_at
+                        ? ` · ${formatPlaylistTimestamp(recipe.last_regenerated_at)}`
+                        : ""
+                    }`
+                  : "Not regenerated yet"}
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <ActionButton
+                  className={controlClasses.actionButtonCompact}
+                  disabled={isRegenerating}
+                  onClick={() => onRegenerate(recipe)}
+                  type="button"
+                >
+                  <RotateCcw aria-hidden="true" className="h-3.5 w-3.5" strokeWidth={1.9} />
+                  Regenerate
+                </ActionButton>
+                <ActionButton
+                  className={controlClasses.actionButtonCompact}
+                  disabled={isSaving}
+                  onClick={() => onEdit(recipe)}
+                  type="button"
+                >
+                  Load and edit
+                </ActionButton>
+                <ActionButton
+                  className={controlClasses.actionButtonCompact}
+                  disabled={isDeleting}
+                  onClick={() => onDelete(recipe)}
+                  tone="danger"
+                  type="button"
+                >
+                  <Trash2 aria-hidden="true" className="h-3.5 w-3.5" strokeWidth={1.9} />
+                  Delete
+                </ActionButton>
+              </div>
+            </article>
+          ))}
+        </div>
+      ) : (
+        <p className={textClasses.bodyMuted}>No saved recipes yet. Configure the source and musical flow below, then save it here.</p>
+      )}
+
+      <div className="grid gap-3 border-t border-ctp-surface1 pt-3 xl:grid-cols-[minmax(16rem,1fr)_auto] xl:items-end">
+        <label className="grid gap-1.5" htmlFor="generation-recipe-name">
+          <span className={textClasses.label}>{editingRecipeId === null ? "New recipe name" : "Editing recipe"}</span>
+          <span className={`${controlClasses.searchFrame} flex min-h-10 items-center gap-2 px-2.5`}>
+            <Save aria-hidden="true" className="h-4 w-4 shrink-0 text-ctp-mauve" />
+            <input
+              className={`min-w-0 flex-1 bg-transparent py-2 text-ctp-text outline-none placeholder:text-ctp-overlay1 ${textClasses.input}`}
+              id="generation-recipe-name"
+              onChange={(event) => onNameChange(event.currentTarget.value)}
+              placeholder="Friday warm-up crates"
+              type="text"
+              value={name}
+            />
+          </span>
+        </label>
+        <div className="flex flex-wrap gap-2">
+          {editingRecipeId !== null ? (
+            <ActionButton disabled={isSaving} onClick={onCancelEdit} type="button">
+              Cancel
+            </ActionButton>
+          ) : null}
+          <ActionButton disabled={saveDisabled || isSaving} onClick={onSave} type="button">
+            <Save aria-hidden="true" className="h-3.5 w-3.5" strokeWidth={1.9} />
+            {isSaving ? "Saving…" : editingRecipeId === null ? "Save recipe" : "Update recipe"}
+          </ActionButton>
+        </div>
+      </div>
+      <div className="grid gap-2 md:grid-cols-3">
+        <label className={`${surfaceClasses.insetPanel} flex items-start gap-2 p-3`}>
+          <input
+            checked={enabled}
+            className="mt-0.5 h-4 w-4 accent-ctp-mauve"
+            onChange={(event) => onEnabledChange(event.currentTarget.checked)}
+            type="checkbox"
+          />
+          <span>
+            <span className={`block ${textClasses.label}`}>Enabled</span>
+            <span className={`mt-1 block ${textClasses.caption}`}>
+              Make this recipe eligible for automatic regeneration. Manual regeneration remains available.
+            </span>
+          </span>
+        </label>
+        <label className={`${surfaceClasses.insetPanel} flex items-start gap-2 p-3`}>
+          <input
+            checked={regenerateOnChange}
+            className="mt-0.5 h-4 w-4 accent-ctp-mauve"
+            onChange={(event) => onRegenerateOnChangeChange(event.currentTarget.checked)}
+            type="checkbox"
+          />
+          <span>
+            <span className={`block ${textClasses.label}`}>Keep generated crates current</span>
+            <span className={`mt-1 block ${textClasses.caption}`}>Regenerate after relevant library changes settle.</span>
+          </span>
+        </label>
+        <label className={`${surfaceClasses.insetPanel} flex items-start gap-2 p-3`}>
+          <input
+            checked={autoExport}
+            className="mt-0.5 h-4 w-4 accent-ctp-mauve"
+            onChange={(event) => onAutoExportChange(event.currentTarget.checked)}
+            type="checkbox"
+          />
+          <span>
+            <span className={`block ${textClasses.label}`}>Refresh configured exports</span>
+            <span className={`mt-1 block ${textClasses.caption}`}>
+              Export leaf playlists only, avoiding redundant parent and child copies.
+            </span>
+          </span>
+        </label>
+      </div>
+      {autoExport ? (
+        <div className={`${surfaceClasses.insetPanel} grid gap-2 p-3 md:grid-cols-[minmax(14rem,1fr)_2fr] md:items-center`}>
+          <label className="grid gap-1.5" htmlFor="generation-recipe-export-profile">
+            <span className={textClasses.label}>Automatic export profile</span>
+            <select
+              className={`${controlClasses.controlRadius} min-h-10 border border-ctp-surface1 bg-ctp-surface0 px-3 text-ctp-text outline-none ${textClasses.input}`}
+              id="generation-recipe-export-profile"
+              onChange={(event) =>
+                onExportProfileChange(event.currentTarget.value ? Number(event.currentTarget.value) : null)
+              }
+              value={selectedExportProfileId ?? ""}
+            >
+              <option value="">Choose an M3U export profile</option>
+              {exportProfiles.map((profile) => (
+                <option key={profile.id} value={profile.id}>
+                  {profile.name}
+                  {profile.is_default ? " (default)" : ""}
+                </option>
+              ))}
+            </select>
+          </label>
+          <p className={textClasses.caption}>
+            The automatic export uses this profile’s library path, writes M3U8 files, and includes leaf playlists only.
+            {exportProfiles.length === 0
+              ? " Create an export profile in M3U export before enabling automatic refresh."
+              : ""}
+          </p>
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+function RealPlaylistPreview({
+  confidence,
+  coverage,
+  playlists,
+  skippedReasons,
+  warnings,
+}: {
+  confidence: number | null;
+  coverage: number | null;
+  playlists: SonicPreviewPlaylist[];
+  skippedReasons: string[];
+  warnings: string[];
+}) {
+  return (
+    <section className="grid gap-3 rounded-[8px] border border-ctp-mauve/35 bg-ctp-mauve/5 p-3" aria-label="Actual playlist preview">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h4 className={textClasses.title}>Actual proposed playlists</h4>
+          <p className={`mt-1 ${textClasses.caption}`}>
+            Names, tracks, boundaries, and quality evidence come from the real in-memory generator. Nothing is saved
+            until you choose Generate.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-1.5">
+          <span className={controlClasses.countBadge}>{playlists.length.toLocaleString()} playlists</span>
+          {coverage !== null ? <span className={controlClasses.countBadge}>{formatEvidencePercent(coverage)} coverage</span> : null}
+          {confidence !== null ? (
+            <span className={controlClasses.countBadge}>{formatEvidencePercent(confidence)} confidence</span>
+          ) : null}
+        </div>
+      </div>
+
+      {warnings.length > 0 || skippedReasons.length > 0 ? (
+        <div className="grid gap-2 md:grid-cols-2">
+          {warnings.length > 0 ? <EvidenceNotes label="Warnings" notes={warnings} tone="warning" /> : null}
+          {skippedReasons.length > 0 ? <EvidenceNotes label="Skipped" notes={skippedReasons} tone="neutral" /> : null}
+        </div>
+      ) : null}
+
+      <div className="grid gap-3 xl:grid-cols-2">
+        {playlists.map((playlist, index) => (
+          <article className={`${surfaceClasses.insetPanel} grid gap-3 p-3`} key={`${playlist.name}-${index}`}>
+            <div className="flex min-w-0 items-start justify-between gap-3">
+              <div className="min-w-0">
+                <h5 className={`truncate ${textClasses.title}`} title={playlist.name}>
+                  {playlist.name}
+                </h5>
+                <p className={`mt-1 ${textClasses.caption}`}>
+                  {playlist.size.toLocaleString()} tracks ·{" "}
+                  {playlist.export_default ? "leaf export target" : "parent grouping"}
+                  {` · ${sequenceIntentLabel(playlist.sequencing_intent)}`}
+                </p>
+              </div>
+              <Pill tone={playlist.confidence >= 0.7 ? "success" : playlist.confidence >= 0.45 ? "pending" : "danger"}>
+                {formatEvidencePercent(playlist.confidence)} confidence
+              </Pill>
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+              <PreviewStat
+                label="Coverage"
+                value={formatEvidencePercent(playlist.coverage)}
+              />
+              <PreviewStat label="Cohesion" value={formatEvidencePercent(playlist.cohesion)} />
+              <PreviewStat label="Confidence" value={formatEvidencePercent(playlist.confidence)} />
+            </div>
+            <PreviewTrackList label="Representative tracks" tracks={playlist.representative_tracks} />
+            <div className="grid gap-3 md:grid-cols-2">
+              <PreviewTrackList emptyLabel="No boundary items flagged" label="Boundary items" tracks={playlist.boundary_tracks} />
+              <PreviewTrackList emptyLabel="No outliers flagged" label="Outliers" tracks={playlist.outlier_tracks} />
+            </div>
+            {playlist.warnings.length > 0 || formatSkippedReasons(playlist.skipped_reasons).length > 0 ? (
+              <div className="grid gap-2 md:grid-cols-2">
+                {playlist.warnings.length > 0 ? (
+                  <EvidenceNotes label="Warnings" notes={playlist.warnings} tone="warning" />
+                ) : null}
+                {formatSkippedReasons(playlist.skipped_reasons).length > 0 ? (
+                  <EvidenceNotes
+                    label="Skipped"
+                    notes={formatSkippedReasons(playlist.skipped_reasons)}
+                    tone="neutral"
+                  />
+                ) : null}
+              </div>
+            ) : null}
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function PreviewTrackList({
+  emptyLabel,
+  label,
+  tracks,
+}: {
+  emptyLabel?: string;
+  label: string;
+  tracks: SonicPreviewTrack[];
+}) {
+  return (
+    <div className="min-w-0">
+      <p className={textClasses.label}>{label}</p>
+      {tracks.length > 0 ? (
+        <ul className="mt-1 grid gap-1">
+          {tracks.map((track, index) => (
+            <li className={`min-w-0 truncate ${textClasses.caption}`} key={`${track.local_track_id ?? "track"}-${index}`}>
+              {track.artist ? `${track.artist} — ` : ""}
+              {track.title ?? "Untitled track"}
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className={`mt-1 ${textClasses.finePrint}`}>{emptyLabel ?? "No tracks returned"}</p>
+      )}
+    </div>
+  );
+}
+
+function EvidenceNotes({
+  label,
+  notes,
+  tone,
+}: {
+  label: string;
+  notes: string[];
+  tone: "neutral" | "warning";
+}) {
+  return (
+    <div className={`rounded-[7px] border p-2.5 ${tone === "warning" ? "border-ctp-yellow/30 bg-ctp-yellow/5" : "border-ctp-surface1 bg-ctp-surface0/40"}`}>
+      <p className={`${textClasses.label} ${tone === "warning" ? "text-ctp-yellow" : ""}`}>{label}</p>
+      <ul className="mt-1 grid gap-1">
+        {notes.map((note, index) => (
+          <li className={textClasses.caption} key={`${note}-${index}`}>
+            {note}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function formatEvidencePercent(value: number) {
+  const percentage = value <= 1 ? value * 100 : value;
+  return `${Math.round(Math.max(0, Math.min(100, percentage)))}%`;
+}
+
+function formatSkippedReasons(reasons: Record<string, number> | string[] | undefined) {
+  if (reasons === undefined) {
+    return [];
+  }
+  if (Array.isArray(reasons)) {
+    return reasons;
+  }
+  return Object.entries(reasons).map(([reason, count]) => `${humanizeEvidenceKey(reason)}: ${count.toLocaleString()}`);
+}
+
+function humanizeEvidenceKey(value: string) {
+  return value.replace(/_/g, " ").replace(/^\w/, (character) => character.toUpperCase());
+}
+
+function sequenceIntentLabel(value: string) {
+  return sequenceIntentOptions.find((option) => option.value === value)?.label ?? humanizeEvidenceKey(value);
 }
 
 function PreviewStat({ label, value }: { label: string; value: number | string }) {
@@ -1183,6 +1928,24 @@ function normalizeNumericValue(key: NumericConfigKey, value: string, fallback: n
 
 function clampNumber(value: number, min: number, max: number) {
   return Math.max(min, Math.min(max, value));
+}
+
+function readStringValue(value: unknown, fallback: string) {
+  return typeof value === "string" ? value : fallback;
+}
+
+function readNumberValue(value: unknown, fallback: number) {
+  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+
+function readStringOption<TValue extends string>(
+  value: unknown,
+  options: ReadonlyArray<{ value: TValue }>,
+  fallback: TValue,
+) {
+  return typeof value === "string" && options.some((option) => option.value === value)
+    ? (value as TValue)
+    : fallback;
 }
 
 function adaptiveNumericDefaults(readyTrackCount: number, presetKey: PresetKey): NumericValues {

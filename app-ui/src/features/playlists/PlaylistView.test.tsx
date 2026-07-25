@@ -41,6 +41,7 @@ const playlistDetailResponse: PlaylistDetailResponse = {
     provider_track_count: 3,
     provider_playlist_id: "PL12",
     sync_mode: "full",
+    automation_level: "off",
     imported_track_count: 3,
     tracks_synced_at: "2026-05-01T09:00:00Z",
     unlinked_count: 1,

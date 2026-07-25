@@ -29,15 +29,18 @@ describe("shell queries", () => {
             generation_number: 19,
             id: 501,
             playlist_count: 2,
+            run_name: "Generation 19",
             source_filter: { source_type: "all_local" },
             status: "pending",
             track_count: 58,
+            trigger: "manual",
             updated_at: "2026-05-24T12:00:00Z",
           },
         ],
         playlists: [
           {
             account_id: 4,
+            automation_level: "off",
             id: 12,
             imported_track_count: 62,
             last_sync_error: null,

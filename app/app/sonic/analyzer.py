@@ -2,16 +2,26 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Protocol
+from typing import Any, Protocol
 
-from app.sonic.models import SONIC_ANALYZER_LIBROSA_V1
+from app.sonic.models import (
+    SONIC_ANALYZER_CURRENT_VERSION,
+    SONIC_ANALYZER_LIBROSA_V1,
+)
+from app.sonic.semantic import (
+    SemanticAudioEmbedder,
+    build_semantic_embedder_from_environment,
+    semantic_cache_payload,
+)
+
+MAX_SEMANTIC_ANALYSIS_ATTEMPTS = 2
 
 
 @dataclass(frozen=True, slots=True)
 class SonicAnalysisResult:
     analyzer_key: str
     analyzer_version: str
-    descriptors: dict[str, float]
+    descriptors: dict[str, Any]
     vector: list[float]
 
 
@@ -25,9 +35,11 @@ class SonicAnalyzer(Protocol):
 @dataclass(slots=True)
 class LibrosaSonicAnalyzer:
     analyzer_key: str = SONIC_ANALYZER_LIBROSA_V1
-    analyzer_version: str = "1"
+    analyzer_version: str = SONIC_ANALYZER_CURRENT_VERSION
     sample_rate: int = 22050
     max_duration_seconds: int = 300
+    semantic_embedder: SemanticAudioEmbedder | None = None
+    semantic_unavailable_reason: str | None = None
 
     def analyze(self, audio_path: Path | str) -> SonicAnalysisResult:
         try:
@@ -47,7 +59,7 @@ class LibrosaSonicAnalyzer:
         if y.size == 0:
             raise ValueError("Audio file did not contain analyzable samples")
 
-        descriptors: dict[str, float] = {}
+        descriptors: dict[str, Any] = {}
 
         def add_scalar(name: str, value: object) -> None:
             scalar = float(np.asarray(value).reshape(-1)[0])
@@ -86,6 +98,32 @@ class LibrosaSonicAnalyzer:
         for index, value in enumerate(chroma_means):
             add_scalar(f"chroma_{index:02d}_mean", value)
         add_scalar("chroma_peak", int(np.argmax(chroma_means)))
+        add_scalar("chroma_peak_strength", float(np.max(chroma_means)))
+        chroma_total = float(np.sum(chroma_means))
+        if chroma_total > 1e-12:
+            add_scalar(
+                "chroma_tonal_confidence",
+                float(np.max(chroma_means)) / chroma_total,
+            )
+
+        if self.semantic_embedder is None:
+            descriptors["semantic_status"] = (
+                "unavailable" if self.semantic_unavailable_reason else "disabled"
+            )
+            if self.semantic_unavailable_reason:
+                descriptors["semantic_failure_code"] = self.semantic_unavailable_reason
+        else:
+            for attempt in range(1, MAX_SEMANTIC_ANALYSIS_ATTEMPTS + 1):
+                try:
+                    semantic_result = self.semantic_embedder.embed(audio_path)
+                except Exception as exc:  # noqa: BLE001 - semantic failure degrades safely
+                    descriptors["semantic_status"] = "failed"
+                    descriptors["semantic_failure_code"] = type(exc).__name__
+                    descriptors["semantic_attempt_count"] = attempt
+                else:
+                    descriptors.update(semantic_cache_payload(semantic_result))
+                    descriptors["semantic_attempt_count"] = attempt
+                    break
 
         vector_keys = vector_descriptor_keys()
         vector = [descriptors.get(key, 0.0) for key in vector_keys]
@@ -102,7 +140,13 @@ def build_sonic_analyzer(
     analyzer_key: str = SONIC_ANALYZER_LIBROSA_V1,
 ) -> SonicAnalyzer:
     if analyzer_key == SONIC_ANALYZER_LIBROSA_V1:
-        return LibrosaSonicAnalyzer()
+        try:
+            semantic_embedder = build_semantic_embedder_from_environment()
+        except Exception as exc:  # noqa: BLE001 - configuration failure is evidence
+            return LibrosaSonicAnalyzer(
+                semantic_unavailable_reason=type(exc).__name__,
+            )
+        return LibrosaSonicAnalyzer(semantic_embedder=semantic_embedder)
 
     raise ValueError(f"Unsupported sonic analyzer: {analyzer_key}")
 

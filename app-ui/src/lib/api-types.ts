@@ -90,6 +90,23 @@ export interface paths {
         patch: operations["update_streaming_playlist_api_streaming_playlists__playlist_id__patch"];
         trace?: never;
     };
+    "/api/streaming/playlists/{playlist_id}/automation-level": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update Streaming Playlist Automation Level */
+        patch: operations["update_streaming_playlist_automation_level_api_streaming_playlists__playlist_id__automation_level_patch"];
+        trace?: never;
+    };
     "/api/playlists/{playlist_id}": {
         parameters: {
             query?: never;
@@ -859,6 +876,59 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/sonic/recipes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Generation Recipes */
+        get: operations["list_generation_recipes_api_sonic_recipes_get"];
+        put?: never;
+        /** Create Generation Recipe */
+        post: operations["create_generation_recipe_api_sonic_recipes_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/sonic/recipes/{recipe_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Update Generation Recipe */
+        put: operations["update_generation_recipe_api_sonic_recipes__recipe_id__put"];
+        post?: never;
+        /** Delete Generation Recipe */
+        delete: operations["delete_generation_recipe_api_sonic_recipes__recipe_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/sonic/recipes/{recipe_id}/regenerate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Regenerate Generation Recipe */
+        post: operations["regenerate_generation_recipe_api_sonic_recipes__recipe_id__regenerate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/sonic/runs/delete-selected": {
         parameters: {
             query?: never;
@@ -1098,6 +1168,59 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/autopilot/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Autopilot Settings */
+        get: operations["get_autopilot_settings_api_autopilot_settings_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update Autopilot Settings */
+        patch: operations["update_autopilot_settings_api_autopilot_settings_patch"];
+        trace?: never;
+    };
+    "/api/autopilot/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Autopilot Runs */
+        get: operations["list_autopilot_runs_api_autopilot_runs_get"];
+        put?: never;
+        /** Start Autopilot Run */
+        post: operations["start_autopilot_run_api_autopilot_runs_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/autopilot/runs/{run_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Autopilot Run */
+        get: operations["get_autopilot_run_api_autopilot_runs__run_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/settings/general": {
         parameters: {
             query?: never;
@@ -1198,6 +1321,198 @@ export interface components {
             /** Detached Final Link Ids */
             detached_final_link_ids: number[];
         };
+        /** AutopilotRunDetailResponse */
+        AutopilotRunDetailResponse: {
+            /** Id */
+            id: string;
+            /** Idempotency Key */
+            idempotency_key: string;
+            /**
+             * Trigger
+             * @enum {string}
+             */
+            trigger: "startup" | "scheduled" | "manual";
+            /** Dry Run */
+            dry_run: boolean;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "planning" | "running" | "succeeded" | "partial" | "failed" | "paused" | "skipped";
+            /** Started At */
+            started_at: string;
+            /** Heartbeat At */
+            heartbeat_at: string | null;
+            /** Finished At */
+            finished_at: string | null;
+            /** Error Detail */
+            error_detail: string | null;
+            /** Refreshed Playlists */
+            refreshed_playlists: number;
+            /** Searched Tracks */
+            searched_tracks: number;
+            /** Queued Downloads */
+            queued_downloads: number;
+            /** Downloaded Tracks */
+            downloaded_tracks: number;
+            /** Ingested Tracks */
+            ingested_tracks: number;
+            /** Analyzed Tracks */
+            analyzed_tracks: number;
+            /** Regenerated Recipes */
+            regenerated_recipes: number;
+            /** Refreshed Exports */
+            refreshed_exports: number;
+            /** Review Items */
+            review_items: number;
+            /** Failed Items */
+            failed_items: number;
+            /** Created At */
+            created_at: string;
+            /** Updated At */
+            updated_at: string;
+            /** Items */
+            items: components["schemas"]["AutopilotRunItemResponse"][];
+        };
+        /** AutopilotRunItemResponse */
+        AutopilotRunItemResponse: {
+            /** Id */
+            id: string;
+            /** Run Id */
+            run_id: string;
+            /** Idempotency Key */
+            idempotency_key: string;
+            /** Stage */
+            stage: string;
+            /** Action */
+            action: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "planned" | "running" | "succeeded" | "skipped" | "retry_wait" | "review" | "failed";
+            /** Playlist Id */
+            playlist_id: number | null;
+            /** Streaming Track Id */
+            streaming_track_id: number | null;
+            /** Acquisition Id */
+            acquisition_id: string | null;
+            /** Recipe Id */
+            recipe_id: number | null;
+            /** Candidate Id */
+            candidate_id: string | null;
+            /** Attempt Count */
+            attempt_count: number;
+            /** Next Attempt At */
+            next_attempt_at: string | null;
+            /** Identity Confidence */
+            identity_confidence: number | null;
+            /** Version Confidence */
+            version_confidence: number | null;
+            /** Quality Score */
+            quality_score: number | null;
+            /** Runner Up Margin */
+            runner_up_margin: number | null;
+            /** Expected Duration Ms */
+            expected_duration_ms: number | null;
+            /** Candidate Duration Ms */
+            candidate_duration_ms: number | null;
+            /** Reason Code */
+            reason_code: string | null;
+            /** Detail */
+            detail: string | null;
+            /** Created At */
+            created_at: string;
+            /** Updated At */
+            updated_at: string;
+            /** Completed At */
+            completed_at: string | null;
+        };
+        /** AutopilotRunResponse */
+        AutopilotRunResponse: {
+            /** Id */
+            id: string;
+            /** Idempotency Key */
+            idempotency_key: string;
+            /**
+             * Trigger
+             * @enum {string}
+             */
+            trigger: "startup" | "scheduled" | "manual";
+            /** Dry Run */
+            dry_run: boolean;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "planning" | "running" | "succeeded" | "partial" | "failed" | "paused" | "skipped";
+            /** Started At */
+            started_at: string;
+            /** Heartbeat At */
+            heartbeat_at: string | null;
+            /** Finished At */
+            finished_at: string | null;
+            /** Error Detail */
+            error_detail: string | null;
+            /** Refreshed Playlists */
+            refreshed_playlists: number;
+            /** Searched Tracks */
+            searched_tracks: number;
+            /** Queued Downloads */
+            queued_downloads: number;
+            /** Downloaded Tracks */
+            downloaded_tracks: number;
+            /** Ingested Tracks */
+            ingested_tracks: number;
+            /** Analyzed Tracks */
+            analyzed_tracks: number;
+            /** Regenerated Recipes */
+            regenerated_recipes: number;
+            /** Refreshed Exports */
+            refreshed_exports: number;
+            /** Review Items */
+            review_items: number;
+            /** Failed Items */
+            failed_items: number;
+            /** Created At */
+            created_at: string;
+            /** Updated At */
+            updated_at: string;
+        };
+        /** AutopilotRunsResponse */
+        AutopilotRunsResponse: {
+            /** Runs */
+            runs: components["schemas"]["AutopilotRunResponse"][];
+        };
+        /** AutopilotSettingsResponse */
+        AutopilotSettingsResponse: {
+            /** Id */
+            id: number;
+            /** Paused */
+            paused: boolean;
+            /** Schedule Minutes */
+            schedule_minutes: number;
+            /** Quiet Period Seconds */
+            quiet_period_seconds: number;
+            /** Max Concurrent Downloads */
+            max_concurrent_downloads: number;
+            /** Max Downloads Per Run */
+            max_downloads_per_run: number;
+            /** Max Searches Per Run */
+            max_searches_per_run: number;
+            /** Max Storage Bytes Per Run */
+            max_storage_bytes_per_run: number;
+            /** Retry Max Attempts */
+            retry_max_attempts: number;
+            /** Retry Base Seconds */
+            retry_base_seconds: number;
+            /** Retry Max Seconds */
+            retry_max_seconds: number;
+            /** Created At */
+            created_at: string;
+            /** Updated At */
+            updated_at: string;
+        };
         /** BeetsAlbumDetailResponse */
         BeetsAlbumDetailResponse: {
             /** Beets Album Id */
@@ -1273,6 +1588,8 @@ export interface components {
         CreatePlaylistGenerationRunRequest: {
             source_filter?: components["schemas"]["SonicSourceFilterRequest"];
             generation_config?: components["schemas"]["PlaylistGenerationConfigRequest"];
+            /** Run Name */
+            run_name?: string | null;
         };
         /** CreatePlaylistGenerationRunResponse */
         CreatePlaylistGenerationRunResponse: {
@@ -1776,6 +2093,11 @@ export interface components {
              * @enum {string}
              */
             sync_mode: "off" | "match_only" | "full";
+            /**
+             * Automation Level
+             * @enum {string}
+             */
+            automation_level: "off" | "sync_only" | "assist" | "full";
             /** Provider Track Count */
             provider_track_count: number | null;
             /** Imported Track Count */
@@ -1869,6 +2191,23 @@ export interface components {
              */
             random_seed: number;
             /**
+             * Semantic Mode
+             * @default off
+             * @enum {string}
+             */
+            semantic_mode: "auto" | "off";
+            /**
+             * Semantic Weight
+             * @default 0.15
+             */
+            semantic_weight: number;
+            /**
+             * Sequencing Intent
+             * @default smooth_mix
+             * @enum {string}
+             */
+            sequencing_intent: "smooth_mix" | "rising_energy" | "warm_up_to_peak" | "varied_listening";
+            /**
              * Tempo Mode
              * @default mixable_v1
              * @enum {string}
@@ -1898,6 +2237,69 @@ export interface components {
             /** Config Notes */
             config_notes: string[];
         };
+        /** PlaylistGenerationRecipeListResponse */
+        PlaylistGenerationRecipeListResponse: {
+            /** Recipes */
+            recipes: components["schemas"]["PlaylistGenerationRecipeResponse"][];
+        };
+        /** PlaylistGenerationRecipeResponse */
+        PlaylistGenerationRecipeResponse: {
+            /** Id */
+            id: number;
+            /** Name */
+            name: string;
+            /** Source Filter */
+            source_filter: {
+                [key: string]: unknown;
+            };
+            /** Generation Config */
+            generation_config: {
+                [key: string]: unknown;
+            };
+            /** Enabled */
+            enabled: boolean;
+            /** Regenerate On Change */
+            regenerate_on_change: boolean;
+            /** Export Config */
+            export_config: {
+                [key: string]: unknown;
+            } | null;
+            /** Last Run Id */
+            last_run_id: number | null;
+            /** Last Regenerated At */
+            last_regenerated_at: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /** PlaylistGenerationRecipeUpsertRequest */
+        PlaylistGenerationRecipeUpsertRequest: {
+            /** Name */
+            name: string;
+            source_filter?: components["schemas"]["SonicSourceFilterRequest"];
+            generation_config?: components["schemas"]["PlaylistGenerationConfigRequest"];
+            /**
+             * Enabled
+             * @default true
+             */
+            enabled: boolean;
+            /**
+             * Regenerate On Change
+             * @default true
+             */
+            regenerate_on_change: boolean;
+            /** Export Config */
+            export_config?: {
+                [key: string]: unknown;
+            } | null;
+        };
         /** PlaylistGenerationRunDetailResponse */
         PlaylistGenerationRunDetailResponse: {
             run: components["schemas"]["PlaylistGenerationRunResponse"];
@@ -1925,6 +2327,20 @@ export interface components {
             generation_config: {
                 [key: string]: unknown;
             };
+            /** Recipe Id */
+            recipe_id?: number | null;
+            /** Run Name */
+            run_name: string;
+            /** Trigger */
+            trigger: string;
+            /** Readiness Summary */
+            readiness_summary?: {
+                [key: string]: unknown;
+            } | null;
+            /** Analyzer Evidence */
+            analyzer_evidence?: {
+                [key: string]: unknown;
+            } | null;
             /** Playlist Count */
             playlist_count: number;
             /** Track Count */
@@ -2067,6 +2483,13 @@ export interface components {
             /** Rejected At */
             rejected_at: string | null;
         };
+        /** RegeneratePlaylistGenerationRecipeResponse */
+        RegeneratePlaylistGenerationRecipeResponse: {
+            recipe: components["schemas"]["PlaylistGenerationRecipeResponse"];
+            run: components["schemas"]["PlaylistGenerationRunResponse"];
+            /** Job Id */
+            job_id: string;
+        };
         /** RejectStreamingRelationshipSuggestionResponse */
         RejectStreamingRelationshipSuggestionResponse: {
             /** Suggestion Id */
@@ -2167,6 +2590,45 @@ export interface components {
             /** Missing Tracks */
             missing_tracks: number;
         };
+        /** SonicGenerationPlaylistPreviewResponse */
+        SonicGenerationPlaylistPreviewResponse: {
+            /** Client Key */
+            client_key: string;
+            /** Parent Key */
+            parent_key: string | null;
+            /** Depth */
+            depth: number;
+            /** Name */
+            name: string;
+            /** Size */
+            size: number;
+            /** Coverage */
+            coverage: number;
+            /** Cohesion */
+            cohesion: number;
+            /** Confidence */
+            confidence: number;
+            /** Representative Tracks */
+            representative_tracks: components["schemas"]["SonicPreviewTrackEvidenceResponse"][];
+            /** Boundary Tracks */
+            boundary_tracks: components["schemas"]["SonicPreviewTrackEvidenceResponse"][];
+            /** Outlier Tracks */
+            outlier_tracks: components["schemas"]["SonicPreviewTrackEvidenceResponse"][];
+            /** Skipped Reasons */
+            skipped_reasons: {
+                [key: string]: number;
+            };
+            /** Warnings */
+            warnings: string[];
+            /** Sequencing */
+            sequencing: {
+                [key: string]: unknown;
+            };
+            /** Sequencing Intent */
+            sequencing_intent: string;
+            /** Export Default */
+            export_default: boolean;
+        };
         /** SonicGenerationPreviewResponse */
         SonicGenerationPreviewResponse: {
             /** Analyzer Key */
@@ -2190,6 +2652,53 @@ export interface components {
             /** Source Track Count */
             source_track_count: number;
             projection: components["schemas"]["PlaylistGenerationProjectionResponse"] | null;
+            /** Analyzer Evidence */
+            analyzer_evidence?: {
+                [key: string]: unknown;
+            };
+            /**
+             * Confidence
+             * @default 0
+             */
+            confidence: number;
+            /**
+             * Coverage
+             * @default 0
+             */
+            coverage: number;
+            /**
+             * Current Feature Count
+             * @default 0
+             */
+            current_feature_count: number;
+            /**
+             * Legacy Descriptor Feature Count
+             * @default 0
+             */
+            legacy_descriptor_feature_count: number;
+            /** Playlists */
+            playlists?: components["schemas"]["SonicGenerationPlaylistPreviewResponse"][];
+            /** Readiness */
+            readiness?: {
+                [key: string]: unknown;
+            };
+            /** Skipped Reasons */
+            skipped_reasons?: {
+                [key: string]: number;
+            };
+            /** Warnings */
+            warnings?: string[];
+        };
+        /** SonicPreviewTrackEvidenceResponse */
+        SonicPreviewTrackEvidenceResponse: {
+            /** Local Track Id */
+            local_track_id: number;
+            /** Title */
+            title?: string | null;
+            /** Artist */
+            artist?: string | null;
+            /** Distance From Center */
+            distance_from_center?: number | null;
         };
         /** SonicSourceFilterRequest */
         SonicSourceFilterRequest: {
@@ -2257,6 +2766,19 @@ export interface components {
             error_detail: string | null;
             /** Link Error Detail */
             link_error_detail?: string | null;
+            /** Automation Run Id */
+            automation_run_id?: string | null;
+            /**
+             * Unattended
+             * @default false
+             */
+            unattended: boolean;
+            /** Verification Status */
+            verification_status?: string | null;
+            /** Verification Detail */
+            verification_detail?: string | null;
+            /** Verified At */
+            verified_at?: string | null;
             /** Streaming Track Id */
             streaming_track_id: number;
             /** Search Text */
@@ -2322,6 +2844,19 @@ export interface components {
             error_detail: string | null;
             /** Link Error Detail */
             link_error_detail?: string | null;
+            /** Automation Run Id */
+            automation_run_id?: string | null;
+            /**
+             * Unattended
+             * @default false
+             */
+            unattended: boolean;
+            /** Verification Status */
+            verification_status?: string | null;
+            /** Verification Detail */
+            verification_detail?: string | null;
+            /** Verified At */
+            verified_at?: string | null;
         };
         /** SoulseekBulkSearchItemResponse */
         SoulseekBulkSearchItemResponse: {
@@ -2375,6 +2910,12 @@ export interface components {
             upload_speed: number | null;
             /** Score */
             score: number;
+            /** Identity Confidence */
+            identity_confidence?: number | null;
+            /** Version Confidence */
+            version_confidence?: number | null;
+            /** Quality Score */
+            quality_score?: number | null;
             /** Created At */
             created_at: string;
         };
@@ -2456,6 +2997,20 @@ export interface components {
             matched: boolean;
             acquisition?: components["schemas"]["SoulseekAcquisitionSummaryResponse"] | null;
         };
+        /** StartAutopilotRunRequest */
+        StartAutopilotRunRequest: {
+            /**
+             * Dry Run
+             * @default true
+             */
+            dry_run: boolean;
+        };
+        /** StartAutopilotRunResponse */
+        StartAutopilotRunResponse: {
+            run: components["schemas"]["AutopilotRunResponse"];
+            /** Job Id */
+            job_id: string;
+        };
         /** StreamingAccountResponse */
         StreamingAccountResponse: {
             /** Id */
@@ -2500,6 +3055,11 @@ export interface components {
              * @enum {string}
              */
             sync_mode: "off" | "match_only" | "full";
+            /**
+             * Automation Level
+             * @enum {string}
+             */
+            automation_level: "off" | "sync_only" | "assist" | "full";
             /** Provider Track Count */
             provider_track_count: number | null;
             /** Imported Track Count */
@@ -2528,6 +3088,11 @@ export interface components {
              * @enum {string}
              */
             sync_mode: "off" | "match_only" | "full";
+            /**
+             * Automation Level
+             * @enum {string}
+             */
+            automation_level: "off" | "sync_only" | "assist" | "full";
             /** Provider Track Count */
             provider_track_count: number | null;
             /** Imported Track Count */
@@ -2904,6 +3469,29 @@ export interface components {
             /** Source Size */
             source_size: number | null;
         };
+        /** UpdateAutopilotSettingsRequest */
+        UpdateAutopilotSettingsRequest: {
+            /** Paused */
+            paused?: boolean | null;
+            /** Schedule Minutes */
+            schedule_minutes?: number | null;
+            /** Quiet Period Seconds */
+            quiet_period_seconds?: number | null;
+            /** Max Concurrent Downloads */
+            max_concurrent_downloads?: number | null;
+            /** Max Downloads Per Run */
+            max_downloads_per_run?: number | null;
+            /** Max Searches Per Run */
+            max_searches_per_run?: number | null;
+            /** Max Storage Bytes Per Run */
+            max_storage_bytes_per_run?: number | null;
+            /** Retry Max Attempts */
+            retry_max_attempts?: number | null;
+            /** Retry Base Seconds */
+            retry_base_seconds?: number | null;
+            /** Retry Max Seconds */
+            retry_max_seconds?: number | null;
+        };
         /** UpdateM3uExportProfileRequest */
         UpdateM3uExportProfileRequest: {
             /** Name */
@@ -2912,6 +3500,14 @@ export interface components {
             library_path?: string | null;
             /** Is Default */
             is_default?: boolean | null;
+        };
+        /** UpdatePlaylistAutomationLevelRequest */
+        UpdatePlaylistAutomationLevelRequest: {
+            /**
+             * Automation Level
+             * @enum {string}
+             */
+            automation_level: "off" | "sync_only" | "assist" | "full";
         };
         /** UpdateStreamingAccountAuthRequest */
         UpdateStreamingAccountAuthRequest: {
@@ -2922,11 +3518,10 @@ export interface components {
         };
         /** UpdateStreamingPlaylistRequest */
         UpdateStreamingPlaylistRequest: {
-            /**
-             * Sync Mode
-             * @enum {string}
-             */
-            sync_mode: "off" | "match_only" | "full";
+            /** Sync Mode */
+            sync_mode?: ("off" | "match_only" | "full") | null;
+            /** Automation Level */
+            automation_level?: ("off" | "sync_only" | "assist" | "full") | null;
         };
         /** UpdateStreamingRelationshipRequest */
         UpdateStreamingRelationshipRequest: {
@@ -3081,6 +3676,41 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["UpdateStreamingPlaylistRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StreamingPlaylistConfigResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_streaming_playlist_automation_level_api_streaming_playlists__playlist_id__automation_level_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                playlist_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdatePlaylistAutomationLevelRequest"];
             };
         };
         responses: {
@@ -4605,6 +5235,154 @@ export interface operations {
             };
         };
     };
+    list_generation_recipes_api_sonic_recipes_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlaylistGenerationRecipeListResponse"];
+                };
+            };
+        };
+    };
+    create_generation_recipe_api_sonic_recipes_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PlaylistGenerationRecipeUpsertRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlaylistGenerationRecipeResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_generation_recipe_api_sonic_recipes__recipe_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                recipe_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PlaylistGenerationRecipeUpsertRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlaylistGenerationRecipeResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_generation_recipe_api_sonic_recipes__recipe_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                recipe_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    regenerate_generation_recipe_api_sonic_recipes__recipe_id__regenerate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                recipe_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RegeneratePlaylistGenerationRecipeResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     delete_selected_generation_runs_api_sonic_runs_delete_selected_post: {
         parameters: {
             query?: never;
@@ -5041,6 +5819,154 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SoulseekWebhookResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_autopilot_settings_api_autopilot_settings_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AutopilotSettingsResponse"];
+                };
+            };
+        };
+    };
+    update_autopilot_settings_api_autopilot_settings_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateAutopilotSettingsRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AutopilotSettingsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_autopilot_runs_api_autopilot_runs_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AutopilotRunsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    start_autopilot_run_api_autopilot_runs_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StartAutopilotRunRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StartAutopilotRunResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_autopilot_run_api_autopilot_runs__run_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AutopilotRunDetailResponse"];
                 };
             };
             /** @description Validation Error */

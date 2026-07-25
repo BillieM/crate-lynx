@@ -27,5 +27,6 @@ until pg_isready -h 127.0.0.1 -p 5432 -U "${POSTGRES_USER}" -d "${POSTGRES_DB}" 
 done
 
 alembic -c /srv/db/alembic.ini upgrade head
+touch /tmp/crate-lynx-migrations-ready
 
 wait "$postgres_pid"

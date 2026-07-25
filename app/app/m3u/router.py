@@ -28,6 +28,7 @@ from app.m3u.schemas import (
 from app.m3u.store import (
     InvalidM3uExportLibraryPathError,
     InvalidM3uExportProfileNameError,
+    M3uExportProfileInUseError,
     M3uExportProfileNotFoundError,
     M3uExportProfileStore,
     normalize_m3u_export_library_path,
@@ -126,6 +127,8 @@ def create_router(
             raise HTTPException(
                 status_code=404, detail="Export profile not found"
             ) from exc
+        except M3uExportProfileInUseError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
 
         return Response(status_code=204)
 

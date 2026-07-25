@@ -169,6 +169,9 @@ def test_links_routes_are_mounted_under_api_prefix() -> None:
     assert "/api/soulseek/candidates/{candidate_id}/enqueue" in route_paths
     assert "/api/soulseek/acquisitions/{acquisition_id}/refresh" in route_paths
     assert "/api/soulseek/slskd/download-complete" in route_paths
+    assert "/api/autopilot/settings" in route_paths
+    assert "/api/autopilot/runs" in route_paths
+    assert "/api/autopilot/runs/{run_id}" in route_paths
     assert "/api/sonic/runs/delete-selected" in route_paths
     assert "/healthz" in route_paths
     assert "/health" not in route_paths
@@ -596,6 +599,7 @@ def test_streaming_playlists_endpoint_lists_synced_playlists(
         "provider_playlist_id": "PL1",
         "title": "Morning Mix",
         "sync_mode": PLAYLIST_SYNC_MODE_FULL,
+        "automation_level": "off",
         "provider_track_count": None,
         "imported_track_count": 2,
         "metadata_synced_at": "2026-05-01T09:00:00",
@@ -673,6 +677,7 @@ def test_streaming_playlists_config_endpoint_lists_all_discovered_playlists(
         "provider_playlist_id": "PL1",
         "title": "Morning Mix",
         "sync_mode": PLAYLIST_SYNC_MODE_FULL,
+        "automation_level": "off",
         "provider_track_count": None,
         "imported_track_count": 1,
         "metadata_synced_at": "2026-05-01T09:00:00",
@@ -686,6 +691,7 @@ def test_streaming_playlists_config_endpoint_lists_all_discovered_playlists(
         "provider_playlist_id": "PL2",
         "title": "Empty Playlist",
         "sync_mode": PLAYLIST_SYNC_MODE_OFF,
+        "automation_level": "off",
         "provider_track_count": None,
         "imported_track_count": 0,
         "metadata_synced_at": "2026-05-01T09:00:00",

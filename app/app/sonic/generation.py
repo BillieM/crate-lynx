@@ -29,17 +29,23 @@ from app.sonic.models import (
     PLAYLIST_OUTPUT_SCOPE_TOP_LEVEL,
     PLAYLIST_OUTPUT_SCOPE_TREE,
     PLAYLIST_OUTPUT_SCOPES,
+    PLAYLIST_SEQUENCING_INTENT_SMOOTH_MIX,
+    PLAYLIST_SEQUENCING_INTENTS,
     PLAYLIST_TEMPO_MODE_MIXABLE,
     PLAYLIST_TEMPO_MODE_RAW,
     PLAYLIST_TEMPO_MODES,
+)
+from app.sonic.naming import (
+    intrinsic_name_candidates,
+    select_intrinsic_style_label,
 )
 from app.sonic.profiles import (
     DEFAULT_SONIC_FEATURE_PROFILE,
     resolve_feature_profile,
     resolve_feature_profile_from_config,
 )
+from app.sonic.sequencing import sequence_track_indexes
 from app.sonic.store import SonicReadyTrack
-
 
 DEFAULT_GENERATION_CONFIG = {
     "clustering_method": PLAYLIST_GENERATION_METHOD_DJ_HIERARCHICAL,
@@ -54,10 +60,14 @@ DEFAULT_GENERATION_CONFIG = {
     "output_scope": PLAYLIST_OUTPUT_SCOPE_TREE,
     "preset_key": PLAYLIST_GENERATION_PRESET_DJ_CRATE_TREE,
     "random_seed": 42,
+    "semantic_mode": "off",
+    "semantic_weight": 0.15,
+    "sequencing_intent": PLAYLIST_SEQUENCING_INTENT_SMOOTH_MIX,
     "tempo_mode": PLAYLIST_TEMPO_MODE_MIXABLE,
 }
 
-STYLE_TAG_DOMINANCE_RATIO = 0.4
+MIN_GENERATION_READY_TRACKS = 4
+MIN_SEMANTIC_COVERAGE = 0.65
 DJ_HIERARCHICAL_WEAK_SPLIT_SILHOUETTE = 0.08
 DJ_HIERARCHICAL_FORCE_SPLIT_TARGET_RATIO = 2.5
 DJ_HIERARCHICAL_GROUP_WEIGHTS = {
@@ -93,6 +103,26 @@ class SplitCandidate:
     cluster_sizes: list[int]
 
 
+@dataclass(frozen=True, slots=True)
+class TrackUnderstanding:
+    tracks: list[SonicReadyTrack]
+    evidence: dict[str, Any]
+
+
+@dataclass(frozen=True, slots=True)
+class GroupingResult:
+    clusters: list[list[int]]
+    evidence: dict[str, Any]
+    matrix: list[list[float]]
+
+
+@dataclass(frozen=True, slots=True)
+class PlaylistGenerationResult:
+    playlists: list[dict[str, Any]]
+    analyzer_evidence: dict[str, Any]
+    readiness: dict[str, Any]
+
+
 def normalize_generation_config(config: dict[str, Any]) -> dict[str, Any]:
     normalized = {**DEFAULT_GENERATION_CONFIG, **config}
     normalized["max_depth"] = max(1, min(int(normalized["max_depth"]), 5))
@@ -105,6 +135,13 @@ def normalize_generation_config(config: dict[str, Any]) -> dict[str, Any]:
     )
     normalized["max_children"] = max(2, min(int(normalized["max_children"]), 10))
     normalized["random_seed"] = int(normalized["random_seed"])
+    normalized["semantic_weight"] = max(
+        0.0, min(float(normalized["semantic_weight"]), 0.75)
+    )
+    if normalized["semantic_mode"] not in {"auto", "off"}:
+        normalized["semantic_mode"] = "auto"
+    if normalized["sequencing_intent"] not in PLAYLIST_SEQUENCING_INTENTS:
+        normalized["sequencing_intent"] = PLAYLIST_SEQUENCING_INTENT_SMOOTH_MIX
     if normalized["clustering_method"] not in (
         PLAYLIST_GENERATION_METHOD_DJ_HIERARCHICAL,
         PLAYLIST_GENERATION_METHOD_KMEANS,
@@ -340,25 +377,130 @@ def generate_playlist_tree(
     tracks: list[SonicReadyTrack],
     generation_config: dict[str, Any],
 ) -> list[dict[str, Any]]:
-    config = normalize_generation_config(generation_config)
-    if not tracks:
-        return []
+    return generate_playlists(tracks, generation_config).playlists
 
+
+def understand_tracks(
+    tracks: list[SonicReadyTrack],
+    generation_config: dict[str, Any],
+) -> TrackUnderstanding:
+    config = normalize_generation_config(generation_config)
     profile = resolve_feature_profile_from_config(config)
     ordered_tracks = sorted(tracks, key=lambda track: track.local_track_id)
-    matrix = _generation_matrix(
-        ordered_tracks,
+    descriptor_keys = list(profile.descriptor_weights)
+    descriptor_counts = {
+        key: sum(
+            _float_or_none(track.descriptors.get(key)) is not None for track in tracks
+        )
+        for key in descriptor_keys
+    }
+    semantic_statuses = Counter(
+        str(track.descriptors.get("semantic_status") or "unavailable")
+        for track in tracks
+    )
+    semantic_ready_count = sum(
+        _semantic_embedding(track) is not None for track in tracks
+    )
+    track_count = len(tracks)
+    version_counts = Counter(
+        track.analyzer_version or "unknown" for track in ordered_tracks
+    )
+    return TrackUnderstanding(
+        tracks=ordered_tracks,
+        evidence={
+            "analyzer_key": profile.analyzer_key,
+            "analyzer_version": profile.analyzer_version,
+            "descriptor_coverage": (
+                round(
+                    sum(descriptor_counts.values())
+                    / max(1, track_count * len(descriptor_keys)),
+                    4,
+                )
+                if descriptor_keys
+                else 0.0
+            ),
+            "descriptor_group_coverage": _descriptor_group_coverage(
+                ordered_tracks,
+                descriptor_keys,
+            ),
+            "semantic_coverage": round(
+                semantic_ready_count / max(1, track_count),
+                4,
+            ),
+            "semantic_ready_count": semantic_ready_count,
+            "semantic_status_counts": dict(sorted(semantic_statuses.items())),
+            "track_count": track_count,
+            "analyzer_version_counts": dict(sorted(version_counts.items())),
+        },
+    )
+
+
+def group_tracks(
+    understanding: TrackUnderstanding,
+    generation_config: dict[str, Any],
+) -> GroupingResult:
+    config = normalize_generation_config(generation_config)
+    tracks = understanding.tracks
+    if not tracks:
+        return GroupingResult(clusters=[], evidence={}, matrix=[])
+    profile = resolve_feature_profile_from_config(config)
+    matrix, matrix_evidence = _generation_matrix_with_evidence(
+        tracks,
         profile.descriptor_weights,
         method=str(config["clustering_method"]),
+        semantic_mode=str(config["semantic_mode"]),
+        semantic_weight=float(config["semantic_weight"]),
         tempo_mode=str(config["tempo_mode"]),
     )
     cluster_indexes = _split_indexes(
-        list(range(len(ordered_tracks))),
+        list(range(len(tracks))),
         matrix,
         config=config,
     )
     if not cluster_indexes:
-        cluster_indexes = [list(range(len(ordered_tracks)))]
+        cluster_indexes = [list(range(len(tracks)))]
+    return GroupingResult(
+        clusters=cluster_indexes,
+        evidence={
+            **matrix_evidence,
+            "cluster_count": len(cluster_indexes),
+            "genre_metadata_used_for_grouping": False,
+            "method": str(config["clustering_method"]),
+        },
+        matrix=matrix,
+    )
+
+
+def generate_playlists(
+    tracks: list[SonicReadyTrack],
+    generation_config: dict[str, Any],
+    *,
+    source_track_count: int | None = None,
+) -> PlaylistGenerationResult:
+    config = normalize_generation_config(generation_config)
+    if not tracks:
+        return PlaylistGenerationResult(
+            playlists=[],
+            analyzer_evidence={
+                "degraded": True,
+                "degraded_reasons": ["no_ready_tracks"],
+            },
+            readiness=_generation_readiness(
+                ready_track_count=0,
+                source_track_count=source_track_count or 0,
+                config=config,
+            ),
+        )
+
+    understanding = understand_tracks(tracks, config)
+    grouping = group_tracks(understanding, config)
+    profile = resolve_feature_profile_from_config(config)
+    ordered_tracks = understanding.tracks
+    readiness = _generation_readiness(
+        ready_track_count=len(ordered_tracks),
+        source_track_count=source_track_count or len(ordered_tracks),
+        config=config,
+    )
 
     drafts: list[GeneratedPlaylistDraft] = []
     used_names: set[str] = set()
@@ -366,9 +508,9 @@ def generate_playlist_tree(
         all_tracks=ordered_tracks,
         drafts=drafts,
         indexes_by_parent=list(range(len(ordered_tracks))),
-        matrix=matrix,
+        matrix=grouping.matrix,
         profile_weights=profile.descriptor_weights,
-        clusters=cluster_indexes,
+        clusters=grouping.clusters,
         config=config,
         depth=0,
         parent_key=None,
@@ -376,7 +518,7 @@ def generate_playlist_tree(
         used_names=used_names,
     )
     drafts = _apply_output_scope(drafts, config)
-    return [
+    playlists = [
         {
             "client_key": draft.client_key,
             "parent_key": draft.parent_key,
@@ -388,6 +530,107 @@ def generate_playlist_tree(
         }
         for draft in drafts
     ]
+    degraded_reasons = []
+    if grouping.evidence.get("semantic_mode_used") != "hybrid":
+        degraded_reasons.append("semantic_embedding_unavailable_or_below_coverage_gate")
+    if float(understanding.evidence.get("descriptor_coverage", 0.0)) < 0.8:
+        degraded_reasons.append("partial_descriptor_coverage")
+    analyzer_evidence = {
+        **understanding.evidence,
+        "grouping": grouping.evidence,
+        "degraded": bool(degraded_reasons),
+        "degraded_reasons": degraded_reasons,
+    }
+    return PlaylistGenerationResult(
+        playlists=playlists,
+        analyzer_evidence=analyzer_evidence,
+        readiness=readiness,
+    )
+
+
+def build_generation_preview(
+    tracks: list[SonicReadyTrack],
+    generation_config: dict[str, Any],
+    *,
+    failed_feature_count: int,
+    missing_feature_count: int,
+    pending_feature_count: int,
+    source_track_count: int,
+) -> dict[str, Any]:
+    result = generate_playlists(
+        tracks,
+        generation_config,
+        source_track_count=source_track_count,
+    )
+    parent_keys = {
+        playlist["parent_key"]
+        for playlist in result.playlists
+        if playlist["parent_key"] is not None
+    }
+    coverage = len(tracks) / max(1, source_track_count)
+    candidates = []
+    for playlist in result.playlists:
+        summary = playlist["summary"]
+        candidates.append(
+            {
+                "boundary_tracks": summary.get("boundary_tracks", []),
+                "client_key": playlist["client_key"],
+                "cohesion": summary.get("cohesion", 0.0),
+                "confidence": summary.get("confidence", 0.0),
+                "coverage": round(coverage, 4),
+                "depth": playlist["depth"],
+                "export_default": playlist["client_key"] not in parent_keys,
+                "name": playlist["name"],
+                "parent_key": playlist["parent_key"],
+                "outlier_tracks": summary.get("boundary_tracks", []),
+                "representative_tracks": summary.get("representative_tracks", []),
+                "sequencing": summary.get("sequencing", {}),
+                "sequencing_intent": _coerce_dict(summary.get("sequencing")).get(
+                    "intent"
+                ),
+                "size": len(playlist["track_ids"]),
+                "skipped_reasons": {},
+                "warnings": _playlist_warnings(summary),
+            }
+        )
+    skipped_reasons = {
+        "analysis_failed": failed_feature_count,
+        "analysis_missing": missing_feature_count,
+        "analysis_pending": pending_feature_count,
+    }
+    warnings = []
+    warnings.extend(result.readiness["reasons"])
+    warnings.extend(result.analyzer_evidence.get("degraded_reasons", []))
+    candidate_confidences = [
+        float(candidate["confidence"])
+        for candidate in candidates
+        if isinstance(candidate.get("confidence"), int | float)
+    ]
+    return {
+        "analyzer_evidence": result.analyzer_evidence,
+        "confidence": round(
+            (mean(candidate_confidences) if candidate_confidences else 0.0) * coverage,
+            4,
+        ),
+        "coverage": round(coverage, 4),
+        "playlists": candidates,
+        "readiness": result.readiness,
+        "skipped_reasons": {
+            key: value for key, value in skipped_reasons.items() if value > 0
+        },
+        "warnings": list(dict.fromkeys(warnings)),
+    }
+
+
+def _playlist_warnings(summary: dict[str, Any]) -> list[str]:
+    warnings = []
+    cohesion = _float_or_none(summary.get("cohesion"))
+    if cohesion is not None and cohesion < 0.35:
+        warnings.append("low_cohesion")
+    bpm = _coerce_dict(summary.get("bpm"))
+    if not bpm:
+        warnings.append("tempo_evidence_unavailable")
+    return warnings
 
 
 def _append_nodes(
@@ -410,12 +653,12 @@ def _append_nodes(
     sibling_entries: list[dict[str, Any]] = []
     for position, cluster in enumerate(clusters, start=1):
         client_key = f"{parent_key or 'root'}-{depth}-{position}"
-        ordered_cluster_indexes = _order_cluster_indexes(
+        ordered_cluster_indexes, sequencing_evidence = sequence_track_indexes(
             cluster,
             all_tracks,
             matrix,
             diversity_mode=str(config["diversity_mode"]),
-            ordering_strategy=str(config["ordering_strategy"]),
+            intent=str(config["sequencing_intent"]),
             random_seed=int(config["random_seed"]),
         )
         cluster_tracks = [all_tracks[index] for index in ordered_cluster_indexes]
@@ -429,6 +672,7 @@ def _append_nodes(
             ordering_strategy=str(config["ordering_strategy"]),
             profile_weights=profile_weights,
         )
+        summary["sequencing"] = sequencing_evidence
         sibling_entries.append(
             {
                 "client_key": client_key,
@@ -751,13 +995,112 @@ def _generation_matrix(
     method: str,
     tempo_mode: str,
 ) -> list[list[float]]:
+    matrix, _ = _generation_matrix_with_evidence(
+        tracks,
+        descriptor_weights,
+        method=method,
+        semantic_mode="off",
+        semantic_weight=0.0,
+        tempo_mode=tempo_mode,
+    )
+    return matrix
+
+
+def _generation_matrix_with_evidence(
+    tracks: list[SonicReadyTrack],
+    descriptor_weights: dict[str, float],
+    *,
+    method: str,
+    semantic_mode: str,
+    semantic_weight: float,
+    tempo_mode: str,
+) -> tuple[list[list[float]], dict[str, Any]]:
     if method == PLAYLIST_GENERATION_METHOD_DJ_HIERARCHICAL:
-        return _dj_profile_matrix(
+        acoustic_matrix = _dj_profile_matrix(
             tracks,
             descriptor_weights,
             tempo_mode=tempo_mode,
         )
-    return _profile_matrix(tracks, descriptor_weights)
+    else:
+        acoustic_matrix = _profile_matrix(tracks, descriptor_weights)
+
+    semantic_vectors = [_semantic_embedding(track) for track in tracks]
+    usable_vectors = [vector for vector in semantic_vectors if vector is not None]
+    consistent_width = (
+        len({len(vector) for vector in usable_vectors}) == 1
+        if usable_vectors
+        else False
+    )
+    semantic_coverage = len(usable_vectors) / max(1, len(tracks))
+    use_semantic = (
+        semantic_mode == "auto"
+        and semantic_weight > 0
+        and semantic_coverage >= MIN_SEMANTIC_COVERAGE
+        and consistent_width
+    )
+    if not use_semantic:
+        return acoustic_matrix, {
+            "acoustic_weight": 1.0,
+            "semantic_coverage": round(semantic_coverage, 4),
+            "semantic_mode_requested": semantic_mode,
+            "semantic_mode_used": "descriptor_only",
+            "semantic_weight": 0.0,
+        }
+
+    semantic_width = len(usable_vectors[0])
+    semantic_medians = [median(column) for column in zip(*usable_vectors, strict=True)]
+    semantic_matrix = _standardize_vectors(
+        [
+            vector if vector is not None else semantic_medians
+            for vector in semantic_vectors
+        ]
+    )
+    acoustic_matrix = _normalize_matrix_energy(acoustic_matrix)
+    semantic_matrix = _normalize_matrix_energy(semantic_matrix)
+    acoustic_scale = sqrt(1.0 - semantic_weight)
+    semantic_scale = sqrt(semantic_weight)
+    hybrid = [
+        [
+            *(value * acoustic_scale for value in acoustic_row),
+            *(value * semantic_scale for value in semantic_row),
+        ]
+        for acoustic_row, semantic_row in zip(
+            acoustic_matrix,
+            semantic_matrix,
+            strict=True,
+        )
+    ]
+    return hybrid, {
+        "acoustic_weight": round(1.0 - semantic_weight, 4),
+        "semantic_coverage": round(semantic_coverage, 4),
+        "semantic_dimension": semantic_width,
+        "semantic_mode_requested": semantic_mode,
+        "semantic_mode_used": "hybrid",
+        "semantic_weight": round(semantic_weight, 4),
+    }
+
+
+def _normalize_matrix_energy(matrix: list[list[float]]) -> list[list[float]]:
+    if not matrix:
+        return []
+    norms = sorted(sqrt(sum(value * value for value in row)) for row in matrix if row)
+    scale = median(norms) if norms else 1.0
+    if scale <= 1e-9:
+        scale = 1.0
+    return [[value / scale for value in row] for row in matrix]
+
+
+def _semantic_embedding(track: SonicReadyTrack) -> list[float] | None:
+    raw_embedding = track.descriptors.get("semantic_embedding")
+    if not isinstance(raw_embedding, list) or len(raw_embedding) < 2:
+        return None
+    embedding = []
+    for value in raw_embedding:
+        numeric = _float_or_none(value)
+        if numeric is None:
+            return None
+        embedding.append(numeric)
+    return embedding
 
 
 def _standardize_vectors(vectors: list[list[float]]) -> list[list[float]]:
@@ -941,17 +1284,15 @@ def _descriptor_group(key: str) -> str:
         return "tempo"
     if key.startswith("rms_"):
         return "energy"
-    if key.startswith("onset_strength_") or key.startswith("zero_crossing_rate_"):
+    if key.startswith(("onset_strength_", "zero_crossing_rate_")):
         return "attack"
-    if key.startswith("spectral_centroid_") or key.startswith("spectral_rolloff_"):
+    if key.startswith(("spectral_centroid_", "spectral_rolloff_")):
         return "brightness"
-    if (
-        key.startswith("spectral_bandwidth_")
-        or key.startswith("spectral_contrast_")
-        or key.startswith("spectral_flatness_")
+    if key.startswith(
+        ("spectral_bandwidth_", "spectral_contrast_", "spectral_flatness_")
     ):
         return "density"
-    if key.startswith("chroma_") or key.startswith("mfcc_"):
+    if key.startswith(("chroma_", "mfcc_")):
         return "harmony"
     return "texture"
 
@@ -1084,6 +1425,51 @@ def _descriptor_means(tracks: list[SonicReadyTrack]) -> dict[str, float]:
     return {key: mean(entries) for key, entries in values.items() if entries}
 
 
+def _descriptor_group_coverage(
+    tracks: list[SonicReadyTrack],
+    descriptor_keys: list[str],
+) -> dict[str, float]:
+    keys_by_group: dict[str, list[str]] = defaultdict(list)
+    for key in descriptor_keys:
+        keys_by_group[_descriptor_group(key)].append(key)
+    result = {}
+    for group, keys in sorted(keys_by_group.items()):
+        observed = sum(
+            _float_or_none(track.descriptors.get(key)) is not None
+            for track in tracks
+            for key in keys
+        )
+        result[group] = round(observed / max(1, len(tracks) * len(keys)), 4)
+    return result
+
+
+def _generation_readiness(
+    *,
+    ready_track_count: int,
+    source_track_count: int,
+    config: dict[str, Any],
+) -> dict[str, Any]:
+    coverage = ready_track_count / max(1, source_track_count)
+    minimum_ready = min(
+        max(MIN_GENERATION_READY_TRACKS, int(config["min_playlist_size"])),
+        max(MIN_GENERATION_READY_TRACKS, source_track_count),
+    )
+    reasons = []
+    if ready_track_count < minimum_ready:
+        reasons.append("insufficient_ready_tracks")
+    if coverage < 0.6:
+        reasons.append("analysis_coverage_below_generation_gate")
+    return {
+        "analysis_coverage": round(coverage, 4),
+        "can_generate": not reasons,
+        "minimum_ready_track_count": minimum_ready,
+        "ready_track_count": ready_track_count,
+        "reasons": reasons,
+        "safe_for_automatic_regeneration": not reasons and coverage >= 0.8,
+        "source_track_count": source_track_count,
+    }
+
+
 def _cluster_summary(
     parent_descriptors: dict[str, float],
     cluster_descriptors: dict[str, float],
@@ -1122,8 +1508,14 @@ def _cluster_summary(
         ),
         reverse=True,
     )[:5]
+    centroid = _centroid(cluster_matrix) if cluster_matrix else []
+    distances = [_distance(row, centroid) for row in cluster_matrix] if centroid else []
+    cohesion = 1.0 / (1.0 + mean(distances)) if distances else 0.0
     return {
         "bpm": _bpm_summary(tracks),
+        "boundary_tracks": _boundary_tracks(tracks, distances),
+        "cohesion": round(cohesion, 4),
+        "confidence": round(cohesion, 4),
         "common_tags": _common_tags(tracks),
         "descriptor_means": cluster_descriptors,
         "diversity_mode": diversity_mode,
@@ -1521,7 +1913,7 @@ def _append_trait_source(
 
 def _texture_label_for_delta(key: str, delta: float) -> str | None:
     high = delta >= 0
-    if key.startswith("spectral_centroid") or key.startswith("spectral_rolloff"):
+    if key.startswith(("spectral_centroid", "spectral_rolloff")):
         return "Bright" if high else "Warm"
     if key.startswith("spectral_bandwidth"):
         return "Dense" if high else "Sparse"
@@ -1632,7 +2024,15 @@ def _playlist_name(
     used_names: set[str],
 ) -> tuple[str, dict[str, Any]]:
     components = _name_components(summary)
-    candidates = _name_candidates_for_strategy(components, depth, naming_strategy)
+    fallback = "Sonic DJ Crate" if depth == 0 else "DJ Utility Split"
+    candidates = intrinsic_name_candidates(components, fallback=fallback)
+    if naming_strategy == PLAYLIST_NAMING_STRATEGY_METADATA_TAGLINE:
+        candidates = [
+            candidate.replace(" / ", ": ", 1) if " / " in candidate else candidate
+            for candidate in candidates
+        ]
+    elif naming_strategy == PLAYLIST_NAMING_STRATEGY_CRATE_LABEL:
+        candidates = [candidate.replace(" / ", " ") for candidate in candidates]
     for candidate in candidates:
         if _name_key(candidate) not in used_names:
             return candidate, {
@@ -1640,18 +2040,7 @@ def _playlist_name(
                 "strategy": _name_debug_strategy(naming_strategy, "candidate"),
             }
 
-    if parent_name:
-        for candidate in candidates:
-            contextual_candidate = _clean_name(f"{candidate} / {parent_name}")
-            if _name_key(contextual_candidate) not in used_names:
-                return contextual_candidate, {
-                    "components": components,
-                    "strategy": _name_debug_strategy(
-                        naming_strategy,
-                        "contextual_parent",
-                    ),
-                }
-
+    del parent_name
     fallback = candidates[0]
     suffix = 2
     while _name_key(f"{fallback} {suffix}") in used_names:
@@ -2030,29 +2419,7 @@ def _sibling_differentiator_sources(summary: dict[str, Any]) -> list[dict[str, A
 
 
 def _dominant_style_label(summary: dict[str, Any]) -> str | None:
-    common_tags = summary.get("common_tags", [])
-    if not common_tags:
-        return None
-
-    first_tag = common_tags[0]
-    if not isinstance(first_tag, dict):
-        return None
-    tag_value = first_tag.get("value")
-    count = first_tag.get("count")
-    track_count = summary.get("track_count")
-    if not isinstance(tag_value, str) or not isinstance(count, int):
-        return None
-    if not isinstance(track_count, int) or track_count <= 0:
-        return None
-
-    threshold = (
-        track_count
-        if track_count <= 2
-        else max(2, ceil(float(track_count) * STYLE_TAG_DOMINANCE_RATIO))
-    )
-    if count < threshold:
-        return None
-    return _titlecase_tag(tag_value)
+    return select_intrinsic_style_label(summary)
 
 
 def _role_label(
@@ -2146,13 +2513,15 @@ def _common_tags(tracks: list[SonicReadyTrack]) -> list[dict[str, Any]]:
     counter: Counter[str] = Counter()
     display_values: dict[str, str] = {}
     for track in tracks:
+        track_tags = set()
         for tag_value in track.tag_values:
             for part in _split_tag_value(tag_value):
                 normalized = part.casefold()
                 if not normalized:
                     continue
-                counter[normalized] += 1
+                track_tags.add(normalized)
                 display_values.setdefault(normalized, part)
+        counter.update(track_tags)
 
     threshold = max(1, ceil(len(tracks) * 0.2))
     return [
@@ -2204,6 +2573,29 @@ def _representative_tracks(
             }
         )
     return representatives
+
+
+def _boundary_tracks(
+    tracks: list[SonicReadyTrack],
+    distances: list[float],
+) -> list[dict[str, Any]]:
+    if len(distances) != len(tracks):
+        return []
+    return [
+        {
+            "artist": track.artist,
+            "distance_from_center": round(distance, 4),
+            "local_track_id": track.local_track_id,
+            "title": track.title,
+        }
+        for distance, _, track in sorted(
+            (
+                (distance, track.local_track_id, track)
+                for track, distance in zip(tracks, distances, strict=True)
+            ),
+            key=lambda entry: (-entry[0], entry[1]),
+        )[:3]
+    ]
 
 
 def _titlecase_tag(value: str) -> str:
