@@ -127,7 +127,9 @@ def run_autopilot_job(
 
 def _job_id(idempotency_key: str) -> str:
     digest = hashlib.sha256(idempotency_key.encode("utf-8")).hexdigest()[:32]
-    return f"autopilot:{digest}"
+    # RQ reserves ":" for its own Redis key namespace and rejects job IDs
+    # containing it before enqueueing.
+    return f"autopilot-{digest}"
 
 
 def _required_environment(name: str) -> str:

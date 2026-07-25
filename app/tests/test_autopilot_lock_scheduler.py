@@ -6,11 +6,21 @@ from types import SimpleNamespace
 
 import app.autopilot.scheduler as scheduler_module
 import pytest
+from app.autopilot.jobs import _job_id
 from app.autopilot.lock import (
     LockOwnershipLostError,
     RenewableRedisLock,
 )
 from app.autopilot.scheduler import scheduled_idempotency_key
+
+
+def test_autopilot_job_id_is_stable_and_rq_safe() -> None:
+    first = _job_id("startup:2026-07-25T23:16:00Z")
+
+    assert first == _job_id("startup:2026-07-25T23:16:00Z")
+    assert first != _job_id("startup:2026-07-25T23:17:00Z")
+    assert first.startswith("autopilot-")
+    assert ":" not in first
 
 
 class FakeRedis:
