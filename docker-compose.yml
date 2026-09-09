@@ -38,6 +38,7 @@ x-app-volumes: &app-volumes
 
 services:
   db:
+    restart: unless-stopped
     build:
       context: .
       dockerfile: db/Dockerfile
@@ -62,6 +63,7 @@ services:
       start_period: 10s
 
   redis:
+    restart: unless-stopped
     image: redis:7-alpine
     command: ["redis-server", "/usr/local/etc/redis/redis.conf"]
     ports:
@@ -85,6 +87,7 @@ services:
     restart: "no"
 
   app:
+    restart: unless-stopped
     build:
       context: ./app
     depends_on:
@@ -114,6 +117,7 @@ services:
       start_period: 15s
 
   app-ui:
+    restart: unless-stopped
     build:
       context: ./app-ui
     depends_on:
