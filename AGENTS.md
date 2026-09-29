@@ -18,8 +18,13 @@ source .venv/bin/activate
 pip install -r app/requirements.txt -r requirements-dev.txt
 ```
 
+Follow the user's global delivery agreement for implementation work: review and
+commit intended changes, push through the normal repository workflow, and deploy
+and verify live when applicable. Honor explicit delivery restrictions.
+
 Deployment is owner-specific and intentionally not described in tracked repo files.
-Do not deploy, push, or commit unless the current user request explicitly asks for it.
+Establish the owner's private deployment runbook before deploying; keep its details
+out of tracked files.
 
 ## Linting & tests
 
@@ -37,4 +42,7 @@ npm test
 npm run build
 ```
 
-Only run the commands relevant to the files changed in the subtask.
+Scope each lane's checks to the changes it owns. API, schema, or cross-stack
+changes also need appropriate combined verification before shipping. For
+documentation-only edits, review the diff and formatting; application test suites
+are unnecessary.
