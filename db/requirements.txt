@@ -11,4 +11,4 @@ psycopg[binary]==3.2.13
 cryptography==45.0.2
 watchdog==6.0.0
 rapidfuzz==3.13.0
-mutagen==1.47.0
+mutagen==1.48.1
