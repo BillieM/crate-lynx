@@ -9,6 +9,9 @@ exports playlist-shaped M3U files backed by the local library. It is built for a
 single trusted operator on a private machine or LAN, not as a hosted multi-user
 service.
 
+Read [Building my own DJ library tools, from Python to Crate Lynx](https://billiem.uk/posts/dj-tools-i-kept-trying-to-build/)
+for the project's background, earlier tools and trade-offs.
+
 ## Screenshots
 
 The screenshots below use synthetic demo data.
